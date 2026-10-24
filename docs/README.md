@@ -1,7 +1,7 @@
 # Eko Language Reference
 
 This manual is the semantic authority for the Eko programming language.
-It is organized as eleven chapters; each chapter is normative unless marked
+It is organized as twelve chapters; each chapter is normative unless marked
 otherwise.
 
 | Chapter | Contents |
@@ -10,13 +10,14 @@ otherwise.
 | [02-syntax.md](02-syntax.md) | Blocks and indentation, line continuation, comments, literals, operators and precedence |
 | [03-control.md](03-control.md) | Binding forms (`=`, `:=`, `<-`), lambdas, `case`/`if`, patterns, working with `Result` |
 | [04-types.md](04-types.md) | Type declarations, composite types, nominal typing and shape adaptation, generics, `Never` |
-| [05-names.md](05-names.md) | Calls and UFCS, member resolution, structural access, modules, `import`, visibility, prelude |
+| [05-names.md](05-names.md) | Calls and UFCS, member resolution, structural access, modules, `import`, visibility, the standard library |
 | [06-world.md](06-world.md) | Capabilities, the world bit, failure layer, file handles, concurrency |
 | [07-runtime.md](07-runtime.md) | Value representation, memory management, monomorphization, iteration and tail calls |
 | [08-builtins.md](08-builtins.md) | `Bool`, `Char`/`String`, `Bytes`, conversions, time, derived services, JSON |
 | [09-library.md](09-library.md) | Standard library surface, testing, diagnostics |
-| [10-prelude.md](10-prelude.md) | Complete prelude inventory: delivery model, free functions, operator namespaces, every namespace member |
-| [11-ffi.md](11-ffi.md) | `extern` and `Pure`, machine words, the `C` namespace, `ctype` and `C.In`, failure and callbacks, linking and reserved symbols, the embedding veneer, the prelude channel |
+| [10-std.md](10-std.md) | Complete standard-library inventory: delivery model, free functions, operator namespaces, every namespace member |
+| [11-ffi.md](11-ffi.md) | `extern` and `Pure`, machine words, the `C` namespace, `ctype` and `C.In`, failure and callbacks, linking and reserved symbols, the embedding veneer, the standard library channel |
+| [12-toolchain.md](12-toolchain.md) | Distribution, derived cache, tooling services, version discipline, generated documentation |
 
 ## Design records
 

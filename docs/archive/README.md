@@ -6,7 +6,7 @@ belong in the normative reference. It is restructured from the original
 Chinese ruling archive (`legacy/`).
 
 **Who needs this:** compiler implementers and language maintainers. Ordinary
-users do not — the eleven chapters are the complete user-facing surface.
+users do not — the twelve chapters are the complete user-facing surface.
 
 **Status of every file here: non-normative.** The rulings live in the
 chapters; a record defers to its chapter and cites it. Where an early ruling
@@ -21,12 +21,13 @@ the record follows the current reference; the chapter always wins.
 | [syntax.md](syntax.md) | 02-syntax.md | layout, operators, literals, numeric vocabulary |
 | [control.md](control.md) | 03-control.md | bindings, lambdas, branching, patterns, `Never`, iteration |
 | [types.md](types.md) | 04-types.md | declarations, nominality, composites, generics notation |
-| [names.md](names.md) | 05-names.md | UFCS, structural access, modules, visibility, prelude |
+| [names.md](names.md) | 05-names.md | UFCS, structural access, modules, visibility, the standard library |
 | [world.md](world.md) | 06-world.md | capabilities, world bit, failure, handles, concurrency |
 | [runtime.md](runtime.md) | 07-runtime.md | representation, acyclicity, memory strategy, monomorphization |
 | [builtins.md](builtins.md) | 08-builtins.md | text, conversions, derived services, JSON, bytes, time |
 | [library.md](library.md) | 09-library.md | standard library surface, testing, diagnostics |
-| [ffi.md](ffi.md) | 11-ffi.md | extern, `Pure`, `C.*`, `ctype`, embedding ABI, prelude channel |
+| [ffi.md](ffi.md) | 11-ffi.md | extern, `Pure`, `C.*`, `ctype`, embedding ABI, the std channel |
+| [stdlib.md](stdlib.md) | 05-names.md §11, 08-builtins.md §6, 10-std.md, 12-toolchain.md | library name and delivery, implicit import, operators and equality, derived services, toolchain |
 
 ## How to read a record
 
