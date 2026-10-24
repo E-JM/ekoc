@@ -1,0 +1,26 @@
+// Cross-module use: import opens the types and constructors, functions are
+// called fully qualified, and the UFCS extension keeps the chain linear
+// (05-names.md §6, §7.1, §8).
+
+import geolib
+
+_kind: (s: Shape) -> String =
+    case s:
+        Circle _ -> "circle"
+        Rect {w, h} -> if w > h: "wide" else: "tall"
+
+area_calls: test =
+    c: Shape = Circle 2.0
+    r: Shape = Rect {2.0, 3.0}
+    assert_eq(Float.to_fixed(geolib.area(c), 2), "12.56")
+    assert_eq(geolib.area(r), 6.0)
+
+point_ufcs: test =
+    p: Point = {x: 3.0, y: 4.0}
+    assert_eq(geolib.coord_sum(p), 7.0)
+    assert_eq(p.geolib.coord_sum(), 7.0)
+    assert_eq(p.geolib.move(1.0), {x: 4.0, y: 4.0})
+
+kinds: test =
+    xs: []Shape = {Circle 1.0, Rect {2.0, 3.0}}
+    assert_eq(xs.map(_kind), {"circle", "tall"})

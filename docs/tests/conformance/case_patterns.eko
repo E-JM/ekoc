@@ -1,0 +1,107 @@
+// case: guards, or-patterns, list patterns, literals, record subsets,
+// multi-scrutinee arms, and the single-line form (03-control.md §3, §5).
+
+Key: type = Up | Down | Left | Right
+Human: type = [name: String, age: Int, city: String]
+Holder: type = Holder Human
+
+_sign: (n: Int) -> String =
+    case n:
+        n if n < 0 -> "negative"
+        n if n == 0 -> "zero"
+        _ -> "positive"
+
+_axis: (k: Key) -> String =
+    case k:
+        Up | Down -> "vertical"
+        Left | Right -> "horizontal"
+
+_pair_only: (xs: []Int) -> String =
+    case xs:
+        {x, y} -> "pair {x},{y}"
+        _ -> "other"
+
+_ends_42: (xs: []Int) -> Bool =
+    case xs:
+        {.., 42} -> True
+        _ -> False
+
+_list_head: (xs: []Int) -> String =
+    case xs:
+        {} -> "empty"
+        {h, ..t} -> "{h}/{t.length()}"
+
+_list_nonempty: (xs: []Int) -> Bool =
+    case xs:
+        {} -> False
+        {_, ..} -> True
+
+_lookup: (r: Result Int String) -> String =
+    case r:
+        Err "timeout" -> "retry"
+        Err msg -> msg
+        Ok 0 -> "zero"
+        Ok n -> "ok {n}"
+
+_describe: (holder: Holder) -> String =
+    case holder:
+        Holder {name, age: a} -> "{name}:{a}"
+
+_fizz: (n: Int) -> String =
+    case n % 3 == 0, n % 5 == 0:
+        True, True -> "FizzBuzz"
+        True, False -> "Fizz"
+        False, True -> "Buzz"
+        False, False -> show(n)
+
+_parity: (n: Int) -> String =
+    case n % 2: 0 -> "even"; _ -> "odd"
+
+guards: test =
+    assert_eq(_sign(-2), "negative")
+    assert_eq(_sign(0), "zero")
+    assert_eq(_sign(3), "positive")
+
+or_patterns: test =
+    assert_eq(_axis(Up), "vertical")
+    assert_eq(_axis(Down), "vertical")
+    assert_eq(_axis(Left), "horizontal")
+    assert_eq(_axis(Right), "horizontal")
+
+list_patterns: test =
+    assert_eq(_pair_only({4, 5}), "pair 4,5")
+    assert_eq(_pair_only({4}), "other")
+    assert_eq(_ends_42({1, 42}), True)
+    assert_eq(_ends_42({1, 2}), False)
+    assert_eq(_list_head({7, 8, 9}), "7/2")
+    assert_eq(_list_head({}), "empty")
+    assert_eq(_list_nonempty({}), False)
+    assert_eq(_list_nonempty({0}), True)
+
+literal_patterns: test =
+    assert_eq(_lookup(Ok 0), "zero")
+    assert_eq(_lookup(Ok 5), "ok 5")
+    assert_eq(_lookup(Err "timeout"), "retry")
+    assert_eq(_lookup(Err "boom"), "boom")
+
+record_subset: test =
+    h: Human = {name: "ada", age: 36, city: "x"}
+    assert_eq(_describe(Holder h), "ada:36")
+
+fizzbuzz: test =
+    assert_eq(_fizz(15), "FizzBuzz")
+    assert_eq(_fizz(9), "Fizz")
+    assert_eq(_fizz(10), "Buzz")
+    assert_eq(_fizz(7), "7")
+
+single_line: test =
+    assert_eq(_parity(4), "even")
+    assert_eq(_parity(5), "odd")
+
+case_value: test =
+    n: Int = 2
+    msg: String =
+        case n:
+            0 -> "zero"
+            _ -> "nonzero"
+    assert_eq(msg, "nonzero")

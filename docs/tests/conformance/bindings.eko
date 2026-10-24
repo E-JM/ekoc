@@ -1,0 +1,42 @@
+// Binding forms: initial `=`, rebinding `:=`, tuple splitting, discard, and
+// inverted-binding chains ending in `Ok` (03-control.md §1, §6).
+
+_sum_row: (row: []String) -> Result Int String =
+    a <- row.get(0).to_result("missing a").try()
+    b <- row.get(1).to_result("missing b").try()
+    x <- Int.parse(a).map_err((e): "a: {e}").try()
+    y <- Int.parse(b).map_err((e): "b: {e}").try()
+    total := x + y
+    Ok total
+
+initial_binding: test =
+    answer: Int = 42
+    assert_eq(answer, 42)
+
+rebinding: test =
+    answer: Int = 42
+    answer := answer + 1
+    assert_eq(answer, 43)
+
+capture_snapshot: test =
+    base: Int = 10
+    read: () -> Int = (): base
+    base := 20
+    assert_eq(read(), 10)
+    assert_eq(base, 20)
+
+tuple_split: test =
+    pair: [String, Int] = {"first", 2}
+    (a, b) = pair
+    assert_eq(a, "first")
+    assert_eq(b, 2)
+
+discard: test =
+    xs: []Int = {1, 2, 3}
+    _ := xs.length()
+    assert_eq(xs.length(), 3)
+
+inverted_chain: test =
+    assert_eq(_sum_row({"7", "8"}), Ok 15)
+    assert_eq(_sum_row({}), Err "missing a")
+    assert_eq(_sum_row({"7"}), Err "missing b")

@@ -1,0 +1,36 @@
+// Access: get/at return Option, None passes through nested access, trust is
+// declared at consumption, and String length counts scalars
+// (05-names.md §4, 08-builtins.md §2).
+
+list_access: test =
+    xs: []Int = {10, 20, 30}
+    assert_eq(xs.get(0), Some 10)
+    assert_eq(xs.get(3), None)
+    assert_eq(xs.get(2).unwrap_or(0), 30)
+    assert_eq(xs.get(9).unwrap_or(0), 0)
+    assert_eq(xs.get(0).expect("index 0 is in range"), 10)
+
+dict_access: test =
+    ages: [String]Int = {"ada": 36}
+    assert_eq(ages.get("ada"), Some 36)
+    assert_eq(ages.get("grace"), None)
+
+string_access: test =
+    s: String = "héllo"
+    assert_eq(s.length(), 5)
+    assert_eq(s.at(1), Some 'é')
+    assert_eq(s.at(5), None)
+    assert_eq(s.slice(1, 3), Some "éll")
+    assert_eq(s.slice(4, 5), None)
+
+nested_access: test =
+    grid: [][]Int = {{1, 2}, {3, 4}}
+    assert_eq(grid.get(1).get(0), Some 3)
+    assert_eq(grid.get(5).get(0), None)
+    assert_eq(grid.get(0).get(5), None)
+    assert_eq(grid.get(5).get(0).unwrap_or(-1), -1)
+
+slice_semantics: test =
+    assert_eq("hello".slice(1, 3), Some "ell")
+    assert_eq("hello".slice(3, 2), Some "lo")
+    assert_eq("hello".slice(4, 5), None)

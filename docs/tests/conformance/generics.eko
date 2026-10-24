@@ -1,0 +1,78 @@
+// Generics: implicit type variables, mutual recursion, a generic tree with
+// self tail recursion over its frontier, an explicit comparator, and
+// instantiation by unification (04-types.md §7, §8, §9).
+
+Tree: type t = Leaf t | Node [Tree t, Tree t, t]
+
+first: (xs: []t) -> Option t =
+    case xs:
+        {x, ..} -> Some x
+        {} -> None
+
+swap: (p: [t, u]) -> [u, t] =
+    case p:
+        {a, b} -> {b, a}
+
+even_len: (xs: []t) -> Bool =
+    case xs:
+        {} -> True
+        {_, ..rest} -> odd_len(rest)
+
+odd_len: (xs: []t) -> Bool =
+    case xs:
+        {} -> False
+        {_, ..rest} -> even_len(rest)
+
+_extend: (acc: []Tree elem, node: Tree elem) -> []Tree elem =
+    case node:
+        Leaf _ -> acc
+        Node {l, r, _} -> acc ++ {l, r}
+
+_children: (frontier: []Tree elem) -> []Tree elem =
+    frontier.fold(frontier.take(0), (acc, node): _extend(acc, node))
+
+_depth: (frontier: []Tree elem, level: Int) -> Int =
+    next := _children(frontier)
+    case next:
+        {} -> level
+        _ -> _depth(next, level + 1)
+
+depth: (tree: Tree elem) -> Int =
+    _depth({tree}, 0)
+
+sort_asc: (xs: []Int) -> []Int =
+    xs.sort_by((a, b): a < b)
+
+doubled: (xs: []Int) -> []Int =
+    xs.map((n): n * 2)
+
+first_values: test =
+    xs: []Int = {10, 20}
+    empty: []Int = {}
+    names: []String = {"ada"}
+    assert_eq(first(xs), Some 10)
+    assert_eq(first(empty), None)
+    assert_eq(first(names), Some "ada")
+
+swap_values: test =
+    pair: [String, Int] = {"first", 2}
+    assert_eq(swap(pair), {2, "first"})
+
+lengths: test =
+    empty: []Int = {}
+    assert(even_len(empty))
+    assert(even_len({1, 2}))
+    assert(odd_len({1, 2, 3}))
+    assert(odd_len(empty).not())
+
+tree_depth: test =
+    root: Tree Int = Node {Leaf 1, Leaf 2, 3}
+    deep: Tree Int = Node {Node {Leaf 1, Leaf 2, 3}, Leaf 4, 5}
+    assert_eq(depth(root), 1)
+    assert_eq(depth(deep), 2)
+
+sorting: test =
+    assert_eq(sort_asc({3, 1, 2}), {1, 2, 3})
+
+mapping: test =
+    assert_eq(doubled({1, 2, 3}), {2, 4, 6})

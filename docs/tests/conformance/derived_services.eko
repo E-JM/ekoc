@@ -1,0 +1,51 @@
+// Derived services: show vs inspect, an override through interpolation,
+// deep equality, declaration-order `<`, immutable `with`, stable sort_by,
+// and capability display (08-builtins.md §6, 09-library.md §5.1).
+
+Sex: type = Man | Woman
+Tree: type t = Leaf t | Node [Tree t, Tree t]
+Money: type = [cents: Int, cur: String]
+Item: type = [key: Int, tag: String]
+Person: type = [name: String, age: Int]
+
+Money.show: (m: Money) -> String = "{m.cur} {m.cents}"
+
+show_vs_inspect: test =
+    plain: String = "hi"
+    assert_eq(show(plain), "hi")
+    assert_eq(inspect(plain), "\"hi\"")
+    tagged: [name: String] = {name: "wd"}
+    assert_eq(show(tagged), "\{name: \"wd\"}")
+    assert_eq(inspect(tagged), "\{name: \"wd\"}")
+
+show_override: test =
+    m: Money = {cents: 12500, cur: "USD"}
+    assert_eq("{m}", "USD 12500")
+    assert_eq(inspect(m), "\{cents: 12500, cur: \"USD\"}")
+
+deep_equality: test =
+    t1: Tree Int = Node {Leaf 1, Leaf 2}
+    t2: Tree Int = Node {Leaf 1, Leaf 2}
+    t3: Tree Int = Node {Leaf 1, Leaf 3}
+    assert(t1 == t2)
+    assert((t1 == t3).not())
+
+declaration_order: test =
+    man: Sex = Man
+    woman: Sex = Woman
+    assert(man < woman)
+
+with_is_immutable: test =
+    p: Person = {name: "ada", age: 36}
+    q := p.with({age: 37})
+    assert_eq(p.age, 36)
+    assert_eq(q.age, 37)
+
+sort_stability: test =
+    items: []Item =
+        {{key: 2, tag: "a"}, {key: 1, tag: "b"}, {key: 1, tag: "c"}, {key: 2, tag: "d"}}
+    sorted := items.sort_by((x, y): x.key < y.key)
+    assert_eq(sorted.map((i): i.tag), {"b", "c", "a", "d"})
+
+capability_display: test =
+    assert_eq(show(Out.null()), "<cap>")

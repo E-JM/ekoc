@@ -1,0 +1,66 @@
+// Composite types: ADTs, records with nested partial update, the newtype
+// form, tuples, dictionaries, and one-directional shape adaptation
+// (04-types.md §1, §2, §5).
+
+Color: type = Red | Green | Blue
+Address: type = [city: String, zip: String]
+Person: type = [name: String, age: UInt, address: Address]
+Age: type = Age UInt
+Human: type = [name: String, age: Int]
+
+_name: (c: Color) -> String =
+    case c:
+        Red -> "red"
+        Green -> "green"
+        Blue -> "blue"
+
+_shift: (p: [Int, Int], d: [Int, Int]) -> [Int, Int] =
+    (x, y) = p
+    (dx, dy) = d
+    {x + dx, y + dy}
+
+_birthday: (a: Age) -> Age =
+    case a:
+        Age n -> Age (n + 1)
+
+_describe: (p: [name: String, age: Int]) -> String =
+    "{p.name}: {p.age}"
+
+adts: test =
+    assert_eq(_name(Red), "red")
+    assert_eq(_name(Green), "green")
+    assert_eq(_name(Blue), "blue")
+
+records: test =
+    p: Person = {name: "ada", age: 36, address: {city: "x", zip: "1"}}
+    moved := p.with({address: {city: "y"}})
+    assert_eq(moved.address.city, "y")
+    assert_eq(moved.address.zip, "1")
+    assert_eq(p.address.city, "x")
+
+newtype: test =
+    assert_eq(_birthday(Age 36), Age 37)
+
+tuples: test =
+    p: [Int, Int] = {1, 2}
+    d: [Int, Int] = {3, 4}
+    assert_eq(_shift(p, d), {4, 6})
+
+dicts: test =
+    ages: [String]UInt = {"ada": 36, "grace": 41}
+    assert_eq(ages.get("ada"), Some 36)
+    assert_eq(ages.length(), 2)
+
+composites: test =
+    empty: []Int = {}
+    pair: [String, Int] = {"first", 2}
+    (word, n) = pair
+    assert_eq(empty.length(), 0)
+    assert_eq(word, "first")
+    assert_eq(n, 2)
+
+shape_adaptation: test =
+    h: Human = {name: "ada", age: 36}
+    assert_eq(_describe(h), "ada: 36")
+    view: [name: String, age: Int] = h
+    assert_eq(view.age, 36)

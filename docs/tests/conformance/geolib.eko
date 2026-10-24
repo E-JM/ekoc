@@ -1,0 +1,18 @@
+// A small library module: a record, an ADT, a private helper, and public
+// functions over both. Imported by geolib_use.eko (05-names.md §6, §9).
+
+Shape: type = Circle Float | Rect [Float, Float]
+Point: type = [x: Float, y: Float]
+
+_sum: (a: Float, b: Float) -> Float = a + b
+
+area: (s: Shape) -> Float =
+    case s:
+        Circle r -> 3.14 * r * r
+        Rect {w, h} -> w * h
+
+coord_sum: (p: Point) -> Float =
+    _sum(p.x, p.y)
+
+move: (p: Point, dx: Float) -> Point =
+    p.with({x: p.x + dx})

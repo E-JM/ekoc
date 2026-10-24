@@ -1,0 +1,62 @@
+// Result chains: `<-` unwrapping, to_result bridges, map_err error
+// conversion, wildcard `_` links over `Result _ e`, a table-driven test
+// with explicit tuple splitting, and the Option/Result consumers
+// (03-control.md §6, 09-library.md §6.4).
+
+Sex: type = Man | Woman
+Person: type = [name: String, age: UInt, sex: Sex, address: String]
+
+_parse_sex: (data: String) -> Result Sex String =
+    case data:
+        "man" -> Ok Man
+        "woman" -> Ok Woman
+        _ -> Err "unknown sex: {data}"
+
+parse_person: (data: []String) -> Result Person String =
+    name <- data.get(0).to_result("short row: missing name").try()
+    age_s <- data.get(1).to_result("short row: missing age").try()
+    age <- UInt.parse(age_s).map_err((e): "age: {e}").try()
+    sex_s <- data.get(2).to_result("short row: missing sex").try()
+    sex <- _parse_sex(sex_s).try()
+    address <- data.get(3).to_result("short row: missing address").try()
+    Ok {name: name, age: age, sex: sex, address: address}
+
+_person: (name: String, age: UInt, sex: Sex, address: String) -> Person =
+    {name: name, age: age, sex: sex, address: address}
+
+parse_table: test =
+    ada: Person = _person("ada", 36, Woman, "x")
+    grace: Person = _person("grace", 45, Woman, "y")
+    row_a: [String, Result Person String] = {"ada,36,woman,x", Ok ada}
+    row_b: [String, Result Person String] = {"grace,45,woman,y", Ok grace}
+    row_c: [String, Result Person String] = {"ada,36,robot,x", Err "unknown sex: robot"}
+    row_d: [String, Result Person String] = {"ada,36,woman", Err "short row: missing address"}
+    rows: [][String, Result Person String] = {row_a, row_b, row_c, row_d}
+    rows.each((row):
+        (data, want) = row
+        assert_eq(parse_person(data.split(",")), want))
+
+parse_missing: test =
+    assert_eq(parse_person({}), Err "short row: missing name")
+    assert(parse_person({"ada", "36", "man", "x"}).is_ok())
+    assert(parse_person({"ada"}).is_err())
+
+result_helpers: test =
+    good: Result Int String = Ok 7
+    bad: Result Int String = Err "no"
+    assert(good.is_ok())
+    assert(bad.is_err())
+    assert_eq(good.unwrap_or(0), 7)
+    assert_eq(bad.unwrap_or(0), 0)
+
+_append: (entry: String) -> Result _ String = Ok _
+
+append_two: (a: String, b: String) -> Result _ String =
+    _ <- _append(a).try()
+    _ <- _append(b).try()
+    Ok _
+
+wildcard_links: test =
+    assert_eq(append_two("x", "y"), Ok _)
+    rows.each_with_index((_, i):
+        assert(i >= 0))
