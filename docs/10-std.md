@@ -1,13 +1,14 @@
-# Chapter 10 — The Prelude
+# Chapter 10 — The Standard Library
 
-This chapter is the complete inventory of the prelude: every type, free
-function, and namespace member, with signatures. Semantics that are specified
-elsewhere are referenced, not repeated; signatures here are normative. The
-prelude's delivery model is specified in 05-names.md §11: an ordinary Eko
-module named `prelude`, shipped as source with the compiler, implicitly
-imported. Only the derived services, `panic`, and the memory operations are
-compiler-generated; everything else is prelude source code. The world bit of
-every signature follows 06-world.md §9.
+This chapter is the complete inventory of the standard library: every type,
+free function, and namespace member, with signatures. Semantics that are
+specified elsewhere are referenced, not repeated; signatures here are
+normative. The delivery model is specified in 05-names.md §11: an ordinary
+Eko module named `std`, shipped as source with the compiler, implicitly
+imported; companion modules under `std/` are imported explicitly. Only the
+derived services, `panic`, and the memory operations are compiler-generated;
+everything else is std source code. The world bit of every signature follows
+06-world.md §9.
 
 ## 1. Free functions
 
@@ -16,14 +17,18 @@ every signature follows 06-world.md §9.
 | `show` | `(t) -> String` | display channel; dispatches to the type namespace; compiler-generated default, overridable (08-builtins.md §6) |
 | `inspect` | `(t) -> String` | structural channel; always derived (08-builtins.md §6.3) |
 | `panic` | `(msg: String) -> Never` | compiler intrinsic; aborts the process; pure (06-world.md §3) |
-| `assert` | `(c: Bool) -> _` | prelude source; panics on `False` (09-library.md §6.3) |
-| `assert_eq` | `(a: t, b: t) -> _` | prelude source; same-type; failure message via `inspect` |
-| `assert_ne` | `(a: t, b: t) -> _` | prelude source; same-type; panics when equal (09-library.md §6.3) |
+| `assert` | `(c: Bool) -> _` | std source; panics on `False` (09-library.md §6.3) |
+| `assert_eq` | `(a: t, b: t) -> _` | std source; same-type; failure message via `inspect` |
+| `assert_ne` | `(a: t, b: t) -> _` | std source; same-type; panics when equal (09-library.md §6.3) |
 
 ## 2. Operator namespaces
 
-Every operator is sugar for a namespace function (02-syntax.md §6.1). The
-complete table:
+Every operator is sugar for a namespace function (02-syntax.md §6.1), and
+the operator surface is defined only on the value layer — `Int`, `UInt`,
+`Float`, the machine words, `Bool`, `Char`, `String`, `Bytes` — plus `++`
+on the syntax-backed containers and text (08-builtins.md §6.4). There is no
+operator on any other type; equality and ordering there are the members
+`T.eq` and `T.lt`, called explicitly. The complete table:
 
 | Expression | Desugars to (by operand type) |
 |---|---|
@@ -31,8 +36,8 @@ complete table:
 | `a / b` | `Int.quot`, `UInt.quot`, `Float.div` |
 | `a % b` | `Int.rem`, `UInt.rem`, `Float.rem` |
 | `-a` | `Int.neg`, `Float.neg` (no `UInt.neg`; unsigned values are non-negative) |
-| `a == b`, `a != b` | `T.eq`, `T.ne` — `T` ∈ {`Int`, `UInt`, `Float`, `Bool`, `Char`, `String`, `Bytes`} and derived `eq` for ADTs and records |
-| `a < b`, `a <= b`, `a > b`, `a >= b` | `T.lt/le/gt/ge` for the same hand-defined types; derived `<` for ADTs (records and `Bool` have none) |
+| `a == b`, `a != b` | `T.eq`, `T.ne` — value layer only; `a == b ≡ a.eq(b)` unconditionally (08-builtins.md §6.4) |
+| `a < b`, `a <= b`, `a > b`, `a >= b` | `T.lt/le/gt/ge` — value layer only; ADTs carry the derived member `T.lt` without an operator (08-builtins.md §6.5) |
 | `a && b`, `a \|\| b` | sugar for `if`; there is no function (02-syntax.md §6.3) |
 | `b.not()` | `Bool.not` |
 | `xs ++ ys` | `List.append`, `String.append`, `Bytes.append`, `Dict.merge` (right side wins) |
@@ -181,7 +186,7 @@ both are pure (06-world.md §3). `Option.to_result` maps `None` to
 Signatures marked `!` set the world bit; derivations are pure.
 
 The `Out.unwrap`/`Out.wrap` pairs (and the per-capability analogues) are
-prelude-private `Pure` externs to reserved host symbols; they are
+std-private `Pure` externs to reserved host symbols; they are
 implementation of the derivation surface, not public inventory
 (`11-ffi.md §8`).
 
@@ -192,7 +197,7 @@ implementation of the derivation surface, not public inventory
 error), `empty: () -> In`, `from_lines: ([]String) -> In`.
 
 **Fs** — `open: (Fs, String, OpenMode) !-> Result File IoError`;
-`with_file: (Fs, String, OpenMode, (File) !-> a) !-> Result a IoError`
+`Fs.with_file: (Fs, String, OpenMode, (File) !-> a) !-> Result a IoError`
 (closes on both paths; 06-world.md §4.4);
 `exists: (Fs, String) !-> Bool`;
 whole-path mirrors `read: (Fs, String) !-> Result String IoError`,
@@ -234,11 +239,11 @@ exit code; 06-world.md §2).
 08-builtins.md §5.4. `Json.parse`, `Json.show`, and the derived
 `to_json`/`from_json` — 08-builtins.md §7.
 
-## 12. What the prelude does not contain
+## 12. What the standard library does not contain
 
-The prelude contains no world-touching free function (every such function
-hangs under a capability namespace), no format-string language, no regular
-expressions, no Unicode case mapping, and no encoding
-family beyond UTF-8 (09-library.md §7). Additions to this inventory are
-specification changes: the prelude is versioned with the compiler, and its
-opened names are part of its interface.
+The standard library contains no world-touching free function (every such
+function hangs under a capability namespace), no format-string language, no
+regular expressions, no Unicode case mapping, and no encoding family beyond
+UTF-8 (09-library.md §7). Additions to this inventory are specification
+changes: std is versioned with the compiler, and its opened names are part of
+its interface.

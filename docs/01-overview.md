@@ -90,7 +90,7 @@ Conversions never panic. Recoverable failure is always a `Result` value;
 
 The manual's running example reads a CSV file of people and prints it
 with line numbers. It exercises bindings, inverted bindings, `case`,
-`with_file`, `Result` combinators, interpolation, and derived `show`:
+`Fs.with_file`, `Result` combinators, interpolation, and derived `show`:
 
 ```eko
 Sex:    type = Man | Woman
@@ -127,7 +127,7 @@ Reading it top to bottom:
 - `main: (out: Out, fs: Fs) !` — the parameter list is the program's
   permission request; the host grants capabilities per parameter. The
   `!` says the body touches the world.
-- `with_file` opens the file and guarantees closure on both the value
+- `Fs.with_file` opens the file and guarantees closure on both the value
   and error paths; its callback's result becomes the success payload.
 - `<-` threads each step's remaining block as a trailing callback;
   `.try()` and `.map_err(...)` move errors through the chain, which ends
@@ -155,14 +155,14 @@ Reading it top to bottom:
 | Access | `get`/`at` only; trust declared at consumption | 05 |
 | Modules | file is module; `import` opens types; functions fully qualified | 05 |
 | I/O model | capabilities, world bit, open bit `?` | 06 |
-| Handles | `OpenMode`, generation checks, `with_file`, attenuation | 06 |
+| Handles | `OpenMode`, generation checks, `Fs.with_file`, attenuation | 06 |
 | Runtime | boxed immutables, O(1) sharing, reference counting, monomorphization | 07 |
 | Iteration | combinators, self tail recursion, TCO guarantee | 07 |
 | Data types | `Bool`, `Char`/`String`, `Bytes`, numeric conversions, time | 08 |
 | Services | `show`/`inspect`, `==`, `<`, `with`, JSON | 08 |
 | Library | fs, formatting, math, text, collections | 09 |
 | Tooling | `test` slots, assertions, diagnostics codes | 09 |
-| FFI | `extern` + `Pure`, machine words, `C.*`, `ctype` and `C.In`, callbacks, linking, embedding veneer, the prelude channel | 11 |
+| FFI | `extern` + `Pure`, machine words, `C.*`, `ctype` and `C.In`, callbacks, linking, embedding veneer, the standard library channel | 11 |
 
 ## 6. Terminology
 
@@ -186,4 +186,4 @@ Reading it top to bottom:
 | `Pure` | the audited guarantee word: no world contact, reentrant and thread-safe (11-ffi.md §2.2) |
 | layout record | a `ctype` declaration whose field types and order pin a C layout (11-ffi.md §3.3) |
 | veneer | the embedding ABI: normative opaque function signatures, layouts excluded (11-ffi.md §7) |
-| prelude | the only implicitly imported module; core types and free functions (05-names.md §11) |
+| std | the standard library: the only implicitly imported module; the vocabulary types and the closed free-name set (05-names.md §11) |

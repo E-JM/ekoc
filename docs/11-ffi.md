@@ -1,7 +1,7 @@
 # Chapter 11 — FFI and Native Interop
 
 Eko reaches native code through one mechanism: the `extern` declaration.
-There is no second vocabulary. The prelude reaches the operating system
+There is no second vocabulary. The standard library reaches the operating system
 through the same lexicon (§8), the embedding host binds through the same
 symbols (§7), and user bindings declare C functions through the same form
 (§2). The vocabulary that lives in other chapters — machine words
@@ -16,7 +16,7 @@ cross-referenced here.
 ### 1.1 One lexicon
 
 `extern` is the single channel to native code. No compiler intrinsic is
-added for it: the prelude's operating-system surface is expressed with the
+added for it: the standard library's operating-system surface is expressed with the
 declarations of §2 and the primitives of §8, and the compiler-provided
 services are the three of `05-names.md §11` — derived services, `panic`,
 and the memory operations.
@@ -24,7 +24,7 @@ and the memory operations.
 ### 1.2 Authorization is linking
 
 There is no FFI capability. The authorization manifest (`06-world.md §2`)
-governs the **operating-system surface**: prelude operations ride
+governs the **operating-system surface**: std operations ride
 capability values, and the manifest is that surface's whole extent. The
 **native track** is authorized where it is declared and linked: every
 extern is a visible declaration in a module interface, statically greppable,
@@ -170,14 +170,14 @@ recorded, not apologized for.
 
 ### 3.2 The `C` namespace
 
-`C` is the prelude namespace for machine-interface vocabulary that has no
+`C` is the standard library namespace for machine-interface vocabulary that has no
 eko-side twin:
 
 | Member | Shape | Semantics |
 |---|---|---|
 | `C.Ptr.Void` | opaque | a pointer C handed you, handed back; no dereference, no arithmetic; typed wrapping is ordinary records (`SqLite: type = [raw: C.Ptr.Void]`) |
 | `C.Size` | `size_t` ferry | compare and convert (`to_uint`, total); no arithmetic |
-| `C.get_errno` | `() -> I32` | reads the C thread-local errno; program-internal state, hence pure (`06-world.md §8`); a prelude `Pure` extern to a host symbol (§8) |
+| `C.get_errno` | `() -> I32` | reads the C thread-local errno; program-internal state, hence pure (`06-world.md §8`); a standard-library `Pure` extern to a host symbol (§8) |
 | `C.In T` | borrow | §3.4 |
 
 ### 3.3 `ctype` — layout records
@@ -378,12 +378,12 @@ no embedding vocabulary.
 Panic aborts the process (`06-world.md §3.3`). The veneer observer is
 best-effort notification, not recovery.
 
-## 8. The prelude channel
+## 8. The standard library channel
 
-The prelude is delivered as source (`05-names.md §11`) and reaches the
+The standard library is delivered as source (`05-names.md §11`) and reaches the
 operating system through this chapter's own lexicon. A capability is
 internally a bundle of world-touching closures: the host constructs real
-bundles, and the prelude composes derived ones (`06-world.md §2.3`)
+bundles, and the standard library composes derived ones (`06-world.md §2.3`)
 from two primitives per capability:
 
 ```eko
@@ -404,8 +404,8 @@ Out.tee: (o: Out, obs: (String) !-> _) -> Out =           // constructs only —
 - **The pairs are protected by the reserved prefix** (§6), not by
   secrecy: `wrap` is the forging surface, and no user declaration can
   name it.
-- **The prelude never calls libc directly.** Operating-system code lives
-  in the host-constructed bundles; the prelude's extern surface is
+- **The standard library never calls libc directly.** Operating-system code lives
+  in the host-constructed bundles; the standard library's extern surface is
   exactly the wrap/unwrap pairs — one lexicon, and no intrinsics.
 
 ## 9. Exclusions

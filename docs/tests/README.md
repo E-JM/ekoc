@@ -24,7 +24,7 @@ interface and are absent from ordinary compilation. A module with no `test`
 binding is an ordinary dependency under a test root, which is exactly how
 `geolib.eko` serves `geolib_use.eko`.
 
-Tests use the prelude assertions. `assert(c)` panics when `c` is `False`;
+Tests use the std assertions. `assert(c)` panics when `c` is `False`;
 `assert_eq(a, b)` locks both arguments to one type, compares with derived
 `==`, and reports failure through `inspect` (`09-library.md §6.3`). A
 comparison of capabilities or functions is therefore a compile error, not a

@@ -1,6 +1,6 @@
 # Names, Calls, and Modules
 
-This chapter defines how names are written, resolved, and scoped. Sections 1–4 cover call-site naming and structural access: the receiver form of a call, the order in which `.` resolves a member, the chains that receiver form makes possible, and the single entry point each structure offers. Sections 5–11 cover the module system that supplies the outermost name layer: modules as files, imports, qualified names, namespace ownership, visibility, the dependency graph, and the prelude. Section 12 lists the exclusions.
+This chapter defines how names are written, resolved, and scoped. Sections 1–4 cover call-site naming and structural access: the receiver form of a call, the order in which `.` resolves a member, the chains that receiver form makes possible, and the single entry point each structure offers. Sections 5–11 cover the module system that supplies the outermost name layer: modules as files, imports, qualified names, namespace ownership, visibility, the dependency graph, and the standard library. Section 12 lists the exclusions.
 
 ## 1. Calls and UFCS
 
@@ -20,7 +20,7 @@ In both cases the first parameter is the receiver, and there is no other notion 
 
 ### 1.2 Receivers everywhere
 
-Every prelude signature takes a capability, a handle, or data as its first parameter, and the receiver form fits that shape exactly:
+Every standard-library signature takes a capability, a handle, or data as its first parameter, and the receiver form fits that shape exactly:
 
 ```eko
 out.println("hi")           // ≡ Out.println(out, "hi")
@@ -43,7 +43,7 @@ World-touching calls (`out`, `fs`, `file`), container traversal (`xs`), and pure
 | 3. Current module | free functions at the top level of the current file whose first parameter is `typeof(x)` | `p.audit()` inside the module that defines `audit` |
 | 4. Module path | the qualified segment `x.Mod.f(args)` (§7.1) | `x.lex.tokenize()` |
 
-Station 2 details: the namespace of a type is named after the type's head — `[]t → List`, `Option t → Option`, `Result t e → Result`; prelude types such as `String`, `Dict`, and `Bytes` use their own names. The namespace is owned by the module that declares the type and travels with the type (§8).
+Station 2 details: the namespace of a type is named after the type's head — `[]t → List`, `Option t → Option`, `Result t e → Result`; standard-library types such as `String`, `Dict`, and `Bytes` use their own names. The namespace is owned by the module that declares the type and travels with the type (§8).
 
 Station 3 makes services defined in the calling module available on any type without adding anything to the type's namespace; this is the only station at which a module can define receiver-form functions on a foreign type. A function defined at the top level of a different module is not found there and requires station 4.
 
@@ -111,7 +111,7 @@ The panic surface shrinks accordingly to arithmetic (division by zero, overflow)
 | Default (table initialization) | `m.get(i).get(j).unwrap_or(0)` |
 | Heterogeneous (JSON) | `case` navigation over variants — a nominal type is mandatory; `and_then` to pass through structures |
 
-`Option.get` is an ordinary prelude function that any user could write; there is no compiler magic:
+`Option.get` is an ordinary standard-library function that any user could write; there is no compiler magic:
 
 ```eko
 Option.get: (rows: Option ([]t), i: Int) -> Option t =
@@ -178,7 +178,7 @@ are identifiers; `..` and absolute paths do not exist.
 
 All paths resolve against the **project root**: the directory containing the
 entry module and, under test compilation, the common ancestor of the test
-roots (09-library.md §6.6).
+roots (09-library.md §6.6). The path `std` and every path under `std/` are reserved for the standard library (§11); they never resolve against the project root, and a user module may not be named `std`.
 
 The path locates the file; the module's name in code is the **final segment's
 stem**. Importing `csv/lex` opens the types and constructors of module `lex`
@@ -193,7 +193,7 @@ An import does exactly two things:
 
 Functions from an imported module are always accessed by module-qualified name — `person.parse(l)`, `stats.summary(ps)`, `lex.tokenize(l)` — so that the provenance of every function is visible at the call site.
 
-Types and constructors must be brought into unqualified scope, because the pattern position writes bare constructors (`Ok v ->`, `Man ->`) and type annotations write bare names (`p: Person`); neither spelling can carry a qualified prefix.
+Types and constructors are brought into unqualified scope so that the bare spelling is the normal form: the pattern position writes `Ok v ->`, and type annotations write `p: Person`. A **qualified spelling exists at every name position** — type annotations, namespace calls at the expression head, constructor values, and pattern constructors — and is the disambiguation device for same-named types (§8); the prefix is the declaring module's name (`std.Out`, `lex.Token`).
 
 ```eko
 import person
@@ -268,6 +268,10 @@ A type namespace belongs to the module that declares the type, and it travels wi
 
 **Same-named types coexist.** When two visible types share a name — from two imports, or an import beside a local declaration — the unqualified spelling is a compile error at its use site, and each is written module-qualified: `compiler.Compiler`, `temp.Compiler`. A module's own name is in scope as a module path inside itself, so self-qualification is always available. Types that do not collide are always written plain; the qualified form is legal everywhere but is idiomatic only for disambiguation.
 
+**The qualified spelling is a device, not a layer.** It is legal at every name position — type annotations, namespace calls at the expression head (`std.Out.println(out, s)`), constructor values, and pattern constructors — and the prefix is the declaring module's name. The bare spelling, supplied by import opening, is the normal form everywhere else.
+
+**A namespace is reachable through values.** Station 2 resolves through the static type of the receiver whenever that type is in the compilation closure, independently of the calling file's imports: `out.println(...)` compiles in a module that never names `std`. Import governs names — annotations, patterns, constructors, module-qualified heads — never the receiver form. Capability flow depends on this: `main` receives `out` and uses it.
+
 Ownership settles orphan-instance problems in advance: whether a function belongs to a type's namespace is decided where the type is declared, never at a distant call site that happens to import both.
 
 ## 9. Visibility
@@ -296,17 +300,19 @@ The result is zero keywords, zero manifest, zero double-writing: public and priv
 - **Interfaces are extracted automatically** from the implementation: types, signatures, and visibility. There is no hand-written `.mli`/`.d.ts` layer. Separate compilation proceeds against the interface; acyclicity plus top-level purity make the build graph a DAG cache, so incremental compilation follows.
 - **Generic bodies travel with the interface** (07-runtime.md §6). Downstream instantiation expands downstream, and identical instances are deduplicated at link time.
 
-## 11. Prelude
+## 11. The standard library
 
-The prelude is the only implicit module: `List`, `String`, `Bytes`, `Set`, `Json`, `Result`, `Option`, the capability types, and the implicitly opened free functions are always available without an import. It is an ordinary Eko module named `prelude`, **delivered as source alongside the compiler** and versioned with it: apart from the compiler-provided services below, the prelude is ordinary Eko code — `assert` and `assert_eq` are prelude source, and so are the combinators and the capability derivations. The complete inventory is 10-prelude.md.
+The standard library is an ordinary Eko module named `std`, **delivered as source with the compiler** and versioned with it. Apart from the compiler-generated services below, it is ordinary Eko code: `assert` and `assert_eq` are std source, and so are the combinators and the capability derivations. The complete inventory is 10-std.md.
 
-**Compiler-provided services are not library code.** The derived services (`show`/`inspect` defaults, `==`, `<`, `with`, `to_json`/`from_json`; 08-builtins.md §6), the `panic` intrinsic, and the memory operations (07-runtime.md §4) are generated by the compiler and cannot be written in Eko source.
+**The implicit import is a constant.** Every file is compiled as if it began with `import std`; the injection is part of the language definition, not an analysis of what the file uses, so the desugaring of a file never depends on its contents. Writing `import std` by hand is redundant (`W-redundant-import`, 09-library.md §7.2). The stem `std` and the `std/` path prefix are reserved (§6): a user module may not be named `std`.
 
-The channel through which the prelude reaches the operating system is the `extern` lexicon of `11-ffi.md §8` — no intrinsic exists for it, and the compiler-provided services are the three above. A pure external is declared with the `Pure` guarantee word (`11-ffi.md §2.2`); the prelude's wrap/unwrap primitives are protected by the reserved symbol prefix (`11-ffi.md §6`).
+**The free-name set is closed.** The free functions brought into unqualified scope are exactly `show`, `inspect`, `panic` — compiler-generated — and `assert`, `assert_eq`, `assert_ne` — std source; no later version opens another name. `show` and `inspect` are generic over every type, and the opened name spans all type namespaces at once — each namespace carries only its own type's member (`08-builtins.md §6.7`) — so no single namespace can supply the free spelling; without the opening, every call would read `std.show(n)` and the spelling floor of the language would collapse. Type-attached functions such as `List.map` resolve through the type namespace, for which scope opening is meaningless. Conflict rules are as for user modules: a file top-level binding and an opened name are in the same layer, a same-name collision is an error, and local shadowing remains legal.
 
-The implicit scope opening supplies the half of the import rule that §6 leaves open: **the free functions `show`, `inspect`, `panic`, `assert`, `assert_eq`, and `assert_ne` are brought into unqualified scope with the prelude.** `show` and `inspect` are generic over every type, and the opened name spans all type namespaces at once — each namespace carries only its own type's member (`08-builtins.md §6.7`) — so no single namespace can supply the free spelling; without the opening, every call would read `prelude.show(n)` and the spelling floor of the language would collapse. Type-attached functions such as `List.map` still resolve through the type namespace, for which scope opening is meaningless.
+**The vocabulary, and nothing else.** `std` holds the types whose bare names pervade programs — `Bool`, `Char`, `String`, `Bytes`, the numeric types, `Option`, `Result`, `Range`, the error types, `File`, the time types, the capability types — their namespace members, and the assert family. Every other std function is a namespace member; std declares no free functions beyond the assert family, and a candidate without an anchor type (a first parameter of a std type) belongs in a companion module. The admission bar is the vocabulary test. A std type's namespace takes universal members only: ownership (§8) welds such members into every file's ambient surface, and they cannot be demoted without breaking bare spellings.
 
-The opened set is closed and versioned with the compiler, so its collision surface is bounded. Conflict rules are the same as for user modules: a file top-level binding and an opened name are in the same layer, so a same-name collision is an error, and local shadowing remains legal. User imports never open everything, so call-site provenance is unaffected.
+**Companion modules.** Commonly used but not universally needed units ship as ordinary modules under the reserved `std/` path: `import std/math` opens the module named `math`. A companion's stem enters scope only on import, so nothing is reserved beyond the path prefix. The admission bar is the common-utility test: worth versioning with the compiler, not needed by most files.
+
+**Compiler-generated services are not std source.** The derived services — `show`/`inspect` defaults, structural `eq`, ADT ordering, `with`, `to_json`/`from_json` (`08-builtins.md §6`) — the `panic` intrinsic, and the memory operations (`07-runtime.md §4`) are generated by the compiler, cannot be written in Eko source, and attach to every type namespace as defaults; tooling marks them as derived (`12-toolchain.md §3`). The channel through which std reaches the operating system is the `extern` lexicon of `11-ffi.md §8` — no intrinsic exists for it. A pure external is declared with the `Pure` guarantee word (`11-ffi.md §2.2`); std's wrap/unwrap primitives are protected by the reserved symbol prefix (`11-ffi.md §6`).
 
 ## 12. Exclusions
 

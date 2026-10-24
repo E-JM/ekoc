@@ -104,7 +104,7 @@ f(a..., (p): rest)
 ```
 
 `rest` is the entire remaining block after the binding line. The callback
-occupies the last parameter position; this is the prelude's contract for
+occupies the last parameter position; this is the standard library's contract for
 higher-order functions, where the callback is last (`06-world.md §4`,
 `06-world.md §9`).
 
@@ -170,7 +170,7 @@ Inside a `case` arm, `rest` is the remaining block of that arm.
 The `<-` form introduces no world-bit rule of its own. `rest` is the
 callback body, and its bit is inferred as for any lambda (§2.2). The
 dispatcher instantiates its open bit from `rest` (`06-world.md §5`). A
-combinator that is itself world-touching, such as `with_file`, has no
+combinator that is itself world-touching, such as `Fs.with_file`, has no
 open bit; its `!` absorbs the callback's bit by OR (`06-world.md §4`).
 
 Because the desugaring appends a callback in the last position, `<-`
@@ -398,7 +398,7 @@ case fs.with_file(path, mode, (file): callback body):
     arms...
 ```
 
-The nesting follows from the type of `with_file`: it returns
+The nesting follows from the type of `Fs.with_file`: it returns
 `Result a IoError`, where `a` is the callback's return type. The error
 exists only after the callback finishes, so the `case` that consumes it
 encloses the whole call. A chain whose values flow forward is flattened
@@ -663,7 +663,7 @@ These exclusions are permanent.
 
 ### 6.1 Combinators
 
-The prelude provides four `Result` combinators (`05-names.md §11`):
+The standard library provides four `Result` combinators (`05-names.md §11`):
 
 ```text
 Result.try:      (Result t e, (t) ?-> Result u e) ?-> Result u e
@@ -736,5 +736,5 @@ callback's return value; it constructs the `Result Person String` that
 the whole chain produces.
 
 The `main` example in §3.4 combines the two shapes: a `case` encloses
-`with_file`, and `<-` chains flatten the success path inside the
+`Fs.with_file`, and `<-` chains flatten the success path inside the
 callback. The resulting `Result` is consumed by the `case` arms.

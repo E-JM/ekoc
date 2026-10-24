@@ -41,7 +41,7 @@ IoError: type = NotFound | Permission | Exists | NotFile
 
 - A variant name is a constructor and is PascalCase (§3). A payload follows its constructor by juxtaposition: `InvalidData String`, `Some t`, `Node [Tree t, Tree t, t]`.
 - A payload with several components is written as a tuple type `[a, b, …]` in the declaration. At value and pattern positions the same payload is written `{...}` (§2.3, §9): `Node [Tree t, Tree t, t]` ↔ `Node {Leaf 1, 2, Leaf 3}` ↔ `Node {l, r, _}`.
-- The variant list may be empty: `Never: type =` declares a zero-variant ADT (§10.1). A user-declared zero-variant type has the same standing as the prelude one.
+- The variant list may be empty: `Never: type =` declares a zero-variant ADT (§10.1). A user-declared zero-variant type has the same standing as the standard library one.
 - A constructor applied by juxtaposition is check-only and needs an expected type (§9).
 - Exhaustiveness is counted by constructors (03-control.md §3; §10.3).
 
@@ -97,7 +97,7 @@ Lists, dictionaries, tuples, and records are the four composite forms. They shar
 - A **partial literal** is legal only in the argument position of `with` (08-builtins.md §6): `p.with({age: 37})`. This is the single localized exception to the never-stand-alone rule.
 - The type side has four forms and the value side two: list and tuple share the shape `{a, b}`, dictionary and record share the shape `{k: v}`, and the expected type closes the choice. Empty literals follow the same rule: `xs: []Int = {}`.
 - Value-position tuples do not use `(...)`: parentheses are already taken by parameter groups, call syntax, and parenthesized expressions. `{...}` is the only composite bracket at value position.
-- `Set` is in the prelude as `Set t` and has **no notation and no literal**: `{a, b}` is already given to lists and tuples. Construction goes through `Set.of` (09-library.md §5).
+- `Set` is in the standard library as `Set t` and has **no notation and no literal**: `{a, b}` is already given to lists and tuples. Construction goes through `Set.of` (09-library.md §5).
 
 ```eko
 xs:     []Int          = {1, 2, 3, 4, 5}
@@ -136,10 +136,10 @@ Types live at compile time; only values live at runtime. No expression denotes a
 Services dispatched by type are carried by compile-time generics:
 
 ```eko
-show: (t) -> String          // prelude: a pure function expanded per instantiation of t
+show: (t) -> String          // std: a pure function expanded per instantiation of t
 ```
 
-`show(x)` and `x.show()` resolve to the namespace of the static type of `x` (08-builtins.md §6), and instantiation is monomorphized (07-runtime.md §6). `Result`, `Option`, `IoError`, and the other prelude types are provided by the prelude (05-names.md §11); their values are constructible anywhere.
+`show(x)` and `x.show()` resolve to the namespace of the static type of `x` (08-builtins.md §6), and instantiation is monomorphized (07-runtime.md §6). `Result`, `Option`, `IoError`, and the other standard-library types are provided by the standard library (05-names.md §11); their values are constructible anywhere.
 
 ```eko
 r:  Result Int String
@@ -327,7 +327,7 @@ A type that is not determined by the parameters should be determined. The rule i
 ### 8.4 Instantiation
 
 - A variable is bound literally to an argument type. Instantiation is unification at the call site, and type arguments are never written at use sites. The parameter-binding rule guarantees that either unification or the expected type determines every variable.
-- **Lambda arguments are checked last.** In `List.map({1, 2, 3}, (x): x * 2)`, the list argument fixes `t = Int` first and the lambda is checked afterwards; otherwise its parameter would be an undetermined variable and the literal `2` would have nowhere to adapt. A user-written generic function behaves identically to a prelude one at the call site.
+- **Lambda arguments are checked last.** In `List.map({1, 2, 3}, (x): x * 2)`, the list argument fixes `t = Int` first and the lambda is checked afterwards; otherwise its parameter would be an undetermined variable and the literal `2` would have nowhere to adapt. A user-written generic function behaves identically to a standard-library one at the call site.
 
 ### 8.5 What type variables can do
 
@@ -387,7 +387,7 @@ deeper: (a: Int, b: Int) -> Int = if a >= b: a else: b
 Never: type =          // zero variants: the degenerate | list
 ```
 
-`Never` is a prelude ADT of the same kind as `Bool`: zero constructors, zero values. It is distinct from the unit type — `_` has exactly one value, `Never` has none. Functions are values, results are not: `never_fn` can be passed and referenced, but `never_fn()` never finishes on a return.
+`Never` is a standard-library ADT of the same kind as `Bool`: zero constructors, zero values. It is distinct from the unit type — `_` has exactly one value, `Never` has none. Functions are values, results are not: `never_fn` can be passed and referenced, but `never_fn()` never finishes on a return.
 
 ### 10.2 Bottom-type adaptation
 

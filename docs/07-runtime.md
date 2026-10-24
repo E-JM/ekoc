@@ -14,7 +14,7 @@ An Eko value is a scalar held directly, an immutable heap object reached through
 | `_` (unit) | zero-sized |
 | `Never` | unrepresented |
 
-Scalar values are held directly in registers and slots — including inline slots inside a heap object — and are never heap objects themselves. `Bool` is a prelude algebraic type and `Char` a prelude scalar type; representation follows the value domain, not the declaration form.
+Scalar values are held directly in registers and slots — including inline slots inside a heap object — and are never heap objects themselves. `Bool` is a standard-library algebraic type and `Char` a standard-library scalar type; representation follows the value domain, not the declaration form.
 
 The unit type has exactly one value, and that value occupies no storage. `Never` has no values at all, so it needs no representation: no expression of type `Never` produces a value (04-types.md §10).
 
