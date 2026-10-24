@@ -18,13 +18,6 @@ otherwise.
 | [10-prelude.md](10-prelude.md) | Complete prelude inventory: delivery model, free functions, operator namespaces, every namespace member |
 | [11-ffi.md](11-ffi.md) | `extern` and `Pure`, machine words, the `C` namespace, `ctype` and `C.In`, failure and callbacks, linking and reserved symbols, the embedding veneer, the prelude channel |
 
-## Reading order
-
-01 → 02 → 03 → 04 → 05 → 06 → 07 → 08 → 09 → 10 → 11.
-Chapters 01–07 define the language; 08–09 define the built-in data types,
-their services, and the library surface; 10 is the complete prelude inventory;
-11 is the native track.
-
 ## Design records
 
 [archive/](archive/) holds the non-normative design record — rejected
