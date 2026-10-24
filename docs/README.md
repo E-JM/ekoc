@@ -11,7 +11,7 @@ otherwise.
 | [03-control.md](03-control.md) | Binding forms (`=`, `:=`, `<-`), lambdas, `case`/`if`, patterns, working with `Result` |
 | [04-types.md](04-types.md) | Type declarations, composite types, nominal typing and shape adaptation, generics, `Never` |
 | [05-names.md](05-names.md) | Calls and UFCS, member resolution, structural access, modules, `import`, visibility, prelude |
-| [06-effects.md](06-effects.md) | Capabilities, the world bit, failure layer, file handles, concurrency |
+| [06-world.md](06-world.md) | Capabilities, the world bit, failure layer, file handles, concurrency |
 | [07-runtime.md](07-runtime.md) | Value representation, memory management, monomorphization, iteration and tail calls |
 | [08-builtins.md](08-builtins.md) | `Bool`, `Char`/`String`, `Bytes`, conversions, time, derived services, JSON |
 | [09-library.md](09-library.md) | Standard library surface, testing, diagnostics |
@@ -25,11 +25,17 @@ Chapters 01–07 define the language; 08–09 define the built-in data types,
 their services, and the library surface; 10 is the complete prelude inventory;
 11 is the native track.
 
+## Design records
+
+[archive/](archive/) holds the non-normative design record — rejected
+alternatives, prior art, and rationale, one file per chapter. Compiler
+implementers' material; ordinary users do not need it.
+
 ## Conventions
 
 - Normative statements use *is*, *must*, and *may*.
 - Code examples are fenced as ```eko; string literals and comments use
   English.
-- Cross-references use the form `06-effects.md §5.2`.
+- Cross-references use the form `06-world.md §5.2`.
 - Signatures are written in Eko's own type syntax, e.g.
   `List.map: ([]t, (t) ?-> u) ?-> []u`.

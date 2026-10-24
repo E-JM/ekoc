@@ -7,7 +7,7 @@ prelude's delivery model is specified in 05-names.md §11: an ordinary Eko
 module named `prelude`, shipped as source with the compiler, implicitly
 imported. Only the derived services, `panic`, and the memory operations are
 compiler-generated; everything else is prelude source code. The world bit of
-every signature follows 06-effects.md §9.
+every signature follows 06-world.md §9.
 
 ## 1. Free functions
 
@@ -15,7 +15,7 @@ every signature follows 06-effects.md §9.
 |---|---|---|
 | `show` | `(t) -> String` | display channel; dispatches to the type namespace; compiler-generated default, overridable (08-builtins.md §6) |
 | `inspect` | `(t) -> String` | structural channel; always derived (08-builtins.md §6.3) |
-| `panic` | `(msg: String) -> Never` | compiler intrinsic; aborts the process; pure (06-effects.md §3) |
+| `panic` | `(msg: String) -> Never` | compiler intrinsic; aborts the process; pure (06-world.md §3) |
 | `assert` | `(c: Bool) -> _` | prelude source; panics on `False` (09-library.md §6.3) |
 | `assert_eq` | `(a: t, b: t) -> _` | prelude source; same-type; failure message via `inspect` |
 | `assert_ne` | `(a: t, b: t) -> _` | prelude source; same-type; panics when equal (09-library.md §6.3) |
@@ -48,14 +48,14 @@ trigonometry and predicates (09-library.md §3). Range constants: `Int.min`,
 `Bool`, `Char`, `String`, `Bytes`, `Int`, `UInt`, `Float`, `Range t`
 (endpoints `Int`, `UInt`, or `Char`), `Option t`, `Result t e`, `Set t`,
 `Time`, `Mono`, `Duration`, `Json`, `ParseError`, `IoError`, `Never`,
-`File` (the handle type), `Scope` and `Task t` (06-effects.md §8), and the
+`File` (the handle type), `Scope` and `Task t` (06-world.md §8), and the
 capabilities `Out`, `In`, `Fs`, `Env`, `Args`, `Clock`, `Rand`, `Proc`, `Conc`. The machine
 words `I8 I16 I32 I64 U8 U16 U32 U64 F32 F64` and the `C` namespace
 (`C.Ptr.Void`, `C.Size`, `C.get_errno`, `C.In`; `11-ffi.md §3.2`). There
 is no FFI capability (`11-ffi.md §1.2`).
 Declarations of `Bool`, `Option`, `Result`, `ParseError`, `IoError`, `Json`,
 `Time`, `Mono`, `Duration`, and `Never` are as given in 08-builtins.md and
-06-effects.md §3.
+06-world.md §3.
 
 ## 4. List namespace (`[]t`)
 
@@ -152,7 +152,7 @@ Resolution through the file system is `Fs.realpath` (§10).
 | `Range` | `to_list: (Range t) -> []t`, `length: (Range t) -> Int`, `each`, `each_with_index`, `map`, `fold` — same callback shapes as the `List` members |
 
 `Option.unwrap` panics on `None`; `Option.expect` panics with its message;
-both are pure (06-effects.md §3). `Option.to_result` maps `None` to
+both are pure (06-world.md §3). `Option.to_result` maps `None` to
 `Err e` and is the bridge used by `<-` chains (03-control.md §6.2).
 
 ## 9. Int, UInt, Float, machine words
@@ -193,7 +193,7 @@ error), `empty: () -> In`, `from_lines: ([]String) -> In`.
 
 **Fs** — `open: (Fs, String, OpenMode) !-> Result File IoError`;
 `with_file: (Fs, String, OpenMode, (File) !-> a) !-> Result a IoError`
-(closes on both paths; 06-effects.md §4.4);
+(closes on both paths; 06-world.md §4.4);
 `exists: (Fs, String) !-> Bool`;
 whole-path mirrors `read: (Fs, String) !-> Result String IoError`,
 `write: (Fs, String, String) !-> Result _ IoError`,
@@ -202,16 +202,16 @@ whole-path mirrors `read: (Fs, String) !-> Result String IoError`,
 `append_bytes: (Fs, String, Bytes) !-> Result _ IoError`;
 the directory surface `list_dir`, `mkdir`, `mkdir_all`, `rm`, `rm_dir`,
 `rename`, `stat`, `realpath` (09-library.md §1); derivations `null`, `root`,
-`read_only` (06-effects.md §4.5).
+`read_only` (06-world.md §4.5).
 
 **File** — `read`, `read_bytes`, `read_line`, `seek`, `write`, `write_bytes`, `flush`,
-`close` (06-effects.md §4.2). Operations on a stale handle yield `Err Closed`.
+`close` (06-world.md §4.2). Operations on a stale handle yield `Err Closed`.
 
 **Env** — `get: (Env, String) !-> Option String` (unset variable → `None`;
 presence is a domain check), `frozen: ([String]String) -> Env`.
 
 **Args** — `all: (Args) !-> []String` (argument vector without the program
-name), `frozen: ([]String) -> Args` (06-effects.md §2.5).
+name), `frozen: ([]String) -> Args` (06-world.md §2.5).
 
 **Clock** — `now: (Clock) !-> Time`, `mono: (Clock) !-> Mono`,
 `sleep: (Clock, Duration) !-> _`, `frozen: (Time) -> Clock`
@@ -222,10 +222,10 @@ name), `frozen: ([]String) -> Args` (06-effects.md §2.5).
 (seed fixes the order; the sequence itself is an implementation detail).
 
 **Proc** — `exit: (Proc, Int) !-> Never` (abrupt termination with the given
-exit code; 06-effects.md §2).
+exit code; 06-world.md §2).
 
 **Conc** — `scope: (Conc, (Scope) ?-> a) ?-> a`, `spawn: (Scope, () ?-> b) ?-> Task b`,
-`join: (Task b) -> Option b`, `cancel: (Task b) -> _` (06-effects.md §8).
+`join: (Task b) -> Option b`, `cancel: (Task b) -> _` (06-world.md §8).
 
 ## 11. Time, Mono, Duration, Json
 

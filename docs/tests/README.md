@@ -35,7 +35,7 @@ test failure.
 Tests never touch the real world. Code under test consumes capabilities;
 the test feeds derived capabilities: `Out.null`, `Out.tee`, `In.from_lines`,
 `Fs.null`, `Env.frozen`, `Args.frozen`, `Clock.frozen`, `Rand.with_seed`
-(`06-effects.md §2.3`, `09-library.md §6.5`). These constructors are pure,
+(`06-world.md §2.3`, `09-library.md §6.5`). These constructors are pure,
 need no host, and make every assertion reproducible. A test binding has no
 arrow, so it has no world bit to reconcile; world-touching calls inside it
 are evaluated normally.

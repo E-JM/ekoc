@@ -2,6 +2,7 @@
 
 Eko's I/O layer is built from four orthogonal mechanisms. Each answers exactly one
 question, and none of them re-describes a phenomenon that another already covers.
+The table orients; the prose and the sections that follow carry the rules.
 
 | Axis | Mechanism | Question answered |
 |---|---|---|
@@ -408,7 +409,7 @@ direction:
 - **Grammar:** `ParenGroup ('!' | '?')? ('->' Type)?`. A marker may appear only after
   a parameter group that could be followed by an arrow. The layout algorithm changes
   in no way: joined tokens never wrap, and a lone marker occurs only in the
-  elided-arrow form, that is, at end of line (`02-syntax.md §1`).
+  elided-arrow form, that is, at end of line (`02-syntax.md §2.4`).
 - **The bit is fully erased**, with zero runtime cost. It is part of type equality and
   of nothing else; it has no calling-convention consequence.
 - **The open bit is anonymous; there are no bit variables.** All `?` in a signature
@@ -423,7 +424,8 @@ direction:
   arrow, and arrows inside that signature's parameter types. Return types (including
   types nested in a return type), container elements, and record fields are all
   forbidden — no binding is generalized there, so an open bit could never be
-  instantiated and would be false precision. Every other position has only `->` and
+  instantiated and would be false precision; each such position reports
+  `E-open-bit-position` (`09-library.md §7.2`). Every other position has only `->` and
   `!->`.
 
 ### 5.3 Unit and `_`
@@ -463,7 +465,10 @@ foo: (a: Int) -> _  ≡  foo: (a: Int) = ...
 
 ### 5.4 Terminology
 
-The word "effect" is banned from all documentation and all diagnostics.
+Effect-system vocabulary is banned from all documentation and all
+diagnostics. The ban covers the terms of that family — "effect system",
+"effect row", "effect handler" — not the ordinary English word: an idiom
+such as "takes effect" is legal. The terms of this layer are:
 
 | Term | Spelling | Meaning |
 |---|---|---|
@@ -498,28 +503,28 @@ All four mismatch modes below are errors; there is no "mark it `?` to be safe".
 
 ```eko
 count: (xs: []Int) ?-> Int = List.length(xs)
-// wrong: no parameter contains ?, so nothing feeds the open bit; the body's bit is
+// wrong (`E-open-bit-unfed`): no parameter contains ?, so nothing feeds the open bit; the body's bit is
 // pure ≠ open. Fix: (xs: []Int) -> Int
 ```
 
 ```eko
 loud_apply: (out: Out, f: (Int) ?-> Int, n: Int) ?-> Int =
     Out.println(out, "call"); f(n)
-// wrong: body bit = open ∨ ! = ! (! absorbs under OR).
+// wrong (`E-world-bit`): body bit = open ∨ ! = ! (! absorbs under OR).
 // Fix: (out: Out, f: (Int) !-> Int, n: Int) !-> (rule 5; a pure callback arrives by adaptation)
 ```
 
 ```eko
 print_all: (out: Out, xs: []String) -> _ =
     List.each(xs, (s): Out.println(out, s))
-// wrong: each is instantiated at !, so the body bit is ! ≠ pure; and touching the world
+// wrong (`E-world-bit`): each is instantiated at !, so the body bit is ! ≠ pure; and touching the world
 // requires holding a capability value (§2).
 // Fix: print_all: (out: Out, xs: []String) ! = ...
 ```
 
 ```eko
 twice_fast: (f: (Int) ?-> Int, n: Int) -> Int = f(f(n))
-// wrong: body bit = open ≠ pure. Fix: (f: (Int) -> Int, n: Int) -> Int
+// wrong (`E-world-bit`): body bit = open ≠ pure. Fix: (f: (Int) -> Int, n: Int) -> Int
 ```
 
 The result-only prohibition and alias laundering are the same rule, judged after
@@ -527,11 +532,11 @@ expansion:
 
 ```eko
 double: (xs: []Int) ?-> []Int = List.map(xs, (n): n * 2)
-// wrong: no parameter contains ?; map is instantiated pure, so the body bit is pure.
+// wrong (`E-open-bit-unfed`): no parameter contains ?; map is instantiated pure, so the body bit is pure.
 // Fix: (xs: []Int) -> []Int
 
 Cb: type = (Int) ?-> _
-c: Cb = (n): n + 1                      // wrong: expanded it is the binding's own ? arrow, nothing feeds it
+c: Cb = (n): n + 1                      // wrong (`E-open-bit-unfed`): expanded it is the binding's own ? arrow, nothing feeds it
 run: (f: Cb, n: Int) ?-> Int = f(n)     // correct: Cb sits in a parameter position and can be fed
 ```
 
@@ -539,11 +544,11 @@ Positions follow §5.2's second rule:
 
 ```eko
 handlers: [](Int) ?-> Bool = {isZero, isNegative}
-// wrong: ? sits in a container element position; no binding is generalized here.
+// wrong (`E-open-bit-position`): ? sits in a container element position; no binding is generalized here.
 // All-pure → [](Int) -> Bool; mixed → [](Int) !-> Bool (pure elements arrive by adaptation)
 
 make: (seed: Int) !-> (Int) ?-> Int
-// wrong: ? is inside the return type. A returned function's bit is fixed at creation;
+// wrong (`E-open-bit-position`): ? is inside the return type. A returned function's bit is fixed at creation;
 // what should be open is the caller's binding, not the result
 ```
 
@@ -699,5 +704,6 @@ The following are normative exclusions, not preferences.
 - **No ambient I/O.** Authorization flows only from `main`.
 - **No FFI capability.** Native code is authorized at the link layer and marked
   by the world bit (`11-ffi.md §1.2`, `§9`).
-- **The term "effect" is not used** — in documentation, in diagnostics, or in
-  identifiers of the specification (§5.4).
+- **Effect-system vocabulary is not used** — no "effect system", no "effect
+  row", no "effect handler", in documentation or in diagnostics (§5.4);
+  ordinary English idioms are outside the ban.

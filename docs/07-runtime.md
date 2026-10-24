@@ -31,7 +31,7 @@ n2 = p2.name               // O(1) field access; p2 and p are the same object
 
 `with` is the record update service (08-builtins.md §6): it copies the top level and shares every field the literal does not name. The language has no deep-copy or shallow-copy vocabulary (§9); an independent copy is built by reconstructing the value field by field (04-types.md §5). A `String` is an immutable UTF-8 sequence on the heap (08-builtins.md §2); bindings share it, and `++` produces a fresh string by copying its operands (§7).
 
-Values of opaque type — capabilities, file handles, `Range` — have implementation-defined representation. A program can use only the operations those interfaces expose. A handle additionally carries a generation, so that use after close is detected rather than undefined (06-effects.md §4). Opacity is what keeps representation freedom from leaking into the language.
+Values of opaque type — capabilities, file handles, `Range` — have implementation-defined representation. A program can use only the operations those interfaces expose. A handle additionally carries a generation, so that use after close is detected rather than undefined (06-world.md §4). Opacity is what keeps representation freedom from leaking into the language.
 
 Eko has value semantics: `==`, `show`/`inspect`, and pattern matching are defined over structure (08-builtins.md §6), never over addresses, so sharing cannot be detected.
 
@@ -92,13 +92,13 @@ Four consequences follow.
 - **Reference counting is complete.** When a count reaches zero, the object is freed and its child references are released; a child that thereby reaches zero is freed in turn. No cycle can keep an object alive, so there is no leak channel that counting would miss, and no cycle collector exists.
 - **Weak and unowned references do not exist.** Strong and weak references are self-rescue vocabulary for mutable object graphs; Eko's graph has no cycles, so the vocabulary has no application.
 - **Derived services terminate.** See §2.
-- **Cross-task sharing is safe.** Tasks capture a snapshot, and sharing an object across tasks is then only a matter of counting (06-effects.md §8); cycles remain impossible.
+- **Cross-task sharing is safe.** Tasks capture a snapshot, and sharing an object across tasks is then only a matter of counting (06-world.md §8); cycles remain impossible.
 
-Panic does not unwind (06-effects.md §3). An abort discards the whole process, so no release pass runs and no finalization obligation remains to be discharged. The memory strategy and the failure model are consistent.
+Panic does not unwind (06-world.md §3). An abort discards the whole process, so no release pass runs and no finalization obligation remains to be discharged. The memory strategy and the failure model are consistent.
 
 ## 4. Memory management
 
-Representation is fixed by §1–§2; lifetime is fixed here. Memory management is reference counting, specified at the normative level: storage is reclaimed when its count reaches zero — or earlier, never later — without pauses or root scanning. Its entire infrastructure is three operations — allocate, retain, release — emitted by code generation; it is not a runtime service. The embedding contract (06-effects.md §2) is correspondingly plain: a host that holds a value holds a reference, with no root registration and no pause negotiation.
+Representation is fixed by §1–§2; lifetime is fixed here. Memory management is reference counting, specified at the normative level: storage is reclaimed when its count reaches zero — or earlier, never later — without pauses or root scanning. Its entire infrastructure is three operations — allocate, retain, release — emitted by code generation; it is not a runtime service. The embedding contract (06-world.md §2) is correspondingly plain: a host that holds a value holds a reference, with no root registration and no pause negotiation.
 
 ### 4.1 Reference counting
 
@@ -108,11 +108,11 @@ Every conforming implementation guarantees the following.
 - **Deterministic.** Storage is reclaimed no later than the moment its count reaches zero, with no pauses and no root scanning. Determinism is unobservable to Eko programs, which have no way to probe reclamation (§9), but observable to the host through the embedding contract; the promise is written for the host.
 - **No worse in magnitude.** The magnitudes of §7 are upper bounds. Bulk release and count elision are implementation domain, and count elision may cause storage to be reclaimed earlier than the baseline, never later.
 
-Cross-task sharing uses atomic counts (§4.2), so the count itself is never a data race.
+Cross-task sharing uses atomic counts (§4.2; task semantics are 06-world.md §8), so the count itself is never a data race.
 
 No tracing collector exists. Given §3, tracing would be redundant infrastructure, and its pauses and root scanning would contradict the determinism promise. No ownership or borrowing layer exists either: signatures carry no lifetime or region annotations, and values may flow and be captured freely. Regions and arenas are not language features; they remain implementation- and host-side techniques.
 
-Memory exhaustion aborts: a process-level abort, not a catchable panic, exactly as for stack overflow (§8.4). A leaked resource is reclaimed by the operating system at process exit, and no finalizer is promised (06-effects.md §4).
+Memory exhaustion aborts: a process-level abort, not a catchable panic, exactly as for stack overflow (§8.4). A leaked resource is reclaimed by the operating system at process exit, and no finalizer is promised (06-world.md §4).
 
 ### 4.2 Implementation requirements
 
@@ -184,7 +184,7 @@ Dictionary merge magnitude is implementation domain, because dictionaries are pe
 
 `while`, `for`, `do`, `break`, `continue`, and `loop` are never part of Eko. Iteration is expressed with library functions and recursion.
 
-The rationale is short. Values are immutable (03-control.md §1), so a loop variable is the ceremony of mutable state: an increment has nowhere to take root, while an accumulator carried as a parameter has the same shape with zero assignment. A loop body does two things — "for each element" and "how to combine" — and `each` and `fold` give each one a name; named operations are greppable, bit-transparent (`?` dispatchers, 06-effects.md §9), and replaceable one at a time. `case` and calls are the entire control flow; `if` is sugar over `case` (03-control.md §4); and `while` is an implicit `goto`. Combinators compose (`xs.filter(f).map(g)`, 05-names.md §3); a syntactic loop does not.
+The rationale is short. Values are immutable (03-control.md §1), so a loop variable is the ceremony of mutable state: an increment has nowhere to take root, while an accumulator carried as a parameter has the same shape with zero assignment. A loop body does two things — "for each element" and "how to combine" — and `each` and `fold` give each one a name; named operations are greppable, bit-transparent (`?` dispatchers, 06-world.md §9), and replaceable one at a time. `case` and calls are the entire control flow; `if` is sugar over `case` (03-control.md §4); and `while` is an implicit `goto`. Combinators compose (`xs.filter(f).map(g)`, 05-names.md §3); a syntactic loop does not.
 
 ### 8.2 Three idioms
 
@@ -245,7 +245,7 @@ Tail positions are:
 - after operator sugar is expanded: in `a || b`, `b` is in tail position along with the `if` arm into which the operator expands (02-syntax.md §6);
 - the final expression of a callback body, which is the tail position of that callback, not of the enclosing function: each lambda has its own arrow (03-control.md §2).
 
-Bits and types are orthogonal to this. The world bit is erased (06-effects.md §5), and type arguments are resolved at compile time (§6); a tail call is a pure control-flow fact, unaffected by either.
+Bits and types are orthogonal to this. The world bit is erased (06-world.md §5), and type arguments are resolved at compile time (§6); a tail call is a pure control-flow fact, unaffected by either.
 
 One observable cost: eliminated frames do not appear in panic backtraces.
 
@@ -269,7 +269,7 @@ The following exclusions are normative; they are what makes §5 sound. An Eko pr
 
 - **compare identity.** `===`, physical equality, and address comparison do not exist. `==` is structural equality and is the whole of equality (08-builtins.md §6).
 - **take the address of a value or manage memory manually.** There are no pointers, no address-of operator, and no manual `free`.
-- **observe reclamation.** There are no finalizers, destructors, or `drop`. Reclamation is not a programmable event; resources are handled by generation-checked handles and the `with_*` family (06-effects.md §4).
+- **observe reclamation.** There are no finalizers, destructors, or `drop`. Reclamation is not a programmable event; resources are handled by generation-checked handles and the `with_*` family (06-world.md §4).
 - **hold weak or unowned references.** Cycles are structurally impossible (§3), so the vocabulary has no application.
 - **speak of deep or shallow copies.** Sharing is the whole story; an independent copy is built by reconstructing the value field by field (04-types.md §5).
 - **manage memory programmatically.** There is no `gc()`, no pause control, and no memory callback.

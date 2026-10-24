@@ -22,7 +22,7 @@ words and nested `ctype` records, checked at the declaration line.
 TypeDecl := Name ':' 'type' TypeVar* '=' TypeRhs
 ```
 
-The marker sits in the slot, the same design act as the bit markers on arrows (`!->`, `?->`; 06-effects.md §5.2) and the binding operators (`=`, `:=`, `<-`; 03-control.md §1).
+The marker sits in the slot, the same design act as the bit markers on arrows (`!->`, `?->`; 06-world.md §5.2) and the binding operators (`=`, `:=`, `<-`; 03-control.md §1).
 
 `TypeRhs` is a declaration form, not an arbitrary type expression: an algebraic variant list (§1.2, §1.4) or a bracketed record or tuple type (§1.3, §7.1). A composite type expression such as `[]Int` or `[String]Int` is not a declaration form — a declaration introduces a new nominal type, it does not name an existing one (§5.1).
 
@@ -82,9 +82,9 @@ Lists, dictionaries, tuples, and records are the four composite forms. They shar
 
 - List and dictionary are distinguished inside the brackets: empty means list, one type means dictionary. These two are the only forms that place a type after the `]`.
 - `[k]v` reads as a map from `k` to `v`; lookup is `d.get(k) -> Option v` (05-names.md §4).
-- A tuple has at least two elements. A one-element `(Int)` is a parenthesized type, not a tuple; a zero-element `()` is the parameter group of a zero-parameter function type (06-effects.md §5.3). The unit value is `_`, not a zero-element tuple.
+- A tuple has at least two elements. A one-element `(Int)` is a parenthesized type, not a tuple; a zero-element `()` is the parameter group of a zero-parameter function type (06-world.md §5.3). The unit value is `_`, not a zero-element tuple.
 - Parenthesize nested composites where the reading would otherwise be ambiguous: `[]([String]Int)` is a list of dictionaries, `[[]String]Int` is a dictionary whose keys are lists.
-- `_` at type position is the unit type, never "infer" (06-effects.md §5.3): `Result _ IoError`, `Option _`.
+- `_` at type position is the unit type, never "infer" (06-world.md §5.3): `Result _ IoError`, `Option _`.
 
 ### 2.2 Value position `{...}`
 
@@ -131,7 +131,7 @@ The lexical rule for type position is: a bare lowercase name is a type variable,
 
 ## 4. Compile-time identity
 
-Types live at compile time; only values live at runtime. No expression denotes a type, and no test inspects one (07-runtime.md §1, §9). Declared types are compared by identity, anonymous composite forms by structure, and a function type includes its world bit in its identity while the bit itself is erased at runtime (06-effects.md §5.2).
+Types live at compile time; only values live at runtime. No expression denotes a type, and no test inspects one (07-runtime.md §1, §9). Declared types are compared by identity, anonymous composite forms by structure, and a function type includes its world bit in its identity while the bit itself is erased at runtime (06-world.md §5.2).
 
 Services dispatched by type are carried by compile-time generics:
 
@@ -202,7 +202,7 @@ Same shape is an exact match, not a width relation: an anonymous form with fewer
 
   The temperature accident is thus closed off from the equality side as well.
 
-- **Position discipline.** Shape adaptation does not enter container elements or the interior of function types — the same spirit as the position bans on `?` and `Never`. Bit adaptation (06-effects.md §5.1) is not subject to this restriction: bits are erased, so they move freely, while shapes carry identity, so they do not. The escape hatch is an explicit map that re-establishes the anonymous element shape: `ys: [][name: String, age: Int] = xs.map((p): p)`.
+- **Position discipline.** Shape adaptation does not enter container elements or the interior of function types — the same spirit as the position bans on `?` and `Never`. Bit adaptation (06-world.md §5.1) is not subject to this restriction: bits are erased, so they move freely, while shapes carry identity, so they do not. The escape hatch is an explicit map that re-establishes the anonymous element shape: `ys: [][name: String, age: Int] = xs.map((p): p)`.
 
 Anonymous ADTs do not exist — there is no union form outside a right-hand side — so shape adaptation is exclusive to records and tuples; tuple shapes extend to generic instantiations (§9). The diagnostic is: `Human does not accept Person (both are declared types); convert through a same-shape anonymous form.`
 
@@ -322,7 +322,7 @@ empty: () -> []t = {}             // ✗ t is not determined by any parameter
 read: (n: Int) -> Option t        // ✗ likewise
 ```
 
-A type that is not determined by the parameters should be determined. The rule is symmetric with the phantom ban on the declaration side: both eliminate dangling variables at declaration time. `empty` loses nothing — an empty list with an expected type suffices (`ys: []Int = {}`, §2.2). The open-bit result-only ban (06-effects.md §5.2) is the same rule; bits and types run on the same machinery.
+A type that is not determined by the parameters should be determined. The rule is symmetric with the phantom ban on the declaration side: both eliminate dangling variables at declaration time. `empty` loses nothing — an empty list with an expected type suffices (`ys: []Int = {}`, §2.2). The open-bit result-only ban (06-world.md §5.2) is the same rule; bits and types run on the same machinery.
 
 ### 8.4 Instantiation
 
@@ -377,7 +377,7 @@ deeper: (a: Int, b: Int) -> Int = if a >= b: a else: b
 - Shape adaptation extends to instantiations by the shape of the right-hand side: for `p: Pair Int String`, `q: [Int, String] = p` is legal, and it is the tuple shape that adapts. Algebraic shapes do not extend: anonymous ADTs do not exist (§5.3).
 - Different instantiations are different nominal types; `Pair Int String` and `Pair Int Float` do not interchange.
 - Literals land through the expected type: `p: Pair Int String = {1, "a"}`.
-- The open bit runs on the same machinery (06-effects.md §6): `?` is an anonymous parameter on bits, fed by parameters, instantiated at the call site, with lambda arguments checked last. The phantom check sees through `?` positions: `Callback: type t = (t) ?-> _` is legal, because the open bit appears in the right-hand side through `?->`.
+- The open bit runs on the same machinery (06-world.md §6): `?` is an anonymous parameter on bits, fed by parameters, instantiated at the call site, with lambda arguments checked last. The phantom check sees through `?` positions: `Callback: type t = (t) ?-> _` is legal, because the open bit appears in the right-hand side through `?->`.
 
 ## 10. Never
 
@@ -400,7 +400,7 @@ case r:
     Err e -> die("{e}")                   // likewise
 ```
 
-The adaptation positions are the same list as for bit subtyping (06-effects.md §5.1) — argument, operand, expected type, collection element — plus two: **arms** and **declared return positions**. Eko's subtyping is exactly two relations, bit adaptation and the `Never` bottom type, so it stays bounded.
+The adaptation positions are the same list as for bit subtyping (06-world.md §5.1) — argument, operand, expected type, collection element — plus two: **arms** and **declared return positions**. Eko's subtyping is exactly two relations, bit adaptation and the `Never` bottom type, so it stays bounded.
 
 Adaptation applies only at **value positions**. It does not apply inside function types: a named `g: (a) -> Never` cannot be passed where `(a) -> Int` is expected, in the same spirit as the position discipline on `?`. The escape is a lambda wrapper — and a lambda literal already reaches `u := Never` by inference, so no subtyping is needed:
 
@@ -447,7 +447,7 @@ main: (out: Out) ! =
 
 Unreachable code is legal and produces a **warning**, not an error; diagnostics have three levels — error, warning, none (09-library.md §7).
 
-The world bit is independent: `Never` is a legal return for any arrow. `panic` is pure, `-> Never`; `Proc.exit` is `!-> Never` — abrupt exit touches the world (`06-effects.md §2`). A `-> t` annotation does not promise termination — divergence neither sets the world bit nor is tracked by it (06-effects.md §5, §7). `Never` marks "must not return", not "may not return".
+The world bit is independent: `Never` is a legal return for any arrow. `panic` is pure, `-> Never`; `Proc.exit` is `!-> Never` — abrupt exit touches the world (`06-world.md §2`). A `-> t` annotation does not promise termination — divergence neither sets the world bit nor is tracked by it (06-world.md §5, §7). `Never` marks "must not return", not "may not return".
 
 ### 10.5 Writing diverging functions
 

@@ -2,6 +2,14 @@
 
 Eko source files use the `.eko` extension. The language is indentation-based: blocks are delimited by layout rather than braces, and a newline normally ends a block member. This chapter defines the surface rules: block layout, licensed line continuations, comments, literals, numeric type names, and the operator surface. Rules that depend on a type or a capability are cross-referenced to the chapter that defines them.
 
+Two levels of description are used throughout the manual. **Concrete syntax**
+is the surface spelled in source: layout, tokens, and the continuation rules
+of this chapter. **Grammar productions** — the binding grammar
+(`03-control.md §1.1`), `TypeDecl` (`04-types.md §1.1`), the marker grammar
+(`06-world.md §5.2`) — describe the structure of a construct without
+encoding its layout. The two levels evolve independently: a production fixes
+the shape of a construct, never its indentation or line breaks.
+
 ## 1. Blocks and indentation
 
 Function bodies, `if` branches, callback bodies, and the arms of `case` are blocks. A block is introduced by a header line and consists of the lines that follow it at one indentation level. The header ends with `:` for a callback, `if`, or `case`, and with `=` for a definition whose body is a block. The first member line establishes the block's column; every member of the block begins in that column. A nested block is indented one level further. Indentation therefore determines block membership, and braces are not used to delimit blocks.
@@ -81,6 +89,16 @@ content.split("\n")
 
 Each link receives the value of the previous link as its receiver (`05-names.md §3`).
 
+### 2.4 Bit markers at end of line
+
+The world-bit markers `!` and `?` never license a continuation. A lone
+marker occurs only in the elided-arrow forms `(a) !` and `(a) ?`
+(`06-world.md §5.2`): it is a self-delimiting token, and a line that ends
+with one — `main: (out: Out) !` — is a complete block member. The joined
+tokens `!->` and `?->` are single tokens and never wrap. Continuation is
+licensed only inside brackets (§2.1), by a trailing callback (§2.2), and
+before a chain dot (§2.3).
+
 ## 3. Comments
 
 `//` begins a line comment that extends to the end of the line. Block comments do not exist.
@@ -100,7 +118,8 @@ greet: (name: String) -> String =
 
 ### 4.1 Numbers
 
-Integer literals are decimal. An underscore may group digits. A floating literal contains a decimal point or an exponent, with digits on both sides of the point: `1.5` and `1.5e3` are floats, while `255.to_hex()` is the integer `255` followed by a postfix call, not an incomplete float.
+Integer literals are decimal by default; hexadecimal and binary forms
+(`0x`, `0b`) complete the numeric surface below. An underscore may group digits. A floating literal contains a decimal point or an exponent, with digits on both sides of the point: `1.5` and `1.5e3` are floats, while `255.to_hex()` is the integer `255` followed by a postfix call, not an incomplete float.
 
 An integer literal is `Int`; a floating literal is `Float`. The two types are distinct, and there is no implicit conversion between them (`1 / 2.0` is a type error; see §6.2). A leading `-` is the unary operator of §6, not part of the literal.
 
@@ -171,7 +190,7 @@ Lexically, an integer literal immediately followed by `..` does not begin a floa
 
 Unbounded and `Float` ranges are excluded: an unbounded range offers no end to strict iteration, and a `Float` endpoint admits no exact unit step. A stepped traversal filters an index range: `(0..n).filter((i): i % s == 0)`.
 
-Range values are consumed by the iteration combinators; `Range.each` and `Range.map` are `?` dispatchers (`06-effects.md §5`).
+Range values are consumed by the iteration combinators; `Range.each` and `Range.map` are `?` dispatchers (`06-world.md §5`).
 
 ```eko
 (1..=100).map(f)        // inclusive: 1 through 100
@@ -244,7 +263,7 @@ The floor family is provided by functions: `Int.div(-7, 2) = -4` and `Int.mod(-7
 
 `UInt` values are non-negative, so the truncation/floor distinction vanishes; the correct domain for non-negative modular arithmetic is `UInt`.
 
-Overflow and division by zero panic. This includes `Int.min / -1`, which overflows. A panic does not set the world bit (`06-effects.md §5`).
+Overflow and division by zero panic. This includes `Int.min / -1`, which overflows. A panic does not set the world bit (`06-world.md §5`).
 
 Wrapping forms are explicit functions: `Int.wrapping_*` and `UInt.wrapping_*`
 (`08-builtins.md §4.6`).
@@ -257,7 +276,7 @@ No implicit numeric conversion is applied: `1 / 2.0` is a type error. Conversion
 
 `&&` and `||` are lazy: the right operand is evaluated only when the result requires it. Short-circuiting is branching, so both are sugar for `if` (§6.1). Both operands are `Bool`.
 
-The world bit is transparent through both: if either operand is world-touching, the enclosing expression sets the world bit as usual (`06-effects.md §5`).
+The world bit is transparent through both: if either operand is world-touching, the enclosing expression sets the world bit as usual (`06-world.md §5`).
 
 ```eko
 if size > 0 && fs.exists(path):      // right operand is world-touching; the bit is set
@@ -266,7 +285,7 @@ if size > 0 && fs.exists(path):      // right operand is world-touching; the bit
 
 `not` requires no laziness and is a function: `b.not()` or `Bool.not(b)`.
 
-`!` belongs exclusively to the world-bit marker (`06-effects.md §1`). Prefix `!x` does not exist.
+`!` belongs exclusively to the world-bit marker (`06-world.md §1`). Prefix `!x` does not exist.
 
 Symbols are used instead of the words `and`, `or`, and `not`. Using words would retire three identifiers, rule out `Bool.and` and `Bool.not` as member names, and break the rule that keywords open blocks. Symbols consume no identifiers; the single-character forms `&` and `|` are unassigned — `|` in pattern position is the or-pattern separator (03-control.md §5.3).
 
@@ -330,11 +349,11 @@ The following constructs are not part of Eko; every exclusion is permanent.
 | Ternary `?:` | Does not exist; `if` is an expression (`03-control.md §4`). |
 | Chained comparisons | Parse error; write `a < b && b < c` (§6.5). |
 | Block comments `/* ... */` | Do not exist; use `//`. |
-| Hexadecimal and binary literals `0x`, `0b` | Specified in `§4.1`. Formatting and parsing are functions (`09-library.md §2`). |
+| Numeric literal type suffixes | Do not exist; literals are placed by expected type (§4.1). Formatting and parsing are functions (`09-library.md §2`). |
 | Tab characters as whitespace | Compile error (`E-tab`); indentation is spaces, four per level (§1.1). A raw tab is ignored only inside comments; literals write `\t`. |
 | Truthiness coercion | Does not exist; conditions and guards are `Bool`. |
 | Word operators `and`, `or`, `not` | Not operators and carry no special meaning; use `&&`, `\|\|`, and `b.not()`. |
-| Prefix `!x` | Does not exist; `!` is the world-bit marker only (`06-effects.md §1`). |
-| Labels or bit variables after `!` or `?` | Not permitted; the markers take no labels or variables (`06-effects.md §1`). |
+| Prefix `!x` | Does not exist; `!` is the world-bit marker only (`06-world.md §1`). |
+| Labels or bit variables after `!` or `?` | Not permitted; the markers take no labels or variables (`06-world.md §1`). |
 | Index syntax `x[i]` | Does not exist for any structure; use `get`, or `at` for strings (`05-names.md §4`). |
 | Multiline string literals | Do not exist; use `\n`. |

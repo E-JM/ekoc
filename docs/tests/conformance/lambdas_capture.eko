@@ -1,6 +1,6 @@
 // Lambdas carry no annotations; they capture by snapshot and receive their
 // bit from the body. A pure factory may return a `!` closure
-// (03-control.md §2, 06-effects.md §5).
+// (03-control.md §2, 06-world.md §5).
 
 inc: (Int) -> Int = (n): n + 1
 

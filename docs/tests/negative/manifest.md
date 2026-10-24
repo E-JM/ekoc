@@ -97,7 +97,7 @@ greet: (out: Out) -> _ =
 ```
 
 Expected: `E-world-bit`. The body touches the world but the arrow is pure
-(`06-effects.md §5.1`).
+(`06-world.md §5.1`).
 
 ## N06 — under-declared through a dispatcher
 
@@ -108,7 +108,7 @@ print_all: (out: Out, xs: []String) -> _ =
 
 Expected: `E-world-bit`. `each` instantiates its open bit at `!` from the
 printing callback, so the body is world-touching while the arrow is pure
-(`06-effects.md §5.5`).
+(`06-world.md §5.5`).
 
 ## N07 — world bit over-declared
 
@@ -117,7 +117,7 @@ double: (n: Int) !-> Int = n * 2
 ```
 
 Expected: `E-world-bit`. A pure body cannot carry a surplus `!`
-(`06-effects.md §5.1`).
+(`06-world.md §5.1`).
 
 ## N08 — open bit unfed
 
@@ -126,7 +126,7 @@ count: (xs: []Int) ?-> Int = List.length(xs)
 ```
 
 Expected: `E-open-bit-unfed`. No parameter contains a `?` arrow, so nothing
-feeds the open bit (`06-effects.md §5.2`).
+feeds the open bit (`06-world.md §5.2`).
 
 ## N09 — result-only generic
 
@@ -244,7 +244,7 @@ handlers: [](Int) ?-> Bool = {is_zero, is_negative}
 
 Expected: compile error: `?` is not allowed in a container element position;
 it is allowed only on the binding's own arrow and in arrows inside its
-parameter types (`06-effects.md §5.2`). No diagnostic code is published for
+parameter types (`06-world.md §5.2`). No diagnostic code is published for
 the position rule.
 
 ## N21 — reserved symbol

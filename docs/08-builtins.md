@@ -1,6 +1,6 @@
 # Built-in Data Types and Services
 
-This chapter specifies the data types and services that the prelude provides without an import (05-names.md §11): `Bool`, `Char` and `String`, `Bytes`, the numeric conversion families, `Time`/`Mono`/`Duration`, the derived services `show`/`inspect`/`==`/`<`/`with`, and the JSON surface with `to_json`/`from_json`. Values of these types are immutable. Signatures, costs, and failure forms stated here are normative. A `!` in a signature marks a world-touching service (06-effects.md §5); the unit type is spelled `_`.
+This chapter specifies the data types and services that the prelude provides without an import (05-names.md §11): `Bool`, `Char` and `String`, `Bytes`, the numeric conversion families, `Time`/`Mono`/`Duration`, the derived services `show`/`inspect`/`==`/`<`/`with`, and the JSON surface with `to_json`/`from_json`. Values of these types are immutable. Signatures, costs, and failure forms stated here are normative. A `!` in a signature marks a world-touching service (06-world.md §5); the unit type is spelled `_`.
 
 ## 1. Bool
 
@@ -8,7 +8,7 @@ This chapter specifies the data types and services that the prelude provides wit
 Bool: type = True | False
 ```
 
-`Bool` is a prelude ADT. There is no truthiness: the condition of an `if` is a `Bool`, and no other value is coerced to one (03-control.md §4). `not` is an ordinary function member of `Bool`, applied as `b.not()`; there is no prefix negation operator. The token `!` is reserved for the world bit (02-syntax.md §6.3, 06-effects.md §5), so `!b` is not a negation and does not type-check. Equality is structural and derived (§6.4). Ordering is deliberately not defined for `Bool` (§6.5).
+`Bool` is a prelude ADT. There is no truthiness: the condition of an `if` is a `Bool`, and no other value is coerced to one (03-control.md §4). `not` is an ordinary function member of `Bool`, applied as `b.not()`; there is no prefix negation operator. The token `!` is reserved for the world bit (02-syntax.md §6.3, 06-world.md §5), so `!b` is not a negation and does not type-check. Equality is structural and derived (§6.4). Ordering is deliberately not defined for `Bool` (§6.5).
 
 ## 2. Char and String
 
@@ -116,8 +116,8 @@ Fs.read_bytes:    (Fs, String) !-> Result Bytes IoError     // convenience mirro
 Fs.append_bytes:  (Fs, String, Bytes) !-> Result _ IoError  // convenience mirror
 ```
 
-- `read_bytes` never returns `InvalidData`: every byte sequence is legal. A short read means EOF and returns `Ok` with a short `Bytes` — EOF is not an error (06-effects.md §3).
-- `File.read` keeps the text gate: it still returns `Err InvalidData` for non-UTF-8 (06-effects.md §4). That refusal is not a dead end: `read_bytes` is the raw-byte entry point, so refusal and acceptance each have their place.
+- `read_bytes` never returns `InvalidData`: every byte sequence is legal. A short read means EOF and returns `Ok` with a short `Bytes` — EOF is not an error (06-world.md §3).
+- `File.read` keeps the text gate: it still returns `Err InvalidData` for non-UTF-8 (06-world.md §4). That refusal is not a dead end: `read_bytes` is the raw-byte entry point, so refusal and acceptance each have their place.
 - `with_file` callbacks and `<-` chains work as usual; `OpenMode` is unchanged. The `In` console layer is text-only and has no byte gate.
 
 ```eko
@@ -146,7 +146,7 @@ This is the same constructor application form used by `Some 3` (§6.3). The prin
 | Surface | Specification |
 |---|---|
 | Value | `Bytes` and all pure services (§3.2) |
-| I/O | `read_bytes`/`write_bytes` (06-effects.md §4.2) |
+| I/O | `read_bytes`/`write_bytes` (06-world.md §4.2) |
 | Byte computation | domain word `Int` in `0..255`; machine words never compute (`11-ffi.md §3.1`) |
 | Bitwise operations | the `UInt` function family (§4.6); no operators (`02-syntax.md §7`) |
 | Literals | `0x`/`0b` (`02-syntax.md §4.1`) |
@@ -171,7 +171,7 @@ ferrying, never for arithmetic.
 
 | Nature of failure | Vocabulary | Example |
 |---|---|---|
-| **Input validation**: external data is untrusted; the caller needs to know why | `Result` | `IoError` (06-effects.md §3) |
+| **Input validation**: external data is untrusted; the caller needs to know why | `Result` | `IoError` (06-world.md §3) |
 | **Domain check**: asks whether, not why | `Option` | `Char.from_code` (§2.3) |
 | **Invariant violation**: the programmer's own error | `panic` | conversions never belong here |
 
@@ -281,9 +281,9 @@ Clock.mono:  (Clock) !-> Mono         // monotonic: measurement — order and le
 Clock.sleep: (Clock, Duration) !-> _  // sleep; a negative duration returns immediately; granularity is host-dependent
 ```
 
-- Reading the clock sets the world bit (06-effects.md §5): two readings can differ, which is an observation of the world. Sleeping also sets the bit: time passes, the process yields, and the world is changed. Both require `Clock`; bit and permission share one origin.
+- Reading the clock sets the world bit (06-world.md §5): two readings can differ, which is an observation of the world. Sleeping also sets the bit: time passes, the process yields, and the world is changed. Both require `Clock`; bit and permission share one origin.
 - **Measure with `mono`, timestamp with `now`**: a wall-clock difference can be negative or jump, while elapsed semantics hold only on the monotonic clock. `Time < Time` is reading order (usable for sorting); precedence is decided with `Mono < Mono`. The derived `<` provides both semantics, and the types keep misuse from meeting.
-- A negative duration returns immediately (clamped to zero, recorded as such). Timeouts and cancellation belong to the concurrency rules (06-effects.md §8); no vocabulary is pre-empted here.
+- A negative duration returns immediately (clamped to zero, recorded as such). Timeouts and cancellation belong to the concurrency rules (06-world.md §8); no vocabulary is pre-empted here.
 
 ```eko
 main: (out: Out, clock: Clock) ! =
@@ -301,9 +301,9 @@ main: (out: Out, clock: Clock) ! =
 Clock.frozen: (Time) -> Clock        // pure
 ```
 
-`frozen(t)` creates a clock with constant readings: `now` always returns `t`, `mono` always returns one fixed reading, and `sleep` returns immediately (time does not flow). It belongs to the same family as `Out.null`, a pure derivation (06-effects.md §2); test determinism comes from it (09-library.md §6).
+`frozen(t)` creates a clock with constant readings: `now` always returns `t`, `mono` always returns one fixed reading, and `sleep` returns immediately (time does not flow). It belongs to the same family as `Out.null`, a pure derivation (06-world.md §2); test determinism comes from it (09-library.md §6).
 
-The bit is unchanged: `now()` on a frozen clock still sets the world bit. The bit is decided statically by built-in criteria and does not inspect values — the bit belongs to the signature and does not depend on the value (06-effects.md §5). Determinism is a property of the values; the bit remains a property of the signature.
+The bit is unchanged: `now()` on a frozen clock still sets the world bit. The bit is decided statically by built-in criteria and does not inspect values — the bit belongs to the signature and does not depend on the value (06-world.md §5). Determinism is a property of the values; the bit remains a property of the signature.
 
 ### 5.4 Display
 
@@ -318,7 +318,7 @@ The bit is unchanged: `now()` on a frozen clock still sets the world bit. The bi
 
 ### 5.5 Domain and overflow
 
-- The payload is Int64 nanoseconds, a span of about ±292 years: the wall-clock domain is roughly 1677-09-21 to 2262-04-11, and `Duration` has the same span. Arithmetic outside the domain panics under the existing arithmetic rules (02-syntax.md §6); a panic does not set the world bit (06-effects.md §5).
+- The payload is Int64 nanoseconds, a span of about ±292 years: the wall-clock domain is roughly 1677-09-21 to 2262-04-11, and `Duration` has the same span. Arithmetic outside the domain panics under the existing arithmetic rules (02-syntax.md §6); a panic does not set the world bit (06-world.md §5).
 - Leap seconds are not represented: the POSIX epoch maps directly, a day is always 86400 seconds, and the alignment policy belongs to the host domain, recorded as such.
 
 **Exclusions.** The following are excluded from the time surface:
@@ -326,7 +326,7 @@ The bit is unchanged: `now()` on a frozen clock still sets the world bit. The bi
 - A single type merging wall clock and monotonic readings (two readings in one type; a known source of subtle errors).
 - Time operator sugar. The payload is not exposed; named arithmetic is the cost and the guarantee of unit safety.
 - A local timezone or calendar family (`Date`, `DateTime`): determinism comes first.
-- A construction right for `Clock` derivations. `frozen` is a pure combinator, not freedom to build clocks (capabilities are opaque, 06-effects.md §2); for the same reason there is no `Clock.frozen_mono`.
+- A construction right for `Clock` derivations. `frozen` is a pure combinator, not freedom to build clocks (capabilities are opaque, 06-world.md §2); for the same reason there is no `Clock.frozen_mono`.
 
 ## 6. Derived services
 
@@ -376,7 +376,7 @@ What you see can be written, with no exception:
 | Dictionary / record | `{"1": 1}`, `{name: "wd", age: 2}` | same |
 | ADT | constructor application form: `Man`, `Some 3`, `Err "…"` | same |
 | `_` (unit) | `_` | same |
-| Capability | `<cap>` (06-effects.md §2) | same |
+| Capability | `<cap>` (06-world.md §2) | same |
 | Function | `<fn>` | same |
 
 Empty containers are `{}`. Record field order is declaration order; dictionary order is insertion order, and iteration follows it. The time types are specified in §5.4.
@@ -384,7 +384,7 @@ Empty containers are `{}`. Record field order is declaration order; dictionary o
 ### 6.4 Equality
 
 - Equality is structural and deep: records field by field; ADTs when the constructors match and payloads compare recursively; containers element by element. `Option` and `Result` follow the ADT rule.
-- There are two exceptions: capabilities have no `==` (06-effects.md §2), and functions have no `==` (comparing closures is meaningless).
+- There are two exceptions: capabilities have no `==` (06-world.md §2), and functions have no `==` (comparing closures is meaningless).
 - `Float` follows IEEE: `NaN == NaN` is `False`. A total-order comparison does not enter the operator.
 - Both sides of `==` have the same type: `Int.eq: (Int, Int) -> Bool` locks the signature. `1 == 1.0` and `age == n` (`UInt` versus `Int`) are type errors; conversion is explicit (`Int.to_float(x) == y`, §4.2).
 

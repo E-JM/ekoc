@@ -23,7 +23,7 @@ and the memory operations.
 
 ### 1.2 Authorization is linking
 
-There is no FFI capability. The authorization manifest (`06-effects.md §2`)
+There is no FFI capability. The authorization manifest (`06-world.md §2`)
 governs the **operating-system surface**: prelude operations ride
 capability values, and the manifest is that surface's whole extent. The
 **native track** is authorized where it is declared and linked: every
@@ -41,14 +41,14 @@ parameter list; externs appear in module interfaces.
 ### 1.3 Honesty
 
 An extern call is world-touching by default: its arrow is `!->`
-(`06-effects.md §5.1` rule 7). The one exception is spelled with the
+(`06-world.md §5.1` rule 7). The one exception is spelled with the
 `Pure` word (§2.2). A binding that is not declared `Pure` and cannot touch
 the world still writes `!` — an over-declared bit is as culpable as a dead
 annotation, and the honest fix is the guarantee word, not a shrug.
 
 ### 1.4 The audit basis
 
-World soundness (`06-effects.md §7`) is stated on two tracks:
+World soundness (`06-world.md §7`) is stated on two tracks:
 
 - the **capability track** is structural, as sketched there;
 - the **native track** is audited: a `Pure` declaration is a manually
@@ -71,7 +71,7 @@ name: signature = extern "symbol" Pure     // audited pure: the arrow is ->
 _sqrt: (F64) -> F64 = extern "sqrt" Pure
 _crc32: (crc: U32, buf: Bytes, len: C.Size) -> U32 = extern "crc32" Pure
 _qsort: (base: C.Ptr.Void, n: C.Size, size: C.Size,
-         compar: (C.Ptr.Void, C.Ptr.Void) !-> Int) ! = extern "qsort"
+         compar: (C.Ptr.Void, C.Ptr.Void) -> Int) ! = extern "qsort"
 ```
 
 - The symbol is a bare C symbol. Library binding belongs to the build
@@ -81,6 +81,10 @@ _qsort: (base: C.Ptr.Void, n: C.Size, size: C.Size,
   wrapper (§2.4).
 - `extern` is a declaration primitive, not a call: it takes no bracketed
   argument list, and its tail carries word attributes.
+- **A callback's bit is its own.** In `_qsort` the comparator is pure
+  computation, so `->` is the honest spelling; `!->` on a callback is for
+  callbacks that themselves touch the world, and a pure function also adapts
+  into a `!->` parameter (`06-world.md §5.1` rule 3).
 
 ### 2.2 The `Pure` word
 
@@ -88,11 +92,11 @@ Choosing `Pure` asserts two guarantees, and both are load-bearing:
 
 1. **No world contact.** The target performs no I/O, raises no signals,
    reads no clock, draws no entropy. Program-internal state is not world
-   (`06-effects.md §8`): reading a C library's own thread-local or static
+   (`06-world.md §8`): reading a C library's own thread-local or static
    state sets no bit.
 2. **Reentrancy and thread safety.** The target may be called concurrently
    from two tasks. Internal static state that breaks this (the `strtok`
-   shape) voids the word: the determinism argument of `06-effects.md §8`
+   shape) voids the word: the determinism argument of `06-world.md §8`
    depends on it, and that argument is not part of the bit system — it is
    the easily missed half of the guarantee.
 
@@ -139,7 +143,7 @@ stat_size: (fs: Fs, path: String) !-> Result Int String =
 - **A named capability must be used.** A wrapper whose signature names a
   capability must actually use it — precheck, scope a path
   (`Fs.root`), or attenuate — or drop the parameter: a decorative
-  capability is a dead annotation (`06-effects.md §5.1` rule 3 in
+  capability is a dead annotation (`06-world.md §5.1` rule 3 in
   spirit). Bindings with no operating-system surface (`libm`) name no
   capability. A used capability parameter restores manifest visibility
   for the operating-system track and is honest guidance for the native
@@ -173,7 +177,7 @@ eko-side twin:
 |---|---|---|
 | `C.Ptr.Void` | opaque | a pointer C handed you, handed back; no dereference, no arithmetic; typed wrapping is ordinary records (`SqLite: type = [raw: C.Ptr.Void]`) |
 | `C.Size` | `size_t` ferry | compare and convert (`to_uint`, total); no arithmetic |
-| `C.get_errno` | `() -> I32` | reads the C thread-local errno; program-internal state, hence pure (`06-effects.md §8`); a prelude `Pure` extern to a host symbol (§8) |
+| `C.get_errno` | `() -> I32` | reads the C thread-local errno; program-internal state, hence pure (`06-world.md §8`); a prelude `Pure` extern to a host symbol (§8) |
 | `C.In T` | borrow | §3.4 |
 
 ### 3.3 `ctype` — layout records
@@ -265,7 +269,7 @@ StatResult _eko_stat(const char *path) {      /* the extern names this symbol */
 | C behavior | Eko behavior |
 |---|---|
 | error code / `errno` / NULL sentinel | data — the extern returns it; `Result`/`Option` wrapping is library-layer; `C.get_errno` reads errno, pure |
-| segfault / `SIGABRT` | process abort, the panic mechanism (`06-effects.md §3.3`); not catchable |
+| segfault / `SIGABRT` | process abort, the panic mechanism (`06-world.md §3.3`); not catchable |
 | `longjmp` / C++ exception crossing | abort; taming — `setjmp` capture before the crossing — is shim work |
 | panic inside a callback | abort propagates into C; C does not unwind |
 | `EINTR` | the host may retry internally; user externs promise nothing |
@@ -282,7 +286,7 @@ The extern mechanism chooses nothing.
   lifetime is the call. Callback parameter and result types follow the
   whitelist (§3.5), and the closure's arrow carries its world bit as
   usual — the bit lives on arrows and does not infect data
-  (`06-effects.md §5.1` rule 4).
+  (`06-world.md §5.1` rule 4).
 - **No async registration.** There is no vocabulary that makes a closure
   outlive its call. This is an absence of vocabulary, not a semantic
   invariant: a callback handle would be new vocabulary and would break no
@@ -328,7 +332,7 @@ are normative, layouts are not.** `eko_value` is opaque throughout.
 
 A conformance host links against the veneer and nothing else. The fast
 path — calling the compiler's generated C directly — exists, is faster,
-and is a compiler detail, not contract (`06-effects.md §2.4` keeps its
+and is a compiler detail, not contract (`06-world.md §2.4` keeps its
 word for the fast path).
 
 ### 7.2 Holding values
@@ -350,7 +354,7 @@ Any thread may call into Eko. The protocol is three sentences:
    guarantee — the same audit class as `Pure`.
 
 Conc scheduling belongs to the host bundle: the language fixes the
-semantics (`06-effects.md §8`), the CLI default bundle is
+semantics (`06-world.md §8`), the CLI default bundle is
 compiler-emitted, and an embedding host supplies its own.
 
 ### 7.4 Application surfaces
@@ -371,7 +375,7 @@ no embedding vocabulary.
 
 ### 7.5 Panic
 
-Panic aborts the process (`06-effects.md §3.3`). The veneer observer is
+Panic aborts the process (`06-world.md §3.3`). The veneer observer is
 best-effort notification, not recovery.
 
 ## 8. The prelude channel
@@ -379,7 +383,7 @@ best-effort notification, not recovery.
 The prelude is delivered as source (`05-names.md §11`) and reaches the
 operating system through this chapter's own lexicon. A capability is
 internally a bundle of world-touching closures: the host constructs real
-bundles, and the prelude composes derived ones (`06-effects.md §2.3`)
+bundles, and the prelude composes derived ones (`06-world.md §2.3`)
 from two primitives per capability:
 
 ```eko
@@ -395,7 +399,7 @@ Out.tee: (o: Out, obs: (String) !-> _) -> Out =           // constructs only —
 ```
 
 - **Bit accounting**: `println` calls a `!` closure and is `!`; `tee` and
-  `null` only construct and are pure (`06-effects.md §5.1` rule 1 — the
+  `null` only construct and are pure (`06-world.md §5.1` rule 1 — the
   `mk_logger` shape).
 - **The pairs are protected by the reserved prefix** (§6), not by
   secrecy: `wrap` is the forging surface, and no user declaration can

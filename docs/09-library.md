@@ -5,8 +5,8 @@ operations, formatting, floating-point mathematics, text, and collection
 utilities are functions in the existing type namespaces (`05-names.md §2`).
 `Set` is an ordinary prelude generic type with no added notation. A test is a
 binding in the existing annotation slot (`04-types.md §1`); assertions are
-zero-type free functions in the prelude (`05-names.md §11`); deterministic
-tests are assembled from pure derived capabilities (`06-effects.md §2`).
+implicitly opened prelude free functions (`05-names.md §11`); deterministic
+tests are assembled from pure derived capabilities (`06-world.md §2`).
 Diagnostics are compile-time messages with stable symbolic codes. No new
 syntax, binding form, literal, or format-string language is introduced
 anywhere in this chapter: every addition reuses machinery specified elsewhere.
@@ -16,8 +16,8 @@ section 7 the diagnostic vocabulary.
 ## 1. File system operations
 
 The `Fs` capability gains seven operations. All of them set the world bit
-(`06-effects.md §5`) and appear in the prelude bit assignments
-(`06-effects.md §9`).
+(`06-world.md §5`) and appear in the prelude bit assignments
+(`06-world.md §9`).
 
 | Service | Signature | Semantics |
 |---|---|---|
@@ -34,7 +34,7 @@ The `Fs` capability gains seven operations. All of them set the world bit
 FileInfo: type = [size: UInt, mtime: Time, is_dir: Bool]
 ```
 
-- **Error mapping reuses the closed `IoError`** (`06-effects.md §3`). Details
+- **Error mapping reuses the closed `IoError`** (`06-world.md §3`). Details
   such as a non-empty directory, removal of a non-directory, and cross-device
   moves are reported as `Other String`. The closed union gains no variant, so
   existing exhaustive matches remain exhaustive.
@@ -189,7 +189,7 @@ surface does not acquire a new notation.
   equal keep their relative order, and the cost is O(n log n).
 - **The comparator has signature `(t, t) -> Bool`.** The callback may touch
   the world: `?` passes through, exactly as for `filter`
-  (`06-effects.md §5`).
+  (`06-world.md §5`).
 - `List.slice` is specified in §4.
 
 ```eko
@@ -332,7 +332,7 @@ assert_eq: (a: t, b: t) -> _ =
     if a == b: _ else: panic("assert_eq failed\n  left:  {inspect(a)}\n  right: {inspect(b)}")
 ```
 
-- **Both are prelude zero-type free functions** in the open scope
+- **Both are prelude free functions in the implicitly opened scope**
   (`05-names.md §11`); both are pure (panic does not set the world bit),
   always enabled, and require zero configuration.
 - **`assert_eq` locks both arguments to the same type.** `==` and `inspect`
@@ -388,13 +388,13 @@ A mock is a derivation, not a framework.
 | `In.from_lines` | `([]String) -> In` | reads the lines in order, EOF when exhausted |
 | `Fs.null` | `() -> Fs` | every path → `Err NotFound` |
 | `Env.frozen` | `([String]String) -> Env` | reads the fixed table |
-| `Args.frozen` | `([]String) -> Args` | reads the fixed value (`06-effects.md §2`) |
+| `Args.frozen` | `([]String) -> Args` | reads the fixed value (`06-world.md §2`) |
 | `Clock.frozen` | `(Time) -> Clock` | reads the fixed value; `sleep` returns immediately (`08-builtins.md §5`) |
 | `Rand.with_seed` | `(Int) -> Rand` | the seed fixes the order; the sequence itself is an implementation detail and is not promised across versions — assert properties, not specific values |
 
 `Out.tee`'s signature is fixed here. Construction is pure; the observer fires
 once per write, and its bit is absorbed by the `!` of the write builtin (the
-same OR absorption as `with_file`, `06-effects.md §5`). A pure observer flows
+same OR absorption as `with_file`, `06-world.md §5`). A pure observer flows
 in by adaptation.
 
 ```eko
@@ -404,7 +404,7 @@ greet_lines: test =
 ```
 
 - **Tests cannot obtain real capabilities.** Construction right belongs to the
-  host; `main`'s parameter table is the only entrance (`06-effects.md §2`),
+  host; `main`'s parameter table is the only entrance (`06-world.md §2`),
   and a test has no parameter table. Derived combinators are the test's entire
   world, which makes the capability layer structurally deterministic.
   Integration tests against real I/O are host domain.
@@ -429,7 +429,7 @@ greet_lines: test =
   absence of ambient I/O.
 - **Execution order and parallelism are host domain.** Tests share no state
   (values are immutable, top level is pure), so parallelism is safe by
-  construction — a direct dividend of top-level purity (`06-effects.md §7`).
+  construction — a direct dividend of top-level purity (`06-world.md §7`).
 
 ## 7. Diagnostics
 
@@ -471,8 +471,9 @@ The first batch of codes:
 | `E-nominal-mismatch` | nominal does not flow into nominal | `04-types.md §5` |
 | `E-shape-mismatch` | shape does not adapt (not the same shape) | `04-types.md §5` |
 | `E-exhaust` | missing arm of an exhaustive match | `03-control.md §3` |
-| `E-world-bit` | bit reconciliation failure (over- or under-declaration) | `06-effects.md §5` |
-| `E-open-bit-unfed` | an open bit that no feeder supplies | `06-effects.md §5` |
+| `E-world-bit` | bit reconciliation failure (over- or under-declaration) | `06-world.md §5` |
+| `E-open-bit-unfed` | an open bit that no feeder supplies | `06-world.md §5` |
+| `E-open-bit-position` | a `?` in a position where no binding is generalized (result type, container element, record field) | `06-world.md §5.2` |
 | `E-phantom` | phantom parameter / result-only variable | `04-types.md §7`, `§8` |
 | `E-name-case` | naming-case violation | `04-types.md §3` |
 | `E-name-conflict` | name conflict (same level, constructor clash, or duplicate module stems among imports) | `05-names.md §6`, `§7.2` |
@@ -518,7 +519,7 @@ E-nominal-mismatch: `Person` does not flow into `Human` (both nominal)
   (hint, names involved). The position format (`file:line:column`) is
   implementation domain.
 - **Diagnostics have three severities: error, warning, and none.**
-  Bit diagnostics are always errors (`06-effects.md §5`); this restates the
+  Bit diagnostics are always errors (`06-world.md §5`); this restates the
   rule rather than narrowing it.
 - **Panic messages are runtime output** and are not part of the vocabulary
   specified here.
@@ -579,7 +580,7 @@ tests cite the code, not the message.
 
 - **Channel.** Standard error, written by the host. Panic output never
   flows through `Out`: `panic` is pure and holds no capability
-  (`06-effects.md §3.3`); abort-reporting is host behavior, not world
+  (`06-world.md §3.3`); abort-reporting is host behavior, not world
   contact.
 - **First line.** One rigid line: `panic [P-code]: message`. The message
   follows `§7.1` style; a user-supplied message (`panic`, `expect`) is
@@ -606,7 +607,7 @@ tests cite the code, not the message.
   | `P-div` | division by zero | division by zero |
   | `P-overflow` | arithmetic overflow | arithmetic overflow |
 
-- **Termination.** The process exits with code `1` (`06-effects.md §2.1`).
+- **Termination.** The process exits with code `1` (`06-world.md §2.1`).
 - **Abort class.** Stack overflow and memory exhaustion are aborts, not
   panics (`07-runtime.md §8.4`): a best-effort single line
   `abort: reason` on standard error and a platform abort exit —

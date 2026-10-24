@@ -99,7 +99,7 @@ age <- data.get(1).to_result("short row: missing name").try()  // into a Result 
 | Default | `unwrap_or(d)` | Substitutes `d` for `None` |
 | Bridge | `to_result(e)` | Converts to `Result`, with `None → Err e`, for statement-level access |
 
-The panic surface shrinks accordingly to arithmetic (division by zero, overflow), `unwrap`/`expect`, `panic`, and `assert` (06-effects.md §3). A dual track of bracket syntax with panics plus a separate `Option`-returning accessor would hide the trust declaration in the choice of syntax; here there is one access vocabulary, and the branch happens at consumption (`case`, `expect`, `unwrap_or`), exactly as for any other `Option`.
+The panic surface shrinks accordingly to arithmetic (division by zero, overflow), `unwrap`/`expect`, `panic`, and `assert` (06-world.md §3). A dual track of bracket syntax with panics plus a separate `Option`-returning accessor would hide the trust declaration in the choice of syntax; here there is one access vocabulary, and the branch happens at consumption (`case`, `expect`, `unwrap_or`), exactly as for any other `Option`.
 
 ### 4.3 Nested access
 
@@ -133,7 +133,7 @@ Each layer costs one line and no lambda is written. Dictionary payloads (`Option
 
 ## 5. Modules
 
-A module is a compile-time namespace: it holds types and free functions, and it has no state, no initialization semantics, and no runtime footprint. The module system answers three questions and no others — where a name lives (unit), who can see whom (visibility), and how the build graph connects (dependency). The remaining agenda of traditional module systems is covered by existing orthogonal mechanisms: top-level purity removes initialization order and import side effects (06-effects.md §7), capability values with capture replace module-level state (06-effects.md §2), generics replace parameterized modules (04-types.md §7), and full erasure of world bits and types removes runtime linking (06-effects.md §5).
+A module is a compile-time namespace: it holds types and free functions, and it has no state, no initialization semantics, and no runtime footprint. The module system answers three questions and no others — where a name lives (unit), who can see whom (visibility), and how the build graph connects (dependency). The remaining agenda of traditional module systems is covered by existing orthogonal mechanisms: top-level purity removes initialization order and import side effects (06-world.md §7), capability values with capture replace module-level state (06-world.md §2), generics replace parameterized modules (04-types.md §7), and full erasure of world bits and types removes runtime linking (06-world.md §5).
 
 ### 5.1 File is module
 
@@ -154,10 +154,10 @@ csv/lex.eko       → lex           (import csv/lex)
 
 ### 5.2 Entry points
 
-The program entry is the module that contains a `main` binding. The dependency graph is the transitive closure from that entry, and the host authorizes according to `main`'s parameter list — the authorization manifest — independently of the module graph (06-effects.md §2). Three boundaries follow:
+The program entry is the module that contains a `main` binding. The dependency graph is the transitive closure from that entry, and the host authorizes according to `main`'s parameter list — the authorization manifest — independently of the module graph (06-world.md §2). Three boundaries follow:
 
 - `main` may be bound only in the entry module; a binding named `main` in a non-entry module is a compile error. The entry `main` must be public, and `_main` is the same error: `main` is a host contract, not an ordinary name.
-- `main` returns `_` — there is no `Int`-returning form; exit codes belong to the host, and a chosen exit code is `Proc.exit` (06-effects.md §2).
+- `main` returns `_` — there is no `Int`-returning form; exit codes belong to the host, and a chosen exit code is `Proc.exit` (06-world.md §2).
 - Modules outside the entry closure do not participate in compilation; this is not an error. Test compilation takes the modules containing a `test` binding as roots (09-library.md §6).
 
 ## 6. import
@@ -291,20 +291,20 @@ The result is zero keywords, zero manifest, zero double-writing: public and priv
 
 ## 10. Dependency graph and interfaces
 
-- **Modules have no initialization semantics.** A module body is a set of pure constants; it may be evaluated in any DAG order or folded to constants directly, and the order is unobservable (06-effects.md §7).
+- **Modules have no initialization semantics.** A module body is a set of pure constants; it may be evaluated in any DAG order or folded to constants directly, and the order is unobservable (06-world.md §7).
 - **Cyclic dependencies are prohibited** — a compile error, not a warning. Names within a module may reference each other freely, recursive functions included; cross-module mutual recursion is resolved by merging the modules, or by passing function values as parameters — the same shape as capability flow.
 - **Interfaces are extracted automatically** from the implementation: types, signatures, and visibility. There is no hand-written `.mli`/`.d.ts` layer. Separate compilation proceeds against the interface; acyclicity plus top-level purity make the build graph a DAG cache, so incremental compilation follows.
 - **Generic bodies travel with the interface** (07-runtime.md §6). Downstream instantiation expands downstream, and identical instances are deduplicated at link time.
 
 ## 11. Prelude
 
-The prelude is the only implicit module: `List`, `String`, `Bytes`, `Set`, `Json`, `Result`, `Option`, the capability types, and the zero-type free functions are always available without an import. It is an ordinary Eko module named `prelude`, **delivered as source alongside the compiler** and versioned with it: apart from the compiler-provided services below, the prelude is ordinary Eko code — `assert` and `assert_eq` are prelude source, and so are the combinators and the capability derivations. The complete inventory is 10-prelude.md.
+The prelude is the only implicit module: `List`, `String`, `Bytes`, `Set`, `Json`, `Result`, `Option`, the capability types, and the implicitly opened free functions are always available without an import. It is an ordinary Eko module named `prelude`, **delivered as source alongside the compiler** and versioned with it: apart from the compiler-provided services below, the prelude is ordinary Eko code — `assert` and `assert_eq` are prelude source, and so are the combinators and the capability derivations. The complete inventory is 10-prelude.md.
 
 **Compiler-provided services are not library code.** The derived services (`show`/`inspect` defaults, `==`, `<`, `with`, `to_json`/`from_json`; 08-builtins.md §6), the `panic` intrinsic, and the memory operations (07-runtime.md §4) are generated by the compiler and cannot be written in Eko source.
 
 The channel through which the prelude reaches the operating system is the `extern` lexicon of `11-ffi.md §8` — no intrinsic exists for it, and the compiler-provided services are the three above. A pure external is declared with the `Pure` guarantee word (`11-ffi.md §2.2`); the prelude's wrap/unwrap primitives are protected by the reserved symbol prefix (`11-ffi.md §6`).
 
-The implicit scope opening supplies the half of the import rule that §6 leaves open: **zero-type free functions — `show`, `panic`, `assert`, and `assert_eq` — are brought into unqualified scope with the prelude.** `show` takes an arbitrary type `t` as its first parameter and cannot hang under any type namespace; without the opening, every call would read `prelude.show(n)` and the spelling floor of the language would collapse. Type-attached functions such as `List.map` still resolve through the type namespace, for which scope opening is meaningless.
+The implicit scope opening supplies the half of the import rule that §6 leaves open: **the free functions `show`, `inspect`, `panic`, `assert`, `assert_eq`, and `assert_ne` are brought into unqualified scope with the prelude.** `show` and `inspect` are generic over every type, and the opened name spans all type namespaces at once — each namespace carries only its own type's member (`08-builtins.md §6.7`) — so no single namespace can supply the free spelling; without the opening, every call would read `prelude.show(n)` and the spelling floor of the language would collapse. Type-attached functions such as `List.map` still resolve through the type namespace, for which scope opening is meaningless.
 
 The opened set is closed and versioned with the compiler, so its collision surface is bounded. Conflict rules are the same as for user modules: a file top-level binding and an opened name are in the same layer, so a same-name collision is an error, and local shadowing remains legal. User imports never open everything, so call-site provenance is unaffected.
 

@@ -2,13 +2,13 @@
 
 Eko is a small, statically typed, immutable language that compiles to
 machine code. There is no virtual machine and no runtime system in the
-traditional sense: type identity, effects, and generics are all resolved
+traditional sense: type identity, world bits, and generics are all resolved
 at compile time, and memory is managed by reference counting emitted by
 the compiler.
 
 Eko's stated goals are **honest, concise, consistent**:
 
-- **Honest** — costs and effects are visible: capabilities gate the
+- **Honest** — costs and world contact are visible: capabilities gate the
   operating-system surface, `extern` declarations gate the native track
   (11-ffi.md), the world bit marks world-touching calls, indexing syntax
   does not exist, and expensive operations say so in
@@ -44,7 +44,7 @@ The language surface can be summarized in a few lines:
   function call syntax: `a.f(b) ≡ f(a, b)` (05-names.md §1).
 - **All I/O flows from `main`'s parameter list** — the authorization
   manifest. Capabilities are opaque values; the world bit on arrows
-  records world contact (06-effects.md §2, §5).
+  records world contact (06-world.md §2, §5).
 - **Memory is reference counting**; immutable values plus strict
   evaluation make the heap graph acyclic by construction, so counting
   is complete and no cycle collector exists (07-runtime.md §3–4).
@@ -55,7 +55,9 @@ The language surface can be summarized in a few lines:
 ## 2. The four I/O mechanisms
 
 The I/O layer is four orthogonal mechanisms; each solves exactly one
-problem and none overlaps another (06-effects.md §1):
+problem and none overlaps another. The table is an orientation summary —
+each question names its mechanism's concern; the normative rules are in
+06-world.md §1:
 
 | Dimension | Mechanism | Question it answers |
 |---|---|---|
@@ -82,7 +84,7 @@ Failure has three natures, each with exactly one word
 
 Conversions never panic. Recoverable failure is always a `Result` value;
 `panic` aborts the process and is never used for control flow
-(06-effects.md §3).
+(06-world.md §3).
 
 ## 4. A complete program
 
@@ -152,7 +154,7 @@ Reading it top to bottom:
 | Calls | UFCS identity, four-station resolution | 05 |
 | Access | `get`/`at` only; trust declared at consumption | 05 |
 | Modules | file is module; `import` opens types; functions fully qualified | 05 |
-| Effects | capabilities, world bit, open bit `?` | 06 |
+| I/O model | capabilities, world bit, open bit `?` | 06 |
 | Handles | `OpenMode`, generation checks, `with_file`, attenuation | 06 |
 | Runtime | boxed immutables, O(1) sharing, reference counting, monomorphization | 07 |
 | Iteration | combinators, self tail recursion, TCO guarantee | 07 |
@@ -166,8 +168,8 @@ Reading it top to bottom:
 
 | Term | Meaning |
 |---|---|
-| capability | opaque, unforgeable, copyable value granting authority for a class of world contact (06-effects.md §2) |
-| world bit | the `!`/`?` marker on an arrow recording whether calls may touch the world (06-effects.md §5) |
+| capability | opaque, unforgeable, copyable value granting authority for a class of world contact (06-world.md §2) |
+| world bit | the `!`/`?` marker on an arrow recording whether calls may touch the world (06-world.md §5) |
 | world-touching | a call that observes or changes the world; sets the world bit |
 | open bit (`?`) | an arrow whose bit is instantiated from callback arguments at the call site |
 | dispatcher | a function with an open bit whose own purity follows from its callbacks (e.g. `List.map`) |
@@ -179,7 +181,7 @@ Reading it top to bottom:
 | derived service | compiler-provided per-type service: `show`, `inspect`, `==`, `<`, `with`, `to_json`, `from_json` (08-builtins.md §6) |
 | acyclicity theorem | immutability + strict evaluation + capture-by-snapshot imply the heap graph is a DAG (07-runtime.md §3) |
 | monomorphization | generics are expanded per instance at compile time; no runtime dictionaries (07-runtime.md §6) |
-| host | the environment that starts an Eko program and constructs capabilities (06-effects.md §2.4) |
+| host | the environment that starts an Eko program and constructs capabilities (06-world.md §2.4) |
 | extern declaration | a binding whose right-hand side names a C symbol; `!->` unless `Pure` (11-ffi.md §2) |
 | `Pure` | the audited guarantee word: no world contact, reentrant and thread-safe (11-ffi.md §2.2) |
 | layout record | a `ctype` declaration whose field types and order pin a C layout (11-ffi.md §3.3) |

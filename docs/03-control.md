@@ -36,7 +36,7 @@ Structural markers occupy slots rather than introducing keywords. The
 annotation slot holds a type expression for a value binding, `type` for
 a type declaration (`04-types.md §1`), and `test` for a test declaration
 (`09-library.md §6`). Bit annotations occupy the arrow (`!->`, `?->`,
-`06-effects.md §5`). The binding operators occupy the binding slot:
+`06-world.md §5`). The binding operators occupy the binding slot:
 
 ```eko
 Person: type = [name: String, age: UInt, sex: Sex, address: String]
@@ -84,7 +84,7 @@ p2 := p
 ```
 
 `_ := e` evaluates `e` and discards the value. In value position `_` is
-Unit; in pattern position it is the wildcard (`06-effects.md §5`).
+Unit; in pattern position it is the wildcard (`06-world.md §5`).
 
 ### 1.3 Inverted binding `<-`
 
@@ -105,8 +105,8 @@ f(a..., (p): rest)
 
 `rest` is the entire remaining block after the binding line. The callback
 occupies the last parameter position; this is the prelude's contract for
-higher-order functions, where the callback is last (`06-effects.md §4`,
-`06-effects.md §9`).
+higher-order functions, where the callback is last (`06-world.md §4`,
+`06-world.md §9`).
 
 The value of the binding line is the value of the call, for example
 `Task b`. To obtain both the call's value and the inverted binding,
@@ -140,7 +140,7 @@ _ <- save(entry).try()   // save returns Result _ e: the payload is discarded
 A zero-argument callback omits the pattern:
 
 ```eko
-<- scope.spawn()            // the rest is the task body (06-effects.md §8)
+<- scope.spawn()            // the rest is the task body (06-world.md §8)
 ```
 
 `<- f()` and `_ <- f()` are distinct forms: the pattern-less form passes a
@@ -169,9 +169,9 @@ Inside a `case` arm, `rest` is the remaining block of that arm.
 
 The `<-` form introduces no world-bit rule of its own. `rest` is the
 callback body, and its bit is inferred as for any lambda (§2.2). The
-dispatcher instantiates its open bit from `rest` (`06-effects.md §5`). A
+dispatcher instantiates its open bit from `rest` (`06-world.md §5`). A
 combinator that is itself world-touching, such as `with_file`, has no
-open bit; its `!` absorbs the callback's bit by OR (`06-effects.md §4`).
+open bit; its `!` absorbs the callback's bit by OR (`06-world.md §4`).
 
 Because the desugaring appends a callback in the last position, `<-`
 requires a call that has a callback parameter. It is not applicable to a
@@ -223,10 +223,10 @@ one level.
 Parameters are identifiers, the wildcard `_`, or tuple parameter groups. A
 tuple parameter group is a group of parameters, not a destructuring pattern
 (§5.6). Parameter types come from the expected function type; actual
-arguments are checked last, when open bits are collected (`06-effects.md
+arguments are checked last, when open bits are collected (`06-world.md
 §5`). `_` is the wildcard parameter: it occupies a parameter position,
 binds nothing, and may occur in any parameter position of a group —
-`(_, i): i` keeps the index and discards the element (`06-effects.md §5.3`).
+`(_, i): i` keeps the index and discards the element (`06-world.md §5.3`).
 
 A lambda carries no annotations: no parameter types, no return type, and
 no bit annotation. Its type and bit are supplied by context and by its
@@ -252,7 +252,7 @@ binding needs an annotated `=` (`04-types.md §8`).
 
 A lambda has no bit annotation. Its world bit is the OR of the bits of
 the calls in its body: a call that touches the world makes the lambda
-`!`; a body with no such call is pure (`06-effects.md §5`). The bit
+`!`; a body with no such call is pure (`06-world.md §5`). The bit
 annotation lives on the arrow of a named binding:
 
 ```eko
@@ -268,14 +268,14 @@ main: (out: Out) ! =
 ```
 
 A signature may contain several `?` annotations; all of them are the
-same open bit (`06-effects.md §5`).
+same open bit (`06-world.md §5`).
 
 ### 2.3 Captures
 
 A lambda that refers to names from its enclosing scope captures their
 values; the resulting function value is a closure. Capturing a capability
-copies it, and copying a capability is delegation (`06-effects.md §2`).
-Holding is quiet; calling sets the bit (`06-effects.md §5`). A pure
+copies it, and copying a capability is delegation (`06-world.md §2`).
+Holding is quiet; calling sets the bit (`06-world.md §5`). A pure
 factory may therefore construct and return a `!` closure:
 
 ```eko
@@ -314,7 +314,7 @@ is an expression; the arms are its block (`02-syntax.md §1`).
 A pattern binds names that are in scope in the arm's result expression
 and in its guard, if any. In pattern position `_` is the wildcard, which
 matches every value and binds nothing; in value position `_` is Unit
-(`06-effects.md §5`).
+(`06-world.md §5`).
 
 All arms must produce the same type. A `Never` arm adapts to the type of
 the other arms (`04-types.md §10`). A well-typed `case` has no
@@ -368,7 +368,7 @@ The word `if` occupies two slots: the head of an `if` expression (§4) and
 the guard slot. The lexicon is the same.
 
 A guard is an ordinary `Bool` expression; its world bit is ORed into the
-enclosing context like any other (`06-effects.md §5`).
+enclosing context like any other (`06-world.md §5`).
 
 ### 3.4 Layout
 
@@ -490,7 +490,7 @@ else:
 
 Branching is transparent to the world bit. The condition and every
 branch body contribute their bits by OR to the enclosing context; there
-is no separate bit rule for `if` or `case` (`06-effects.md §5`). For
+is no separate bit rule for `if` or `case` (`06-world.md §5`). For
 `case`, the scrutinee, the guards, and every arm body contribute their
 bits in the same way.
 
@@ -644,7 +644,7 @@ group `(p, i)` is a two-parameter group, not automatic destructuring
 (`04-types.md §2`); to destructure a tuple value, use a `case` pattern or
 an `=` binding line. `_` is the one pattern besides a variable that a
 parameter position admits: it binds nothing, so `(_, i)` and `(_, _)`
-are legal, and `<-` inherits it (`06-effects.md §5.3`).
+are legal, and `<-` inherits it (`06-world.md §5.3`).
 
 ### 5.7 Excluded patterns
 
@@ -682,7 +682,7 @@ successful results into a list; an `Err` yields an `Err`.
 
 The callbacks are open-bit: a pure callback makes the combinator pure,
 and a world-touching callback makes it world-touching
-(`06-effects.md §5`). The receiver forms are the usual UFCS forms
+(`06-world.md §5`). The receiver forms are the usual UFCS forms
 (`05-names.md §1`): `expr.try()`, `lines.traverse(f)`, and
 `expr.map_err(g)`. A bare `expr.try()` is completed by the `<-`
 desugaring; otherwise the callback is written explicitly.
