@@ -182,7 +182,7 @@ greet: String = "hi {name}, n={n}"      // {name} and {n} are show(e) slots
 
 ### 4.4 Ranges
 
-Two range forms exist: `a..b` is end-exclusive (open at `b`), and `a..=b` is end-inclusive. Both produce a `Range` value (a prelude type); the element type is `Int`, `UInt`, or `Char`.
+Two range forms exist: `a..b` is end-exclusive (open at `b`), and `a..=b` is end-inclusive. Both produce a `Range` value (a standard-library type); the element type is `Int`, `UInt`, or `Char`.
 
 Range operators are infix and bind less tightly than postfix operators, so a chain over a range requires parentheses: `(1..=100).map(f)`.
 
@@ -289,7 +289,7 @@ if size > 0 && fs.exists(path):      // right operand is world-touching; the bit
 
 Symbols are used instead of the words `and`, `or`, and `not`. Using words would retire three identifiers, rule out `Bool.and` and `Bool.not` as member names, and break the rule that keywords open blocks. Symbols consume no identifiers; the single-character forms `&` and `|` are unassigned — `|` in pattern position is the or-pattern separator (03-control.md §5.3).
 
-The `Bool` type is a prelude algebraic data type (ADT):
+The `Bool` type is a standard-library algebraic data type (ADT):
 
 ```eko
 Bool: type = True | False
@@ -334,7 +334,7 @@ Comparisons have no associativity. A chain such as `a < b < c` is a parse error,
 
 Range operators are infix and bind less tightly than postfix; see §4.4.
 
-Comparison operators produce `Bool` and dispatch by operand type (`Int.eq`, `String.lt`). Both operands must have the same type; `1 == 1.0` is a type error. Built-in ordering is defined for numeric types, `Char` (code-point order), `String` (lexicographic order), and `Bytes` (byte order). Capabilities and functions have no `==`. `==` is derived structurally for data types; `Float` equality is IEEE (`NaN != NaN`). `<` is derived for ADTs by variant declaration order and recursive payload comparison; records and `Bool` have no `<` (`08-builtins.md §6`).
+Comparison operators produce `Bool` and dispatch by operand type (`Int.eq`, `String.lt`). Both operands must have the same type; `1 == 1.0` is a type error. The comparison operators are defined only on the value layer — the numeric types, `Bool`, `Char`, `String`, `Bytes` — where `Float` equality is IEEE (`NaN != NaN`). Every other type compares through its `eq`/`lt` members, called explicitly (`08-builtins.md §6.4`, `§6.5`); capabilities and functions have no equality at all.
 
 ## 7. Excluded syntax
 

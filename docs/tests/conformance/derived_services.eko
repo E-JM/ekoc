@@ -27,13 +27,13 @@ deep_equality: test =
     t1: Tree Int = Node {Leaf 1, Leaf 2}
     t2: Tree Int = Node {Leaf 1, Leaf 2}
     t3: Tree Int = Node {Leaf 1, Leaf 3}
-    assert(t1 == t2)
-    assert((t1 == t3).not())
+    assert(t1.eq(t2))
+    assert(t1.eq(t3).not())
 
 declaration_order: test =
     man: Sex = Man
     woman: Sex = Woman
-    assert(man < woman)
+    assert(man.lt(woman))
 
 with_is_immutable: test =
     p: Person = {name: "ada", age: 36}

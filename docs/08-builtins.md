@@ -1,6 +1,6 @@
 # Built-in Data Types and Services
 
-This chapter specifies the data types and services that the prelude provides without an import (05-names.md §11): `Bool`, `Char` and `String`, `Bytes`, the numeric conversion families, `Time`/`Mono`/`Duration`, the derived services `show`/`inspect`/`==`/`<`/`with`, and the JSON surface with `to_json`/`from_json`. Values of these types are immutable. Signatures, costs, and failure forms stated here are normative. A `!` in a signature marks a world-touching service (06-world.md §5); the unit type is spelled `_`.
+This chapter specifies the data types and services that the standard library provides without an import (05-names.md §11): `Bool`, `Char` and `String`, `Bytes`, the numeric conversion families, `Time`/`Mono`/`Duration`, the derived services `show`/`inspect`/`eq`/`lt`/`with`, and the JSON surface with `to_json`/`from_json`. Values of these types are immutable. Signatures, costs, and failure forms stated here are normative. A `!` in a signature marks a world-touching service (06-world.md §5); the unit type is spelled `_`.
 
 ## 1. Bool
 
@@ -8,7 +8,7 @@ This chapter specifies the data types and services that the prelude provides wit
 Bool: type = True | False
 ```
 
-`Bool` is a prelude ADT. There is no truthiness: the condition of an `if` is a `Bool`, and no other value is coerced to one (03-control.md §4). `not` is an ordinary function member of `Bool`, applied as `b.not()`; there is no prefix negation operator. The token `!` is reserved for the world bit (02-syntax.md §6.3, 06-world.md §5), so `!b` is not a negation and does not type-check. Equality is structural and derived (§6.4). Ordering is deliberately not defined for `Bool` (§6.5).
+`Bool` is a standard-library ADT. There is no truthiness: the condition of an `if` is a `Bool`, and no other value is coerced to one (03-control.md §4). `not` is an ordinary function member of `Bool`, applied as `b.not()`; there is no prefix negation operator. The token `!` is reserved for the world bit (02-syntax.md §6.3, 06-world.md §5), so `!b` is not a negation and does not type-check. `Bool` is in the operator domain of `==`/`!=` (§6.4); it has no ordering (§6.5).
 
 ## 2. Char and String
 
@@ -16,7 +16,7 @@ Text is a sequence of Unicode scalar values. Eko types characters and strings se
 
 ### 2.1 Char
 
-`Char` is a prelude scalar type. Its domain is the Unicode scalar values (USV): `0..0x10FFFF`, excluding the surrogate range. One `Char` is exactly one code point; a grapheme cluster is a sequence property and is not a `Char`.
+`Char` is a standard-library scalar type. Its domain is the Unicode scalar values (USV): `0..0x10FFFF`, excluding the surrogate range. One `Char` is exactly one code point; a grapheme cluster is a sequence property and is not a `Char`.
 
 ```eko
 c: Char = 'a'
@@ -54,7 +54,7 @@ Char.from_code:    (Int) -> Option Char     // invalid code point → None
 
 ### 3.1 Identity
 
-`String` is text and `Bytes` is bytes; the only gate between the two is UTF-8 encoding and decoding (§3.3). `Bytes` is a prelude built-in composite: an immutable sequence of bytes, in the same family as `String` and not one of the four composite formers (04-types.md §2). There is no byte literal; construction goes through functions. Element values are plain `Int` in `0..255` (domain words); machine words (`U8`, `I32`, …) exist for layout and ferrying, never computation (`11-ffi.md §3.1`). `get` is the only entry point, and index syntax is banned as for every type in the language. Immutability, boxing, sharing, and reference counting follow 07-runtime.md §4 with no new rule. The name is PascalCase; `<bytes>` is not used because `Bytes` has structure and is not a capability.
+`String` is text and `Bytes` is bytes; the only gate between the two is UTF-8 encoding and decoding (§3.3). `Bytes` is a standard-library built-in composite: an immutable sequence of bytes, in the same family as `String` and not one of the four composite formers (04-types.md §2). There is no byte literal; construction goes through functions. Element values are plain `Int` in `0..255` (domain words); machine words (`U8`, `I32`, …) exist for layout and ferrying, never computation (`11-ffi.md §3.1`). `get` is the only entry point, and index syntax is banned as for every type in the language. Immutability, boxing, sharing, and reference counting follow 07-runtime.md §4 with no new rule. The name is PascalCase; `<bytes>` is not used because `Bytes` has structure and is not a capability.
 
 | | `String` | `Bytes` |
 |---|---|---|
@@ -118,15 +118,15 @@ Fs.append_bytes:  (Fs, String, Bytes) !-> Result _ IoError  // convenience mirro
 
 - `read_bytes` never returns `InvalidData`: every byte sequence is legal. A short read means EOF and returns `Ok` with a short `Bytes` — EOF is not an error (06-world.md §3).
 - `File.read` keeps the text gate: it still returns `Err InvalidData` for non-UTF-8 (06-world.md §4). That refusal is not a dead end: `read_bytes` is the raw-byte entry point, so refusal and acceptance each have their place.
-- `with_file` callbacks and `<-` chains work as usual; `OpenMode` is unchanged. The `In` console layer is text-only and has no byte gate.
+- `Fs.with_file` callbacks and `<-` chains work as usual; `OpenMode` is unchanged. The `In` console layer is text-only and has no byte gate.
 
 ```eko
 png_magic: []Int = {137, 80, 78, 71, 13, 10, 26, 10}
 
 is_png: (fs: Fs, path: String) !-> Result Bool IoError =
-    with_file(fs, path, Read, (f):
+    fs.with_file(path, Read, (f):
         head <- f.read_bytes(8).try()
-        Ok head.to_ints() == png_magic)
+        Ok head.to_ints().eq(png_magic))
 ```
 
 ### 3.5 Display
@@ -161,8 +161,8 @@ ferrying, never for arithmetic.
 - Byte literals (`0x…` as a byte construction form, `b"…"`, `bytes"…"`). Construction goes through functions; `0x` literals are integer literals (`02-syntax.md §4.1`), not byte construction.
 - Index syntax `b[i]`. `get` is the only entry point.
 - Mutable `Bytes`, builder, or resize vocabulary. Values are immutable; `append` is an O(n) full copy, recorded as such; batch construction goes through `from_ints`.
-- Other encoding families in the prelude (UTF-16, latin-1, GBK). UTF-8 is the only built-in gate; encoding conversion is library domain.
-- Digest or CRC functions in the prelude. They are algorithm domain; `get` and `to_ints` are sufficient for library implementations.
+- Other encoding families in the standard library (UTF-16, latin-1, GBK). UTF-8 is the only built-in gate; encoding conversion is library domain.
+- Digest or CRC functions in the standard library. They are algorithm domain; `get` and `to_ints` are sufficient for library implementations.
 - Implicit `Bytes`/`String` conversion. The only gate is `to_bytes`/`to_string`, explicit and carrying failure semantics.
 
 ## 4. Conversions
@@ -202,7 +202,7 @@ The variants follow the `IoError` criterion: a name is deserved only when caller
 ### 4.4 Round trips
 
 ```eko
-parse(show(x)) == Ok x        // non-NaN: exact for Int/UInt; Float guaranteed by the shortest round-trip show
+parse(show(x)).eq(Ok x)    // non-NaN: exact for Int/UInt; Float guaranteed by the shortest round-trip show
                               // NaN exception: under IEEE ==, NaN != NaN; accept by NaN equivalence
 ```
 
@@ -282,7 +282,7 @@ Clock.sleep: (Clock, Duration) !-> _  // sleep; a negative duration returns imme
 ```
 
 - Reading the clock sets the world bit (06-world.md §5): two readings can differ, which is an observation of the world. Sleeping also sets the bit: time passes, the process yields, and the world is changed. Both require `Clock`; bit and permission share one origin.
-- **Measure with `mono`, timestamp with `now`**: a wall-clock difference can be negative or jump, while elapsed semantics hold only on the monotonic clock. `Time < Time` is reading order (usable for sorting); precedence is decided with `Mono < Mono`. The derived `<` provides both semantics, and the types keep misuse from meeting.
+- **Measure with `mono`, timestamp with `now`**: a wall-clock difference can be negative or jump, while elapsed semantics hold only on the monotonic clock. `Time.lt` is reading order (usable for sorting); precedence is decided with `Mono.lt`. The derived members provide both semantics, and the types keep misuse from meeting.
 - A negative duration returns immediately (clamped to zero, recorded as such). Timeouts and cancellation belong to the concurrency rules (06-world.md §8); no vocabulary is pre-empted here.
 
 ```eko
@@ -313,7 +313,7 @@ The bit is unchanged: `now()` on a frozen clock still sets the world bit. The bi
 | `Duration` | `0.5s` (decimal seconds, trailing zeros removed) | `Duration 500000000` |
 | `Mono` | `Mono 89347123456` (no human form — the epoch is meaningless) | same |
 
-- `Time.show` formats ISO 8601 in UTC, and `Duration.show` prints decimal seconds; both are prelude overrides of the §6.2 machinery (the declaring module is the prelude). `inspect` is always the constructor form, so what you see can be written.
+- `Time.show` formats ISO 8601 in UTC, and `Duration.show` prints decimal seconds; both are std overrides of the §6.2 machinery (the declaring module is std). `inspect` is always the constructor form, so what you see can be written.
 - UTC is the only zone; a local timezone would undermine determinism, and formatting and localization stay library domain. `Time.parse: (String) -> Result Time ParseError` accepts the ISO 8601 UTC forms that `Time.show` produces; `Duration.parse: (String) -> Result Duration ParseError` accepts decimal seconds. Both hold the round-trip property of §4.4.
 
 ### 5.5 Domain and overflow
@@ -383,17 +383,23 @@ Empty containers are `{}`. Record field order is declaration order; dictionary o
 
 ### 6.4 Equality
 
-- Equality is structural and deep: records field by field; ADTs when the constructors match and payloads compare recursively; containers element by element. `Option` and `Result` follow the ADT rule.
-- There are two exceptions: capabilities have no `==` (06-world.md §2), and functions have no `==` (comparing closures is meaningless).
-- `Float` follows IEEE: `NaN == NaN` is `False`. A total-order comparison does not enter the operator.
-- Both sides of `==` have the same type: `Int.eq: (Int, Int) -> Bool` locks the signature. `1 == 1.0` and `age == n` (`UInt` versus `Int`) are type errors; conversion is explicit (`Int.to_float(x) == y`, §4.2).
+The operator and the member are separate rulings.
+
+**Operator domain.** `==` and `!=` are defined for exactly the value layer: `Int`, `UInt`, `Float`, the machine words, `Bool`, `Char`, `String`, `Bytes`. On this domain `a == b ≡ a.eq(b)` holds unconditionally, and the `eq`/`ne` names are compiler-owned. Nowhere else does the operator exist: for every other type — records, tuples, ADTs, `Option`, `Result`, the time types — equality is the member `T.eq`, written `x.eq(y)` or `T.eq(x, y)`. Both sides always have the same type: `1 == 1.0` and `age == n` (`UInt` versus `Int`) are type errors; conversion is explicit (`Int.to_float(x) == y`, §4.2).
+
+**Structural derivation.** For every type outside the value layer, `T.eq` is derived from structure and materialized on demand: records and tuples compare field by field in declaration order with short-circuit; ADTs compare when constructors match and payloads compare recursively; containers element by element. Each field or payload compares through that type's `eq` member, so derivation composes with declarations at every level. `T.ne` is synthesized as the negation of `T.eq`. A declaration `T.eq:` in the module that declares `T` replaces the derivation entirely.
+
+**Stop condition.** Derivation halts at capabilities and functions, recursively: a type with a capability or function field has no `eq` at all, and equality, keying, or assertion over it is a compile error (`E-no-eq`) whose diagnostic names the offending field. Capabilities have no equality (06-world.md §2); comparing closures is meaningless.
+
+**Float.** `Float.eq` follows IEEE: `NaN == NaN` is `False`. A total-order comparison does not enter the operator.
 
 ### 6.5 Ordering
 
-- `<` is derived **only for ADTs**: variants compare by declaration order, and payloads compare recursively in order (`Sex: Man | Woman` implies `Man < Woman`). A declaration list is naturally an order, so derivation is faithful.
-- Records have **no `<`**: a field set has no magnitude semantics, and imposing an order is arbitrary. Sort records with `sort_by` and an explicit comparator (09-library.md §5).
-- `Bool` has **no `<`**: the order of `True | False` is enumeration convenience, not magnitude. Partition with `filter`. Derivation of `<` is deliberately suppressed for `Bool`.
-- Builtins are hand-defined rather than derived: numbers, `Char` code-point order, `String` lexicographic order, and `Bytes` byte order.
+`<`, `<=`, `>`, `>=` follow the same shape as equality (§6.4).
+
+- **Operator domain**: the value layer with an arithmetic or textual order — numbers, `Char` code-point order, `String` lexicographic order, `Bytes` byte order — as hand-defined, compiler-owned members. `Bool` has no ordering: the order of `True | False` is enumeration convenience, not magnitude; partition with `filter`.
+- **ADTs** derive `T.lt` by declaration order, payloads comparing recursively in order (`Sex: Man | Woman` implies `Man.lt(Woman)` is `True`). The derived member backs no operator; the call is `a.lt(b)`.
+- **Records** have no derived ordering: a field set has no magnitude semantics, and imposing an order is arbitrary. Sort with `sort_by` and an explicit comparator (09-library.md §5); a hand-written `T.lt` is an ordinary member, called explicitly.
 
 ### 6.6 Record update with `with`
 
@@ -410,15 +416,14 @@ p.with({ age: 37 }).notify(out)                   // direct chain; the call is a
 
 ### 6.7 Dispatch
 
-`show`, `inspect`, `==`, `<`, `to_json`, and `from_json` are all compile-time generic dispatch (04-types.md §4): the bare form resolves by static type to that type's namespace, and the derived default is the dispatcher's default member. World bits do not participate; every one of these services is pure.
+`show`, `inspect`, `eq`, `lt`, `to_json`, and `from_json` are compile-time members of every type namespace: a derived default where the type declares none, the declaration where it does. World bits do not participate; every one of these services is pure. The operator identities hold where the operator is defined (§6.4, §6.5):
 
 ```eko
-show(t)            ≡  t.show()          // dispatch, override or default
-inspect(t)         ≡  t.inspect()       // always derived
-a == b             ≡  Int.eq(a, b)      // same-type locked; resolves by static type
-a < b              ≡  Int.lt(a, b)      // ADT or builtin
-"{e}"              ≡  show(e) injected  // display channel
-p.with({age: 37})                       // record update, a derived service
+show(t)          ≡  t.show()          // dispatch, declaration or default
+inspect(t)       ≡  t.inspect()       // always derived
+a == b           ≡  a.eq(b)           // value layer only; same-type locked
+"{e}"            ≡  show(e) injected  // display channel
+p.with({age: 37})                     // record update, a generated service
 ```
 
 `to_json`/`from_json` follow the same dispatch and override model (§7.5).
@@ -427,7 +432,7 @@ p.with({age: 37})                       // record update, a derived service
 
 ### 7.1 The Json type
 
-`Json` is a prelude ADT with seven variants.
+`Json` is a standard-library ADT with seven variants.
 
 ```eko
 Json: type =
@@ -453,10 +458,10 @@ Json.show:  (Json) -> String                       // minimal form: no whitespac
 ```
 
 - `parse` is a member of the §4 parse family: `ParseError` is reused, and the taxonomy placement is input validation, with a reason.
-- `Json.show` uses the override machinery (the declaring module is the prelude). Interpolation `"{j}"` produces JSON text directly; the structural channel `inspect(j)` is always the constructor form, so the dual channels each hold their place (§6.1).
+- `Json.show` uses the override machinery (the declaring module is std). Interpolation `"{j}"` produces JSON text directly; the structural channel `inspect(j)` is always the constructor form, so the dual channels each hold their place (§6.1).
 - Number text: a `Float` uses the shortest round trip — `3.5` prints `3.5`, `3.0` prints `3.0`; `3` prints `3` and parses back as `Int 3`. The variant decides the spelling.
 - String escapes follow the JSON specification (`\uXXXX`). Surrogate pairs are parsed as pairs; lone surrogates are rejected — `String` is always valid UTF-8, and the entrance enforces it (§2.2).
-- `parse(show(j)) == Ok j`.
+- `parse(show(j)).eq(Ok j)`.
 - Non-finite floats render as themselves — `NaN`, `Inf`, `-Inf` — following the
   Float display vocabulary (§6.3), and `Json.parse` accepts those tokens back, so
   the round-trip promise holds, judged by NaN equivalence where applicable (§4.4).
@@ -482,7 +487,7 @@ Each data type derives `to_json: (t) -> Json` and `from_json: (Json) -> Result t
 | Non-string-keyed dictionary | ✗ compile error | convert explicitly |
 | Capability / function | ✗ compile error | things without `==` do not enter the isomorphism |
 
-Every value whose type participates in the isomorphism satisfies the specification-level round-trip property `from_json(to_json(v)) == Ok v`. A missing field, an extra key, an unknown variant, or a payload type mismatch yields `Err`.
+Every value whose type participates in the isomorphism satisfies the specification-level round-trip property `from_json(to_json(v)).eq(Ok v)`. A missing field, an extra key, an unknown variant, or a payload type mismatch yields `Err`.
 
 - `Bool` is special-cased: `true`/`false` are JSON booleans, while a user-declared enum (`Yes | No`) still goes through external tagging as strings. The built-in `Bool` mapping is hand-defined (§6.5); a declared type does not inherit it.
 - `Bytes` maps to a lowercase hex string (the same basis as `to_hex`/`from_hex`, §3.2). The field type is known, so decoding is unambiguous, and the round trip is faithful.
@@ -501,10 +506,10 @@ Tree:   type t = Leaf t | Node [Tree t, Tree t, t]
 - This is the externally-tagged form. It is the simplest for CLI configuration: zero-payload enums read and write directly.
 - `from_json`: an unknown variant or key, a missing field, or a payload type mismatch yields `Err` (with an `Invalid "unknown variant …"` payload where applicable); constructor fields are checked, so a misspelling is a compile error (04-types.md §3).
 
-### 7.5 Overrides and generics
+### 7.5 Derivation and generics
 
-- **Override**: the declaring module writes `Money.to_json: (Money) -> Json = …` in the type namespace, shadowing the default; `from_json` has the same right. Ownership belongs to the declaring module, and orphan overrides do not exist — the same machine as `show` (§6.2).
-- **Generics**: `to_json` and `from_json` join the type-variable capability set (04-types.md §8). A generic function may call them directly on `t`; at instantiation, the concrete derivation or override applies. A capability, a function, or a non-string-keyed dictionary at an instantiation site is an error — the same rule as `==`.
+- **The derived pair is fixed.** `to_json` and `from_json` are derived for every suitable type and admit no override. The derived pair is an involution — `from_json(to_json(x))` yields `x` — and the guarantee is structural: a one-sided override would break the round trip silently, and a two-sided one cannot be checked for it. A representation choice (field renaming, omission, versioning) is a protocol decision and lives as a named codec pair in the protocol's module (`api.person_to_json`, `api.person_from_json`). Serialization conformance is guaranteed by the `Json` type itself: `to_json` yields a `Json` value and rendering is one fixed function, so no per-type code can produce malformed JSON.
+- **Generics**: `to_json` and `from_json` join the type-variable capability set (04-types.md §8). A generic function may call them directly on `t`; at instantiation, the concrete derivation applies. A capability, a function, or a non-string-keyed dictionary at an instantiation site is an error — the same rule as `eq`.
 - Dispatch is compile-time generic dispatch (§6.7), with zero runtime reflection.
 
 ```eko
@@ -518,5 +523,5 @@ load_config: (s: String) -> Result Config String =
 - A format-string DSL or path queries (jq-like). These are library domain.
 - Default pretty printing. `show` is minimal; `indent` is library domain.
 - Silent non-string-keyed dictionary isomorphism. It is a compile error with an explicit conversion; no silent distortion.
-- YAML or TOML in the prelude. They are library domain; JSON is the only built-in serialization surface.
+- YAML or TOML in the standard library. They are library domain; JSON is the only built-in serialization surface.
 - Runtime reflection. Derivation is compile-time expansion with zero reflection surface.

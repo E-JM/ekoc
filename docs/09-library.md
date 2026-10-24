@@ -3,9 +3,9 @@
 This chapter completes the language's surface without extending it. File-system
 operations, formatting, floating-point mathematics, text, and collection
 utilities are functions in the existing type namespaces (`05-names.md §2`).
-`Set` is an ordinary prelude generic type with no added notation. A test is a
+`Set` is an ordinary std generic type with no added notation. A test is a
 binding in the existing annotation slot (`04-types.md §1`); assertions are
-implicitly opened prelude free functions (`05-names.md §11`); deterministic
+implicitly opened std free functions (`05-names.md §11`); deterministic
 tests are assembled from pure derived capabilities (`06-world.md §2`).
 Diagnostics are compile-time messages with stable symbolic codes. No new
 syntax, binding form, literal, or format-string language is introduced
@@ -16,7 +16,7 @@ section 7 the diagnostic vocabulary.
 ## 1. File system operations
 
 The `Fs` capability gains seven operations. All of them set the world bit
-(`06-world.md §5`) and appear in the prelude bit assignments
+(`06-world.md §5`) and appear in the standard library bit assignments
 (`06-world.md §9`).
 
 | Service | Signature | Semantics |
@@ -219,7 +219,7 @@ Set.diff:      (Set t, Set t) -> Set t        // preserves left order
   no word is provided for it.
 - **`Set.of` deduplicates keeping the first occurrence.** The order is
   insertion order, so results are deterministic and reproducible.
-- **`Set` is a nominal prelude generic type**, written `Set t` and applied by
+- **`Set` is a nominal std generic type**, written `Set t` and applied by
   juxtaposition (`04-types.md §7`). `==` is derived; `<` does not exist,
   because structural equality carries no ordering — the same judgment as for
   `Dict`.
@@ -251,7 +251,7 @@ grid: [[]String]Int = {}        // lists as keys; the key domain is settled
 
 ## 6. Testing
 
-Testing adds one annotation-slot word, two prelude functions, and a family of
+Testing adds one annotation-slot word, two standard-library functions, and a family of
 pure capability constructors. It adds no test framework, no test file kind,
 and no second compiler mode.
 
@@ -332,7 +332,7 @@ assert_eq: (a: t, b: t) -> _ =
     if a == b: _ else: panic("assert_eq failed\n  left:  {inspect(a)}\n  right: {inspect(b)}")
 ```
 
-- **Both are prelude free functions in the implicitly opened scope**
+- **Both are std free functions in the implicitly opened scope**
   (`05-names.md §11`); both are pure (panic does not set the world bit),
   always enabled, and require zero configuration.
 - **`assert_eq` locks both arguments to the same type.** `==` and `inspect`
@@ -394,7 +394,7 @@ A mock is a derivation, not a framework.
 
 `Out.tee`'s signature is fixed here. Construction is pure; the observer fires
 once per write, and its bit is absorbed by the `!` of the write builtin (the
-same OR absorption as `with_file`, `06-world.md §5`). A pure observer flows
+same OR absorption as `Fs.with_file`, `06-world.md §5`). A pure observer flows
 in by adaptation.
 
 ```eko
@@ -409,7 +409,7 @@ greet_lines: test =
   world, which makes the capability layer structurally deterministic.
   Integration tests against real I/O are host domain.
 - **The embedding contract is discharged with zero host magic.** All
-  derivations complete in the prelude layer.
+  derivations complete in the standard library layer.
 - **Bits are unchanged.** What is fed is a real capability value, and the
   arrows of the functions under test do not change. Tests relax no check:
   same compiler, same rules.
@@ -479,7 +479,7 @@ The first batch of codes:
 | `E-name-conflict` | name conflict (same level, constructor clash, or duplicate module stems among imports) | `05-names.md §6`, `§7.2` |
 | `E-namespace-owner` | a type-namespace member declared outside the owning module | `05-names.md §8` |
 | `E-cycle-import` | circular dependency | `05-names.md §10` |
-| `E-no-eq` | a type without `==` used for equality, a key, or an assertion | `08-builtins.md §6` |
+| `E-no-eq` | equality, keying, or assertion over a type whose `eq` derivation halts (a capability or function payload) | `08-builtins.md §6.4` |
 | `E-json-shape` | no default JSON isomorphic form (for example a non-string-keyed dictionary) | `08-builtins.md §7` |
 | `E-instantiation-depth` | generic instantiation expansion does not terminate | `07-runtime.md §6` |
 | `E-literal-overflow` | a numeric literal outside the range of its target type | `02-syntax.md §4.1` |
@@ -490,12 +490,14 @@ the first batch.
 
 ### 7.3 Warnings
 
-The warning list is closed and contains exactly two members:
+The warning list is closed and contains exactly four members:
 
 | Code | Meaning | Source |
 |---|---|---|
 | `W-unreachable` | code after a `Never` call | `04-types.md §10` |
 | `W-unused` | unused binding or unused import, counted over all compilation roots | §6.6 |
+| `W-redundant-import` | an explicit `import std`: the implicit import (05-names.md §11) is always present | `05-names.md §11` |
+| `W-deprecated` | use of a member whose documentation carries `/// @deprecated`; the interface diff between compiler versions is the authority (12-toolchain.md §4) | `12-toolchain.md §5` |
 
 - **The closure is a contract.** Users perform zero-warning engineering
   against this list; an opened gap breaks the contract. A new warning requires
@@ -534,9 +536,9 @@ Standard library:
   plus named functions already cover the need, and names can be grepped.
 - `Set` notation and literals are excluded. The four composite forms are
   unchanged, and `{a, b}` already belongs to lists and tuples.
-- Unicode case mapping and regular expressions are excluded from the prelude;
+- Unicode case mapping and regular expressions are excluded from the standard library;
   they are library domain.
-- bignum, complex numbers, and matrices are excluded from the prelude; they
+- bignum, complex numbers, and matrices are excluded from the standard library; they
   are library domain.
 - Unstable sorting is not an option. Stability is the only commitment;
   quicksort-style internals are implementation freedom and are not observable.
@@ -551,7 +553,7 @@ Testing:
 - No `describe`/`it` and no nested suites. Nesting is narrative sugar; a
   table plus a pure `_helper` function is equivalent and adds no surface.
 - No `setup`/`teardown` hooks. Resources go through existing machinery such
-  as `with_file`, and construction goes through pure functions; hooks are
+  as `Fs.with_file`, and construction goes through pure functions; hooks are
   implicit control flow.
 - No mock framework. A mock is a derived capability; a framework would be a
   second vocabulary for the capability system.
@@ -618,5 +620,5 @@ panic [P-assert-eq]: assertion failed
   left:  Person {name: "ada", age: 36}
   right: Person {name: "grace", age: 41}
   at person.make_person (person.eko:14:9)
-  at prelude.assert_eq (…)
+  at std.assert_eq (…)
 ```

@@ -33,7 +33,7 @@ expressed in the vocabulary of another.
 ```eko
 // authority comes from the value; honesty comes from the arrow
 main: (out: Out, fs: Fs) ! =
-    case with_file(fs, "log.txt", Append, (f):
+    case fs.with_file("log.txt", Append, (f):
         case File.write(f, "started\n"):
             Ok _  -> _
             Err e -> Out.println(out, "write: {e}")):
@@ -141,7 +141,7 @@ capabilities are the entire mock surface of the language; no framework is involv
   derivation surface and is what makes the embedding contract's third promise
   (§2.4) real rather than aspirational.
 - `Out.tee`'s observer is triggered by a write builtin; the observer's bit is
-  absorbed by that builtin's `!` in the same way as `with_file`'s callback (§5.1
+  absorbed by that builtin's `!` in the same way as `Fs.with_file`'s callback (§5.1
   rule 5), so a pure observer flows in by adaptation.
 - Derivation is not a way to observe the world. If a decision depends on world state,
   call a separate bit-setting builtin instead (for example `Fs.exists`).
@@ -157,7 +157,7 @@ compiler detail and no part of this contract.
 2. **Capabilities are opaque.** Inside the language one only ever sees `<cap>`;
    construction authority lies with the host alone.
 3. **Tests need no host.** Derivations such as `Out.null` are implemented in the
-   prelude layer; no host magic is required to obtain them.
+   std layer; no host magic is required to obtain them.
 
 ### 2.5 Args
 
@@ -274,7 +274,7 @@ File.write:       (File, String) !-> Result _ IoError     // write at the curren
 File.write_bytes: (File, Bytes) !-> Result _ IoError      // bytes at the current position
 File.flush:       (File) !-> Result _ IoError
 File.close:       (File) !-> Result _ IoError             // stale handle → Err Closed
-with_file:        (Fs, String, OpenMode, (File) !-> a) !-> Result a IoError
+Fs.with_file:    (Fs, String, OpenMode, (File) !-> a) !-> Result a IoError
 ```
 
 - The text gate and the byte gate are separate. `File.read` rejects invalid UTF-8
@@ -298,26 +298,26 @@ Neither rule depends on the host's file descriptor reuse, because staleness is
 decided by the language-level generation, not by the number the OS handed back.
 
 The escape example shows what the generation buys — a handle that outlives its
-`with_file` is inert and sayable:
+`Fs.with_file` is inert and sayable:
 
 ```
 sneaky: (fs: Fs) !-> Result File IoError =
-    with_file(fs, "x", Read, (f): f)        // the returned handle is already closed
+    fs.with_file("x", Read, (f): f)        // the returned handle is already closed
 // any later File.read on it → Err Closed: checked, not UB
 ```
 
-### 4.4 with_file
+### 4.4 Fs.with_file
 
-- `with_file` closes on **both** paths: the value path and the error path.
+- `Fs.with_file` closes on **both** paths: the value path and the error path.
 - A panic is an abort: the OS reclaims, and no unwinding is needed.
-- The callback type is `(File) !-> a` and has **no open bit**. `with_file` is itself
+- The callback type is `(File) !-> a` and has **no open bit**. `Fs.with_file` is itself
   world-touching, and `OR` absorbs everything (§5.1 rule 5), so a pure callback flows
   in by adaptation and there is nothing to generalize.
 
 ```eko
-// a fallible callback nests: with_file yields Result a IoError with a = Result _ IoError
+// a fallible callback nests: Fs.with_file yields Result a IoError with a = Result _ IoError
 append_line: (fs: Fs, line: String) !-> Result (Result _ IoError) IoError =
-    with_file(fs, "log.txt", Append, (f): File.write(f, "{line}\n"))
+    fs.with_file("log.txt", Append, (f): File.write(f, "{line}\n"))
 ```
 
 The inner `Result` is the callback's; the outer covers opening and closing the
@@ -366,7 +366,7 @@ narrow.
    `logged : []String` is an ordinary value — there is no "world-touching list".
 5. **`?` appears only on dispatchers that are "pure if the callback is pure"**
    (iterators such as `map` / `each` / `fold`). A higher-order function that is itself
-   world-touching needs no `?`: `with_file` is already `!->`, `OR` absorbs
+   world-touching needs no `?`: `Fs.with_file` is already `!->`, `OR` absorbs
    everything, and the callback is written directly as `(File) !-> a`.
 6. **All `?` in one signature are the same open bit.** `OR` absorbs on the bit axis,
    so several bit variables would behave identically; `?` is therefore anonymous, and
@@ -486,7 +486,7 @@ and no "effect handler" in this language.
 
 There is only one legal shape: **a parameter feeds the bit, and the body passes it
 through.** The teaching line is: writing `->` and `!->` needs no justification;
-writing `?` does — the callback's bit must actually be passed out. In the prelude `?`
+writing `?` does — the callback's bit must actually be passed out. In the standard library `?`
 belongs to dispatchers only (§9); in user code it should be a rare word.
 
 ```eko
@@ -657,11 +657,11 @@ that divergence is not tracked (§7). There are no channels, hence no deadlock
 in the language. Channels and timeouts are excluded: communication introduces
 observable scheduling and would break the determinism argument.
 
-## 9. Prelude bit assignments
+## 9. Standard-library bit assignments
 
 | Category | Signatures |
 |---|---|
-| sets `!` | `Out.print/println`, `In.read_line`, `Fs.read/write/append/read_bytes/append_bytes/exists/open/list_dir/mkdir/mkdir_all/rm/rm_dir/rename/stat/realpath`, `File.read/read_bytes/read_line/seek/write/write_bytes/flush/close`, `with_file`, `Env.get`, `Args.all`, `Clock.now/mono/sleep`, `Rand.int`, `Proc.exit` |
+| sets `!` | `Out.print/println`, `In.read_line`, `Fs.read/write/append/read_bytes/append_bytes/exists/open/list_dir/mkdir/mkdir_all/rm/rm_dir/rename/stat/realpath`, `File.read/read_bytes/read_line/seek/write/write_bytes/flush/close`, `Fs.with_file`, `Env.get`, `Args.all`, `Clock.now/mono/sleep`, `Rand.int`, `Proc.exit` |
 | derived (pure) | `Out.tee`, `Out.null`, `In.empty`, `In.from_lines`, `Fs.null`, `Fs.root`, `Fs.read_only`, `Env.frozen`, `Clock.frozen`, `Rand.with_seed`, `Args.frozen`, `show: (t) -> String`, `to_json/from_json` |
 | pure, surprisingly | `panic(msg) -> Never` — aborting is not world contact |
 | `?` dispatchers | every builtin that takes a callback: `List.map/filter/fold/each/any/all/find_by/sort_by/zip_with`, `Dict.map/filter/fold/each`, `Range.each/each_with_index/map/fold`, `Option.map/and_then/or_else/filter`, `Result.try/map/map_err/traverse` (the combinators behind `<-` inverted binding, `03-control.md §6`) |
