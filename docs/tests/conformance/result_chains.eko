@@ -1,7 +1,7 @@
 // Result chains: `<-` unwrapping, to_result bridges, map_err error
 // conversion, wildcard `_` links over `Result _ e`, a table-driven test
 // with explicit tuple splitting, and the Option/Result consumers
-// (03-control.md §6, 09-library.md §6.4).
+// (Clauses 9.2, 9.14.4).
 
 Sex: type = Man | Woman
 Person: type = [name: String, age: UInt, sex: Sex, address: String]

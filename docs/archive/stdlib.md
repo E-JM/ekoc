@@ -1,10 +1,9 @@
 # Design Record — The Standard Library and Operators
 
-Non-normative. Rulings: `05-names.md §6`, `§8`, `§11`; `08-builtins.md
-§6.4`–`§6.7`, `§7.5`; `10-std.md`; `12-toolchain.md`. Rejected
-alternatives and rationale, restructured from the design session that
-named the library, fixed its delivery model, and settled the operator and
-equality doctrine.
+Non-normative. Rulings: Clauses 7.2.2, 7.4.5, 9.1, 9.8.4, 9.8.7, and 9.15;
+Annex C; Clause 11. Rejected alternatives and rationale, restructured from
+the design session that named the library, fixed its delivery model, and
+settled the operator and equality doctrine.
 
 ## 1. The name: `std`
 
@@ -29,9 +28,12 @@ source file". Zig's model transfers exactly: source in the distribution,
 cache on first use, keyed by content hash. The interface artifact is a
 build cache in the same family as `.hi`/rmeta — nobody audits it, it is
 disposable by definition. Object code is lazy and per target; nothing
-platform-specific ever enters the distribution. The content-hash lock and
-`--std` override separate accidental tampering (refused) from deliberate
-experimentation (explicit, separately cached).
+platform-specific ever enters the distribution. The content-hash lock
+refuses accidental tampering. The `--std` override that formerly admitted
+deliberate experimentation was cancelled when the capability surface moved
+into the compiler (`world.md` §9): an override would have replaced only
+the utility library, and the compatibility machinery it required bought
+too little.
 
 ## 3. Implicit import: a constant, not an analysis
 
@@ -41,7 +43,7 @@ a function of usage analysis rather than of surface text — two identical
 files could desugar differently, which dissolves the no-sugar form.
 All-at-once injection of a per-type module tree opens the union of all
 std type names ambiently and burns every common module stem (`string`,
-`list`, `io`, …), because module names are flat file stems (§5.1) and
+`list`, `io`, …), because module names are flat file stems (Clause 7.2.1) and
 directories are not nameable. The adopted rule injects one constant line,
 `import std`; companions stay explicit; a companion's stem enters scope
 only on import, so nothing is reserved beyond the path prefix. A manual
@@ -55,12 +57,12 @@ module burns a name users want, and the vocabulary is needed by every
 file anyway (`Option`, `Result`, `String` pervade patterns and
 annotations), so splitting changes nothing about which names a file must
 see. Facade splitting fails structurally: forwarding is a function, not a
-re-export (§12 exclusions), and there are no type aliases (04-types.md),
+re-export (Clause 6.10 exclusions), and there are no type aliases (Clause 7),
 so a facade cannot carry types. Growth is governed by admission, not
 layout — the vocabulary test for std, the common-utility test for
 companions. Promotion into std costs every file an ambient name; demotion
 breaks bare spellings; membership is conservative. A std type's namespace
-is welded to std by ownership (§8), so convenience members live as free
+is welded to std by ownership (Clause 7.4.5), so convenience members live as free
 functions in companions (`xs.listx.windowed(n)`) — the ugly spelling is
 the visible price of namespace pollution. Repo-side parts assembled into
 one `std.eko` at release remain a zero-language-cost fallback, held in
@@ -69,9 +71,9 @@ escalation if the vocabulary itself outgrows one file.
 
 ## 5. `Fs.with_file`, not `with_file`
 
-Three spellings coexisted in the manual: a free function in the §4.2
-signature table, a receiver form in 02-syntax's example, and a namespaced
-form in drafts. The receivers-everywhere principle (§1.2) decides: a
+Three spellings coexisted in the manual: a free function in the Clause 9.12.2
+signature table, a receiver form in Clause 6's example, and a namespaced
+form in drafts. The receivers-everywhere principle (Clause 7.4.3) decides: a
 capability as first parameter makes the function a namespace member. The
 free-function spelling was a transcription error; the generic-namespace
 precedent (`Option.get`) shows members with type variables are ordinary.
@@ -123,9 +125,9 @@ Opt-in equality (declare `T.eq` or go without) was rejected on mechanics.
 `Set t`, `Dict`, `Option.eq`, and `assert_eq` are generic over `t` and
 need `t`'s equality, so the type system would have to carry a constraint
 the surface cannot express: the inexpressible-signature exception that
-`with` holds alone (§6.6) would become a family, and every tested type
+`with` holds alone (Clause 9.8.6) would become a family, and every tested type
 would pay a declaration tax. Explicit constraint syntax was rejected as a
-language feature against the closed-union philosophy (§12 exclusions).
+language feature against the closed-union philosophy (Clause 6.10 exclusions).
 Derivation was adopted with three sharpenings: it materializes on demand;
 it composes with declarations at every level (a record whose field type
 has a declared `eq` routes through the declaration); and it halts at
@@ -150,13 +152,13 @@ frozen structural guarantee beneath it.
 
 ## 10. Interfaces and diffs
 
-The interface artifact must carry generic bodies (05-names.md §10:
+The interface artifact must carry generic bodies (Clause 11.6:
 generic bodies travel with the interface) or downstream monomorphization
 has nothing to expand — a hard requirement easy to miss in
 implementation. The interface diff between compiler versions is the
 compatibility verdict, and its station-3 shadowing flag exists because
-ordered resolution (§2) lets a new namespace member capture receiver
+ordered resolution (Clause 7.4.3) lets a new namespace member capture receiver
 calls that previously resolved to the calling module's own function:
-evolution's blast radius is made explicit mechanically. Chapter 10 is
+evolution's blast radius is made explicit mechanically. Annex C is
 generated from source and verified in CI so the normative inventory can
 never drift from the shipped library.

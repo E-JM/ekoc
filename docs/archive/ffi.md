@@ -1,25 +1,27 @@
 # Design Record — FFI and Native Interop
 
-Non-normative. Rulings: `11-ffi.md`. This record preserves the option
-analysis behind the chapter: the three-direction co-design, the F-series
+Non-normative. Rulings: `Clause 10`. This record preserves the option
+analysis behind the clause: the three-direction co-design, the F-series
 rulings, and the rejected alternatives.
 
 ## 1. Why the three directions were designed together
 
-The internal channel (prelude → OS), the user direction (binding C
-libraries), and the embedding ABI (host ↔ Eko) were ruled in one pass,
-because the internal channel's hardest demand — `Out.tee` must be
-implementable as ordinary prelude Eko with zero host magic — drags the
-other two directions' mechanisms in regardless (**the tee sieve**). Any
-"compile the capability operations as intrinsics" scheme fails the sieve:
-every derived capability becomes compiler magic, and the
-"prelude is ordinary Eko source" promise leaks one function at a time.
+The internal channel (capability module → OS), the user direction
+(binding C libraries), and the embedding ABI (host ↔ Eko) were ruled in
+one pass, because the internal channel's hardest demand — `Out.tee` must
+be implementable as ordinary capability-module Eko with zero host magic —
+drags the other two directions' mechanisms in regardless (**the tee
+sieve**). Any "compile the capability operations as intrinsics" scheme
+fails the sieve: every derived capability becomes compiler magic, and the
+"members are ordinary Eko source" promise leaks one function at a time.
 
-The convergence (**B′**): the lexicon is `extern` declarations; a
-capability is internally a bundle of world-touching closures constructed
-by the host. The prelude never calls libc (`11-ffi.md §8`) — the operating
-system surface lives in host-constructed bundles, and the prelude composes
-derived bundles from one wrap/unwrap pair per capability.
+The convergence (**B′**): a capability is internally a bundle of
+world-touching closures constructed by the host. The capability module
+never calls libc (`Clause 10.8`) — the operating system surface lives in
+host-constructed bundles, and the capability module composes derived
+bundles from one wrap/unwrap pair per derivable capability. The pairs
+were originally std-private externs to reserved host symbols; they are
+now compiler-injected primitives (see §7 and `world.md` §9).
 
 ## 2. The authorization axis: `Unsafe` cancelled
 
@@ -31,7 +33,7 @@ symbol resolves at link time. A host or sandbox that refuses native code
 refuses extern declarations; `--sandbox` restricts the capability grant
 *and* rejects externs. The enforcement granularity of both schemes is the
 same (whole-surface); what differs is visibility and the absence of a
-runtime grant to subvert. `11-ffi.md §1.2` and the world-soundness
+runtime grant to subvert. `Clause 10.1.2` and the world-soundness
 restatement ("modulo audited link inputs") follow from this ruling.
 
 ## 3. `Pure`: spelling and the two-part guarantee
@@ -49,7 +51,7 @@ The guarantee is **two-part**, and the second half is easily missed:
 2. **Reentrancy and thread safety** (the concurrency axis) — the target may
    be called concurrently from two tasks; internal static state of the
    `strtok` shape voids the word. This half comes from the determinism
-   argument of `06-world.md §8`, not from the bit system.
+   argument of `Clause 8.9`, not from the bit system.
 
 **The honest-tax argument** (why user-declared `Pure` exists at all):
 forcing `!` on provably pure libm functions is a false assertion — the bit
@@ -102,7 +104,7 @@ reports at the use site while the cause sits in the declaration file;
 the declaration. Companion rulings: fields are machine words or nested
 `ctype` records, checked at the declaration line; crossing is **by value
 only**; partial re-declaration is impossible (complete mirror or shim);
-out-parameters are shim work; no address-of ever — `07-runtime.md §9`
+out-parameters are shim work; no address-of ever — `Clause 8.11`
 survives intact. `ctype` is the single explicit exception to
 representation freedom.
 
@@ -114,7 +116,7 @@ shim-only.
 
 ## 6. Embedding ABI: the opaque veneer
 
-The veneer (`11-ffi.md §7`) rules: **function signatures are normative,
+The veneer (`Clause 10.7`) rules: **function signatures are normative,
 layouts are not**; `eko_value` is opaque throughout. The rejected
 alternative — fully specifying the ABI (RC header, closure layout) — would
 freeze code generation and kill the optimization surface. The fast path
@@ -133,13 +135,19 @@ mechanism, no registration step.
 
 ## 7. The reserved prefix and the wrap/unwrap pairs
 
-Symbols beginning `eko_` are the host's (`11-ffi.md §6`). The lexical rule
-"the word is the audit" cannot stop a *link-time* symbol: a user extern
-naming `eko_out_wrap` would reach the forging surface. The reserved prefix
-draws the line in symbol space. The wrap/unwrap pairs themselves are
-prelude-private `Pure` externs to reserved host symbols — the
-implementation of the derivation surface, not public inventory
-(`11-ffi.md §8`).
+Symbols beginning `eko_` are the host's (`Clause 10.6`): retain/release and
+the veneer entries. The lexical rule "the word is the audit" cannot stop a
+*link-time* symbol, so the reserved prefix draws the line in symbol space;
+a user extern naming a reserved symbol is `E-reserved-symbol`.
+
+The wrap/unwrap pairs were originally std-private `Pure` externs to
+reserved host symbols. **Superseded:** they are now compiler-injected
+primitives of the capability module — pure, invisible outside it, with no
+declaration form and no extern symbol (`Clause 10.8`). The wall is the same
+either way, and it is nameability, not symbol space: a program cannot name
+the pair, cannot declare an extern whose signature mentions a capability
+type (`E-extern-type`, `Clause 10.3.5`), and cannot name std's private
+bindings. The record of the locus decision is in `world.md` §9.
 
 ## 8. Machine words, bitwise family, literals
 

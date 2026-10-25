@@ -1,6 +1,6 @@
 // Cross-module use: import opens the types and constructors, functions are
 // called fully qualified, and the UFCS extension keeps the chain linear
-// (05-names.md §6, §7.1, §8).
+// (Clauses 7.2.2, 7.4.4, 7.4.5).
 
 import geolib
 

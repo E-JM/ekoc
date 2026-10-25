@@ -1,6 +1,6 @@
 # Design Record — Built-in Data Types and Services
 
-Non-normative. Rulings: `08-builtins.md`. Rejected alternatives, prior art,
+Non-normative. Rulings: Clauses 9.3–9.9. Rejected alternatives, prior art,
 and rationale.
 
 ## 1. Char: the scalar layer of Unicode
@@ -15,7 +15,7 @@ byte length goes through `s.to_bytes().length()`.
 
 ## 2. Conversions: honesty against silent misrepresentation
 
-The three-way failure taxonomy (`08-builtins.md §4.1`) — input validation
+The three-way failure taxonomy (`Clause 9.2`) — input validation
 → `Result`, domain check → `Option`, invariant violation → `panic`,
 conversions never panic — produces two anti-saturation rulings:
 
@@ -49,7 +49,7 @@ always present as the fallback.
 - `with`'s parameter type is **inexpressible** in Eko's type syntax — the
   first compiler built-in service whose type cannot be written. The
   exception is explicit, localized, and the reason no second one
-  (`Option.get` payload dispatch) was allowed (`05-names.md §12`).
+  (`Option.get` payload dispatch) was allowed (`Clause 6.10`).
 
 ## 4. JSON: external tagging and round-trip fidelity
 
@@ -74,7 +74,7 @@ reflection (derivation is compile-time expansion).
 
 `Bytes` is a contiguous immutable block, in the same family as `String`,
 with **no byte literal** — construction goes through functions. The full
-rejection table behind `08-builtins.md §3`:
+rejection table behind `Clause 9.5`:
 
 | Rejected | Reason |
 |---|---|

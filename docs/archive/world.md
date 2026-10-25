@@ -1,6 +1,6 @@
 # Design Record — Capabilities and the World Bit
 
-Non-normative. Rulings: `06-world.md`. Rejected alternatives, prior art,
+Non-normative. Rulings: Clauses 7.9, 8.4, 8.9, 9.12. Rejected alternatives, prior art,
 and rationale.
 
 ## 1. The dividing line against label- and row-based designs
@@ -12,7 +12,7 @@ vocabulary (capability names) — the bit introduces no second vocabulary. A
 label set mirroring capabilities (`console` ↔ `Out`, `fs` ↔ `Fs`) would be
 a permanent synchronization burden describing a distinction the capability
 value already carries. This is why the whole effect-system family is
-rejected, not merely not chosen (`06-world.md §10`):
+rejected, not merely not chosen (`Clause 7.9`):
 
 | Rejected | Reason |
 |---|---|
@@ -29,7 +29,7 @@ cancelled in favor of the anonymous `?`, because OR-absorption makes
 several bit variables behave identically — a variable with no
 distinguishing work to do. The markers were then joined to their arrows as
 single tokens `!->`/`?->` (longest-match lexing, no binding rules, no
-layout rules — `02-syntax.md §2.4`).
+layout rules — `Clause 6.2.4`).
 
 ## 2. Bit semantics: the seven rules and their reasons
 
@@ -42,7 +42,7 @@ layout rules — `02-syntax.md §2.4`).
   adaptation positions, never the other way.
 - **Panic is pure.** Aborting is not world contact — the bit governs world
   contact only; partiality, blocking, and cancellation are non-promises
-  stated beside the soundness theorem (`§7`).
+  stated beside the soundness theorem (`Clause 7.9.7`).
 - **`?` is for dispatchers only** — "pure if the callback is pure". A
   higher-order function that is itself world-touching needs no `?`:
   `with_file` is already `!->`, and OR absorbs everything.
@@ -64,7 +64,7 @@ Staleness is decided by the language-level generation counter, not by the
 host's descriptor reuse — double-close and use-after-close are checked
 errors (`Err Closed`), never undefined behavior. Leaks are allowed: without
 `close`, the OS reclaims at exit; no finalizer is promised, consistent with
-reclamation being unobservable (`07-runtime.md §4`).
+reclamation being unobservable (`Clause 8.6`).
 
 **No `Rights` type — the combinators are the rights.** A rights datum that
 nobody would ever match on is dead weight; `Fs.root` and `Fs.read_only`
@@ -108,7 +108,7 @@ no data races and are deterministic.
 ## 7. Unit is `_`
 
 `_` at type position only ever means Unit, never "please infer"
-(`06-world.md §5.3`). The motivation was a real hole in an earlier
+(`Clause 7.5.4`). The motivation was a real hole in an earlier
 grammar: `-> ()` parsed as "returns a zero-parameter function", so a unit
 return could not be written explicitly at all. `-> _` fills the explicit
 form and the elided sugar round-trips. Documents must state this plainly to
@@ -117,10 +117,47 @@ an inference hole.
 
 ## 8. World soundness
 
-The theorem and its sketch live in `06-world.md §7`: setting the bit
-originates only in a builtin call that requires a capability value or in an
-extern declaration; capabilities are unforgeable; a closure's bit is on its
+The theorem and its sketch live in `Clause 7.9.7`: the bit originates only in
+an extern call or in a call of a world-touching function value, and every such
+value closes, transitively, over an extern or over a bundle unwrapped from a
+capability (real bundles are host-constructed, `Clause 10.8`); capabilities
+are unforgeable; a closure's bit is on its
 arrow; subtyping is one-directional. The corollary is free top-level purity
 — the top level holds no capability values, so a bit-setting call is
 structurally impossible there. The non-promises are normative: no `!` does
 not mean no panic, termination, no blocking, or immunity to cancellation.
+
+## 9. Where the capability surface lives
+
+**Ruling:** the capability types, their members, and the derivation
+combinators are declared by the capability module — compiler-embedded Eko
+source, part of the language definition (`Clause 9.1.1`). The forging
+channel is a compiler-injected pure `wrap`/`unwrap` pair per derivable
+capability, visible only inside that module (`Clause 10.8`). `std` and its
+companions contain no capability content; `Proc.exit` and the four `Conc`
+members are compiler-provided declarations.
+
+**Rejected: members as std source over reserved extern pairs** (the prior
+design). It worked — the wall was reserved symbols plus private bindings —
+but the forging surface sat inside a swappable unit (the `--std` override
+carried it), the capability story was scattered across four clauses, and
+the module that "just uses" capabilities held the privilege.
+
+**Rejected: implementation-language intrinsics.** Rejected for three
+reasons: world bits would become compiler assertions instead of inferred
+facts; the zero-grant proof of `Out.null` (three auditable lines) would
+become an unverifiable compiler fact; and every member change would be
+compiler surgery instead of an Eko-source edit.
+
+**Rejected names:** `prelude` (prior art means "names opened by default";
+the literal meaning, "overture", is no guide); `core` (Rust's core is the
+no-OS subset — exactly inverted here, and the name stays unspent for a
+future strippable subset, if one ever exists); `lang` (names the locus,
+not the content). `cap` chosen: the content names itself. `std` keeps its
+name; the framing that makes it honest is "capabilities belong to the
+language; the standard library is `std` and its companions".
+
+**Also cancelled:** the `--std` override (formerly `Clause 11.1`). With the
+capability layer compiler-fixed, an override would have replaced only the
+utility library; the feature's remaining value did not pay for the
+interface-compatibility machinery it required.

@@ -1,6 +1,6 @@
 # Design Record — Types and Generics
 
-Non-normative. Rulings: `04-types.md`. Rejected alternatives, prior art,
+Non-normative. Rulings: Clauses 7.5, 7.6. Rejected alternatives, prior art,
 and rationale.
 
 ## 1. Declarations: the annotation slot and no aliases
@@ -37,19 +37,19 @@ an anonymous form is a view.** The same philosophy as capabilities
 
 | Rejected | Reason |
 |---|---|
-| Row polymorphism / width subtyping | Same-shape exactness is the contract; rows reintroduce silent structural drift (`04-types.md §5.2`) |
-| Automatic conjunction for mixed operands | Operand typing is fixed by the left operand; searching for a common anonymous supertype would reopen the temperature accident from the equality side (`§5.3`) |
-| Shape adaptation inside containers and function types | Shapes carry identity, so they do not move freely; bit adaptation is exempt because bits are erased (`§5.3`) |
+| Row polymorphism / width subtyping | Same-shape exactness is the contract; rows reintroduce silent structural drift (`Clause 7.5.5`) |
+| Automatic conjunction for mixed operands | Operand typing is fixed by the left operand; searching for a common anonymous supertype would reopen the temperature accident from the equality side (`Clause 7.5.5`) |
+| Shape adaptation inside containers and function types | Shapes carry identity, so they do not move freely; bit adaptation is exempt because bits are erased (`Clause 7.5.5`) |
 | Anonymous ADTs | No union form outside a right-hand side; adaptation stays records-and-tuples only |
-| `Name(x)` conversion functions and "type names in value position" | Explicit conversion is a literal at the expected position or a field-by-field rebuild (`§5.1`) |
+| `Name(x)` conversion functions and "type names in value position" | Explicit conversion is a literal at the expected position or a field-by-field rebuild (`Clause 7.5.2`) |
 
 ## 3. The four composites and two bracket pairs
 
 `[...]` at type position, `{...}` at value position, zero overlap
-(`04-types.md §2`). A composite literal never stands alone — the expected
+(`Clause 6.6`). A composite literal never stands alone — the expected
 type resolves list-vs-tuple and dictionary-vs-record, the same machinery
 that types lambda parameters. The single localized exception is `with`'s
-partial literal (`08-builtins.md §6.6`).
+partial literal (`Clause 9.8.6`).
 
 - Value-position tuples do not use `(...)`: parentheses are already taken
   by parameter groups, call syntax, and parenthesized expressions.
@@ -64,16 +64,16 @@ partial literal (`08-builtins.md §6.6`).
 
 Application is **juxtaposition without commas**: `Value Int Float`, composite
 arguments parenthesized, the chain stops at `,` and `->`
-(`04-types.md §7.2`). The full option space that was weighed:
+(`Clause 7.6.4`). The full option space that was weighed:
 
 | Candidate | Verdict |
 |---|---|
 | `Value<Int, Float>` | Rejected: operator ambiguity, `>>` nesting damage, and a surface break in a language whose other applications are by adjacency |
-| `Value[Int, Float]` | Rejected: fatal collision with the bracketed type forms of `§2` |
+| `Value[Int, Float]` | Rejected: fatal collision with the bracketed type forms of `Clause 6.6` |
 | `Value(Int, Float)` | Rejected: collides with call syntax |
 | `Value Int, Float` | Rejected — the decisive case: a function parameter list already separates parameters with commas, so `(Value Int, Float) -> Int` can only parse as two parameters; writing a single argument would need double parentheses in exactly the position where function types appear most often |
 | Prefix binders `Value u t: type` | Rejected: breaks the `Name ':'` declaration-head invariant |
-| Uppercase multi-letter implicit variables | Rejected: a misspelled type name silently becomes a variable (`§7.2`) |
+| Uppercase multi-letter implicit variables | Rejected: a misspelled type name silently becomes a variable (`Clause 7.6.4`) |
 | ML apostrophe `'a` | Rejected: a new lexical class; recorded as a fallback, never used |
 
 The winning rationale is internal consistency: the language's existing
@@ -116,9 +116,9 @@ positional skeleton of its own to prevent it.
 - A function annotation's variable must occur in at least one parameter
   type (result-only ban) — a type not determined by the parameters should
   be determined, and `Set.empty: () -> Set t` is exactly why no such word
-  exists (`09-library.md §5.2`).
+  exists (`Clause 9.10.3`).
 
-The open-bit result-only prohibition (`06-world.md §5.2`) is the same
+The open-bit result-only prohibition (`Clause 7.9.3`) is the same
 rule on the bit axis: bits and types run on one machine. Polymorphic
 recursion comes free because the type comes from the annotation rather
 than inference, and a recursive call may use any instantiation.
@@ -126,11 +126,11 @@ than inference, and a recursive call may use any instantiation.
 ## 6. Recursive types: open recursion, indirect positions
 
 A right-hand side may self-refer; **every recursive position is a pointer**
-(`07-runtime.md §2`), so size is always finite and opening recursion needed
+(`Clause 8.5.5`), so size is always finite and opening recursion needed
 zero new well-formedness checks. A recursive type with no base case is
 legal and has zero inhabitants — inhabitance is not checked, the same
 spirit as `Never` and `[]Never`. Derived services terminate on recursive
-structure by the acyclicity theorem (`07-runtime.md §3`).
+structure by the acyclicity theorem (`Clause 8.6.1`).
 
 ## 7. Constructors and equality anchoring
 

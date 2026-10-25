@@ -1,13 +1,13 @@
 # Design Record — Standard Library, Testing, and Diagnostics
 
-Non-normative. Rulings: `09-library.md`. Rejected alternatives, prior art,
+Non-normative. Rulings: Clauses 9.10–9.15 and Annex B. Rejected alternatives, prior art,
 and rationale.
 
 ## 1. The library principle: surface without syntax
 
 Every library addition is a function in an existing type namespace. No new
 syntax, binding form, literal, or format-string language enters with the
-library (`09-library.md` intro).
+library (`Clause 9` intro).
 
 - **No format DSL.** `show` handles display; formatting is explicitly
   invoked functions (`to_hex`, `to_fixed`, `to_exp`, `pad_left`). Names are
@@ -33,7 +33,7 @@ library (`09-library.md` intro).
 
 Testing adds one annotation-slot word (`test`), prelude assertion
 functions, and pure capability constructors — and refuses everything else.
-Each refusal with its reason (`09-library.md §6`):
+Each refusal with its reason (`Clause 9.14`):
 
 | Rejected | Reason |
 |---|---|

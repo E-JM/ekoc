@@ -1,6 +1,6 @@
 # Design Record — Representation and Execution
 
-Non-normative. Rulings: `07-runtime.md`. Rejected alternatives, prior art,
+Non-normative. Rulings: Clauses 8.5–8.8, 8.10. Rejected alternatives, prior art,
 and rationale.
 
 ## 1. The governing principle
@@ -10,7 +10,7 @@ passing, capture, and insertion copy an O(1) reference, never a value, and
 no operation can observe that two names designate the same object. Value
 semantics (`==`, `show`/`inspect`, patterns defined over structure, never
 addresses) is what makes sharing undetectable, and undetectable sharing is
-what makes the optimization surface of `§5` fully open.
+what makes the optimization surface of `Clause 8.10` fully open.
 
 ## 2. The acyclicity theorem
 
@@ -31,7 +31,7 @@ terminate; cross-task sharing is only a matter of counting.
 
 ## 3. Memory strategy: the rejected option space
 
-The full table that was weighed for `07-runtime.md §4`:
+The full table that was weighed for `Clause 8.6`:
 
 | Rejected | Reason |
 |---|---|
@@ -79,9 +79,9 @@ Unboxing, stack allocation via escape analysis, count elision, and shared
 instantiation are all licensed by the fact that an Eko program *cannot*
 observe representation: no identity comparison, no address-of, no
 finalizers, no memory-footprint vocabulary, no `gc()`. Each excluded
-observation is also a guarantee — the exclusions list of `§9` is the
-soundness proof of `§5`. The single explicit exception is the `ctype`
-freeze (`11-ffi.md §3.3`), scoped to types that asked for it.
+observation is also a guarantee — the exclusions list of `Clause 8.11` is the
+soundness proof of `Clause 8.10`. The single explicit exception is the `ctype`
+freeze (`Clause 10.3.3`), scoped to types that asked for it.
 
 ## 7. Iteration guarantees
 

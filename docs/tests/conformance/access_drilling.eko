@@ -1,6 +1,6 @@
 // Access: get/at return Option, None passes through nested access, trust is
 // declared at consumption, and String length counts scalars
-// (05-names.md §4, 08-builtins.md §2).
+// (Clauses 9.10, 9.4).
 
 list_access: test =
     xs: []Int = {10, 20, 30}

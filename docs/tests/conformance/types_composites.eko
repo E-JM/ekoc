@@ -1,6 +1,6 @@
 // Composite types: ADTs, records with nested partial update, the newtype
 // form, tuples, dictionaries, and one-directional shape adaptation
-// (04-types.md §1, §2, §5).
+// (Clauses 6.3.5, 6.6, 7.5).
 
 Color: type = Red | Green | Blue
 Address: type = [city: String, zip: String]

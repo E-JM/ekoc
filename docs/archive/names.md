@@ -1,19 +1,19 @@
 # Design Record — Names, Calls, and Modules
 
-Non-normative. Rulings: `05-names.md`. Rejected alternatives, prior art,
+Non-normative. Rulings: Clauses 7.2, 7.3, 7.4. Rejected alternatives, prior art,
 and rationale.
 
 ## 1. UFCS: one identity, four stations
 
 `a.f(b, c) ≡ f(a, b, c)` always and everywhere; every function is a free
-function, and `.` is its receiver form (`05-names.md §1`). The prelude's
+function, and `.` is its receiver form (`Clause 7.4.3`). The prelude's
 signatures — capabilities, handles, data as first parameters — are the
 natural soil: `out.println(...)`, `fs.open(...)`, `xs.map(...)` share one
 shape, and there is no second dispatch mechanism to learn or to implement.
 
 Resolution is an ordered search — record field, type namespace, current
 module, module path — first hit wins, and the receiver position never
-consults lexical bindings (`§2`). This is *ordered resolution*, not name
+consults lexical bindings (`Clause 7.4.3`). This is *ordered resolution*, not name
 conflict: stations are never merged, and a collision across stations is
 resolved by spelling (field access or fully qualified call), with the
 diagnostic listing the readings.
@@ -23,7 +23,7 @@ diagnostic listing the readings.
 Index syntax `x[i]` is banned for every structure; each structure has
 exactly one entry point, and out-of-bounds is a domain check returning
 `Option` — the trust decision is made at the consumption site
-(`05-names.md §4`). The prior-art comparison, recorded for the decision:
+(`Clause 9.10`). The prior-art comparison, recorded for the decision:
 
 | Family | Practice | Assessment |
 |---|---|---|
@@ -48,7 +48,7 @@ earns its place).
 ## 3. Modules: file is module
 
 One file is one module, named by its file stem; directories organize files
-and are never modules and never named in code (`05-names.md §5`). This
+and are never modules and never named in code (`Clause 7.2.1`). This
 structurally eliminates the two historical ambiguities of the family: the
 Rust module tree (is a directory a module or a container?) and Go's
 package-name-vs-directory mismatch. Import paths locate files; call sites
@@ -80,7 +80,7 @@ alike.
 ## 4. Visibility: the `_` prefix
 
 Public by default; a leading `_` makes a top-level binding module-private
-(`05-names.md §9`). The yield: zero keywords, zero manifest, zero
+(`Clause 7.3.1`). The yield: zero keywords, zero manifest, zero
 double-writing — the interface is extracted from the implementation. The
 price, recorded: the export surface grows without a separate declaration,
 and changing visibility is a rename.
@@ -95,7 +95,7 @@ exhaustiveness depends on the complete constructor set.
 
 | Rejected | Reason |
 |---|---|
-| Functors / module-level signatures | Generics already own parameterization; two vocabularies for one phenomenon are prohibited (`§12`) |
+| Functors / module-level signatures | Generics already own parameterization; two vocabularies for one phenomenon are prohibited (`Clause 6.10`) |
 | Modules as values | A record of closures is the value form (`mk_logger`); modules never enter value position |
 | `open` — opening functions into scope | Does not fix the receiver position (the stations still exclude opened names, so yet another rule would be needed), loses call-site provenance, and adds a global collision surface |
 | Re-export | Forwarding is a function, and forwarding is not renaming; honest and greppable |
@@ -109,7 +109,7 @@ exhaustiveness depends on the complete constructor set.
 
 The prelude is the only implicit module, and the implicitly opened free
 functions (`show`, `inspect`, `panic`, `assert`, `assert_eq`, `assert_ne`)
-are brought into unqualified scope with it (`05-names.md §11`). The opened
+are brought into unqualified scope with it (`Clause 9.1`). The opened
 name spans all type namespaces at once — each namespace carries only its
 own type's member — so no single namespace can supply the free spelling;
 without the opening, every call would read `prelude.show(n)` and the

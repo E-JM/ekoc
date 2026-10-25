@@ -1,6 +1,6 @@
 // Derived services: show vs inspect, an override through interpolation,
 // deep equality, declaration-order `<`, immutable `with`, stable sort_by,
-// and capability display (08-builtins.md §6, 09-library.md §5.1).
+// and capability display (Clauses 9.8, 9.10.1).
 
 Sex: type = Man | Woman
 Tree: type t = Leaf t | Node [Tree t, Tree t]

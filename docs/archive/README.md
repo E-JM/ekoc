@@ -1,45 +1,43 @@
 # Design Records
 
 This directory is the **design record** of the Eko language: rejected
-alternatives, prior-art comparisons, and the deeper rationale that does not
-belong in the normative reference. It is restructured from the original
-Chinese ruling archive (`legacy/`).
+alternatives, prior-art comparisons, and the rationale that does not belong in
+the normative specification.
 
 **Who needs this:** compiler implementers and language maintainers. Ordinary
-users do not — the twelve chapters are the complete user-facing surface.
+users do not; Clauses 1 through 11 and Annexes A through D are the complete
+user-facing surface.
 
 **Status of every file here: non-normative.** The rulings live in the
-chapters; a record defers to its chapter and cites it. Where an early ruling
-was later revised while writing the reference (module paths, `main`'s return
-type, the `Pure` declaration scope, `0x`/`0b` literals, the warning channel),
-the record follows the current reference; the chapter always wins.
+normative clauses; a record defers to its clause and cites it. Where a record
+and a normative clause disagree, the clause prevails.
 
 ## Index
 
-| Record | Covers chapter | Source topics |
+| Record | Covers | Source topics |
 |---|---|---|
-| [syntax.md](syntax.md) | 02-syntax.md | layout, operators, literals, numeric vocabulary |
-| [control.md](control.md) | 03-control.md | bindings, lambdas, branching, patterns, `Never`, iteration |
-| [types.md](types.md) | 04-types.md | declarations, nominality, composites, generics notation |
-| [names.md](names.md) | 05-names.md | UFCS, structural access, modules, visibility, the standard library |
-| [world.md](world.md) | 06-world.md | capabilities, world bit, failure, handles, concurrency |
-| [runtime.md](runtime.md) | 07-runtime.md | representation, acyclicity, memory strategy, monomorphization |
-| [builtins.md](builtins.md) | 08-builtins.md | text, conversions, derived services, JSON, bytes, time |
-| [library.md](library.md) | 09-library.md | standard library surface, testing, diagnostics |
-| [ffi.md](ffi.md) | 11-ffi.md | extern, `Pure`, `C.*`, `ctype`, embedding ABI, the std channel |
-| [stdlib.md](stdlib.md) | 05-names.md §11, 08-builtins.md §6, 10-std.md, 12-toolchain.md | library name and delivery, implicit import, operators and equality, derived services, toolchain |
+| [syntax.md](syntax.md) | Clauses 5, 6 | layout, operators, literals, numeric vocabulary |
+| [control.md](control.md) | Clauses 6.3, 6.7, 6.8, 7.7, 8.2, 8.3, 8.8 | bindings, lambdas, branching, patterns, `Never`, iteration |
+| [types.md](types.md) | Clauses 7.5, 7.6 | declarations, nominality, composites, generics notation |
+| [names.md](names.md) | Clauses 7.2, 7.3, 7.4 | UFCS, structural access, modules, visibility, the standard library |
+| [world.md](world.md) | Clauses 7.9, 8.4, 8.9, 9.12 | capabilities, world bit, failure, handles, concurrency |
+| [runtime.md](runtime.md) | Clauses 8.5–8.8, 8.10 | representation, acyclicity, memory strategy, monomorphization |
+| [builtins.md](builtins.md) | Clauses 9.3–9.9 | text, conversions, derived services, JSON, bytes, time |
+| [library.md](library.md) | Clauses 9.10–9.15, Annex B | standard library surface, testing, diagnostics |
+| [ffi.md](ffi.md) | Clause 10 | extern, `Pure`, `C.*`, `ctype`, embedding ABI, the capability channel |
+| [stdlib.md](stdlib.md) | Clauses 9.1, 9.8, 11, Annex C | library name and delivery, implicit import, operators and equality, derived services, toolchain |
 
 ## How to read a record
 
 Each record has three kinds of content:
 
 - **Rejected alternatives** — the option space that was weighed, with the
-  reason each losing candidate lost. These are the load-bearing content:
-  the reference states what *is*; the record preserves why the rest *is not*.
-- **Prior art** — how other languages answer the same question and where
-  Eko deliberately departs.
+  reason each losing candidate lost. These are the load-bearing content: the
+  specification states what *is*; the record preserves why the rest *is not*.
+- **Prior art** — how other languages answer the same question and where Eko
+  deliberately departs.
 - **Rationale** — arguments and invariants that justify a ruling but would
   bloat the normative text.
 
-Exclusion lists in the chapters state the exclusions themselves; the records
-here are their evidence base.
+Exclusion lists in the normative clauses state the exclusions themselves; the
+records here are their evidence base.

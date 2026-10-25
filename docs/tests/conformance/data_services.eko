@@ -1,6 +1,6 @@
 // Data services: Bytes round trips and append, JSON derivation and external
 // tagging, numeric conversions and parse round trips, frozen time, and
-// formatting (08-builtins.md §3, §4, §5, §7, 09-library.md §2).
+// formatting (Clauses 9.5, 9.6, 9.7, 9.9, 9.13.1).
 
 Sex: type = Man | Woman
 Profile: type = [name: String, sex: Sex]

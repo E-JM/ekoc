@@ -1,6 +1,6 @@
 // Generics: implicit type variables, mutual recursion, a generic tree with
 // self tail recursion over its frontier, an explicit comparator, and
-// instantiation by unification (04-types.md §7, §8, §9).
+// instantiation by unification (Clauses 7.6, 7.7).
 
 Tree: type t = Leaf t | Node [Tree t, Tree t, t]
 

@@ -1,5 +1,5 @@
 // Binding forms: initial `=`, rebinding `:=`, tuple splitting, discard, and
-// inverted-binding chains ending in `Ok` (03-control.md §1, §6).
+// inverted-binding chains ending in `Ok` (Clauses 6.3, 9.2).
 
 _sum_row: (row: []String) -> Result Int String =
     a <- row.get(0).to_result("missing a").try()

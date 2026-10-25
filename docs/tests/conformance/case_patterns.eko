@@ -1,5 +1,5 @@
 // case: guards, or-patterns, list patterns, literals, record subsets,
-// multi-scrutinee arms, and the single-line form (03-control.md §3, §5).
+// multi-scrutinee arms, and the single-line form (Clauses 6.7, 6.8).
 
 Key: type = Up | Down | Left | Right
 Human: type = [name: String, age: Int, city: String]

@@ -1,8 +1,8 @@
 # Negative Conformance Manifest
 
 Each entry is a minimal program that must fail to compile. The expected
-outcome is a published code from `09-library.md §7.2` where one exists;
-otherwise it names the rejection and the normative section.
+outcome is a published code from `Annex B.3` where one exists;
+otherwise it names the rejection and the normative clause.
 
 | ID | Rejection | Expected outcome |
 |---|---|---|
@@ -44,7 +44,7 @@ f: Fahrenheit = c
 ```
 
 Expected: `E-nominal-mismatch`. A nominal value never flows into another
-nominal type (`04-types.md §5.1`).
+nominal type (`Clause 7.5.2`).
 
 ## N02 — shape mismatch
 
@@ -60,7 +60,7 @@ use: () -> String = take(w)
 ```
 
 Expected: `E-shape-mismatch`. The anonymous shape has fewer fields
-(`04-types.md §5.2`).
+(`Clause 7.5.5`).
 
 ## N03 — missing arm
 
@@ -72,7 +72,7 @@ label: (s: Sex) -> String =
         Man -> "m"
 ```
 
-Expected: `E-exhaust`. `Woman` is not covered (`03-control.md §3.2`).
+Expected: `E-exhaust`. `Woman` is not covered (`Clause 7.7.2`).
 
 ## N04 — bare panic arm
 
@@ -86,7 +86,7 @@ label: (s: Sex) -> String =
 ```
 
 Expected: compile error: a bare divergence is not an arm; every arm is
-`PATTERN -> expression` (`03-control.md §3.2`). No diagnostic code is
+`PATTERN -> expression` (`Clause 6.7.1`). No diagnostic code is
 published for this parse-level rejection.
 
 ## N05 — world bit under-declared
@@ -97,7 +97,7 @@ greet: (out: Out) -> _ =
 ```
 
 Expected: `E-world-bit`. The body touches the world but the arrow is pure
-(`06-world.md §5.1`).
+(`Clause 7.9.2`).
 
 ## N06 — under-declared through a dispatcher
 
@@ -108,7 +108,7 @@ print_all: (out: Out, xs: []String) -> _ =
 
 Expected: `E-world-bit`. `each` instantiates its open bit at `!` from the
 printing callback, so the body is world-touching while the arrow is pure
-(`06-world.md §5.5`).
+(`Clause 7.9.6`).
 
 ## N07 — world bit over-declared
 
@@ -117,7 +117,7 @@ double: (n: Int) !-> Int = n * 2
 ```
 
 Expected: `E-world-bit`. A pure body cannot carry a surplus `!`
-(`06-world.md §5.1`).
+(`Clause 7.9.2`).
 
 ## N08 — open bit unfed
 
@@ -126,7 +126,7 @@ count: (xs: []Int) ?-> Int = List.length(xs)
 ```
 
 Expected: `E-open-bit-unfed`. No parameter contains a `?` arrow, so nothing
-feeds the open bit (`06-world.md §5.2`).
+feeds the open bit (`Clause 7.9.6`).
 
 ## N09 — result-only generic
 
@@ -135,7 +135,7 @@ empty: () -> []t = {}
 ```
 
 Expected: `E-phantom`. A type variable must occur in a parameter type
-(`04-types.md §8.3`).
+(`Clause 7.6.5`).
 
 ## N10 — phantom binder
 
@@ -144,7 +144,7 @@ Value: type t u = Second t
 ```
 
 Expected: `E-phantom`. The binder `u` does not occur in the right-hand side
-(`04-types.md §7.1`).
+(`Clause 7.6.2`).
 
 ## N11 — type name case
 
@@ -152,7 +152,7 @@ Expected: `E-phantom`. The binder `u` does not occur in the right-hand side
 person: type = [name: String]
 ```
 
-Expected: `E-name-case`. Declared types are PascalCase (`04-types.md §3`).
+Expected: `E-name-case`. Declared types are PascalCase (`Clause 5.5.2`, `Clause 7.4.1`).
 
 ## N12 — name conflict
 
@@ -163,7 +163,7 @@ geolib: Int = 1
 ```
 
 Expected: `E-name-conflict`. An import and a file top-level binding share one
-layer (`05-names.md §7.2`). The snippet assumes `geolib.eko` from
+layer (`Clause 7.4.6`). The snippet assumes `geolib.eko` from
 `tests/conformance/` is on the module path.
 
 ## N13 — no equality on capabilities
@@ -173,7 +173,7 @@ check: () -> _ = assert_eq(Out.null(), Out.null())
 ```
 
 Expected: `E-no-eq`. Capabilities have no `==`, so `assert_eq` rejects them
-(`08-builtins.md §6.4`, `09-library.md §6.3`).
+(`Clause 9.8.4`, `Clause 9.14.3`).
 
 ## N14 — literal overflow
 
@@ -182,7 +182,7 @@ big: Int = 9223372036854775808
 ```
 
 Expected: `E-literal-overflow`. The literal is `Int.max + 1`
-(`02-syntax.md §4.1`).
+(`Clause 5.7.4`).
 
 ## N15 — tab indentation
 
@@ -193,7 +193,7 @@ count: Int =
 
 The arrow marks one raw tab character; the spaces after it complete the
 indentation. Expected: `E-tab`. A raw tab is not whitespace
-(`02-syntax.md §1.1`).
+(`Clause 5.2.3`).
 
 ## N16 — chained comparison
 
@@ -202,7 +202,7 @@ between: (a: Int, b: Int, c: Int) -> Bool = a < b < c
 ```
 
 Expected: parse error. Comparisons have no associativity; write
-`a < b && b < c` (`02-syntax.md §6.5`).
+`a < b && b < c` (`Clause 6.5.5`).
 
 ## N17 — index syntax
 
@@ -211,7 +211,7 @@ head: (xs: []Int) -> Int = xs[0]
 ```
 
 Expected: parse error. Expression-position `[` does not exist; use `get`
-(`05-names.md §4.1`).
+(`Clause 6.10`, `Clause 9.10`).
 
 ## N18 — mixed numeric operands
 
@@ -220,7 +220,7 @@ ratio: Float = 1 / 2.0
 ```
 
 Expected: compile error: type mismatch between `Int` and `Float`; there is no
-implicit numeric conversion (`02-syntax.md §6.2`). No diagnostic code is
+implicit numeric conversion (`Clause 7.8.4`). No diagnostic code is
 published for ordinary type mismatch.
 
 ## N19 — no generalization at `:=`
@@ -230,7 +230,7 @@ id := (x): x
 ```
 
 Expected: compile error: `:=` does not generalize, and a lambda is check-only,
-so no expected type supplies the parameter type (`04-types.md §8.2`). No
+so no expected type supplies the parameter type (`Clause 7.6.3`). No
 diagnostic code is published.
 
 ## N20 — open bit in a container element
@@ -242,10 +242,9 @@ is_negative: (n: Int) -> Bool = n < 0
 handlers: [](Int) ?-> Bool = {is_zero, is_negative}
 ```
 
-Expected: compile error: `?` is not allowed in a container element position;
-it is allowed only on the binding's own arrow and in arrows inside its
-parameter types (`06-world.md §5.2`). No diagnostic code is published for
-the position rule.
+Expected: `E-open-bit-position`. `?` is not allowed in a container element
+position; it is allowed only on the binding's own arrow and in arrows inside
+its parameter types (`Clause 7.9.6`).
 
 ## N21 — reserved symbol
 
@@ -255,7 +254,7 @@ _wrap: (_OutB) -> Out = extern "eko_out_wrap" Pure
 
 Expected: `E-reserved-symbol`. Symbols beginning `eko_` are the host's; the
 lexical rule "the word is the audit" cannot stop a link-time symbol, so the
-symbol space itself draws the line (`11-ffi.md §6`).
+symbol space itself draws the line (`Clause 10.6`).
 
 ## N22 — ctype field predicate
 
@@ -265,7 +264,7 @@ Stat: ctype = [size: I64, label: String]
 
 Expected: `E-ctype-field`, at the declaration line. A `ctype` mirrors a C
 struct; every field is a machine word or a nested `ctype` record
-(`11-ffi.md §3.3`).
+(`Clause 10.3.3`).
 
 ## N23 — extern parameter outside the whitelist
 
@@ -274,7 +273,7 @@ _sum: (xs: []I64) !-> I64 = extern "sum64"
 ```
 
 Expected: `E-extern-type`. An extern signature carries only whitelisted
-types (`11-ffi.md §3.5`); a list is ferried by the library layer.
+types (`Clause 10.3.5`); a list is ferried by the library layer.
 
 ## N24 — type variable in an extern signature
 
@@ -284,4 +283,4 @@ _id: (x: t) !-> t = extern "id_any"
 
 Expected: `E-extern-type`. C symbols have no template semantics; an extern
 signature is monomorphic and generic wrapping is ordinary library code
-(`11-ffi.md §2.3`).
+(`Clause 10.2.3`).
