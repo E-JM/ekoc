@@ -27,6 +27,17 @@ LAYOUT_SRC := \
 	src/layout/layout.c \
 	src/layout/process.c
 
+PARSE_SRC := \
+	src/parse/binding.c \
+	src/parse/ctl.c \
+	src/parse/decl.c \
+	src/parse/expr.c \
+	src/parse/literal.c \
+	src/parse/parse.c \
+	src/parse/pattern.c \
+	src/parse/type.c \
+	src/parse/util.c
+
 LIB_SUPPORT := $(BUILD)/libek_support.a
 SUPPORT_OBJ := $(SUPPORT_SRC:src/%.c=$(BUILD)/%.o)
 
@@ -36,8 +47,11 @@ LEX_OBJ := $(LEX_SRC:src/%.c=$(BUILD)/%.o)
 LIB_LAYOUT := $(BUILD)/libek_layout.a
 LAYOUT_OBJ := $(LAYOUT_SRC:src/%.c=$(BUILD)/%.o)
 
+LIB_PARSE := $(BUILD)/libek_parse.a
+PARSE_OBJ := $(PARSE_SRC:src/%.c=$(BUILD)/%.o)
+
 # link order: later stages first, dependencies last
-STAGE_LIBS := $(LIB_LAYOUT) $(LIB_LEX) $(LIB_SUPPORT)
+STAGE_LIBS := $(LIB_PARSE) $(LIB_LAYOUT) $(LIB_LEX) $(LIB_SUPPORT)
 
 UNIT_SRC := $(wildcard tests/unit/*/*.c)
 UNIT_BIN := $(UNIT_SRC:tests/unit/%.c=$(BUILD)/tests/%)
@@ -45,9 +59,10 @@ UNIT_BIN := $(UNIT_SRC:tests/unit/%.c=$(BUILD)/tests/%)
 .PHONY: all clean test
 
 # keep object files between runs; they are cheap to reuse, not intermediates
-.SECONDARY: $(SUPPORT_OBJ) $(LEX_OBJ) $(LAYOUT_OBJ) $(UNIT_BIN:%=%.o)
+.SECONDARY: $(SUPPORT_OBJ) $(LEX_OBJ) $(LAYOUT_OBJ) $(PARSE_OBJ) \
+	$(UNIT_BIN:%=%.o)
 
-all: $(LIB_SUPPORT) $(LIB_LEX) $(LIB_LAYOUT)
+all: $(LIB_SUPPORT) $(LIB_LEX) $(LIB_LAYOUT) $(LIB_PARSE)
 
 test: all $(UNIT_BIN)
 	@status=0; \
@@ -72,6 +87,10 @@ $(LIB_LAYOUT): $(LAYOUT_OBJ)
 	@mkdir -p $(dir $@)
 	$(AR) rcs $@ $^
 
+$(LIB_PARSE): $(PARSE_OBJ)
+	@mkdir -p $(dir $@)
+	$(AR) rcs $@ $^
+
 $(BUILD)/%.o: src/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -Isrc -MMD -MP -c $< -o $@
@@ -84,4 +103,5 @@ $(BUILD)/tests/%.o: tests/unit/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -Isrc -Itests -MMD -MP -c $< -o $@
 
--include $(SUPPORT_OBJ:.o=.d) $(LEX_OBJ:.o=.d) $(LAYOUT_OBJ:.o=.d) $(UNIT_BIN:%=%.d)
+-include $(SUPPORT_OBJ:.o=.d) $(LEX_OBJ:.o=.d) $(LAYOUT_OBJ:.o=.d) \
+	$(PARSE_OBJ:.o=.d) $(UNIT_BIN:%=%.d)

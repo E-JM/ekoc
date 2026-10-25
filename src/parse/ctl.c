@@ -1,0 +1,213 @@
+#include "parse/internal.h"
+
+/* case and if (Clause 6.7, A.3.5). An arm is always
+   PATTERN -> EXPRESSION; a bare expression is not an arm (6.7.1), so a
+   missing arrow is diagnosed with the clause named. The single-line
+   form separates arms with `;` (Clause 5.3.2, 6.7.5). */
+
+static ek_node *arm(p_ctx *c);
+static void arm_lines(p_ctx *c, ek_node *n);
+static void arm_inline(p_ctx *c, ek_node *n);
+static ek_node *else_branch(p_ctx *c);
+
+/* CaseExpression := 'case' Expression { ',' Expression } CaseBlock |
+   'case' Expression { ',' Expression } InlineCase (A.3.5). */
+ek_node *p_case_expr(p_ctx *c)
+{
+    const ek_layout_token *kw = p_take(c);
+    ek_node *n = p_node(c, EK_N_CASE, kw->line, kw->col);
+
+    if (!n) {
+        return NULL;
+    }
+    p_list_init(&n->u.caseexpr.scrutinees);
+    p_list_init(&n->u.caseexpr.arms);
+    for (;;) {
+        ek_node *e = p_expr(c);
+
+        p_list_add(c, &n->u.caseexpr.scrutinees, e);
+        if (!e || c->oom) {
+            return n;
+        }
+        if (!p_got(c, EK_TOK_COMMA)) {
+            break;
+        }
+    }
+    if (!p_got(c, EK_TOK_COLON)) {
+        p_error_tok(c, "E-syntax", p_peek(c),
+                    "expected `:` before the case arms (Clause 6.7.1)");
+        p_sync(c);
+        return n;
+    }
+    if (p_at_layout(c, EK_LTOK_NEWLINE)) {
+        p_take(c);
+        if (!p_got_layout(c, EK_LTOK_INDENT)) {
+            p_error_tok(c, "E-syntax", p_peek(c),
+                        "expected an indented arm block (Clause 6.7.1)");
+            return n;
+        }
+        arm_lines(c, n);
+        return n;
+    }
+    arm_inline(c, n);
+    return n;
+}
+
+/* CaseBlock := NEWLINE INDENT Arm { Arm } DEDENT: each arm ends at
+   NEWLINE, `;` carries arms on one line, DEDENT closes (A.3.3). */
+static void arm_lines(p_ctx *c, ek_node *n)
+{
+    while (!c->oom) {
+        size_t before = c->pos;
+        ek_node *a;
+
+        if (p_got_layout(c, EK_LTOK_DEDENT)
+            || p_at_layout(c, EK_LTOK_EOF)) {
+            return;
+        }
+        if (p_got_layout(c, EK_LTOK_NEWLINE) || p_got(c, EK_TOK_SEMI)) {
+            continue;
+        }
+        a = arm(c);
+        p_list_add(c, &n->u.caseexpr.arms, a);
+        if (c->pos == before) {
+            p_error_tok(c, "E-syntax", p_peek(c),
+                        "expected a case arm; skipped");
+            p_take(c);
+        }
+    }
+}
+
+/* InlineCase := ':' InlineArm { ';' InlineArm }; the arms run to the
+   end of the member (Clause 6.7.5). */
+static void arm_inline(p_ctx *c, ek_node *n)
+{
+    while (!c->oom) {
+        ek_node *a = arm(c);
+
+        p_list_add(c, &n->u.caseexpr.arms, a);
+        if (!a || c->oom) {
+            return;
+        }
+        if (!p_got(c, EK_TOK_SEMI)) {
+            return;
+        }
+    }
+}
+
+/* Arm := Pattern { ',' Pattern } [ 'if' Expression ] '->' Expression
+   (A.3.3, with the multi-scrutinee arm of Clause 6.7.2). */
+static ek_node *arm(p_ctx *c)
+{
+    const ek_layout_token *first = p_peek(c);
+    ek_node *n = p_node(c, EK_N_ARM, first->line, first->col);
+
+    if (!n) {
+        return NULL;
+    }
+    p_list_init(&n->u.arm.patterns);
+    for (;;) {
+        ek_node *p = p_pattern(c);
+
+        p_list_add(c, &n->u.arm.patterns, p);
+        if (!p || c->oom) {
+            return n;
+        }
+        if (!p_got(c, EK_TOK_COMMA)) {
+            break;
+        }
+        if (!p_pattern_start(p_src_kind(p_peek(c)))) {
+            p_error_tok(c, "E-syntax", p_peek(c),
+                        "expected a pattern after `,`");
+            return n;
+        }
+    }
+    n->u.arm.guard = NULL;
+    n->u.arm.body = NULL;
+    if (p_got(c, EK_TOK_KW_IF)) {
+        n->u.arm.guard = p_expr(c);
+        if (!n->u.arm.guard) {
+            return n;
+        }
+    }
+    if (!p_at(c, EK_TOK_ARROW)) {
+        p_error_tok(c, "E-bare-case-arm", p_peek(c),
+                    "an arm is `pattern -> expression`; a bare expression "
+                    "is not an arm (Clause 6.7.1)");
+        p_sync(c);
+        return n;
+    }
+    p_take(c);
+    n->u.arm.body = p_expr(c);
+    return n;
+}
+
+/* IfExpression := 'if' Expression Suite [ 'else' Suite ] (A.3.5). The
+   layout emits the DEDENTs required by the stack before a matching
+   `else` line (A.4 rule 8), so the parser reattaches it across
+   NEWLINE and DEDENT markers. */
+ek_node *p_if_expr(p_ctx *c)
+{
+    const ek_layout_token *kw = p_take(c);
+    ek_node *cond;
+    ek_node *then_body;
+    ek_node *n;
+
+    if (c->oom) {
+        return NULL;
+    }
+    cond = p_expr(c);
+    if (!cond) {
+        p_sync(c);
+        return NULL;
+    }
+    if (!p_got(c, EK_TOK_COLON)) {
+        p_error_tok(c, "E-syntax", p_peek(c),
+                    "expected `:` after the condition (Clause 6.7.4)");
+        p_sync(c);
+        return NULL;
+    }
+    then_body = p_body_suite(c);
+    if (!then_body) {
+        return NULL;
+    }
+    n = p_node(c, EK_N_IF, kw->line, kw->col);
+    if (!n) {
+        return NULL;
+    }
+    n->u.ifexpr.cond = cond;
+    n->u.ifexpr.then = then_body;
+    n->u.ifexpr.els = else_branch(c);
+    return n;
+}
+
+/* 'else' Suite when present; the lookahead restores the cursor when no
+   else belongs to this if. */
+static ek_node *else_branch(p_ctx *c)
+{
+    size_t save = c->pos;
+    ek_node *body;
+
+    for (;;) {
+        const ek_layout_token *t = p_peek(c);
+
+        if (t->kind == EK_LTOK_DEDENT || t->kind == EK_LTOK_NEWLINE) {
+            p_take(c);
+            continue;
+        }
+        break;
+    }
+    if (!p_at(c, EK_TOK_KW_ELSE)) {
+        c->pos = save;
+        return NULL;
+    }
+    p_take(c);
+    if (!p_got(c, EK_TOK_COLON)) {
+        p_error_tok(c, "E-syntax", p_peek(c),
+                    "expected `:` after `else` (Clause 6.7.4)");
+        p_sync(c);
+        return NULL;
+    }
+    body = p_body_suite(c);
+    return body;
+}
