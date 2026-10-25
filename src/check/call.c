@@ -1,0 +1,279 @@
+#include <string.h>
+
+#include "check/internal.h"
+
+/* Calls, lambdas, and constructor application (Clauses 7.8.1, 7.8.2,
+   7.6.3, 7.6.4). A call needs a function type with exactly n
+   parameters; the receiver of a member call is the first argument
+   (Clause 7.8.2). An unknown callee unifies with the function type of
+   its synthesized arguments. */
+
+static const ek_type *call_fn(ck_ctx *c, const ek_node *e,
+                              const ek_type *fntype, const ek_type *recv,
+                              const ek_nlist *args, int synthesize)
+{
+    const ek_type *f = ck_prune(fntype);
+    size_t nargs = args->count + (recv ? 1 : 0);
+    size_t i, off = recv ? 1 : 0;
+
+    if (!f || f->kind != EK_T_FN) {
+        /* Unknown callee: the arguments synthesize and the callee
+           unifies with their function type (opacity). */
+        const ek_type **ps = NULL;
+        const ek_type *ret = ck_ivar(c);
+        const ek_type *built;
+
+        if (nargs) {
+            ps = ek_arena_alloc(c->arena, nargs * sizeof *ps);
+            if (!ps) {
+                c->oom = 1;
+                return ret;
+            }
+            if (recv) {
+                ps[0] = recv;
+            }
+            for (i = 0; i < args->count; i++) {
+                /* A fresh expectation per argument: literals and
+                   composites stay opaque under it (the ruling). */
+                ps[off + i] = ck_expr(c, args->data[i], ck_ivar(c));
+            }
+        }
+        built = ck_fn(c, ps, nargs, ret, EK_ARROW_PURE);
+        if (f && f->kind == EK_T_IVAR) {
+            ck_conforms(c, built, f, 0);
+        } else if (f && !synthesize) {
+            ck_error(c, e, "E-not-callable",
+                     "a value of type %s is not called (Clause 7.8.1)",
+                     ck_type_name(c, f));
+        }
+        return ret;
+    }
+    if (f->u.fn.count != nargs) {
+        ck_error(c, e, "E-call-arity",
+                 "the call supplies %zu arguments, the function takes %zu "
+                 "(Clause 7.8.1)", nargs, f->u.fn.count);
+    }
+    for (i = 0; i < args->count && off + i < f->u.fn.count; i++) {
+        const ek_node *arg = args->data[i];
+        const ek_type *at = ck_expr(c, arg, f->u.fn.params[off + i]);
+        ck_conform k = ck_conforms(c, at, f->u.fn.params[off + i], 1);
+
+        if (k != CK_OK) {
+            ck_error(c, arg, ck_conform_code(k),
+                     "the argument is %s, the parameter is %s "
+                     "(Clause 7.8.1)", ck_type_name(c, at),
+                     ck_type_name(c, f->u.fn.params[off + i]));
+        }
+    }
+    if (recv && f->u.fn.count >= 1) {
+        ck_conform k = ck_conforms(c, recv, f->u.fn.params[0], 1);
+
+        if (k != CK_OK) {
+            ck_error(c, e, ck_conform_code(k),
+                     "the receiver is %s, the first parameter is %s "
+                     "(Clauses 7.4.3, 7.8.2)", ck_type_name(c, recv),
+                     ck_type_name(c, f->u.fn.params[0]));
+        }
+    }
+    return f->u.fn.result;
+}
+
+/* The receiver of a direct (symbol-bearing) callee: `Mod.f(x)` has no
+   receiver; `a.Mod.f(x)` is `Mod.f(a, x)` (Clauses 6.5.2, 7.4.4).
+   Returns the value to prepend, or NULL. */
+static const ek_type *direct_receiver(ck_ctx *c, const ek_node *recv)
+{
+    const ek_ref *r = NULL;
+
+    if (!recv) {
+        return NULL;
+    }
+    if (recv->kind == EK_N_NAME && ck_ref_at(c, recv, EK_SYM_MODULE, &r)) {
+        return NULL; /* the head is the module itself */
+    }
+    if (recv->kind == EK_N_FIELD && ck_ref_at(c, recv, EK_SYM_MODULE, &r)) {
+        return ck_expr(c, recv->u.field.recv, NULL);
+    }
+    return ck_expr(c, recv, NULL);
+}
+
+/* Typing one EK_N_CALL: a plain head, or the last link of a receiver
+   chain (Clause 7.8.2). */
+const ek_type *ck_call(ck_ctx *c, const ek_node *e, const ek_type *expected)
+{
+    const ek_node *callee = e->u.call.callee;
+    const ek_ref *ref = NULL;
+
+    (void)expected;
+    if (c->oom) {
+        return NULL;
+    }
+    if (callee && callee->kind == EK_N_NAME) {
+        /* A head the resolver classified (Clause 7.4.2). */
+        const ek_type *t = ck_expr(c, callee, NULL);
+
+        return call_fn(c, e, t, NULL, &e->u.call.args, 0);
+    }
+    if (!callee || callee->kind != EK_N_FIELD) {
+        const ek_type *t = ck_expr(c, callee, NULL);
+
+        return call_fn(c, e, t, NULL, &e->u.call.args, 0);
+    }
+    {
+        int direct = ck_ref_at(c, callee, 0, &ref) && ref->symbol != NULL
+            && (ref->kind == EK_SYM_FUNC || ref->kind == EK_SYM_NAMESPACE
+                || ref->kind == EK_SYM_EXTERN);
+
+        if (direct) {
+            /* A qualified or module-path member: the receiver is the
+               first argument (Clauses 7.4.4, 7.8.2). */
+            const ek_type *recv = direct_receiver(c, callee->u.field.recv);
+            const ek_type *t = ck_type_of(c, ref->symbol);
+
+            return call_fn(c, e, t, recv, &e->u.call.args, 0);
+        }
+        {
+            ek_reading rd = EK_RD_NONE;
+            const ek_type *recv = direct_receiver(c, callee->u.field.recv);
+            const ek_type *t = ck_link(c, callee, recv, &rd);
+            const ek_type *pt = rd == EK_RD_FIELD ? ck_prune(t) : NULL;
+
+            if (rd == EK_RD_FIELD) {
+                if (pt && pt->kind == EK_T_FN) {
+                    /* x.f(args) on a function-valued field calls the
+                       value (Clause 7.4.3 station 1). */
+                    return call_fn(c, e, t, NULL, &e->u.call.args, 0);
+                }
+                ck_error(c, e, "E-not-callable",
+                         "the field `%s` is not a function value "
+                         "(Clause 7.4.3)", callee->u.field.name);
+                return call_fn(c, e, NULL, NULL, &e->u.call.args, 1);
+            }
+            /* Namespace, module, derived, and opaque readings all
+               take the receiver first. */
+            return call_fn(c, e, t, recv, &e->u.call.args, 0);
+        }
+    }
+}
+
+/* Lambda checking (Clause 7.6.3): check-only against an expected
+   function type; the parameters come from it. */
+const ek_type *ck_lambda(ck_ctx *c, const ek_node *e, const ek_type *expected)
+{
+    const ek_node *params = e->u.pair.a;
+    const ek_node *body = e->u.pair.b;
+    const ek_type *pe = ck_prune(expected);
+    const ek_type **ps = NULL;
+    const char **names = NULL;
+    const ek_type *ret;
+    size_t i, n = 0;
+
+    if (!pe || pe->kind != EK_T_FN) {
+        if (!pe || pe->kind != EK_T_IVAR) {
+            ck_error(c, e, "E-lambda-check-only",
+                     "a lambda is check-only and `:=` does not generalize: "
+                     "no expected type supplies the parameter types "
+                     "(Clause 7.6.3)");
+        }
+        pe = NULL;
+    }
+    if (params) {
+        n = params->u.kids.count;
+    }
+    if (n) {
+        ps = ek_arena_alloc(c->arena, n * sizeof *ps);
+        names = ek_arena_alloc(c->arena, n * sizeof *names);
+        if (!ps || !names) {
+            c->oom = 1;
+            return expected;
+        }
+    }
+    for (i = 0; i < n; i++) {
+        const ek_node *p = params->u.kids.data[i];
+
+        names[i] = p->kind == EK_N_NAME && p->u.path.count == 1
+                       && strcmp(p->u.path.data[0], "_") != 0
+                   ? p->u.path.data[0] : NULL;
+        ps[i] = pe && i < pe->u.fn.count ? pe->u.fn.params[i] : ck_ivar(c);
+    }
+    if (pe && pe->u.fn.count != n) {
+        ck_error(c, e, "E-call-arity",
+                 "the lambda takes %zu parameters, the expected function "
+                 "type has %zu (Clause 7.8.1)", n, pe->u.fn.count);
+    }
+    ck_scope_push(c);
+    for (i = 0; i < n; i++) {
+        if (names[i]) {
+            ck_scope_bind(c, names[i], ps[i]);
+        }
+    }
+    ret = ck_expr(c, body, pe ? pe->u.fn.result : NULL);
+    ck_scope_pop(c);
+    if (!pe) {
+        pe = ck_fn(c, ps, n, ret, EK_ARROW_PURE);
+        if (expected && ck_prune(expected)->kind == EK_T_IVAR) {
+            ck_conforms(c, pe, expected, 0);
+        }
+    }
+    ck_row(c, e, pe, EK_RD_NONE);
+    return pe;
+}
+
+/* Constructor application by juxtaposition is check-only: it takes
+   its instantiation from the expected type (Clause 7.6.4). */
+const ek_type *ck_apply(ck_ctx *c, const ek_node *e, const ek_type *expected)
+{
+    const ek_node *head = e->u.pair.a;
+    const ek_node *arg = e->u.pair.b;
+    const ek_ref *ref = NULL;
+    const ck_ctor *ct = NULL;
+
+    if (c->oom) {
+        return expected;
+    }
+    if (head && ck_ref_at(c, head, EK_SYM_CONSTRUCTOR, &ref) && ref->symbol) {
+        ct = ck_ctor_of(c, ref->symbol);
+    }
+    if (ct && ct->owner) {
+        const ck_decl *d = ck_decl_of(c, ct->owner);
+        size_t nb = d ? d->nbinders : 0;
+        const ek_type *exp = ck_prune(expected);
+
+        if (nb == 0) {
+            /* Self-anchoring (Clause 7.6.4). */
+            const ek_type *t = ck_nominal(c, ct->owner, NULL, 0);
+
+            if (ct->payload) {
+                ck_expr(c, arg, ct->payload);
+            }
+            ck_row(c, e, t, EK_RD_NONE);
+            return t;
+        }
+        if (exp && exp->kind == EK_T_NOMINAL && exp->u.nominal.sym == ct->owner
+            && exp->u.nominal.argc == nb) {
+            const ek_type *pt = ck_apply_binders(c, ct->payload, d->binders,
+                                                 exp->u.nominal.args, nb);
+
+            ck_expr(c, arg, pt);
+            ck_row(c, e, exp, EK_RD_NONE);
+            return exp;
+        }
+        ck_error(c, head, "E-undetermined",
+                 "the constructor `%s` has no unique instantiation; an "
+                 "expected type determines it (Clause 7.6.4)",
+                 ref->symbol->name);
+        ck_expr(c, arg, NULL);
+        return ck_ivar(c);
+    }
+    /* An external constructor (the std placeholders): opaque. */
+    {
+        const ek_type *iv = ck_ivar(c);
+
+        ck_expr(c, arg, iv);
+        if (expected) {
+            ck_conforms(c, iv, expected, 1);
+        }
+        ck_row(c, e, iv, EK_RD_NONE);
+        return iv;
+    }
+}

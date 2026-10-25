@@ -97,12 +97,15 @@ typedef struct ek_symbol {
 } ek_symbol;
 
 /* The surface of one module in the closure. modules[0] of a result is
-   the compilation root. */
+   the compilation root. ast is the module's own AST (NULL for the
+   std placeholder), so check walks the root and reads the interface
+   annotations of the modules it imports (Clause 7.3.2). */
 typedef struct {
     const char *module; /* the stem, the module's name in code */
     const char *file;   /* path the module was loaded from */
     ek_symbol *syms;
     size_t count;
+    const ek_node *ast;
 } ek_surface;
 
 /* One resolved reference site: an EK_N_NAME, EK_N_FIELD, EK_N_CALL, or

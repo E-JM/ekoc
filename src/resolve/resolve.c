@@ -192,7 +192,9 @@ static void finish(r_ctx *c, ek_resolve_result *r)
     }
     for (i = 0; i < c->nmods; i++) {
         if (!c->mods[i].external && c->mods[i].surf) {
-            r->modules[r->module_count++] = *c->mods[i].surf;
+            r->modules[r->module_count] = *c->mods[i].surf;
+            r->modules[r->module_count].ast = c->mods[i].ast;
+            r->module_count++;
         }
     }
     r_refs_sort(c->refs, c->nrefs);

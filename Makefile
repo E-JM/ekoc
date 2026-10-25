@@ -50,6 +50,28 @@ RESOLVE_SRC := \
 	src/resolve/surface.c \
 	src/resolve/type.c
 
+CHECK_SRC := \
+	src/check/bind.c \
+	src/check/call.c \
+	src/check/check.c \
+	src/check/composite.c \
+	src/check/ctl.c \
+	src/check/decl.c \
+	src/check/elab.c \
+	src/check/entry.c \
+	src/check/exhaust.c \
+	src/check/exhaust_prod.c \
+	src/check/expr.c \
+	src/check/literal.c \
+	src/check/member.c \
+	src/check/op.c \
+	src/check/patbind.c \
+	src/check/pattern.c \
+	src/check/scheme.c \
+	src/check/store.c \
+	src/check/subst.c \
+	src/check/unify.c
+
 LIB_SUPPORT := $(BUILD)/libek_support.a
 SUPPORT_OBJ := $(SUPPORT_SRC:src/%.c=$(BUILD)/%.o)
 
@@ -65,9 +87,12 @@ PARSE_OBJ := $(PARSE_SRC:src/%.c=$(BUILD)/%.o)
 LIB_RESOLVE := $(BUILD)/libek_resolve.a
 RESOLVE_OBJ := $(RESOLVE_SRC:src/%.c=$(BUILD)/%.o)
 
+LIB_CHECK := $(BUILD)/libek_check.a
+CHECK_OBJ := $(CHECK_SRC:src/%.c=$(BUILD)/%.o)
+
 # link order: later stages first, dependencies last
-STAGE_LIBS := $(LIB_RESOLVE) $(LIB_PARSE) $(LIB_LAYOUT) $(LIB_LEX) \
-	$(LIB_SUPPORT)
+STAGE_LIBS := $(LIB_CHECK) $(LIB_RESOLVE) $(LIB_PARSE) $(LIB_LAYOUT) \
+	$(LIB_LEX) $(LIB_SUPPORT)
 
 UNIT_SRC := $(wildcard tests/unit/*/*.c)
 UNIT_BIN := $(UNIT_SRC:tests/unit/%.c=$(BUILD)/tests/%)
@@ -76,9 +101,10 @@ UNIT_BIN := $(UNIT_SRC:tests/unit/%.c=$(BUILD)/tests/%)
 
 # keep object files between runs; they are cheap to reuse, not intermediates
 .SECONDARY: $(SUPPORT_OBJ) $(LEX_OBJ) $(LAYOUT_OBJ) $(PARSE_OBJ) \
-	$(RESOLVE_OBJ) $(UNIT_BIN:%=%.o)
+	$(RESOLVE_OBJ) $(CHECK_OBJ) $(UNIT_BIN:%=%.o)
 
-all: $(LIB_SUPPORT) $(LIB_LEX) $(LIB_LAYOUT) $(LIB_PARSE) $(LIB_RESOLVE)
+all: $(LIB_SUPPORT) $(LIB_LEX) $(LIB_LAYOUT) $(LIB_PARSE) $(LIB_RESOLVE) \
+	$(LIB_CHECK)
 
 test: all $(UNIT_BIN)
 	@status=0; \
@@ -111,6 +137,10 @@ $(LIB_RESOLVE): $(RESOLVE_OBJ)
 	@mkdir -p $(dir $@)
 	$(AR) rcs $@ $^
 
+$(LIB_CHECK): $(CHECK_OBJ)
+	@mkdir -p $(dir $@)
+	$(AR) rcs $@ $^
+
 $(BUILD)/%.o: src/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -Isrc -MMD -MP -c $< -o $@
@@ -124,4 +154,5 @@ $(BUILD)/tests/%.o: tests/unit/%.c
 	$(CC) $(CFLAGS) -Isrc -Itests -MMD -MP -c $< -o $@
 
 -include $(SUPPORT_OBJ:.o=.d) $(LEX_OBJ:.o=.d) $(LAYOUT_OBJ:.o=.d) \
-	$(PARSE_OBJ:.o=.d) $(RESOLVE_OBJ:.o=.d) $(UNIT_BIN:%=%.d)
+	$(PARSE_OBJ:.o=.d) $(RESOLVE_OBJ:.o=.d) $(CHECK_OBJ:.o=.d) \
+	$(UNIT_BIN:%=%.d)
