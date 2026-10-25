@@ -14,6 +14,9 @@ the entry module (Clause 7.1.3); for test compilation the roots are the modules 
 The modules reachable from the roots by import edges form the program. A module outside that closure is not part of the compilation unit, and its
 contents MUST NOT cause the program to be rejected.
 
+The capability module (Clause 9.1.1) is part of every compilation unit without being imported: its names resolve per Clause 9.1.2, and it is checked
+once per compiler build, not per unit (Clause 11.2).
+
 Every module in the closure MUST satisfy Clauses 5 and 6 and this clause. A violation in any reachable module is an error. Top-level bindings are
 checked without dependence on source order, except for the scope rules of Clause 7.4.2.
 ### 7.1.2 Top-Level Bindings
@@ -278,9 +281,10 @@ module that declares the type (Clause 9.8.2).
 ### 7.4.6 Name Conflicts
 A name conflict is a collision within one layer. The following are conflicts:
 
-- two top-level bindings of one module with the same name;
+- two top-level bindings of one module with the same name — a namespace binding is keyed by its full head, so `Int.add` and `Float.add` coexist, and only
+  the same head conflicts;
 - an import and a file top-level binding with the same name;
-- two imported modules with the same stem;
+- two imported modules with the same stem, judged over the compilation unit's import closure and not over one file's import list (Clause 7.2.1);
 - two visible constructors with the same name in one unqualified scope;
 - a type variable with the same name as an imported module;
 - two parameters of `main` with the same capability type (Clause 7.1.3);
@@ -542,6 +546,9 @@ so a polymorphic binding MUST use an annotated `=`.
 
 A polymorphic recursive or mutually recursive function is admitted. The annotation supplies the type, and each recursive call MAY use any
 instantiation. A body may call itself or a mutually recursive partner at a different instantiation.
+A type variable is rigid within its declaration. It is not a unification variable: nothing refines or narrows it after generalization, and one
+variable never unifies with another. Instantiation substitutes a variable exactly, at the call site (Clause 7.6.4); no variance, constraint, or
+partial order attaches to a variable.
 Generalization has no explicit quantifier syntax; the annotation's variables are implicitly generalized. The open bit is generalized at the same
 point (Clause 7.9.6). There are no inference holes: `_` in type position is the unit type, never a placeholder (Clause 7.5.4). A binding whose
 right-hand side is a lambda MUST carry an annotation; a lambda is always check-only and `:=` carries none.
@@ -632,7 +639,10 @@ Every alternative of an or-pattern MUST bind the same set of names at the same t
 
 A literal pattern's literal is placed at the scrutinee type (Clause 5.7.4); an out-of-range numeric literal is E-literal-overflow (Annex B). A
 literal pattern is a `String`, an integer, a float, a negative numeric literal, or a zero-payload constructor (Clause 6.8.5); an interpolated
-string is not a pattern. Parameter positions admit an identifier, `_`, or a tuple parameter group, and no other pattern form. Record,
+string is not a pattern. A value binding admits only irrefutable patterns: `_`, a variable, a tuple or group pattern of irrefutable patterns, and a
+record pattern whose subpatterns are irrefutable. Constructor, literal, list, and or-patterns occur only in `case` arms; a refutable pattern in a
+value binding is E-refutable-binding (Annex B). Parameter positions admit an identifier, `_`, or a tuple parameter group, and no other pattern form.
+Record,
 constructor, list, literal, and or-patterns are rejected there; `<-` inherits the restriction (Clause 7.8.1).
 
 Dictionary patterns, as-patterns, and conjunctive patterns do not exist; a program MUST NOT use them (Clause 6.8.7). A `case` over several scrutinees has one pattern
@@ -835,7 +845,7 @@ A capability value MAY be copied, passed, returned, stored, and captured. Copyin
 A capability has no `eq`; equality, keying, or assertion over it is E-no-eq (Clause 9.8.4). `show` prints `<cap>` (Clause 9.8.3).
 
 A capability is necessary but not sufficient for world contact; bit assignment is per operation (Clause 7.9.2). `Conc` authorizes parallel
-resources and sets no bit; `Conc.join` and `Conc.cancel` are pure (Clause 8.9.2). Derived capabilities are constructed by pure combinators and
+resources and sets no bit; `Task.join` and `Task.cancel` are pure (Clause 8.9.2). Derived capabilities are constructed by pure combinators and
 set no bit at construction or holding (Clauses 9.12.5, 9.14.5); the attenuation combinators only narrow the grant. A derivation constructs a
 capability value, never authority: the grant of a derived capability is contained in the grants of the capabilities it consumes, and a
 zero-input derivation yields a zero-grant value. There is no capability for native code; the native track is authorized by declaration and
@@ -858,8 +868,10 @@ passing a function value, and capturing a capability set no bit.
 A call that observes or changes the world sets the bit; a pure derivation does not. `Out.println` and `Clock.now` set the bit; `Out.tee`
 and `Fs.root` are pure.
 
-At an annotated binding, the declared bit MUST equal the bit of the body. A missing `!` and a surplus `!` are both errors with code E-world-bit
-(Annex B). Bit adaptation applies only at the positions of Clause 7.9.5 and never in the reverse direction.
+At an annotated binding, the binding's own bit is the top-level arrow of the annotation when the annotation is a function type, and pure otherwise. The
+own bit MUST equal the OR of the call bits of the body; a missing `!` and a surplus `!` are both errors with code E-world-bit (Annex B).
+Independently, the body is checked against the annotation by type identity; bit adaptation applies only at the positions of Clause 7.9.5, never at a
+declaration, and never in the reverse direction. A pure function value is therefore bound under its exact type and adapts at its use positions.
 
 The bit lives on the arrow and does not infect data. `logged := List.map(xs, greeter)` requires an enclosing `!`, but `logged: []String` is an
 ordinary value; there is no world-touching list type.

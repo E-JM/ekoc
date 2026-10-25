@@ -188,6 +188,7 @@
 | `E-open-bit-position` | `?` 出现在无法泛化的位置 | Clause 7.9.6 |
 | `E-open-bit-unfed` | 开放位没有参数供给 | Clause 7.9.6 |
 | `E-phantom` | 幻影参数或仅出现在结果中的变量 | Clause 7.6.2, Clause 7.6.5 |
+| `E-refutable-binding` | 值绑定位置出现可驳模式 | Clause 7.7.1 |
 | `E-reserved-symbol` | extern 声明引用保留符号 | Clause 10.6 |
 | `E-shape-mismatch` | 形状不同，无法适配 | Clause 7.5.5 |
 | `E-tab` | 以制表符作为空白 | Clause 5.2.3 |

@@ -189,6 +189,9 @@ ValueBinding := Pattern [':' TypeExpression] '=' RHS
               | Pattern ':=' RHS
               | Pattern '<-' Call
               | '<-' Call
+              | NamespaceBinding
+
+NamespaceBinding := PascalName '.' snake_case Identifier ':' TypeExpression '=' RHS
 
 RHS          := Expression | NEWLINE INDENT {Member} DEDENT
 ```
@@ -200,6 +203,13 @@ bound pattern is supplied by the callback parameter.
 A binding line begins with its pattern. An expression line begins with its
 expression. The binding operators are infix; they are never written at the
 start of a line, except for the pattern-less `<-` form.
+
+A namespace binding declares a member of a type namespace: its head is
+`TypeName.name`, the annotation is mandatory, and the form is legal only in
+the module that declares `TypeName` (Clause 7.4.5). The tail carries the
+privacy prefix: a member named `_name` is private to its module. `:=` and
+`<-` are not admitted for a namespace binding; the annotation is the
+member's public signature.
 
 ```eko
 Person: type = [name: String, age: UInt]
@@ -529,14 +539,27 @@ ReceiverCall := Expression '.' Name '(' [Argument (',' Argument)*] ')'
 QualifiedReceiverCall := Expression '.' ModuleName '.' Name '(' [Argument {',' Argument}] ')'
 ```
 
-The two forms are identical:
+The two forms are identical when `f` resolves to a function — a namespace
+member, a module function, or a free function (stations 2 through 4,
+Clause 7.4.3):
 
 ```text
 a.f(b, c)  ≡  f(a, b, c)
 a.Mod.f(b, c)  ≡  Mod.f(a, b, c)
 ```
 
-The first parameter is the receiver. There is no other method-call form.
+When `f` is a function-typed field of `a`'s record type, `a.f(b, c)` is the
+call of that field value, `(a.f)(b, c)`; station 1 precedes the others, and
+the identity does not apply (Clause 7.4.3).
+
+In every resolution, the first parameter is the receiver. There is no other
+method-call form.
+
+A constructor is applied by juxtaposition. The argument, when present, is a
+postfix expression, and juxtaposition binds tighter than every operator:
+`Ok inner`, `Duration 500`, `Succ (Succ Zero)`, and `Ok x || y` reads
+`(Ok x) || y`. A nullary constructor is the bare `PascalName`. A qualified
+constructor `Mod.Name` selects among same-named constructors (Clause 7.4.6).
 
 Operator notation is sugar for the same calls: `a + b` is `Int.add(a, b)`,
 and therefore `a.add(b)` (Clause 7.8.3).

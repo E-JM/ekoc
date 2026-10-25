@@ -568,7 +568,8 @@ admits derivation: `Out`, `In`, `Fs`, `Env`, `Args`, `Clock`, and `Rand`.
 
 The capability module declares no extern declaration; its only native contact
 is the injected pair, and operating-system code lives in the host-constructed
-bundles. `Proc.exit` and the four `Conc` members are compiler-provided
+bundles. `Proc.exit` and the four concurrency members — `Conc.scope`,
+`Scope.spawn`, `Task.join`, `Task.cancel` — are compiler-provided
 declarations rather than capability-module source: an open-bit dispatcher over
 a runtime scheduler and the observation of runtime task values are not
 source-expressible (Clauses 7.9.6, 8.9).

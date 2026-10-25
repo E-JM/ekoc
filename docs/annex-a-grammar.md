@@ -157,6 +157,10 @@ ValueBinding    := Pattern [ ':' Type ] '=' BindingRHS
                  | Pattern ':=' Expression
                  | Pattern '<-' CallExpression
                  | '<-' CallExpression
+                 | NamespaceBinding
+
+NamespaceBinding := QualifiedPascalName '.' snake_case Identifier
+                    ':' Type '=' BindingRHS
 
 BindingRHS      := Expression
                  | NEWLINE INDENT { Member } DEDENT
@@ -249,12 +253,15 @@ PostfixExpression := PrimaryExpression { Postfix }
 Postfix         := '.' Identifier [ '(' [ Argument { ',' Argument } ] ')' ]
 
 PrimaryExpression := Literal
-                 | Identifier
+                 | QualifiedName [ '(' [ Argument { ',' Argument } ] ')' ]
+                 | ConstructorExpression
                  | '(' Expression ')'
                  | Lambda
                  | CaseExpression
                  | IfExpression
                  | CompositeLiteral
+
+ConstructorExpression := PascalName PostfixExpression
 
 CaseExpression  := 'case' Expression { ',' Expression } CaseBlock
                  | 'case' Expression { ',' Expression } InlineCase
@@ -263,13 +270,19 @@ IfExpression    := 'if' Expression Suite [ 'else' Suite ]
 
 CompositeLiteral := '{' '}'
                  | '{' CompositeItem { ',' CompositeItem } '}'
-CompositeItem   := Expression
-                 | Identifier ':' Expression
+CompositeItem   := Expression [ ':' Expression ]
 
 Argument        := Expression
 ```
 
-`CallExpression` is `PostfixExpression` where the postfix ends in a call.
+A bare or dotted name of any case class is a `QualifiedName`; a `PascalName`
+followed by a juxtaposed postfix expression is a constructor application
+(Clause 6.5.2). An item of a composite literal with a `:` is a keyed entry;
+without one it is an element (Clause 6.6.1).
+
+A call in prefix form is a `QualifiedName` with arguments (Clause 6.5.2); a
+call in receiver form is a `PostfixExpression` whose postfix ends in a call.
+`CallExpression` covers both.
 
 ### A.3.6 Patterns
 
@@ -280,8 +293,9 @@ OrPattern       := PrimaryPattern { '|' PrimaryPattern }
 PrimaryPattern  := '_'
                  | Literal
                  | '-' ( IntegerLiteral | FloatLiteral )
-                 | PascalName [ PrimaryPattern ]
+                 | QualifiedPascalName [ PrimaryPattern ]
                  | Identifier
+                 | '(' Pattern { ',' Pattern } ')'
                  | '{' '}'
                  | '{' Pattern { ',' Pattern } '}'
                  | '{' Pattern { ',' Pattern } ',' '..' [ Identifier ] '}'
@@ -310,7 +324,7 @@ FunctionType    := ParameterGroup ( '->' Type
 
 AppliedType     := TypeAtom { TypeAtom }
 
-TypeAtom        := PascalName
+TypeAtom        := QualifiedPascalName
                  | TypeVar
                  | '_'
                  | '(' Type ')'
@@ -340,50 +354,64 @@ between the two readings.
 ### A.3.8 Imports and Qualified Names
 
 ```ebnf
-QualifiedName   := Identifier { '.' Identifier }
+QualifiedName       := Identifier { '.' Identifier }
+QualifiedPascalName := PascalName { '.' PascalName }
 ```
 
-A dotted name in type position is a module path. A dotted name in expression
-position is resolved by Clause 7.4.4.
+A dotted name in expression position is resolved by Clause 7.4.4 and may
+carry a call's arguments (Clause 6.5.2). A dotted `PascalName` in type
+position is a module-qualified type (Clause 7.4.5); in pattern position it
+is a qualified constructor (Clause 7.4.6); as the head of a
+`NamespaceBinding` it names the owner type.
 
 ## A.4 Layout Algorithm
 
 The layout algorithm runs after lexical analysis and before syntactic
-analysis. It inserts `NEWLINE`, `INDENT`, and `DEDENT` tokens.
+analysis. It inserts `NEWLINE`, `INDENT`, and `DEDENT` tokens. The licensed
+continuation positions are exactly those of Clause 6.2.4; every other line
+break ends a member.
 
 1. **Physical lines.** Split the source at line terminators. Compute each
    line's indentation as its leading spaces. A tab in the indentation is an
    error (`E-tab`).
 2. **Significant lines.** Discard blank lines and lines whose first non-space
    characters are `//` or `///`. They do not affect the indentation stack.
-3. **Indentation stack.** Maintain a stack of indentation columns, initially
-   `[0]`. For each significant line with column `c`:
-   - if `c` equals the top, emit `NEWLINE`;
-   - if `c` is greater, `c - top` MUST be a multiple of four; push `c`
-     and emit `NEWLINE INDENT`. The first member establishes the block
-     column. A column that is not a multiple of four relative to the
-     enclosing block is an error;
-   - if `c` is smaller, pop until the top equals `c`, emitting one `DEDENT`
-     per pop; if no stack entry equals `c`, the line is an error.
-4. **Headers.** A line that opens a block MUST end in `:` or `=` (or be an
-   `extern` declaration, whose right-hand side is complete). A greater
-   indentation after a line that does not open a block is an error.
-5. **Brackets.** While the bracket depth is greater than zero, line breaks
-   emit no `NEWLINE` or `INDENT`. Bracket depth is increased by `(`, `[`, and
-   `{` and decreased by the matching closing bracket.
-6. **Trailing callbacks.** A callback header of the form `( ... ) :` inside a
-   bracket group opens a block whose indentation is relative to the callback
-   header's line. The block ends at the closing bracket of the call or at a
-   line whose indentation is at or left of the callback header's column.
+3. **Bracket suppression.** Bracket depth is the number of `(`, `[`, and `{`
+   open at the end of a line. A line break at depth greater than zero emits
+   no token, and the next line's indentation is ignored — except after a
+   callback header (rule 4).
+4. **Callback blocks.** A line inside brackets that ends in a parameter
+   group followed by `:` — a lambda or trailing-callback header
+   (Clause 6.2.5) — opens a block. The block consists of the following lines
+   whose indentation is greater than that of the header line. Before its
+   first member the algorithm emits `NEWLINE INDENT`; at a line indented at
+   or left of the header's column it emits the pending `DEDENT`s. The
+   closing bracket of the call closes any callback block still open and
+   emits its `DEDENT`s.
+5. **Indentation stack.** For a line at bracket depth zero with column `c`,
+   against the stack of block columns, initially `[0]`:
+   - `c` equals the top: emit `NEWLINE`.
+   - `c` is greater: the step `c - top` MUST be a positive multiple of four;
+     push `c` and emit `NEWLINE INDENT`. The first member of a block fixes
+     its column, and every later line of that block MUST equal it.
+   - `c` is smaller: pop until the top equals `c`, emitting one `DEDENT` per
+     pop; if no stack entry equals `c`, the line is an error.
+6. **Headers and continuation.** A line at depth zero that ends in `:` or `=`
+   opens a block (Clause 6.2.3); a deeper following line is the block's
+   first member and is processed by rule 5. A deeper line after a line that
+   opens no block is a continuation: it emits no token, and its indentation
+   is ignored. Continuation is licensed by Clause 6.2.4; a deeper line in
+   any other position is diagnosed at parse, not by this algorithm.
 7. **Chain continuation.** A line whose first token is `.` and whose column
    equals the column of the first `.` of the chain continues the expression.
    No `NEWLINE` is emitted at the end of the previous line.
 8. **else.** An `else` line at the same column as the `if` it matches
-   continues that `if`. It does not begin a new member. The layout algorithm
-   emits the `DEDENT`s required by the stack; the parser reattaches `else` to
-   the `if`.
-9. **Semicolons.** `;` is a member terminator equivalent to `NEWLINE`. It
-   does not change the indentation stack and does not open or close a block.
+   continues that `if`; it does not begin a new member. The algorithm emits
+   the `DEDENT`s required by the stack, and the parser reattaches `else`.
+   The rule holds whether the branches are inline or block form.
+9. **Semicolons.** `;` terminates the current inline item (Clause 5.3.2). It
+   emits no token, does not change the indentation stack, and does not open
+   or close a block.
 10. **End of file.** Emit one `DEDENT` for every open level, then `EOF`.
 
 ## A.5 Precedence and Associativity
@@ -392,7 +420,7 @@ The precedence table of Clause 6.5.5 is repeated here for reference.
 
 | Level | Operators | Associativity |
 |---|---|---|
-| 1 | postfix `.f()` | left |
+| 1 | postfix `.f()`, constructor juxtaposition | left |
 | 2 | unary `-` | none |
 | 3 | `* / %` | left |
 | 4 | `+ - ++` | left |

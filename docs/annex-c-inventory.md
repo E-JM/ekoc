@@ -419,12 +419,15 @@ total and exists only where the machine domain is included in the domain word
 
 ## C.9 Capability Surface
 
-Capabilities are opaque, unforgeable values (Clause 7.9.1). Every member takes
-its capability as the first parameter. A member marked `!` sets the world bit;
-a derivation is pure. `File` is a handle rather than a capability; its
-namespace is included here because a `File` is reached only through `Fs.open`.
+Capabilities are opaque, unforgeable values (Clause 7.9.1). Every member of a
+capability namespace takes its capability as the first parameter; `Scope.spawn`,
+`Task.join`, and `Task.cancel` take their handle first, as the members of
+`File` do. A member marked `!` sets the world bit;
+a derivation is pure. `File`, `Scope`, and `Task t` are handles rather than
+capabilities; their namespaces are included here because each is reached only
+through a capability member.
 Every member in this section is capability-module source (Clause 9.1.1), except
-`Proc.exit` and the four `Conc` members, which are compiler-provided
+`Proc.exit` and the four concurrency members, which are compiler-provided
 declarations (Clause 10.8).
 
 | Capability | Member | Signature | Clause |
@@ -470,9 +473,9 @@ declarations (Clause 10.8).
 | `Rand` | `Rand.with_seed` | `(Int) -> Rand` | Clause 9.14.5 |
 | `Proc` | `Proc.exit` | `(Proc, Int) !-> Never` | Clause 8.4.3 |
 | `Conc` | `Conc.scope` | `(Conc, (Scope) ?-> a) ?-> a` | Clause 8.9.1 |
-| `Conc` | `Conc.spawn` | `(Scope, () ?-> b) ?-> Task b` | Clause 8.9.1 |
-| `Conc` | `Conc.join` | `(Task b) -> Option b` | Clause 8.9.2 |
-| `Conc` | `Conc.cancel` | `(Task b) -> _` | Clause 8.9.2 |
+| `Scope` | `Scope.spawn` | `(() ?-> b) ?-> Task b` | Clause 8.9.1 |
+| `Task` | `Task.join` | `(Task b) -> Option b` | Clause 8.9.2 |
+| `Task` | `Task.cancel` | `(Task b) -> _` | Clause 8.9.2 |
 
 `read_line` yields `Ok None` at end of input; EOF is not an error
 (Clause 9.2.4). `Out.tee` writes once and reports once, invoking its observer
@@ -503,8 +506,8 @@ the bound, exclusive of the bound; a zero bound is an invariant violation and
 panics (Clause 9.2.3, Annex B.5). `Rand.with_seed` fixes the order; the sequence itself is
 an implementation detail (Clause 9.14.5). `Proc.exit` terminates the process
 abruptly with the given exit code (Clause 8.4.3). `Conc.scope` and
-`Conc.spawn` are open-bit dispatchers; a child's world bit joins the open bit
-(Clause 8.9.1). `Conc.join` and `Conc.cancel` are pure; `join` yields `None`
+`Scope.spawn` are open-bit dispatchers; a child's world bit joins the open bit
+(Clause 8.9.1). `Task.join` and `Task.cancel` are pure; `join` yields `None`
 when the task was cancelled (Clause 8.9.2).
 
 ## C.10 Time, Mono, Duration, Json

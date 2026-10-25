@@ -126,6 +126,7 @@ collide with a code in the table.
 | `E-json-shape` | a type has no default JSON isomorphic form, for example a dictionary with a non-string key | Clause 9.9.3 |
 | `E-ctype-field` | a `ctype` field is neither a machine word nor a `ctype` record | Clause 10.3.3 |
 | `E-extern-type` | an `extern` signature uses a type outside the marshalling whitelist, or contains a type variable or variadic parameter | Clause 10.2.3, Clause 10.3.5 |
+| `E-refutable-binding` | a refutable pattern in a value binding | Clause 7.7.1 |
 | `E-reserved-symbol` | an `extern` names a reserved symbol | Clause 10.6 |
 
 The table is the first batch of the vocabulary. A code for a condition outside

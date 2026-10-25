@@ -86,7 +86,8 @@ type is not `Never`; the type system does not track termination.
 An initial binding has the form `P = e` or `P: t = e`, where `P` is a pattern.
 The right-hand side `e` is evaluated to a value, `P` is matched against that
 value, every name in `P` is bound to the matched subvalue, and those bindings
-become visible in the remainder of the enclosing block.
+become visible in the remainder of the enclosing block. `P` is irrefutable
+(Clause 7.7.1), so the match always succeeds and binding never fails.
 
 The annotation `: t` is static and has no evaluation effect. It fixes the type
 against which `e` is checked; it does not evaluate a type expression at run
@@ -762,15 +763,18 @@ The concurrency surface has the following signatures:
 
 ```text
 Conc.scope:  (Conc, (Scope) ?-> a) ?-> a
-Conc.spawn:  (Scope, () ?-> b) ?-> Task b
-Conc.join:   (Task b) -> Option b
-Conc.cancel: (Task b) -> _
+Scope.spawn: (() ?-> b) ?-> Task b
+Task.join:   (Task b) -> Option b
+Task.cancel: (Task b) -> _
 ```
 
 `Conc` is an opt-in capability (Clause 7.9.1). `Scope` and `Task b` are opaque
-types (Clause 8.5.3). The four members are compiler-provided declarations, not
-capability-module source (Clause 10.8). The world bit of a spawn or scope call
-is determined by its callback through the open bit, as specified in Clause 7.9.
+types (Clause 8.5.3). The concurrency surface spans three namespaces:
+`Conc.scope` takes the capability; `Scope.spawn` is reached at a scope, and
+`Task.join` and `Task.cancel` at a task, in the manner of `File`. The four
+members are compiler-provided declarations, not capability-module source
+(Clause 10.8). The world bit of a spawn or scope call is determined by its
+callback through the open bit, as specified in Clause 7.9.
 
 ### 8.9.1 Scope and Spawn
 
@@ -783,7 +787,7 @@ has terminated. When the callback returns, the scope cancels every child that
 has not terminated; scope exit waits for all children. A task cannot outlive
 its scope.
 
-`Conc.spawn(scope, callback)` creates a task and returns a `Task b` value. The
+`scope.spawn(callback)` creates a task and returns a `Task b` value. The
 callback is a closure over the values visible at the spawn site, captured by
 snapshot under Clause 8.2.3. The task is eligible to execute after `spawn`
 returns; the relative order in which the parent and child execute is not
@@ -791,16 +795,16 @@ specified. The task's result is observed only through `join`.
 
 A spawn callback's world bit joins the open bit of `spawn`. A pure callback
 makes the spawn call pure; a world-touching callback makes it world-touching.
-The same rule applies to the callback of `scope`.
+The same rule applies to the callback of `Conc.scope`.
 
 ### 8.9.2 Join and Cancel
 
-`Conc.join(task)` waits until the task has terminated. It returns `Some v` when
+`task.join()` waits until the task has terminated. It returns `Some v` when
 the task completed normally with value `v`, and `None` when the task was
 cancelled. `join` and `cancel` observe program-internal state and do not touch
 the world; both are pure.
 
-`Conc.cancel(task)` requests cancellation of a task and returns `_`. Cancellation
+`task.cancel()` requests cancellation of a task and returns `_`. Cancellation
 is cooperative. It is applied at world-call boundaries: a task that is executing
 a pure computation is not interrupted at an arbitrary point. A task that never
 reaches a world-call boundary therefore cannot be cancelled.

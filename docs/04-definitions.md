@@ -128,7 +128,7 @@ operative rules.
 | **reference counting** | the memory strategy that reclaims an object when its reference count reaches zero | 8.6.2 |
 | **tail position** | a position whose value is the value of the enclosing function or lambda | 8.8.2 |
 | **self tail call** | a call to the enclosing function in tail position | 8.8.3 |
-| **task** | a unit of concurrent execution created by `Conc.spawn` | 8.9.1 |
+| **task** | a unit of concurrent execution created by `Scope.spawn` | 8.9.1 |
 | **scope** | the dynamic extent within which spawned tasks run | 8.9.1 |
 | **cancellation** | the cooperative termination of a task by a parent's `cancel` or by scope exit | 8.9.2 |
 

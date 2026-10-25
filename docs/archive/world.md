@@ -134,8 +134,9 @@ combinators are declared by the capability module — compiler-embedded Eko
 source, part of the language definition (`Clause 9.1.1`). The forging
 channel is a compiler-injected pure `wrap`/`unwrap` pair per derivable
 capability, visible only inside that module (`Clause 10.8`). `std` and its
-companions contain no capability content; `Proc.exit` and the four `Conc`
-members are compiler-provided declarations.
+companions contain no capability content; `Proc.exit` and the four
+concurrency members (`Conc.scope`, `Scope.spawn`, `Task.join`,
+`Task.cancel`) are compiler-provided declarations.
 
 **Rejected: members as std source over reserved extern pairs** (the prior
 design). It worked — the wall was reserved symbols plus private bindings —

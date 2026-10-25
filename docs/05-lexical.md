@@ -90,10 +90,12 @@ positions specified in Clause 5.6.2.
 
 ### 5.3.2 Semicolons
 
-A semicolon `;` is equivalent to a line terminator as a member separator. It
-terminates the current member and every block opened within that member.
-Whether the enclosing construct continues after the semicolon is decided by
-that construct, exactly as for a line terminator.
+A semicolon `;` separates the items of a single-line suite. It terminates the
+current inline item — an expression or a `case` arm — as a line terminator
+terminates a member. It does not change the indentation stack and does not
+open or close a block (Annex A.4). Whether the enclosing construct continues
+after the semicolon is decided by that construct, exactly as for a line
+terminator.
 
 ### 5.3.3 Newlines
 
