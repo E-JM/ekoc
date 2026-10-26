@@ -241,6 +241,66 @@ static void empty_literals(void)
     cfx_end(&f);
 }
 
+
+/* A diagnostic at one line contains the needle. */
+static int diag_has(const cfx *f, int line, const char *needle)
+{
+    size_t i;
+
+    for (i = 0; i < f->cdn; i++) {
+        if (f->cds[i].line == line && f->cds[i].message
+            && strstr(f->cds[i].message, needle)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* Diagnostics spell types the way the language writes them: list and
+   dictionary brackets, nominal arguments, and function arrows. */
+static void type_names(void)
+{
+    cfx f;
+
+    cfx_begin(&f, "f: (xs: []Int) -> []String = xs\n");
+    EK_CHECK(cfx_has_code(&f, "E-type-mismatch"));
+    EK_CHECK(diag_has(&f, 1, "body is []Int"));
+    EK_CHECK(diag_has(&f, 1, "result type is []String"));
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "Box: type t = [v: t]\n"
+              "mk_i: (n: Int) -> Box Int = (n): {v: n}\n"
+              "mk_s: (s: String) -> Box String = (s): {v: s}\n"
+              "g: (b: Bool) -> Box Int =\n"
+              "    case b:\n"
+              "        True -> mk_i(1)\n"
+              "        False -> mk_s(\"s\")\n");
+    EK_CHECK(cfx_has_code(&f, "E-type-mismatch"));
+    EK_CHECK(diag_has(&f, 5, "Box Int and Box String"));
+    cfx_end(&f);
+
+    cfx_begin(&f, "d: (m: [String]Int) -> Int = m\n");
+    EK_CHECK(diag_has(&f, 1, "body is [String]Int"));
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "twice: (f: (Int) -> Int) -> Int = f(1)\n"
+              "id: (s: String) -> String = s\n"
+              "x: Int = twice(id)\n");
+    EK_CHECK(diag_has(&f, 3, "argument is (String) -> String"));
+    EK_CHECK(diag_has(&f, 3, "parameter is (Int) -> Int"));
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "run: () !-> Int = (): Out.println(\"x\"); 1\n"
+              "use: (f: () -> Int) -> Int = f()\n"
+              "x: Int = use(run)\n");
+    EK_CHECK(diag_has(&f, 3, "argument is () !-> Int"));
+    EK_CHECK(diag_has(&f, 3, "parameter is () -> Int"));
+    cfx_end(&f);
+}
+
 int main(void)
 {
     nominal_vs_structural();
@@ -250,5 +310,6 @@ int main(void)
     literal_placement();
     never_adaptation();
     wide_decls();
+    type_names();
     return ek_test_report("check/types");
 }
