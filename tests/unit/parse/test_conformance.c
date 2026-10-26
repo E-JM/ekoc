@@ -3,9 +3,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-/* Smoke test: every conformance module (Annex D sources, kept under
-   tests/conformance) must lex, lay out, and parse to completion
-   with zero error diagnostics. */
+/* Smoke test: every conformance module under tests/conformance must
+   lex, lay out, and parse to completion with zero error diagnostics. */
 
 static const char *const modules[] = {
     "tests/conformance/access_drilling.eko",

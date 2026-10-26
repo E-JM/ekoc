@@ -1,9 +1,9 @@
 #include "parse/internal.h"
 
-/* Expression := OrExpression and the ladder of A.3.5, which fixes the
-   precedence of Clause 6.5.5. Comparison and range are non-associative:
-   a chain is diagnosed once and then folded left so the rest of the
-   module still parses. The level-1 operand layer is postfix.c. */
+/* The expression ladder: one function per precedence level, loosest at
+   the top. Comparison and range are non-associative: a chain is
+   diagnosed once and then folded left so the rest of the module still
+   parses. The tightest level, the operand layer, is postfix.c. */
 
 static ek_node *mul(p_ctx *c);
 static ek_node *unary(p_ctx *c);
@@ -68,7 +68,7 @@ static int is_range(ek_token_kind k)
 
 /* A `case` or `if` used as an operand is parenthesized; the whole
    right-hand side or the whole argument escapes the check because
-   those positions never pass through here (Clause 6.5.1). */
+   those positions never pass through here. */
 static ek_node *operand(p_ctx *c, ek_node *e)
 {
     if (e && (e->kind == EK_N_IF || e->kind == EK_N_CASE)) {
@@ -112,8 +112,8 @@ static ek_node *mul(p_ctx *c)
     return e;
 }
 
-/* UnaryExpression := [ '-' ] PostfixExpression: no unary `+`, and `-`
-   never chains (Clause 6.5.4). */
+/* Unary: an optional '-' over a postfix expression; no unary `+`, and
+   `-` never chains. */
 static ek_node *unary(p_ctx *c)
 {
     const ek_layout_token *minus = p_peek(c);
@@ -135,8 +135,8 @@ static ek_node *unary(p_ctx *c)
     return n;
 }
 
-/* Level 6: one comparison; `a < b < c` is an error (Clause 6.5.5).
-   The error fires on the second fold, whatever the left operand is. */
+/* Level 6: one comparison; `a < b < c` is an error. The error fires
+   on the second fold, whatever the left operand is. */
 static ek_node *comparison(p_ctx *c)
 {
     ek_node *e = range(c);
@@ -161,7 +161,7 @@ static ek_node *comparison(p_ctx *c)
 }
 
 /* Level 5: one range operator; a chain over a range requires
-   parentheses (Clause 6.5.6). */
+   parentheses. */
 static ek_node *range(p_ctx *c)
 {
     ek_node *e = add(c);

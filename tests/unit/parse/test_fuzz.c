@@ -4,10 +4,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* Black-box robustness over the Annex D corpus: every byte prefix of
-   every conformance module, and seeded single-token mutations of each
-   module, must run the full pipeline to termination, return a MODULE
-   root, and stay inside a finite diagnostic budget. */
+/* Black-box robustness over the conformance corpus: every byte prefix
+   of every conformance module, and seeded single-token mutations of
+   each module, must run the full pipeline to termination, return a
+   MODULE root, and stay inside a finite diagnostic budget. */
 
 static const char *const modules[] = {
     "tests/conformance/access_drilling.eko",

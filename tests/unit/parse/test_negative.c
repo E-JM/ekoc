@@ -1,11 +1,11 @@
 #include "common.h"
 
-/* The parse-rejected negative entries of Annex D: N04, N16, and N17
-   have no published code, so the diagnostic names the violated clause
-   (Annex D.3, Annex B.3). Each module must come back as a partial AST
-   with an error, never a hang. */
+/* Parse-rejected sources with no dedicated error code, so the
+   diagnostic names the violated clause in its message text. Each
+   module must come back as a partial AST with an error, never a
+   hang. */
 
-/* N04 (Clause 6.7.1): a bare expression is not an arm. */
+/* N04: a bare expression is not an arm. */
 static void n04_bare_panic_arm(void)
 {
     parse_fixture f;
@@ -23,7 +23,7 @@ static void n04_bare_panic_arm(void)
     pfx_end(&f);
 }
 
-/* N16 (Clause 6.5.5): comparisons do not associate. */
+/* N16: comparisons do not associate. */
 static void n16_chained_comparison(void)
 {
     parse_fixture f;
@@ -38,7 +38,7 @@ static void n16_chained_comparison(void)
     EK_CHECK(f.ast.module != NULL);
     pfx_end(&f);
 
-    /* The same rule covers equality (Clause 6.5.5). */
+    /* The same check covers equality. */
     pfx_begin(&f, "f: Int =\n    1 == 2 == 3\n");
     EK_CHECK(pfx_errors(&f) >= 1);
     pfx_collect(&f);
@@ -46,7 +46,7 @@ static void n16_chained_comparison(void)
     pfx_end(&f);
 }
 
-/* N17 (Clause 6.10): index syntax does not exist. */
+/* N17: index syntax does not exist. */
 static void n17_index_syntax(void)
 {
     parse_fixture f;
@@ -59,7 +59,7 @@ static void n17_index_syntax(void)
     EK_CHECK(f.ast.module != NULL);
     pfx_end(&f);
 
-    /* Braces are the only value brackets (Clause 6.10). */
+    /* Braces are the only value brackets. */
     pfx_begin(&f, "f: Int =\n    [1, 2]\n");
     EK_CHECK(pfx_errors(&f) >= 1);
     pfx_collect(&f);

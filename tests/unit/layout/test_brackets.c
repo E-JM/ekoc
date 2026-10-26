@@ -1,7 +1,7 @@
 #include "common.h"
 
-/* Bracket groups (5.3.3, A.4 rules 3 and 4): free formatting inside
-   ( [ {, callback blocks, and the DEDENT before a closing bracket. */
+/* Bracket groups: free formatting inside ( [ {, callback blocks, and
+   the DEDENT before a closing bracket. */
 
 /* Line breaks and arbitrary indentation inside brackets are free. */
 static void test_free_formatting(void)
@@ -18,7 +18,7 @@ static void test_free_formatting(void)
 }
 
 /* A callback block opens with NEWLINE INDENT and its DEDENT precedes
-   the call's closing bracket (A.4 rule 4). */
+   the call's closing bracket. */
 static void test_trailing_callback(void)
 {
     layout_fixture f;
@@ -33,7 +33,7 @@ static void test_trailing_callback(void)
 }
 
 /* A callback body member misaligned with the first member's column is
-   an error and drains as a member (Clause 5.2.2). */
+   an error and drains as a member. */
 static void test_callback_member_misaligned(void)
 {
     layout_fixture f;
@@ -49,7 +49,7 @@ static void test_callback_member_misaligned(void)
 }
 
 /* A line at or left of the header column closes the callback block
-   before its own tokens (A.4 rule 4). */
+   before its own tokens. */
 static void test_callback_closed_by_dedent(void)
 {
     layout_fixture f;
@@ -63,9 +63,8 @@ static void test_callback_closed_by_dedent(void)
     fx_end(&f);
 }
 
-/* The scrutinee form of Clause 6.7.1: a multi-line callback inside the
-   scrutinee, the call closed by a line ending ')', and the case arms
-   opening after the colon. */
+/* A multi-line callback inside a case scrutinee: the call closed by a
+   line ending ')', and the case arms opening after the colon. */
 static void test_case_scrutinee_with_callback(void)
 {
     layout_fixture f;

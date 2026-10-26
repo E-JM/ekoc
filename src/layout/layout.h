@@ -8,25 +8,22 @@
 #include "support/diag.h"
 
 /*
- * Stage 3 (Annex A.4): token stream -> layout token stream.
- * The algorithm derives block structure from the column of each line's
- * first token (Clause 5.2; the lexer counts columns in scalar values and
- * drops indentation spaces, so column - 1 is the line's indentation) and
- * inserts the virtual NEWLINE, INDENT, and DEDENT tokens the syntactic
- * grammar of Annex A.3 consumes. Source tokens pass through in order,
- * wrapped as EK_LTOK_SOURCE; the input NEWLINE and EOF tokens are
- * consumed and re-encoded. A tab in indentation is diagnosed by the
- * lexer (E-tab, Clause 5.2.3) and only flows through here.
+ * Token stream -> layout token stream. Block structure is derived from
+ * the column of each line's first token (the lexer counts columns in
+ * scalar values and drops indentation spaces, so column - 1 is the
+ * line's indentation), and the virtual NEWLINE, INDENT, and DEDENT
+ * tokens the parser needs are inserted. Source tokens pass through in
+ * order, wrapped as EK_LTOK_SOURCE; the input NEWLINE and EOF tokens
+ * are consumed and re-encoded. A tab in indentation is diagnosed by
+ * the lexer and only flows through here.
  *
- * The stream always ends with EK_LTOK_EOF. Encoding: the encoding is
- * terminator-style — every significant line at bracket depth zero ends
- * with a NEWLINE marker (Arm, VariantLine, and ImportLine carry a
- * trailing NEWLINE in Annex A.3), except continuations, where no
- * NEWLINE is emitted at the end of the previous line (A.4 rules 6 and
- * 7) and the lines splice. INDENT follows the NEWLINE of the header
- * line (Suite := ':' NEWLINE INDENT ...); a stack block's DEDENTs
- * follow the last member's NEWLINE, and a callback block's DEDENTs
- * precede the closing bracket that closes it (A.4 rules 4 and 10).
+ * The stream always ends with EK_LTOK_EOF. Encoding is terminator
+ * style: every significant line at bracket depth zero ends with a
+ * NEWLINE marker, except continuations, where no NEWLINE is emitted at
+ * the end of the previous line and the lines splice. INDENT follows
+ * the NEWLINE of the header line; a stack block's DEDENTs follow the
+ * last member's NEWLINE, and a callback block's DEDENTs precede the
+ * closing bracket that closes it.
  *
  * Marker positions: NEWLINE sits at the line terminator it encodes;
  * INDENT at the first token of the member opening the block; DEDENT at
@@ -36,9 +33,9 @@
 
 typedef enum {
     EK_LTOK_SOURCE = 0, /* lexical token, carried in tok */
-    EK_LTOK_NEWLINE,    /* A.4 NEWLINE: ends a member line */
-    EK_LTOK_INDENT,     /* A.4 INDENT: opens a block */
-    EK_LTOK_DEDENT,     /* A.4 DEDENT: closes a block */
+    EK_LTOK_NEWLINE,    /* virtual NEWLINE: ends a member line */
+    EK_LTOK_INDENT,     /* virtual INDENT: opens a block */
+    EK_LTOK_DEDENT,     /* virtual DEDENT: closes a block */
     EK_LTOK_EOF
 } ek_layout_kind;
 

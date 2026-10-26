@@ -1,7 +1,7 @@
 #include "common.h"
 
 /* Block structure: nesting, first-member column, relative indentation,
-   dedents, and end of file (Clauses 5.1.3 and 5.2.2, Annex A.4). */
+   dedents, and end of file. */
 
 /* A header opens a block; its NEWLINE INDENT pairs with the EOF DEDENT. */
 static void test_simple_block(void)
@@ -10,7 +10,7 @@ static void test_simple_block(void)
 }
 
 /* The first member fixes the block column; two levels deeper is legal,
-   and later members join without a second INDENT (Clause 5.2.2). */
+   and later members join without a second INDENT. */
 static void test_first_member_fixes_column(void)
 {
     fx_skeleton_check("f: Int =\n        x\n        y\n",
@@ -20,7 +20,7 @@ static void test_first_member_fixes_column(void)
 }
 
 /* A step that is not a positive multiple of four is an error; layout
-   drains by opening the block anyway (Clause 5.2.2). */
+   drains by opening the block anyway. */
 static void test_step_not_multiple_of_four(void)
 {
     layout_fixture f;
@@ -36,7 +36,7 @@ static void test_step_not_multiple_of_four(void)
 }
 
 /* A dedent to a column matching no open block cannot close the block
-   consistently (Clause 5.1.3); layout drains by pretending it did. */
+   consistently; layout drains by pretending it did. */
 static void test_dedent_to_unmatched_column(void)
 {
     layout_fixture f;
@@ -51,8 +51,7 @@ static void test_dedent_to_unmatched_column(void)
     fx_end(&f);
 }
 
-/* End of file terminates the last line and closes every open block
-   (Clause 5.1.3, A.4 rule 10). */
+/* End of file terminates the last line and closes every open block. */
 static void test_eof_closes_all_blocks(void)
 {
     fx_skeleton_check("a: Int =\n    b: Int =\n        c: Int =\n"

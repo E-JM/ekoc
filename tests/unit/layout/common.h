@@ -122,8 +122,8 @@ static inline void fx_skeleton_check(const char *src, const char *want)
     fx_end(&f);
 }
 
-/* The conformance modules (Annex D sources), relative to the repository
-   root, where make test runs the suite binaries. */
+/* The conformance corpus modules, relative to the repository root,
+   where make test runs the suite binaries. */
 static inline const char *const *fx_modules(size_t *count)
 {
     static const char *const mods[] = {

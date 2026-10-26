@@ -3,7 +3,7 @@
 #include "parse/internal.h"
 
 /* Names carry their position so case diagnostics land on the
-   identifier (Clause 5.5.2). */
+   identifier. */
 void p_check_case(p_ctx *c, const char *name, const ek_layout_token *t,
                   int want_pascal, const char *what)
 {
@@ -20,7 +20,7 @@ void p_check_case(p_ctx *c, const char *name, const ek_layout_token *t,
 }
 
 /* The cooked bytes of a string literal that must be plain: an extern
-   symbol carries no interpolation (Clause 6.3.8). */
+   symbol carries no interpolation. */
 static const char *lit_text(p_ctx *c, const ek_layout_token *t)
 {
     size_t i, len = 0;
@@ -49,7 +49,7 @@ static const char *lit_text(p_ctx *c, const ek_layout_token *t)
     return out;
 }
 
-/* Variant := PascalName [ TypeAtom ] (A.3.2). */
+/* A variant: a Pascal name with an optional type atom payload. */
 ek_node *p_variant(p_ctx *c)
 {
     const ek_layout_token *head = p_expect(c, EK_TOK_IDENT, "a variant name");
@@ -73,7 +73,7 @@ ek_node *p_variant(p_ctx *c)
 }
 
 /* NEWLINE INDENT VariantLine { VariantLine } DEDENT; every line leads
-   with `|` (Clause 6.3.5). */
+   with `|`. */
 static void variant_lines(p_ctx *c, ek_node *n)
 {
     while (!c->oom) {
@@ -123,9 +123,9 @@ static void variant_list(p_ctx *c, ek_node *n)
     }
 }
 
-/* TypeRhs := VariantList | block of VariantLines | RecordType | TupleType
-   | epsilon (A.3.2). A bracket form that is neither a record nor a
-   tuple is an alias, which does not exist (Clause 6.9.5). */
+/* A type right-hand side: a variant list, a block of variant lines, a
+   record, a tuple, or nothing. A bracket form that is neither a record
+   nor a tuple is an alias, which does not exist. */
 static void type_rhs(p_ctx *c, ek_node *n)
 {
     if (p_at_layout(c, EK_LTOK_NEWLINE)) {
@@ -169,8 +169,9 @@ static void type_rhs(p_ctx *c, ek_node *n)
     variant_list(c, n);
 }
 
-/* TypeDecl := PascalName ':' 'type' { TypeVar } '=' TypeRhs (A.3.2);
-   the colon and the cursor before `type` are the caller's. */
+/* A type declaration: 'type', optional type variable binders, '=', and
+   the right-hand side; the colon and the cursor before `type` are the
+   caller's. */
 ek_node *p_type_decl(p_ctx *c, const char *name, const ek_layout_token *head)
 {
     ek_node *n = p_node(c, EK_N_TYPE_DECL, head->line, head->col);
@@ -200,7 +201,7 @@ ek_node *p_type_decl(p_ctx *c, const char *name, const ek_layout_token *head)
     return n;
 }
 
-/* CTypeDecl := PascalName ':' 'ctype' '=' RecordType (A.3.2). */
+/* A ctype declaration: 'ctype', '=', and a record type. */
 ek_node *p_ctype_decl(p_ctx *c, const char *name, const ek_layout_token *head)
 {
     ek_node *n = p_node(c, EK_N_CTYPE_DECL, head->line, head->col);
@@ -234,8 +235,7 @@ ek_node *p_ctype_decl(p_ctx *c, const char *name, const ek_layout_token *head)
     return n;
 }
 
-/* TestDecl := snake_case Identifier ':' 'test' '=' (Expression | block)
-   (A.3.2). */
+/* A test declaration: 'test', '=', and an expression or block body. */
 ek_node *p_test_decl(p_ctx *c, const char *name, const ek_layout_token *head)
 {
     ek_node *n = p_node(c, EK_N_TEST_DECL, head->line, head->col);
@@ -257,8 +257,8 @@ ek_node *p_test_decl(p_ctx *c, const char *name, const ek_layout_token *head)
     return n;
 }
 
-/* ExternDecl tail: the word `extern`, the native symbol, and the
-   optional `Pure` (A.3.2). The signature was parsed as the annotation. */
+/* Extern declaration tail: the word `extern`, the native symbol, and
+   the optional `Pure`. The signature comes in as the annotation. */
 ek_node *p_extern_tail(p_ctx *c, const char *name,
                        const ek_layout_token *head, ek_node *sig)
 {

@@ -2,11 +2,11 @@
 
 #include "parse/internal.h"
 
-/* The level-1 operand layer of A.3.5: postfix member chains,
+/* The operand layer of the expression ladder: postfix member chains,
    constructor juxtaposition, primaries, and call argument lists. A
    `case` or `if` reaches this layer only as a whole argument or
-   right-hand side (Clause 6.5.1); the operator ladder in expr.c checks
-   its own operands. */
+   right-hand side; the operator ladder in expr.c checks its own
+   operands. */
 
 static ek_node *primary(p_ctx *c);
 static ek_node *apply_ctor(p_ctx *c, ek_node *head);
@@ -14,7 +14,7 @@ static ek_node *dot_link(p_ctx *c, ek_node *e);
 static void call_args(p_ctx *c, ek_nlist *args);
 
 /* Is e a name chain that can head a constructor application: every
-   segment PascalCase, no call or application yet (Clause 6.5.2). */
+   segment PascalCase, no call or application yet. */
 static int cons_head(const ek_node *e)
 {
     switch (e->kind) {
@@ -27,9 +27,9 @@ static int cons_head(const ek_node *e)
     }
 }
 
-/* ConstructorExpression := PascalName PostfixExpression; the argument
-   is one postfix expression, so juxtaposition binds tighter than every
-   operator (Clause 6.5.2, 6.5.5). */
+/* Constructor application: an all-Pascal name head followed by one
+   postfix expression, so juxtaposition binds tighter than every
+   operator. */
 static ek_node *apply_ctor(p_ctx *c, ek_node *head)
 {
     ek_node *arg = p_postfix(c);
@@ -46,9 +46,10 @@ static ek_node *apply_ctor(p_ctx *c, ek_node *head)
     return n;
 }
 
-/* Postfix := '.' Identifier [ '(' args ')' ], level 1 of Clause 6.5.5.
-   Index syntax does not exist (Clause 6.10). Dotted references and
-   receiver chains share FIELD and CALL; Clause 7.4.4 classifies. */
+/* Postfix: '.' Identifier [ '(' args ')' ] and constructor
+   application. Index syntax does not exist. Dotted references and
+   receiver chains share FIELD and CALL; the parser does not classify
+   the links. */
 ek_node *p_postfix(p_ctx *c)
 {
     ek_node *e = primary(c);
@@ -65,7 +66,7 @@ ek_node *p_postfix(p_ctx *c)
         if (p_src_kind(t) != EK_TOK_DOT) {
             if (p_src_kind(t) == EK_TOK_LPAREN && !cons_head(e)
                 && (e->kind == EK_N_NAME || e->kind == EK_N_FIELD)) {
-                /* Callee '(' args ')' — prefix or receiver call (A.3.5) */
+                /* Callee '(' args ')' — prefix or receiver call */
                 ek_node *call = p_node(c, EK_N_CALL, e->line, e->col);
 
                 if (!call) {
@@ -87,8 +88,8 @@ ek_node *p_postfix(p_ctx *c)
     return e;
 }
 
-/* Postfix := '.' Identifier [ '(' args ')' ]: the link always builds
-   the FIELD, and the call wraps it (A.3.5). */
+/* One '.' Identifier link always builds the FIELD, and a following
+   '(' wraps the call. */
 static ek_node *dot_link(p_ctx *c, ek_node *e)
 {
     const ek_layout_token *name;
@@ -120,8 +121,8 @@ static ek_node *dot_link(p_ctx *c, ek_node *e)
     }
 }
 
-/* PrimaryExpression (A.3.5): literals, names, calls, parenthesized
-   expressions, lambdas, case, if, and composite literals. */
+/* A primary: literals, names, calls, parenthesized expressions,
+   lambdas, case, if, and composite literals. */
 static ek_node *primary(p_ctx *c)
 {
     const ek_layout_token *t = p_peek(c);
@@ -161,8 +162,8 @@ static ek_node *primary(p_ctx *c)
     }
 }
 
-/* '(' [ Argument { ',' Argument } ] ')' (A.3.5); breaks inside brackets
-   are free formatting (Clause 6.2.4). The '(' is consumed. */
+/* A parenthesized argument list; breaks inside brackets are free
+   formatting. The '(' is consumed. */
 static void call_args(p_ctx *c, ek_nlist *args)
 {
     p_list_init(args);

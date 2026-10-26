@@ -1,9 +1,9 @@
 #include "common.h"
 
-/* N15 (Annex D): a raw tab as indentation is E-tab, diagnosed once by
-   the lexer and passed through by layout (Clause 5.2.3). The tab counts
-   one column, so "\t   " puts the member at column four and the rest of
-   the program still lays out without a second diagnostic. */
+/* A raw tab as indentation is E-tab, diagnosed once by the lexer and
+   passed through by layout. The tab counts one column, so "\t   " puts
+   the member at column four and the rest of the program still lays out
+   without a second diagnostic. */
 
 static void test_tab_indentation_diagnosed_once(void)
 {

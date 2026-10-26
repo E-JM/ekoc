@@ -1,9 +1,8 @@
 #include "parse/internal.h"
 
-/* Type expressions of Clause 6.9 / A.3.7. Parentheses are
-   context-sensitive: a group where a complete type is expected is a
-   parameter group with the arrow possibly elided; where an atom is
-   expected, it is a grouped type. */
+/* Type expressions. Parentheses are context-sensitive: a group where a
+   complete type is expected is a parameter group with the arrow
+   possibly elided; where an atom is expected, it is a grouped type. */
 
 static ek_node *fn_type(p_ctx *c, const ek_layout_token *open);
 static ek_node *fn_params(p_ctx *c, ek_node *n);
@@ -28,9 +27,9 @@ ek_node *p_type(p_ctx *c)
     return applied_type(c);
 }
 
-/* FunctionType := ParameterGroup ( '->' | '!->' | '?->' ) Type
-   | ParameterGroup '!' | ParameterGroup '?' | ParameterGroup (A.3.7).
-   The elided forms carry result NULL, meaning `_`. */
+/* A parameter group followed by an arrow and a result type, by a bare
+   '!' or '?', or by nothing. The elided forms carry result NULL,
+   meaning `_`. */
 static ek_node *fn_type(p_ctx *c, const ek_layout_token *open)
 {
     ek_node *n = p_node(c, EK_N_T_FN, open->line, open->col);
@@ -91,7 +90,7 @@ static ek_node *fn_params(p_ctx *c, ek_node *n)
     return n;
 }
 
-/* The arrow forms of Clause 6.9.3; elided forms carry result NULL. */
+/* The arrow and suffix forms; elided forms carry result NULL. */
 static ek_node *fn_arrow(p_ctx *c, ek_node *n)
 {
     if (p_got(c, EK_TOK_ARROW)) {
@@ -110,8 +109,8 @@ static ek_node *fn_arrow(p_ctx *c, ek_node *n)
     return n;
 }
 
-/* AppliedType := TypeAtom { TypeAtom }; a chain stops at `,` and `->`
-   because neither begins an atom (Clause 6.9.4). */
+/* A type application: one atom applied to more atoms; a chain stops at
+   `,` and `->` because neither begins an atom. */
 static ek_node *applied_type(p_ctx *c)
 {
     ek_node *head = p_type_atom(c);
@@ -150,8 +149,8 @@ static ek_node *applied_type(p_ctx *c)
     return n;
 }
 
-/* An application argument is an arrow-free atom, and a composite
-   argument is parenthesized (Clause 6.9.4). */
+/* An application argument is an atom, and a composite argument must be
+   parenthesized. */
 static void arg_atom(p_ctx *c, ek_nlist *args)
 {
     ek_node *a = p_type_atom(c);
@@ -165,8 +164,8 @@ static void arg_atom(p_ctx *c, ek_nlist *args)
     p_list_add(c, args, a);
 }
 
-/* TypeAtom of A.3.7: a (qualified) name, the unit type, a grouped
-   type, or one of the bracket forms. */
+/* A type atom: a (qualified) name, the unit type, a grouped type, or
+   one of the bracket forms. */
 ek_node *p_type_atom(p_ctx *c)
 {
     const ek_layout_token *t = p_peek(c);
@@ -214,10 +213,9 @@ ek_node *p_type_atom(p_ctx *c)
     }
 }
 
-/* '[]' Type | '[' Type ']' Type | '[' Type { ',' Type } ']'
-   | '[' Field { ',' Field } ']' (A.3.7). The bracket forms are told
-   apart by what follows the first type: `]` plus an atom is a
-   dictionary, `,` a tuple, `name :` a record (Clause 6.9.2). */
+/* The bracket forms: a list, a dictionary, a tuple, or a record. They
+   are told apart by what follows the first type: `]` plus an atom is a
+   dictionary, `,` a tuple, `name :` a record. */
 static ek_node *bracket_type(p_ctx *c, const ek_layout_token *open)
 {
     ek_node *n;
@@ -260,7 +258,7 @@ static ek_node *bracket_type(p_ctx *c, const ek_layout_token *open)
 }
 
 /* After `[ Type ]`: an atom begins the value of a dictionary; nothing
-   is the invalid one-element bracket (Clause 6.9.2). */
+   is the invalid one-element bracket. */
 static ek_node *bracket_tail(p_ctx *c, const ek_layout_token *open,
                              ek_node *key)
 {
@@ -285,7 +283,7 @@ static ek_node *bracket_tail(p_ctx *c, const ek_layout_token *open,
     return n;
 }
 
-/* TupleType := '[' Type ',' Type { ',' Type } ']' (A.3.7). */
+/* A tuple type: at least two comma-separated types in brackets. */
 static ek_node *tuple_type(p_ctx *c, const ek_layout_token *open,
                            ek_node *first)
 {
@@ -319,7 +317,7 @@ static ek_node *tuple_type(p_ctx *c, const ek_layout_token *open,
     }
 }
 
-/* RecordType := '[' Field { ',' Field } ']' (A.3.7). */
+/* A record type: comma-separated `name : type` fields in brackets. */
 static ek_node *record_type(p_ctx *c, const ek_layout_token *open)
 {
     ek_node *n = p_node(c, EK_N_T_RECORD, open->line, open->col);

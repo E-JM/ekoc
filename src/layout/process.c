@@ -2,9 +2,9 @@
 
 #include "layout/internal.h"
 
-/* Annex A.4 implementation codes: relative indentation that is not a
-   multiple of four (5.2.2), a line at a column its position forbids
-   (5.2.2, 6.2.6), and a dedent matching no open block (5.1.3). */
+/* Layout error codes: relative indentation that is not a multiple of
+   four, a line at a column its position forbids, and a dedent
+   matching no open block. */
 #define CODE_STEP "E-indent-step"
 #define CODE_COLUMN "E-indent-column"
 #define CODE_DEDENT "E-indent-dedent"
@@ -39,8 +39,9 @@ static int first_dot_col(const line_run *l)
     return -1;
 }
 
-/* Rule 5 (smaller) and rule 8: pops to col, one DEDENT per pop; a col
-   matching no stack entry is an error and recovers as if it matched. */
+/* Pops the indentation stack to col on a dedent, one DEDENT per pop; a
+   col matching no stack entry is an error and recovers as if it
+   matched. */
 static void dedent_to(layout_ctx *c, int col, const line_run *l)
 {
     int line = l->tok[0].line, at = l->tok[0].col;
@@ -56,7 +57,7 @@ static void dedent_to(layout_ctx *c, int col, const line_run *l)
     }
 }
 
-/* Rule 4, line start: closes every callback block whose header sits at
+/* At a line start, closes every callback block whose header sits at
    or right of col, emitting the DEDENTs owed for opened blocks. */
 static void close_cb_col(layout_ctx *c, int col, int line, int at)
 {
@@ -69,7 +70,7 @@ static void close_cb_col(layout_ctx *c, int col, int line, int at)
     }
 }
 
-/* Rule 4, closing bracket: a bracket closing from depth d closes every
+/* At a closing bracket, a bracket closing from depth d closes every
    callback block opened at depth d or deeper. */
 static void close_cb_depth(layout_ctx *c, int depth, int line, int at)
 {
@@ -82,8 +83,8 @@ static void close_cb_depth(layout_ctx *c, int depth, int line, int at)
     }
 }
 
-/* Rule 3/4: a line inside brackets. Only callback blocks impose
-   structure here; every other line break is free formatting. */
+/* A line inside brackets. Only callback blocks impose structure here;
+   every other line break is free formatting. */
 static void bracket_start(layout_ctx *c, const line_run *l, int col)
 {
     int line = l->tok[0].line, at = l->tok[0].col;
@@ -113,8 +114,8 @@ static void bracket_start(layout_ctx *c, const line_run *l, int col)
     }
 }
 
-/* Rules 5 to 8: a line at bracket depth zero. Continuations splice: no
-   token is emitted for the break (rules 6 and 7). */
+/* A line at bracket depth zero. Continuations splice: no token is
+   emitted for the break. */
 static void top_start(layout_ctx *c, const line_run *l, int col)
 {
     if (l->tok[0].kind == EK_TOK_KW_ELSE) {
@@ -155,7 +156,7 @@ static void line_start(layout_ctx *c, const line_run *l)
 }
 
 /* Emits the line's tokens; closers first close the callback blocks
-   their bracket ends, with DEDENTs before the bracket (rule 4). */
+   their bracket ends, with DEDENTs before the bracket. */
 static void emit_line(layout_ctx *c, const line_run *l)
 {
     size_t i;
@@ -181,8 +182,8 @@ static void emit_line(layout_ctx *c, const line_run *l)
 }
 
 /* End-of-line state: a parameter group followed by ':' inside brackets
-   opens a callback block (rule 4); a depth-zero line ending in ':' or
-   '=' opens a block and a dot fixes the chain column (rules 6 and 7). */
+   opens a callback block; a depth-zero line ending in ':' or '=' opens
+   a block, and a dot fixes the chain column. */
 static void line_state(layout_ctx *c, const line_run *l)
 {
     const ek_token *last = &l->tok[l->count - 1];
@@ -209,8 +210,8 @@ static size_t next_sig(const line_run *lines, size_t count, size_t idx)
     return j;
 }
 
-/* Rules 6 and 7: the next line is deeper with no block expected, so it
-   continues or splices and the previous line's NEWLINE is suppressed. */
+/* The next line is deeper with no block expected, so it continues or
+   splices and the previous line's NEWLINE is suppressed. */
 static int next_is_splice(const layout_ctx *c, const line_run *lines,
                           size_t count, size_t idx)
 {
@@ -223,7 +224,7 @@ static int next_is_splice(const layout_ctx *c, const line_run *lines,
 }
 
 /* A member line at depth zero ends with NEWLINE unless its break is
-   suppressed (rule 3 keeps it inside brackets; rules 6 and 7 splice). */
+   suppressed because the line sits inside brackets or splices. */
 static void line_terminator(layout_ctx *c, const line_run *lines,
                             size_t count, size_t idx)
 {
@@ -237,7 +238,7 @@ static void line_terminator(layout_ctx *c, const line_run *lines,
     lo_emit(c, EK_LTOK_NEWLINE, at->line, at->col);
 }
 
-/* Rule 10: the file closes every open level, callback blocks first. */
+/* End of file closes every open level, callback blocks first. */
 static void finish(layout_ctx *c)
 {
     while (c->cb_count > 0) {

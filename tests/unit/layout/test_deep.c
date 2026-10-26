@@ -4,7 +4,7 @@
 #include <stdlib.h>
 
 /* Deeply nested blocks: six header levels, each opening exactly one
-   block, all closed by end of file (Clause 5.1.3, A.4 rule 10). */
+   block, all closed by end of file. */
 
 static char *build_source(void)
 {

@@ -13,8 +13,7 @@ void lo_oom(layout_ctx *c)
 }
 
 /* Doubles a growable arena array, copying count items to the new block.
-   Old blocks stay in the arena; arenas free wholesale (ARCHITECTURE
-   rule 5). */
+   Old blocks stay in the arena and are freed with it. */
 static void *grow(layout_ctx *c, void *data, size_t count, size_t *cap,
                   size_t item)
 {
@@ -111,8 +110,8 @@ void lo_push_cb(layout_ctx *c, int header_col, int header_depth)
     c->cb_count++;
 }
 
-/* Splits the token stream at NEWLINE and EOF terminators (A.4 rule 1).
-   The trailing input EOF is not a line. */
+/* Splits the token stream at NEWLINE and EOF terminators. The trailing
+   input EOF is not a line. */
 static line_run *split_lines(layout_ctx *c, const ek_token *tokens,
                              size_t count, size_t *out_count)
 {

@@ -2,10 +2,10 @@
 
 #include "parse/internal.h"
 
-/* Patterns of Clause 6.8 / A.3.6. Variables and constructors are
-   classified by spelling alone (Clause 5.5.2). Tuple, record, and list
-   patterns share braces; the node records the items as written and the
-   expected type decides the family (Clause 6.8.1). */
+/* Patterns. Variables and constructors are classified by spelling
+   alone. Tuple, record, and list patterns share braces; the node
+   records the items as written and the expected type decides the
+   family. */
 
 static ek_node *primary_pattern(p_ctx *c);
 static ek_node *lit_pattern(p_ctx *c, ek_node *lit);
@@ -17,7 +17,7 @@ static ek_node *paren_pattern(p_ctx *c, const ek_layout_token *open);
 static void brace_items(p_ctx *c, ek_node *n);
 static ek_node *brace_item(p_ctx *c);
 
-/* Pattern := OrPattern: P | Q matches either alternative (6.8.3). */
+/* A pattern: `|` alternatives; `P | Q` matches either. */
 ek_node *p_pattern(p_ctx *c)
 {
     ek_node *first = primary_pattern(c);
@@ -59,7 +59,7 @@ static void dotted_name(p_ctx *c, const ek_layout_token *first,
     }
 }
 
-/* PrimaryPattern of A.3.6. */
+/* One primary pattern. */
 static ek_node *primary_pattern(p_ctx *c)
 {
     const ek_layout_token *t = p_peek(c);
@@ -86,15 +86,15 @@ static ek_node *primary_pattern(p_ctx *c)
 }
 
 /* An identifier pattern: a (qualified) constructor or a variable,
-   classified by spelling (Clause 5.5.2, A.3.6). */
+   classified by spelling. */
 static ek_node *name_pattern(p_ctx *c, const ek_layout_token *t)
 {
     ek_slist path;
 
     p_take(c);
     dotted_name(c, t, &path);
-    /* A dotted head is a qualified constructor `Mod.Name`
-       (Clause 7.4.6); the module segment is snake_case. */
+    /* A dotted head is a qualified constructor `Mod.Name`; the module
+       segment is snake_case. */
     if (path.count > 1 || p_is_pascal(path.data[0])) {
         ek_node *n = p_node(c, EK_N_P_CONS, t->line, t->col);
 
@@ -121,7 +121,7 @@ static ek_node *name_pattern(p_ctx *c, const ek_layout_token *t)
     }
 }
 
-/* A string pattern carries no interpolation (Clause 6.8.5). */
+/* A string pattern carries no interpolation. */
 static ek_node *string_pattern(p_ctx *c, const ek_layout_token *t)
 {
     ek_node *lit = p_literal(c, p_take(c));
@@ -140,7 +140,7 @@ static ek_node *string_pattern(p_ctx *c, const ek_layout_token *t)
     return lit_pattern(c, lit);
 }
 
-/* `-` and a numeric literal (Clause 6.8.5). */
+/* A negative pattern: `-` and a numeric literal. */
 static ek_node *minus_pattern(p_ctx *c, const ek_layout_token *t)
 {
     ek_token_kind k;
@@ -168,7 +168,7 @@ static ek_node *minus_pattern(p_ctx *c, const ek_layout_token *t)
 }
 
 /* P_LIT wraps the literal expression, including the negative numeric
-   form (Clause 6.8.5). */
+   form. */
 static ek_node *lit_pattern(p_ctx *c, ek_node *lit)
 {
     ek_node *n;
@@ -184,7 +184,7 @@ static ek_node *lit_pattern(p_ctx *c, ek_node *lit)
 }
 
 /* '(' Pattern { ',' Pattern } ')': the tuple group of a binding line
-   or a multi-scrutinee arm (A.3.6). */
+   or a multi-scrutinee arm. */
 static ek_node *paren_pattern(p_ctx *c, const ek_layout_token *open)
 {
     ek_node *n = p_node(c, EK_N_P_PAREN, open->line, open->col);
@@ -216,7 +216,7 @@ static ek_node *paren_pattern(p_ctx *c, const ek_layout_token *open)
 }
 
 /* '{' '}' | elements | elements ',' '..' [name] | '..' [name] ','
-   elements | fields — the shared brace syntax of Clause 6.8. */
+   elements | fields — the shared brace syntax. */
 static ek_node *brace_pattern(p_ctx *c, const ek_layout_token *open)
 {
     ek_node *n = p_node(c, EK_N_P_BRACE, open->line, open->col);
@@ -252,8 +252,7 @@ static ek_node *brace_pattern(p_ctx *c, const ek_layout_token *open)
     return n;
 }
 
-/* Items until '}'; a `..` after the items is the suffix rest of
-   Clause 6.8.4. */
+/* Items until '}'; a `..` after the items is the suffix rest. */
 static void brace_items(p_ctx *c, ek_node *n)
 {
     for (;;) {
@@ -303,8 +302,8 @@ static void brace_items(p_ctx *c, ek_node *n)
 }
 
 /* One item: a field `name [: Pattern]` or an element pattern. A bare
-   identifier stays an element; the record reading of Clause 6.8.2
-   reinterprets it as the shorthand field. */
+   identifier stays an element; the record reading reinterprets it as
+   the shorthand field. */
 static ek_node *brace_item(p_ctx *c)
 {
     const ek_layout_token *t = p_peek(c);

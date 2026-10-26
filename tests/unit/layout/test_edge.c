@@ -1,14 +1,12 @@
 #include "common.h"
 
-/* Edge cases from the Annex A.4 white-box audit: the first significant
-   line (rules 5 and 6), header terminators (Clause 6.2.3), dedents
-   across and between levels (Clause 5.2.2), bracket asymmetry at end of
-   file (Clause 5.3.3), callback block edges (Clause 6.2.5), and blank
-   input. */
+/* Edge cases: the first significant line, header terminators, dedents
+   across and between levels, bracket asymmetry at end of file,
+   callback block edges, and blank input. */
 
 /* The first significant line is deeper than the stack bottom with no
-   header before it: rule 6 ignores its indentation and leaves the
-   diagnosis to parse, so layout emits no INDENT and no error. */
+   header before it: layout ignores its indentation and leaves the
+   diagnosis to parse, so it emits no INDENT and no error. */
 static void test_first_line_indented(void)
 {
     layout_fixture f;
@@ -30,7 +28,8 @@ static void test_else_at_column_zero_at_start(void)
 }
 
 /* An indented else demands a block at its column; with only the bottom
-   on the stack nothing matches, which is the rule 5 error. */
+   on the stack nothing matches, which is the dedent-matches-no-block
+   error. */
 static void test_else_indented_at_start(void)
 {
     layout_fixture f;
@@ -45,8 +44,8 @@ static void test_else_indented_at_start(void)
     fx_end(&f);
 }
 
-/* ':=' is one token and neither of the rule 6 terminators ':' and '=',
-   so it opens no block; the deeper line splices (Clause 6.3.1). */
+/* ':=' is one token and neither of the header terminators ':' and '=',
+   so it opens no block; the deeper line splices. */
 static void test_coloneq_does_not_open_block(void)
 {
     layout_fixture f;
@@ -61,8 +60,8 @@ static void test_coloneq_does_not_open_block(void)
     fx_end(&f);
 }
 
-/* '=' is a rule 6 terminator: the deeper line is the block's first
-   member, processed by rule 5. */
+/* '=' is a header terminator: the deeper line is the block's first
+   member. */
 static void test_eq_opens_block(void)
 {
     layout_fixture f;
@@ -89,7 +88,7 @@ static void test_eqeq_does_not_open_block(void)
     fx_end(&f);
 }
 
-/* A dedent may close several levels at once (Clause 5.2.2): else at
+/* A dedent may close several levels at once: else at
    column zero pops both the if's and the case's block. */
 static void test_dedent_past_two_levels(void)
 {
@@ -106,7 +105,7 @@ static void test_dedent_past_two_levels(void)
 }
 
 /* A dedent to a column between two open blocks pops past them and
-   reports the mismatch once (Clause 5.2.2). */
+   reports the mismatch once. */
 static void test_dedent_between_levels(void)
 {
     layout_fixture f;
@@ -122,7 +121,7 @@ static void test_dedent_between_levels(void)
 }
 
 /* Steps of twelve are legal; steps of one and three are diagnosed
-   (Clause 5.2.2) and drain by opening the block anyway. */
+   and drain by opening the block anyway. */
 static void test_indent_steps(void)
 {
     fx_skeleton_check("a: Int =\n            x\n",
@@ -147,7 +146,7 @@ static void test_indent_steps(void)
     fx_end(&f);
 }
 
-/* Blank lines do not break a header from its first member (5.2.4):
+/* Blank lines do not break a header from its first member:
    next_sig skips them for the splice decision. */
 static void test_blank_between_header_and_member(void)
 {
@@ -155,7 +154,7 @@ static void test_blank_between_header_and_member(void)
 }
 
 /* An unclosed bracket at end of file emits no NEWLINE and no DEDENT;
-   the missing closer is a parse diagnosis (Clause 5.3.3). */
+   the missing closer is a parse diagnosis. */
 static void test_unclosed_bracket_at_eof(void)
 {
     layout_fixture f;
@@ -170,7 +169,7 @@ static void test_unclosed_bracket_at_eof(void)
 }
 
 /* An extra closer at depth zero and mismatched kinds pass through; the
-   bracket depth is one counter over all six brackets (A.4 rule 3). */
+   bracket depth is one counter over all six brackets. */
 static void test_extra_and_mismatched_brackets(void)
 {
     fx_skeleton_check("a)\nb\n", "S S N S N E");
@@ -178,7 +177,7 @@ static void test_extra_and_mismatched_brackets(void)
 }
 
 /* A callback header immediately before end of file never opened, so
-   nothing is owed (A.4 rule 4). */
+   nothing is owed. */
 static void test_callback_header_at_eof(void)
 {
     layout_fixture f;
@@ -195,7 +194,7 @@ static void test_callback_header_at_eof(void)
 }
 
 /* A bracket opened on line 1 and closed on line 2: free formatting, no
-   NEWLINE anywhere (A.4 rule 3). */
+   NEWLINE anywhere. */
 static void test_bracket_opened_on_line_one(void)
 {
     fx_skeleton_check("f(a,\nb)\n", "S S S S S S N E");
@@ -203,7 +202,7 @@ static void test_bracket_opened_on_line_one(void)
 
 /* Sibling callbacks inside one call: the first block's DEDENT precedes
    its closing bracket, the second header opens after it, and an
-   inline body splices with no NEWLINE (Clauses 6.2.4 and 6.2.5). */
+   inline body splices with no NEWLINE. */
 static void test_sibling_callbacks(void)
 {
     layout_fixture f;
@@ -219,7 +218,7 @@ static void test_sibling_callbacks(void)
 }
 
 /* A callback body line deeper than the member column is free
-   formatting: rule 3 ignores it, so it splices (A.4 rule 3). */
+   formatting: the bracket counter ignores it, so it splices. */
 static void test_callback_member_deeper_splices(void)
 {
     layout_fixture f;
@@ -235,7 +234,7 @@ static void test_callback_member_deeper_splices(void)
 
 /* A memberless callback block: the deeper closing-bracket line is the
    first member by column, so its DEDENT follows the INDENT directly
-   and the empty member list surfaces at parse (A.4 rule 4). */
+   and the empty member list surfaces at parse. */
 static void test_memberless_callback(void)
 {
     layout_fixture f;
@@ -250,7 +249,7 @@ static void test_memberless_callback(void)
 }
 
 /* An else deeper than the if it could match matches no open block and
-   is diagnosed (A.4 rule 8, Clause 5.2.2). */
+   is diagnosed. */
 static void test_else_deeper_than_if(void)
 {
     layout_fixture f;
@@ -266,14 +265,14 @@ static void test_else_deeper_than_if(void)
 }
 
 /* A header directly before end of file opened no member, so no INDENT
-   is owed; the NEWLINE sits at the terminator (A.4 rules 6 and 10). */
+   is owed; the NEWLINE sits at the terminator. */
 static void test_header_at_eof(void)
 {
     fx_skeleton_check("a: Int =\n", "S S S S N E");
 }
 
 /* Empty input and input of only NEWLINEs produce the lone EOF marker;
-   blank lines are discarded by rule 2. */
+   blank lines carry no tokens. */
 static void test_empty_and_newline_only(void)
 {
     layout_fixture f;

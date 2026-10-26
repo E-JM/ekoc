@@ -1,7 +1,7 @@
 #include "common.h"
 
-/* Expression forms of 6.4 to 6.9 with the precedence ladder of
-   Clause 6.5.5, postfix and receiver chains, and lambdas. */
+/* Expression forms with the full precedence ladder: postfix and
+   receiver chains, and lambdas. */
 
 /* Parses `_t: Int = <expr>` and returns the right-hand side, or NULL
    when the failed RHS takes the whole binding with it. */
@@ -45,7 +45,7 @@ static void literals_and_names(void)
     EK_CHECK_U64(e->u.field.recv->kind, EK_N_NAME);
     pfx_end(&f);
 
-    /* `_` in value position is the unit value (Clause 6.3.2). */
+    /* `_` in value position is the unit value. */
     e = expr_of(&f, "_");
     EK_CHECK_U64(pfx_errors(&f), 0);
     EK_CHECK_U64(e->kind, EK_N_NAME);
@@ -53,7 +53,7 @@ static void literals_and_names(void)
     pfx_end(&f);
 }
 
-/* Ladder of Clause 6.5.5, tightest to loosest. */
+/* The precedence ladder, tightest to loosest. */
 static void precedence(void)
 {
     parse_fixture f;
@@ -141,7 +141,7 @@ static void calls_and_chains(void)
     EK_CHECK_U64(e->u.call.args.count, 2);
     pfx_end(&f);
 
-    /* receiver call and member chains (Clause 6.5.3) */
+    /* receiver call and member chains */
     e = expr_of(&f, "a.b(c).d");
     EK_CHECK_U64(pfx_errors(&f), 0);
     EK_CHECK_U64(e->kind, EK_N_FIELD);
@@ -150,7 +150,7 @@ static void calls_and_chains(void)
     EK_CHECK_U64(e->u.field.recv->u.call.args.count, 1);
     pfx_end(&f);
 
-    /* a chain may attach a module: a.Mod.f(b) (Clause 7.4.4) */
+    /* a chain may attach a module: a.Mod.f(b) */
     e = expr_of(&f, "p.geolib.coord_sum()");
     EK_CHECK_U64(pfx_errors(&f), 0);
     EK_CHECK_U64(e->kind, EK_N_CALL);
@@ -188,7 +188,7 @@ static void calls_and_chains(void)
     EK_CHECK_U64(e->u.pair.b->u.kids.count, 2);
     pfx_end(&f);
 
-    /* postfix on a literal (Clause 5.7.4) */
+    /* postfix on a literal */
     e = expr_of(&f, "255.to_hex()");
     EK_CHECK_U64(pfx_errors(&f), 0);
     EK_CHECK_U64(e->kind, EK_N_CALL);
@@ -221,7 +221,7 @@ static void composite_literals(void)
     EK_CHECK_U64(e->u.kids.data[0]->u.pair.b->kind, EK_N_INT_LIT);
     pfx_end(&f);
 
-    /* nested records (Clause 6.6.3) */
+    /* nested records */
     e = expr_of(&f, "{address: {city: \"y\"}}");
     EK_CHECK_U64(pfx_errors(&f), 0);
     EK_CHECK_U64(e->u.kids.data[0]->u.pair.b->kind, EK_N_COMPOSITE);
@@ -245,7 +245,7 @@ static void lambdas(void)
     EK_CHECK_U64(e->u.pair.a->u.kids.count, 0);
     pfx_end(&f);
 
-    /* a nested parameter group is a group of parameters (6.4.3) */
+    /* a nested parameter group is a group of parameters */
     e = expr_of(&f, "((a, b)): a");
     EK_CHECK_U64(pfx_errors(&f), 0);
     EK_CHECK_U64(e->u.pair.a->kind, EK_N_LAMBDA_PARAMS);
@@ -264,7 +264,7 @@ static void operand_blocks(void)
     parse_fixture f;
     const ek_node *e;
 
-    /* a case or if operand is parenthesized (Clause 6.5.1) */
+    /* a case or if operand is parenthesized */
     e = expr_of(&f, "1 + if c: 2 else: 3");
     EK_CHECK(pfx_errors(&f) > 0);
     pfx_collect(&f);
@@ -284,7 +284,7 @@ static void precedence_corners(void)
     parse_fixture f;
     const ek_node *e;
 
-    /* Unary minus never chains (Clause 6.5.4). */
+    /* Unary minus never chains. */
     (void)expr_of(&f, "- -x");
     EK_CHECK(pfx_errors(&f) > 0);
     pfx_end(&f);
@@ -296,14 +296,14 @@ static void precedence_corners(void)
     EK_CHECK_U64(e->u.binary.rhs->kind, EK_N_UNARY);
     pfx_end(&f);
 
-    /* Range chains are diagnosed (Clause 6.5.5). */
+    /* Range chains are diagnosed. */
     (void)expr_of(&f, "1..2..3");
     EK_CHECK(pfx_errors(&f) > 0);
     pfx_collect(&f);
     EK_CHECK(pfx_has_code(&f, "E-chained-range"));
     pfx_end(&f);
 
-    /* Comparison over a range folds without error (Clause 6.5.5). */
+    /* Comparison over a range folds without error. */
     e = expr_of(&f, "a < b..c");
     EK_CHECK_U64(pfx_errors(&f), 0);
     EK_CHECK_U64(e->u.binary.op, EK_BIN_LT);
@@ -311,7 +311,7 @@ static void precedence_corners(void)
     pfx_end(&f);
 
     /* The juxtaposition argument is one postfix expression, so the
-       chain under it binds first (Clause 6.5.2). */
+       chain under it binds first. */
     e = expr_of(&f, "Ok x.f()");
     EK_CHECK_U64(pfx_errors(&f), 0);
     EK_CHECK_U64(e->kind, EK_N_APPLY);
@@ -326,8 +326,8 @@ static void precedence_corners(void)
     EK_CHECK_U64(e->u.pair.b->u.wrap.inner->kind, EK_N_APPLY);
     pfx_end(&f);
 
-    /* A `case`/`if` is admitted as the whole juxtaposed argument
-       (Clause 6.5.1); only an operator operand must be parenthesized. */
+    /* A `case`/`if` is admitted as the whole juxtaposed argument;
+       only an operator operand must be parenthesized. */
     e = expr_of(&f, "Ok if c: 1 else: 2");
     EK_CHECK_U64(pfx_errors(&f), 0);
     EK_CHECK_U64(e->kind, EK_N_APPLY);
@@ -340,7 +340,7 @@ static void lambda_shapes(void)
     parse_fixture f;
     const ek_node *e;
 
-    /* Several parameters, flat and grouped (A.3.4). */
+    /* Several parameters, flat and grouped. */
     e = expr_of(&f, "(a, b, c): a");
     EK_CHECK_U64(pfx_errors(&f), 0);
     EK_CHECK_U64(e->u.pair.a->u.kids.count, 3);
@@ -351,13 +351,13 @@ static void lambda_shapes(void)
     EK_CHECK(pfx_errors(&f) > 0);
     pfx_end(&f);
 
-    /* An anonymous parameter (A.3.4). */
+    /* An anonymous parameter. */
     e = expr_of(&f, "(_): 1");
     EK_CHECK_U64(pfx_errors(&f), 0);
     EK_CHECK_STR(e->u.pair.a->u.kids.data[0]->u.path.data[0], "_");
     pfx_end(&f);
 
-    /* A lambda body may be a `;` suite (Clause 6.7.5). */
+    /* A lambda body may be a `;` suite. */
     e = expr_of(&f, "(n): a(); n");
     EK_CHECK_U64(pfx_errors(&f), 0);
     EK_CHECK_U64(e->u.pair.b->kind, EK_N_BLOCK);

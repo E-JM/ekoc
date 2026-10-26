@@ -9,45 +9,44 @@
 #include "support/diag.h"
 
 /*
- * Stage 4 (Clause 6, Annex A.3): layout token stream -> AST.
+ * Layout token stream -> AST.
  *
  * ek_parse is a pure entry point, (input, arena, diag) -> output. A
  * module that fails to parse still yields a partial AST plus error
- * diagnostics; the stage never aborts (ARCHITECTURE rule 4). Nodes are
- * dumb data: a kind, a source position, and children. No parent
- * pointers, no semantic fields; everything is arena-allocated.
+ * diagnostics; the parser never aborts. Nodes are dumb data: a kind, a
+ * source position, and children. No parent pointers, no semantic
+ * fields; everything is arena-allocated.
  *
- * Representation notes for resolve (M5) and check (M6):
+ * Representation notes for consumers:
  *
  * - Dotted references and receiver chains share EK_N_FIELD and
  *   EK_N_CALL. `Math.pi` is FIELD(NAME "Math", "pi"); `p.f(x)` is
  *   CALL(FIELD(NAME "p", "f"), [x]); `a.Mod.f(b)` nests the same way.
  *   Which links are module accesses, namespace members, or record
- *   fields is decided by Clause 7.4.3 and 7.4.4, not by this stage.
- * - EK_N_APPLY is constructor juxtaposition (`Ok x`, `Mod.Name x`,
- *   Clause 6.5.2). The head is an all-Pascal name chain; the argument
- *   is one postfix expression, since juxtaposition binds tighter than
- *   every operator (Clause 6.5.5).
- * - EK_N_STRING_LIT carries the parts of Clause 5.9.3 in source order,
- *   one ek_str_seg per literal segment (text/text_len set, expr NULL)
- *   and one per interpolation slot (expr set, text NULL). A slot's
- *   token run is parsed by the same expression grammar, so a slot is a
- *   full expression node and slots nest through EK_N_STRING_LIT.
- * - EK_N_BLOCK holds the members of a block body (Clause 6.2.2) and of
- *   a `;`-separated single-line suite (Clause 5.3.2, 6.7.5); the two
- *   are the same node. A body of one expression is stored bare, so
- *   `if c: a else: b` has expressions, not blocks, as its branches.
+ *   fields is not decided here.
+ * - EK_N_APPLY is constructor juxtaposition (`Ok x`, `Mod.Name x`).
+ *   The head is an all-Pascal name chain; the argument is one postfix
+ *   expression, since juxtaposition binds tighter than every operator.
+ * - EK_N_STRING_LIT carries its parts in source order, one ek_str_seg
+ *   per literal segment (text/text_len set, expr NULL) and one per
+ *   interpolation slot (expr set, text NULL). A slot's token run is
+ *   parsed by the same expression grammar, so a slot is a full
+ *   expression node and slots nest through EK_N_STRING_LIT.
+ * - EK_N_BLOCK holds the members of an indented block body and of a
+ *   `;`-separated single-line suite; the two are the same node. A body
+ *   of one expression is stored bare, so `if c: a else: b` has
+ *   expressions, not blocks, as its branches.
  * - EK_N_P_BRACE covers the brace patterns that share one syntax
- *   (tuple, record, list; Clause 6.8). The expected type decides the
- *   family, so the node records items as written: a bare-identifier
- *   item is EK_N_P_VAR, which a record reading reinterprets as the
- *   shorthand field of Clause 6.8.2. A `:` item is EK_N_P_FIELD.
+ *   (tuple, record, list). The expected type decides the family, so
+ *   the node records items as written: a bare-identifier item is
+ *   EK_N_P_VAR, which a record reading reinterprets as the shorthand
+ *   field. A `:` item is EK_N_P_FIELD.
  * - EK_N_T_FN with result NULL is one of the elided forms `(a)`,
- *   `(a) !`, `(a) ?` of Clause 6.9.3; a written unit result is an
- *   EK_N_T_NAME "_" node. EK_N_T_PARAM reuses the t_field member and
- *   carries a NULL name for an unlabeled parameter.
- * - EK_N_P_VAR and EK_N_P_CONS are classified by spelling alone
- *   (Clause 5.5.2): snake_case is a variable, PascalCase a constructor.
+ *   `(a) !`, `(a) ?`; a written unit result is an EK_N_T_NAME "_"
+ *   node. EK_N_T_PARAM reuses the t_field member and carries a NULL
+ *   name for an unlabeled parameter.
+ * - EK_N_P_VAR and EK_N_P_CONS are classified by spelling alone:
+ *   snake_case is a variable, PascalCase a constructor.
  */
 
 typedef enum {
@@ -66,7 +65,7 @@ typedef enum {
     EK_N_T_RECORD, EK_N_T_FIELD, EK_N_T_PARAM, EK_N_T_PAREN, EK_N_T_FN
 } ek_node_kind;
 
-/* Operator of EK_N_BINARY; ranges of Clause 6.5.6 are binary too. */
+/* Operator of EK_N_BINARY; range operators are binary too. */
 typedef enum {
     EK_BIN_ADD, EK_BIN_SUB, EK_BIN_MUL, EK_BIN_DIV, EK_BIN_REM,
     EK_BIN_CONCAT, EK_BIN_EQ, EK_BIN_NE, EK_BIN_LT, EK_BIN_LE,
@@ -74,18 +73,18 @@ typedef enum {
     EK_BIN_RANGE_EXC, EK_BIN_RANGE_INC
 } ek_binop;
 
-/* World bit of a function type (Clause 6.9.3). result NULL means the
-   arrow was elided and the result is `_`. */
+/* World bit of a function type. result NULL means the arrow is
+   elided and the result is `_`. */
 typedef enum {
     EK_ARROW_PURE, EK_ARROW_WORLD, EK_ARROW_OPEN
 } ek_arrow;
 
-/* Where the `..` rest of a list pattern sits (Clause 6.8.4). */
+/* Where the `..` rest of a list pattern sits. */
 typedef enum {
     EK_REST_NONE, EK_REST_SUFFIX, EK_REST_PREFIX
 } ek_rest;
 
-/* Right-hand side shape of a type declaration (Clause 6.3.5). */
+/* Right-hand side shape of a type declaration. */
 typedef enum {
     EK_TYPE_RHS_VARIANTS, EK_TYPE_RHS_RECORD, EK_TYPE_RHS_TUPLE,
     EK_TYPE_RHS_EMPTY
@@ -104,7 +103,7 @@ typedef struct {
 } ek_slist;
 
 /* One part of a string literal: a cooked literal segment or one
-   interpolation slot parsed to an expression (Clause 5.9.3). */
+   interpolation slot parsed to an expression. */
 typedef struct {
     const char *text;   /* literal segment; NULL when the part is a slot */
     size_t text_len;

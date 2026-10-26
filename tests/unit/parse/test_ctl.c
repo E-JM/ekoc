@@ -1,7 +1,7 @@
 #include "common.h"
 
-/* case and if (Clause 6.7): arms, guards, or-patterns, multiple
-   scrutinees, guards, the single-line form, and else reattachment. */
+/* case and if: arms, or-patterns, multiple scrutinees, guards, the
+   single-line form, and else reattachment. */
 
 static const char *block_case =
     "f: (k: Key) -> String =\n"
@@ -49,7 +49,7 @@ static void case_arms(void)
     EK_CHECK_U64(ce->u.caseexpr.arms.data[1]->u.arm.guard, NULL);
     pfx_end(&f);
 
-    /* Multiple scrutinees, one pattern each (Clause 6.7.2). */
+    /* Multiple scrutinees, one pattern each. */
     pfx_begin(&f, multi_case);
     EK_CHECK_U64(pfx_errors(&f), 0);
     ce = pfx_find(f.ast.module, EK_N_CASE);
@@ -64,7 +64,7 @@ static void single_line_case(void)
     parse_fixture f;
     const ek_node *ce;
 
-    /* `;` separates arms on one line (Clause 6.7.5). */
+    /* `;` separates arms on one line. */
     pfx_begin(&f, "f: Int =\n    case r: Ok v -> v; Err e -> 0\n");
     EK_CHECK_U64(pfx_errors(&f), 0);
     ce = pfx_find(f.ast.module, EK_N_CASE);
@@ -85,7 +85,7 @@ static void if_forms(void)
     parse_fixture f;
     const ek_node *ie;
 
-    /* Block branches of Clause 6.7.4. */
+    /* Block branches. */
     pfx_begin(&f,
         "f: (n: Int) -> Int =\n"
         "    if n < 0:\n"
@@ -109,7 +109,7 @@ static void if_forms(void)
     EK_CHECK_U64(ie->u.ifexpr.then->u.kids.count, 2);
     pfx_end(&f);
 
-    /* An omitted else stays NULL (Clause 6.7.4 sugar). */
+    /* An omitted else stays NULL. */
     pfx_begin(&f,
         "f: (n: Int) -> Int =\n"
         "    if err_count > 0:\n"
@@ -120,7 +120,7 @@ static void if_forms(void)
     EK_CHECK_U64(ie->u.ifexpr.els, NULL);
     pfx_end(&f);
 
-    /* Inline then and else on one line (6.2.3). */
+    /* Inline then and else on one line. */
     pfx_begin(&f, "f: Int =\n    x = if n < 0: 0 else: n\n    x\n");
     EK_CHECK_U64(pfx_errors(&f), 0);
     ie = pfx_find(f.ast.module, EK_N_IF);
@@ -136,7 +136,7 @@ static void else_reattachment(void)
     const ek_node *ie;
 
     /* An else line left of the then block reattaches across the
-       DEDENTs the layout emitted (A.4 rule 8). */
+       DEDENTs the layout emitted. */
     pfx_begin(&f,
         "f: (c: Bool) -> Int =\n"
         "    if c:\n"
@@ -166,7 +166,7 @@ static void case_as_value(void)
     parse_fixture f;
     const ek_node *let;
 
-    /* A case is the whole right-hand side of a binding (6.5.1). */
+    /* A case is the whole right-hand side of a binding. */
     pfx_begin(&f,
         "f: (n: Int) -> String =\n"
         "    msg: String =\n"
@@ -188,7 +188,7 @@ static void arm_corners(void)
     parse_fixture f;
     const ek_node *ce;
 
-    /* Three or-alternatives flatten into one arm (A.3.6). */
+    /* Three or-alternatives flatten into one arm. */
     pfx_begin(&f,
         "f: (k: Key) -> String =\n"
         "    case k:\n"
@@ -203,7 +203,7 @@ static void arm_corners(void)
                  3);
     pfx_end(&f);
 
-    /* A guard over multiple scrutinees (Clause 6.7.2). */
+    /* A guard over multiple scrutinees. */
     pfx_begin(&f,
         "f: (a: Bool, b: Bool) -> String =\n"
         "    case a, b:\n"
@@ -216,7 +216,7 @@ static void arm_corners(void)
     EK_CHECK(ce->u.caseexpr.arms.data[0]->u.arm.guard != NULL);
     pfx_end(&f);
 
-    /* `;` separates arms inside an indented block, too (Clause 5.3.2). */
+    /* `;` separates arms inside an indented block, too. */
     pfx_begin(&f,
         "f: (r: Result Int String) -> Int =\n"
         "    case r:\n"
@@ -233,7 +233,7 @@ static void else_chains(void)
     parse_fixture f;
     const ek_node *ie;
 
-    /* `else` nests through the suite (A.3.5). */
+    /* `else` nests through the suite. */
     pfx_begin(&f, "f: Int =\n    if a: 1 else: if b: 2 else: 3\n    0\n");
     EK_CHECK_U64(pfx_errors(&f), 0);
     ie = pfx_find(f.ast.module, EK_N_IF);
@@ -242,7 +242,7 @@ static void else_chains(void)
     EK_CHECK_U64(ie->u.ifexpr.els->u.ifexpr.els->kind, EK_N_INT_LIT);
     pfx_end(&f);
 
-    /* An `else` guarding nothing is diagnosed (Clause 6.7.4). */
+    /* An `else` guarding nothing is diagnosed. */
     pfx_begin(&f, "f: Int =\n    if a: 1 else if b: 2\n    0\n");
     EK_CHECK(pfx_errors(&f) > 0);
     pfx_collect(&f);

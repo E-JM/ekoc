@@ -1,17 +1,16 @@
 #include "parse/internal.h"
 
-/* case and if (Clause 6.7, A.3.5). An arm is always
-   PATTERN -> EXPRESSION; a bare expression is not an arm (6.7.1), so a
-   missing arrow is diagnosed with the clause named. The single-line
-   form separates arms with `;` (Clause 5.3.2, 6.7.5). */
+/* case and if. An arm is always `pattern -> expression`; a bare
+   expression is not an arm and has a dedicated error. The single-line
+   form separates arms with `;`. */
 
 static ek_node *arm(p_ctx *c);
 static void arm_lines(p_ctx *c, ek_node *n);
 static void arm_inline(p_ctx *c, ek_node *n);
 static ek_node *else_branch(p_ctx *c);
 
-/* CaseExpression := 'case' Expression { ',' Expression } CaseBlock |
-   'case' Expression { ',' Expression } InlineCase (A.3.5). */
+/* A case expression: 'case' scrutinees ':' then either an indented arm
+   block or a `;`-separated inline arm run. */
 ek_node *p_case_expr(p_ctx *c)
 {
     const ek_layout_token *kw = p_take(c);
@@ -53,8 +52,8 @@ ek_node *p_case_expr(p_ctx *c)
     return n;
 }
 
-/* CaseBlock := NEWLINE INDENT Arm { Arm } DEDENT: each arm ends at
-   NEWLINE, `;` carries arms on one line, DEDENT closes (A.3.3). */
+/* The indented arm block: each arm ends at NEWLINE, `;` carries arms
+   on one line, DEDENT closes. */
 static void arm_lines(p_ctx *c, ek_node *n)
 {
     while (!c->oom) {
@@ -78,8 +77,8 @@ static void arm_lines(p_ctx *c, ek_node *n)
     }
 }
 
-/* InlineCase := ':' InlineArm { ';' InlineArm }; the arms run to the
-   end of the member (Clause 6.7.5). */
+/* The inline arm run after ':': `;` separates arms, and they run to
+   the end of the member. */
 static void arm_inline(p_ctx *c, ek_node *n)
 {
     while (!c->oom) {
@@ -95,8 +94,8 @@ static void arm_inline(p_ctx *c, ek_node *n)
     }
 }
 
-/* Arm := Pattern { ',' Pattern } [ 'if' Expression ] '->' Expression
-   (A.3.3, with the multi-scrutinee arm of Clause 6.7.2). */
+/* One arm: one or more patterns (several for a multi-scrutinee arm),
+   an optional `if` guard, '->', and the body expression. */
 static ek_node *arm(p_ctx *c)
 {
     const ek_layout_token *first = p_peek(c);
@@ -142,10 +141,10 @@ static ek_node *arm(p_ctx *c)
     return n;
 }
 
-/* IfExpression := 'if' Expression Suite [ 'else' Suite ] (A.3.5). The
-   layout emits the DEDENTs required by the stack before a matching
-   `else` line (A.4 rule 8), so the parser reattaches it across
-   NEWLINE and DEDENT markers. */
+/* An if expression: 'if' condition ':' suite, with an optional `else`
+   suite. Layout emits the DEDENTs owed by the stack before a matching
+   `else` line, so the parser reattaches it across NEWLINE and DEDENT
+   markers. */
 ek_node *p_if_expr(p_ctx *c)
 {
     const ek_layout_token *kw = p_take(c);

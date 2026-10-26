@@ -30,7 +30,7 @@ ek_parse_result ek_parse(const ek_layout_token *tokens, size_t count,
     return r;
 }
 
-/* CompilationUnit := { ImportLine } { TopLevelItem } (A.3.1). */
+/* A module: import lines first, then top-level items. */
 ek_node *p_module(p_ctx *c)
 {
     const ek_layout_token *first = p_peek(c);
@@ -72,8 +72,8 @@ ek_node *p_module(p_ctx *c)
     return mod;
 }
 
-/* ImportLine := 'import' ModulePath NEWLINE; ModulePath separates its
-   segments with '/' (A.3.1, A.3.8). */
+/* An import line: 'import' followed by a '/'-separated module path,
+   ended by the line. */
 static ek_node *p_import(p_ctx *c)
 {
     const ek_layout_token *kw = p_take(c);
@@ -105,7 +105,7 @@ static ek_node *p_import(p_ctx *c)
     return n;
 }
 
-/* Member := Statement (A.3.3): a value binding or an expression. */
+/* One member line: a value binding or an expression. */
 ek_node *p_member(p_ctx *c, int top_level)
 {
     if (c->oom) {
@@ -150,7 +150,7 @@ ek_node *p_member(p_ctx *c, int top_level)
     }
 }
 
-/* The zero-pattern form `<- Call` (Clause 6.3.4). */
+/* The zero-pattern form `<- Call`. */
 ek_node *p_invert_bare(p_ctx *c)
 {
     const ek_layout_token *arrow = p_take(c);
@@ -174,7 +174,7 @@ ek_node *p_invert_bare(p_ctx *c)
 }
 
 /* Finds the first binding operator at bracket depth zero before the
-   line ends; the member dispatch of A.3.3 hangs on it. */
+   line ends; the member dispatch hangs on it. */
 int p_binding_op_ahead(p_ctx *c)
 {
     size_t i;
@@ -221,7 +221,7 @@ int p_binding_op_ahead(p_ctx *c)
     return 0;
 }
 
-/* Identifier { '.' Identifier } (A.3.8); head receives the first token. */
+/* A dotted name path; head receives the first token. */
 void p_name_path(p_ctx *c, ek_slist *path, const ek_layout_token **head)
 {
     p_path_init(path);
@@ -243,7 +243,7 @@ void p_name_path(p_ctx *c, ek_slist *path, const ek_layout_token **head)
 }
 
 /* The single-name patterns admitted on a binding line: a variable, the
-   wildcard, or — by spelling — a constructor (Clause 6.8.1). */
+   wildcard, or — by spelling — a constructor. */
 ek_node *p_path_pattern(p_ctx *c, const ek_slist *path,
                         const ek_layout_token *head)
 {
@@ -274,7 +274,7 @@ ek_node *p_path_pattern(p_ctx *c, const ek_slist *path,
     return n;
 }
 
-/* `<-` admits exactly the lambda parameter shapes (Clause 6.3.4). */
+/* `<-` admits exactly the lambda parameter shapes. */
 void p_check_invert_pattern(p_ctx *c, const ek_node *pat)
 {
     size_t i;

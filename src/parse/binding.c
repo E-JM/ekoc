@@ -4,7 +4,7 @@
 
 /* Member bodies. A block body is NEWLINE INDENT { Member } DEDENT; a
    `;`-separated single-line suite is the same member sequence on one
-   line (Clause 5.3.2, 6.7.5), so both produce EK_N_BLOCK. */
+   line, so both produce EK_N_BLOCK. */
 
 ek_node *p_member_list(p_ctx *c)
 {
@@ -82,7 +82,7 @@ ek_node *p_inline_suite(p_ctx *c)
     return block;
 }
 
-/* The body after a lambda, `if`, or `else` header (A.3.3, A.3.4). */
+/* The body after a lambda, `if`, or `else` header. */
 ek_node *p_body_suite(p_ctx *c)
 {
     if (p_at_layout(c, EK_LTOK_NEWLINE)) {
@@ -91,8 +91,8 @@ ek_node *p_body_suite(p_ctx *c)
     return p_inline_suite(c);
 }
 
-/* BindingRHS := Expression | NEWLINE INDENT { Member } DEDENT: one
-   expression, or a block (Clause 6.3.1). */
+/* A binding right-hand side: one expression, or a block on the
+   following lines. */
 ek_node *p_binding_rhs(p_ctx *c)
 {
     if (p_at_layout(c, EK_LTOK_NEWLINE)) {
@@ -101,7 +101,7 @@ ek_node *p_binding_rhs(p_ctx *c)
     return p_expr(c);
 }
 
-/* A line whose pre-scan found a binding operator (Clause 6.3.1). */
+/* A line whose pre-scan found a binding operator. */
 ek_node *p_binding_line(p_ctx *c, int top_level)
 {
     if (p_at(c, EK_TOK_LARROW)) {
@@ -164,7 +164,7 @@ ek_node *p_binding_after_pattern(p_ctx *c, ek_node *pat)
     return NULL;
 }
 
-/* `Name := Expression` (Clause 6.3.3). */
+/* `Name := Expression`. */
 static ek_node *rebind_tail(p_ctx *c, const ek_slist *path,
                             const ek_layout_token *head)
 {
@@ -181,7 +181,7 @@ static ek_node *rebind_tail(p_ctx *c, const ek_slist *path,
     return p_node3(c, EK_N_REBIND, pat, NULL, v);
 }
 
-/* `Pattern <- Call` with the admitted shapes of Clause 6.3.4. */
+/* `Pattern <- Call`; the pattern must be an admitted shape. */
 static ek_node *invert_tail(p_ctx *c, const ek_slist *path,
                             const ek_layout_token *head)
 {
@@ -204,7 +204,7 @@ static ek_node *invert_tail(p_ctx *c, const ek_slist *path,
     return p_node3(c, EK_N_INVERT, pat, NULL, call);
 }
 
-/* `Name = BindingRHS` without an annotation (Clause 6.3.2). */
+/* `Name = BindingRHS` without an annotation. */
 static ek_node *plain_let_tail(p_ctx *c, const ek_slist *path,
                                const ek_layout_token *head)
 {
@@ -222,7 +222,7 @@ static ek_node *plain_let_tail(p_ctx *c, const ek_slist *path,
 }
 
 /* A binding line that begins with a name: `:=`, `<-`, `:` with an
-   annotation or contextual word, or plain `=` (Clause 6.3). */
+   annotation or contextual word, or plain `=`. */
 ek_node *p_binding_name_head(p_ctx *c, int top_level)
 {
     ek_slist path;
@@ -251,7 +251,7 @@ ek_node *p_binding_name_head(p_ctx *c, int top_level)
 }
 
 /* The word in the annotation slot names a declaration; the name and
-   its top-level position must fit the form (Clause 5.6.2). */
+   its top-level position must fit the form. */
 static const char *slot_word(p_ctx *c)
 {
     const ek_layout_token *w = p_peek(c);
@@ -291,7 +291,7 @@ static ek_node *annotated_let(p_ctx *c, const ek_slist *path,
                               const ek_layout_token *head, ek_node *ann);
 
 /* Everything after `Name ':'`: the contextual words type, ctype, and
-   test, or a type annotation followed by `=` (Clause 6.3). */
+   test, or a type annotation followed by `=`. */
 ek_node *p_after_colon(p_ctx *c, int top_level, const ek_slist *path,
                        const ek_layout_token *head)
 {
@@ -327,7 +327,7 @@ ek_node *p_after_colon(p_ctx *c, int top_level, const ek_slist *path,
     return annotated_let(c, path, head, ann);
 }
 
-/* `Pattern : Type = BindingRHS` (Clause 6.3.2). */
+/* `Pattern : Type = BindingRHS`. */
 static ek_node *annotated_let(p_ctx *c, const ek_slist *path,
                               const ek_layout_token *head, ek_node *ann)
 {
@@ -344,8 +344,8 @@ static ek_node *annotated_let(p_ctx *c, const ek_slist *path,
     return p_node3(c, EK_N_LET, pat, ann, v);
 }
 
-/* NamespaceBinding := QualifiedPascalName '.' snake_case Identifier
-   ':' Type '=' BindingRHS (A.3.2). */
+/* A namespace binding: a Pascal owner chain, a snake_case name,
+   ':' type '=' binding right-hand side. */
 ek_node *p_namespace_tail(p_ctx *c, const ek_slist *path,
                           const ek_layout_token *head, ek_node *ann)
 {

@@ -1,7 +1,7 @@
 #include "common.h"
 
-/* String interpolation (Clause 5.9.3): slot runs parsed with the
-   expression grammar, nesting, and escaped braces. */
+/* String interpolation: slot runs parsed with the expression grammar,
+   nesting, and escaped braces. */
 
 /* Parses `m: String = <literal>` and returns the string node. */
 static const ek_node *str_of(parse_fixture *f, const char *quoted)
@@ -52,7 +52,7 @@ static void slots(void)
     parse_fixture f;
     const ek_node *s;
 
-    /* Literal, slot, literal (Clause 5.9.3). */
+    /* Literal, slot, literal. */
     s = str_of(&f, "\"a{x}b\"");
     EK_CHECK_U64(pfx_errors(&f), 0);
     EK_CHECK_U64(s->u.str.count, 3);
@@ -78,7 +78,7 @@ static void slots(void)
     EK_CHECK_U64(s->u.str.segs[2].expr->kind, EK_N_CALL);
     pfx_end(&f);
 
-    /* Slots nest through string literals (Clause 5.9.3). */
+    /* Slots nest through string literals. */
     s = str_of(&f, "\"outer {\"inner {n}\"}\"");
     EK_CHECK_U64(pfx_errors(&f), 0);
     EK_CHECK_U64(s->u.str.count, 2);
@@ -122,20 +122,20 @@ static void slot_forms(void)
     parse_fixture f;
     const ek_node *s;
 
-    /* A slot re-enters the whole expression grammar: lambda (A.3.4). */
+    /* A slot re-enters the whole expression grammar: lambda. */
     s = str_of(&f, "\"{(n): n + 1}\"");
     EK_CHECK_U64(pfx_errors(&f), 0);
     EK_CHECK_U64(s->u.str.count, 1);
     EK_CHECK_U64(s->u.str.segs[0].expr->kind, EK_N_LAMBDA);
     pfx_end(&f);
 
-    /* A slot holding an if (Clause 6.5.1: the whole slot is it). */
+    /* A slot holding an if: the whole slot is it. */
     s = str_of(&f, "\"{if c: 1 else: 2}\"");
     EK_CHECK_U64(pfx_errors(&f), 0);
     EK_CHECK_U64(s->u.str.segs[0].expr->kind, EK_N_IF);
     pfx_end(&f);
 
-    /* Braces balance inside a slot (Clause 5.9.3). */
+    /* Braces balance inside a slot. */
     s = str_of(&f, "\"{ {1, 2} }\"");
     EK_CHECK_U64(pfx_errors(&f), 0);
     EK_CHECK_U64(s->u.str.count, 1);
@@ -143,7 +143,7 @@ static void slot_forms(void)
     EK_CHECK_U64(s->u.str.segs[0].expr->u.kids.count, 2);
     pfx_end(&f);
 
-    /* A slot holding a case with two inline arms (Clause 6.7.5). */
+    /* A slot holding a case with two inline arms. */
     s = str_of(&f, "\"{case x: 1 -> 2; _ -> 3}\"");
     EK_CHECK_U64(pfx_errors(&f), 0);
     EK_CHECK_U64(s->u.str.segs[0].expr->kind, EK_N_CASE);

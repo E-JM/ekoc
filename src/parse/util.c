@@ -49,7 +49,7 @@ void p_list_init(ek_nlist *l)
 }
 
 /* Children live in an arena growable array; growth copies, the spent
-   block stays in the arena (no object management, ARCHITECTURE rule 5). */
+   block stays in the arena (no object management). */
 static void *grow(p_ctx *c, void *data, size_t count, size_t unit)
 {
     size_t cap = count ? count * 2 : 8;
@@ -284,7 +284,7 @@ int p_atom_start(ek_token_kind k)
     return k == EK_TOK_IDENT || k == EK_TOK_LPAREN || k == EK_TOK_LBRACKET;
 }
 
-/* Clause 5.5.2 case classes, by spelling alone. The tables carry
+/* Name case classes, by spelling alone. The tables carry
    XID data only, so the test is ASCII: a first scalar above ASCII is
    treated as snake_case. */
 static int no_underscore(const char *s)

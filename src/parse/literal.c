@@ -1,7 +1,7 @@
 #include "parse/internal.h"
 
 /* Literals, lambda bodies, composite literals, and string
-   interpolation (Clause 5.9.3, 6.4.1, 6.6.1, A.3.5). */
+   interpolation. */
 
 static ek_node *lambda(p_ctx *c);
 static ek_node *lambda_param(p_ctx *c);
@@ -42,7 +42,7 @@ ek_node *p_literal(p_ctx *c, const ek_layout_token *t)
 }
 
 /* EK_N_STRING_LIT: one segment per part, slots parsed with the
-   expression grammar (Clause 5.9.3). */
+   expression grammar. */
 static ek_node *string_lit(p_ctx *c, const ek_layout_token *t)
 {
     ek_node *n = p_node(c, EK_N_STRING_LIT, t->line, t->col);
@@ -78,7 +78,7 @@ static ek_node *string_lit(p_ctx *c, const ek_layout_token *t)
 
 /* One interpolation slot: the raw token run is re-wrapped as a stream
    and parsed by the same expression entry, so `{n + 1}` and a nested
-   string slot are ordinary expressions (Clause 5.9.3). */
+   string slot are ordinary expressions. */
 ek_node *p_slot_expr(p_ctx *c, const ek_token *toks, size_t n)
 {
     ek_layout_token *lay = p_alloc(c, (n + 1) * sizeof *lay);
@@ -113,9 +113,9 @@ ek_node *p_slot_expr(p_ctx *c, const ek_token *toks, size_t n)
     return e;
 }
 
-/* CompositeLiteral := '{' [ CompositeItem { ',' CompositeItem } ] '}',
-   with breaks inside braces free (Clause 6.6.1). Keyed entries and
-   elements share the node; the expected type decides the family. */
+/* A composite literal: '{' items '}', with breaks inside braces free.
+   Keyed entries and elements share the node; the expected type decides
+   the family. */
 ek_node *p_composite(p_ctx *c)
 {
     const ek_layout_token *open = p_take(c);
@@ -176,7 +176,7 @@ static ek_node *composite_item(p_ctx *c)
 }
 
 /* '(' in primary position: a parenthesized expression, or a lambda
-   when the matching ')' is followed by ':' (A.3.4, A.3.5). */
+   when the matching ')' is followed by ':'. */
 ek_node *p_paren_primary(p_ctx *c)
 {
     size_t close = match_bracket(c, c->pos);
@@ -238,7 +238,7 @@ size_t match_bracket(p_ctx *c, size_t from)
     return c->count > 0 ? c->count - 1 : 0;
 }
 
-/* Lambda := LambdaParameterGroup ':' LambdaBody (A.3.4). */
+/* A lambda: '(' parameters ')' ':' body. */
 static ek_node *lambda(p_ctx *c)
 {
     const ek_layout_token *open = p_take(c); /* '(' */
@@ -283,7 +283,7 @@ static ek_node *lambda(p_ctx *c)
     return n;
 }
 
-/* LambdaParameter := Identifier | '_' | '(' params ')' (A.3.4). */
+/* A lambda parameter: a name, '_', or a nested parameter group. */
 static ek_node *lambda_param(p_ctx *c)
 {
     const ek_layout_token *t = p_peek(c);

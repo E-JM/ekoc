@@ -6,7 +6,7 @@
 #include "parse/parse.h"
 
 /* Parser state. The cursor walks the layout token stream; errors are
-   emitted once per position and never abort (ARCHITECTURE rule 4). */
+   emitted once per position and never abort. */
 typedef struct {
     const char *file;
     ek_arena *arena;
@@ -49,7 +49,7 @@ void p_skip_newlines(p_ctx *c);
 int p_expr_start(ek_token_kind k);  /* begins an expression or operand */
 int p_apply_start(ek_token_kind k); /* begins a juxtaposition argument */
 int p_pattern_start(ek_token_kind k);
-int p_atom_start(ek_token_kind k);  /* begins a type atom (Clause 6.9.4) */
+int p_atom_start(ek_token_kind k);  /* begins a type atom */
 int p_is_pascal(const char *s);
 int p_is_snake(const char *s);
 
@@ -62,7 +62,7 @@ ek_node *p_path_pattern(p_ctx *c, const ek_slist *path,
                         const ek_layout_token *head);
 void p_check_invert_pattern(p_ctx *c, const ek_node *pat);
 
-/* binding.c: binding forms (6.3) and member/suite bodies. */
+/* binding.c: binding forms and member/suite bodies. */
 ek_node *p_binding_line(p_ctx *c, int top_level);
 ek_node *p_invert_bare(p_ctx *c); /* `<-` without a pattern */
 ek_node *p_binding_after_pattern(p_ctx *c, ek_node *pat);
@@ -90,12 +90,12 @@ ek_node *p_variant(p_ctx *c);
 /* expr.c */
 ek_node *p_expr(p_ctx *c);
 
-/* postfix.c: the level-1 operand layer of A.3.5. */
+/* postfix.c: the operand layer of the expression ladder. */
 ek_node *p_postfix(p_ctx *c);
 
 /* literal.c */
 ek_node *p_literal(p_ctx *c, const ek_layout_token *t);
-ek_node *p_paren_primary(p_ctx *c); /* grouping or lambda (A.3.5) */
+ek_node *p_paren_primary(p_ctx *c); /* grouping or lambda */
 ek_node *p_composite(p_ctx *c);     /* '{' consumed */
 ek_node *p_slot_expr(p_ctx *c, const ek_token *toks, size_t n);
 

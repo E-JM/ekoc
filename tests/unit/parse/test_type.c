@@ -1,7 +1,7 @@
 #include "common.h"
 
-/* Type expressions of Clause 6.9: atoms, the bracket forms, arrows of
-   6.9.3, and generic application of 6.9.4. */
+/* Type expressions: atoms, the bracket forms, arrows, and generic
+   application. */
 
 /* Parses `x: <type> = 1` and returns the annotation. */
 static const ek_node *ann_of(parse_fixture *f, const char *ty)
@@ -24,7 +24,7 @@ static void atoms(void)
     EK_CHECK_STR(t->u.path.data[0], "Person");
     pfx_end(&f);
 
-    /* A module-qualified type (Clause 6.9.1). */
+    /* A module-qualified type. */
     t = ann_of(&f, "person.Person");
     EK_CHECK_U64(pfx_errors(&f), 0);
     EK_CHECK_U64(t->u.path.count, 2);
@@ -37,14 +37,14 @@ static void atoms(void)
     EK_CHECK_STR(t->u.path.data[0], "elem");
     pfx_end(&f);
 
-    /* `_` is the unit type (Clause 6.9.1). */
+    /* `_` is the unit type. */
     t = ann_of(&f, "_");
     EK_CHECK_U64(pfx_errors(&f), 0);
     EK_CHECK_STR(t->u.path.data[0], "_");
     pfx_end(&f);
 
-    /* A group in complete-type position is a parameter group
-       (Clause 6.9.3); a grouped type atom needs an atom position. */
+    /* A group in complete-type position is a parameter group; a
+       grouped type atom needs an atom position. */
     t = ann_of(&f, "([]Int)");
     EK_CHECK_U64(pfx_errors(&f), 0);
     EK_CHECK_U64(t->kind, EK_N_T_FN);
@@ -81,7 +81,7 @@ static void brackets(void)
     EK_CHECK_STR(t->u.pair.a->u.path.data[0], "String");
     pfx_end(&f);
 
-    /* A dictionary keyed by lists (Clause 6.9.2). */
+    /* A dictionary keyed by lists. */
     t = ann_of(&f, "[[]String]Int");
     EK_CHECK_U64(pfx_errors(&f), 0);
     EK_CHECK_U64(t->kind, EK_N_T_DICT);
@@ -101,7 +101,7 @@ static void brackets(void)
     EK_CHECK_STR(t->u.kids.data[0]->u.t_field.name, "name");
     pfx_end(&f);
 
-    /* A one-element bracket is not a valid type (Clause 6.9.2). */
+    /* A one-element bracket is not a valid type. */
     t = ann_of(&f, "[Int]");
     EK_CHECK(pfx_errors(&f) > 0);
     pfx_end(&f);
@@ -118,7 +118,7 @@ static void brackets(void)
     EK_CHECK(pfx_errors(&f) > 0);
     pfx_end(&f);
 
-    /* A dictionary value may be an arrow (Clause 6.9.2). */
+    /* A dictionary value may be an arrow. */
     t = ann_of(&f, "[String](Int) -> Int");
     EK_CHECK_U64(pfx_errors(&f), 0);
     EK_CHECK_U64(t->kind, EK_N_T_DICT);
@@ -139,7 +139,7 @@ static void arrows(void)
     EK_CHECK(t->u.t_fn.result != NULL);
     pfx_end(&f);
 
-    /* A labeled parameter group (Clause 6.4.3). */
+    /* A labeled parameter group. */
     t = ann_of(&f, "(a: Int, b: Int) -> Int");
     EK_CHECK_U64(pfx_errors(&f), 0);
     EK_CHECK_STR(t->u.t_fn.params.data[0]->u.t_field.name, "a");
@@ -167,7 +167,7 @@ static void arrows(void)
     EK_CHECK_U64(t->u.t_fn.arrow, EK_ARROW_OPEN);
     pfx_end(&f);
 
-    /* The elided forms of Clause 6.9.3. */
+    /* The elided forms. */
     t = ann_of(&f, "(Int)");
     EK_CHECK_U64(pfx_errors(&f), 0);
     EK_CHECK_U64(t->kind, EK_N_T_FN);
@@ -186,7 +186,7 @@ static void arrows(void)
     EK_CHECK_U64(t->u.t_fn.arrow, EK_ARROW_OPEN);
     pfx_end(&f);
 
-    /* Arrows nest without parentheses (Clause 6.9.3). */
+    /* Arrows nest without parentheses. */
     t = ann_of(&f, "(Out) -> (String) !-> String");
     EK_CHECK_U64(pfx_errors(&f), 0);
     EK_CHECK_U64(t->u.t_fn.result->kind, EK_N_T_FN);
@@ -212,7 +212,7 @@ static void generic_application(void)
     EK_CHECK_U64(t->u.t_apply.args.count, 2);
     pfx_end(&f);
 
-    /* A composite argument is parenthesized (Clause 6.9.4). */
+    /* A composite argument is parenthesized. */
     t = ann_of(&f, "Option (Value Int Float)");
     EK_CHECK_U64(pfx_errors(&f), 0);
     EK_CHECK_U64(t->u.t_apply.args.count, 1);
@@ -226,7 +226,7 @@ static void generic_application(void)
     EK_CHECK_U64(t->u.kids.data[0]->u.t_apply.args.count, 2);
     pfx_end(&f);
 
-    /* A list element carries its own chain (Clause 6.9.4). */
+    /* A list element carries its own chain. */
     t = ann_of(&f, "[]Value Int Float");
     EK_CHECK_U64(pfx_errors(&f), 0);
     EK_CHECK_U64(t->kind, EK_N_T_LIST);
@@ -259,13 +259,13 @@ static void nested_signatures(void)
     parse_fixture f;
     const ek_node *t;
 
-    /* A function-typed parameter (Clause 6.9.2). */
+    /* A function-typed parameter. */
     t = ann_of(&f, "(f: (Int) -> Int) -> Int");
     EK_CHECK_U64(pfx_errors(&f), 0);
     EK_CHECK_U64(t->u.t_fn.params.data[0]->u.t_field.type->kind, EK_N_T_FN);
     pfx_end(&f);
 
-    /* The extern signature shape of Clause 6.3.8. */
+    /* The extern signature shape. */
     t = ann_of(&f, "(base: C.Ptr.Void, compar: (C.Ptr.Void) -> Int) !");
     EK_CHECK_U64(pfx_errors(&f), 0);
     EK_CHECK_U64(t->u.t_fn.arrow, EK_ARROW_WORLD);

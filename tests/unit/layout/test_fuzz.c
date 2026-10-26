@@ -9,12 +9,12 @@
    Invariants, always: the stream is nonempty and ends with exactly one
    EOF, a nonempty stream starts with a source token, and every INDENT
    directly follows a NEWLINE. On a run with no error diagnostic,
-   INDENT and DEDENT also balance, with no DEDENT before its INDENT
-   (Clauses 5.1.3 and 5.2.2, A.4 rule 10). The imbalance of diagnosed
-   runs is the recovery of dedent_to, which pushes a level it never
-   opened. An INDENT directly followed by a DEDENT is legal: a
-   memberless callback block whose deeper line is the call's closing
-   bracket (A.4 rule 4), so no adjacency is checked between them. */
+   INDENT and DEDENT also balance, with no DEDENT before its INDENT.
+   The imbalance of diagnosed runs is the recovery of dedent_to, which
+   pushes a level it never opened. An INDENT directly followed by a
+   DEDENT is legal: a memberless callback block whose deeper line is
+   the call's closing bracket, so no adjacency is checked between
+   them. */
 
 static unsigned long long fuzz_cases;
 static unsigned long long fuzz_failures;

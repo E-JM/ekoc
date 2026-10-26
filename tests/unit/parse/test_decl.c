@@ -1,8 +1,8 @@
 #include "common.h"
 
-/* Every declaration form of Clause 6.3: value bindings, rebinding,
-   inverted bindings, namespace bindings, and the type, ctype, test,
-   and extern declarations. */
+/* Every declaration form: value bindings, rebinding, inverted
+   bindings, namespace bindings, and the type, ctype, test, and extern
+   declarations. */
 
 static void value_bindings(void)
 {
@@ -24,7 +24,7 @@ static void value_bindings(void)
     EK_CHECK_U64(pfx_item(&f, 0)->u.bind.type, NULL);
     pfx_end(&f);
 
-    /* Tuple split of Clause 6.3.2. */
+    /* Tuple split of a binding. */
     pfx_begin(&f, "f: Int =\n    (a, b) = row\n    a\n");
     EK_CHECK_U64(pfx_errors(&f), 0);
     let = pfx_item(&f, 0)->u.bind.value->u.kids.data[0];
@@ -71,7 +71,7 @@ static void inverted_bindings(void)
     EK_CHECK_U64(n->u.bind.value->kind, EK_N_CALL);
     pfx_end(&f);
 
-    /* The zero-argument callback of Clause 6.3.4. */
+    /* The zero-argument callback. */
     pfx_begin(&f, "f: Int =\n    <- scope.spawn()\n    0\n");
     EK_CHECK_U64(pfx_errors(&f), 0);
     n = pfx_find(f.ast.module, EK_N_INVERT);
@@ -125,13 +125,13 @@ static void type_decls(void)
     EK_CHECK_U64(n->u.type_decl.variants.data[0]->u.variant.payload, NULL);
     pfx_end(&f);
 
-    /* A leading bar is admitted (A.3.2). */
+    /* A leading bar is admitted. */
     pfx_begin(&f, "T: type = | A | B\n");
     EK_CHECK_U64(pfx_errors(&f), 0);
     EK_CHECK_U64(pfx_item(&f, 0)->u.type_decl.variants.count, 2);
     pfx_end(&f);
 
-    /* Generic binders and typed payloads (Clause 6.3.5). */
+    /* Generic binders and typed payloads. */
     pfx_begin(&f, "Result: type t e = Ok t | Err e\n");
     EK_CHECK_U64(pfx_errors(&f), 0);
     n = pfx_item(&f, 0);
@@ -168,7 +168,7 @@ static void type_decls(void)
     EK_CHECK_U64(pfx_item(&f, 0)->u.type_decl.rhs, EK_TYPE_RHS_EMPTY);
     pfx_end(&f);
 
-    /* A composite expression is not a declaration form (6.9.5). */
+    /* A composite expression is not a declaration form. */
     pfx_begin(&f, "Bad: type = []Int\n");
     EK_CHECK(pfx_errors(&f) > 0);
     pfx_collect(&f);

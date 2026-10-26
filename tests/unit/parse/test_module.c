@@ -1,8 +1,8 @@
 #include "common.h"
 
-/* Compilation units (Clause 6.2.1): imports, member dispatch, and the
-   semicolon suites of Clause 5.3.2. Recovery is exercised by modules
-   that yield several diagnostics without aborting. */
+/* Compilation units: imports, member dispatch, and the semicolon
+   suites. Recovery is exercised by modules that yield several
+   diagnostics without aborting. */
 
 static void imports(void)
 {
@@ -21,7 +21,7 @@ static void imports(void)
     EK_CHECK_STR(imp->u.path.data[1], "lex");
     pfx_end(&f);
 
-    /* An import after a binding is an error (Clause 6.2.1). */
+    /* An import after a binding is an error. */
     pfx_begin(&f, "x: Int = 1\nimport person\n");
     EK_CHECK(pfx_errors(&f) > 0);
     pfx_collect(&f);
@@ -41,14 +41,14 @@ static void top_level_items(void)
 {
     parse_fixture f;
 
-    /* An expression is not a top-level item (A.3.1). */
+    /* An expression is not a top-level item. */
     pfx_begin(&f, "1 + 2\n");
     EK_CHECK(pfx_errors(&f) > 0);
     pfx_collect(&f);
     EK_CHECK(pfx_has_code(&f, "E-top-item"));
     pfx_end(&f);
 
-    /* A file with no bindings is legal (Clause 6.2.1). */
+    /* A file with no bindings is legal. */
     pfx_begin(&f, "import person\n// only a comment\n");
     EK_CHECK_U64(pfx_errors(&f), 0);
     EK_CHECK_U64(f.ast.module->u.kids.count, 1);
@@ -66,7 +66,7 @@ static void semicolon_suites(void)
     parse_fixture f;
     const ek_node *body;
 
-    /* `;` is a line-terminator equivalent (Clause 5.3.2). */
+    /* `;` is a line-terminator equivalent. */
     pfx_begin(&f,
         "f: Int =\n"
         "    a: Int = 1; b: Int = 2\n"
@@ -80,7 +80,7 @@ static void semicolon_suites(void)
     EK_CHECK_U64(body->u.kids.data[2]->kind, EK_N_BINARY);
     pfx_end(&f);
 
-    /* A lambda body may be a `;` suite (6.7.5). */
+    /* A lambda body may be a `;` suite. */
     pfx_begin(&f,
         "g: (out: Out) -> (Int) !-> Int =\n"
         "    (n): out.println(show(n)); n + 1\n");
@@ -99,8 +99,8 @@ static void recovery(void)
 {
     parse_fixture f;
 
-    /* One module, many diagnostics: the parse drains (ARCHITECTURE
-       rule 4) and still returns an AST. */
+    /* One module, many diagnostics: the parse drains and still returns
+       an AST. */
     pfx_begin(&f,
         "a: Int = 1\n"
         "b: Int = [1, 2]\n"
@@ -144,7 +144,7 @@ static void member_shapes(void)
     EK_CHECK(pfx_find(f.ast.module, EK_N_IF) != NULL);
     pfx_end(&f);
 
-    /* An inverted chain of Clause 6.3.4 nests in sequence. */
+    /* An inverted chain nests in sequence. */
     pfx_begin(&f,
         "f: (out: Out) ! =\n"
         "    a <- f1()\n"
@@ -156,8 +156,7 @@ static void member_shapes(void)
 }
 
 /* A stream from a stage that could not allocate must not crash the
-   parser: ek_parse returns an empty MODULE root with a diagnostic
-   (ARCHITECTURE rule 4). */
+   parser: ek_parse returns an empty MODULE root with a diagnostic. */
 static void empty_stream(void)
 {
     parse_fixture f;
