@@ -53,8 +53,37 @@ static void dedent_to(layout_ctx *c, int col, const line_run *l)
     if (top_col(c) != col) {
         err_at(c, CODE_DEDENT, l,
                "dedent to column %d matches no open block", col);
-        lo_push_col(c, col);
+        lo_push_col(c, col, -1);
     }
+}
+
+/* An else line continues the if whose header begins in its column.  The
+   if's branch block is the level the dedent closes, so a match on that
+   level's header column ends the dedent even when the if's line was a
+   continuation that never pushed its own level.  An if with an inline
+   suite opened no level at all; its else is still a continuation. */
+static void else_dedent(layout_ctx *c, int col, const line_run *l)
+{
+    int line = l->tok[0].line, at = l->tok[0].col;
+
+    while (c->col_count > 1 && top_col(c) > col) {
+        int header = c->hdr[c->col_count - 1];
+
+        c->col_count--;
+        lo_emit(c, EK_LTOK_DEDENT, line, at);
+        if (header == col) {
+            return;
+        }
+    }
+    if (top_col(c) == col) {
+        return;
+    }
+    if (col > top_col(c) && c->last_if_col == col) {
+        return;
+    }
+    err_at(c, CODE_DEDENT, l,
+           "dedent to column %d matches no open block", col);
+    lo_push_col(c, col, -1);
 }
 
 /* At a line start, closes every callback block whose header sits at
@@ -119,7 +148,7 @@ static void bracket_start(layout_ctx *c, const line_run *l, int col)
 static void top_start(layout_ctx *c, const line_run *l, int col)
 {
     if (l->tok[0].kind == EK_TOK_KW_ELSE) {
-        dedent_to(c, col, l);
+        else_dedent(c, col, l);
         return;
     }
     if (col == top_col(c)) {
@@ -131,7 +160,7 @@ static void top_start(layout_ctx *c, const line_run *l, int col)
                 err_at(c, CODE_STEP, l, "indentation step of %d is not a "
                        "multiple of four", col - top_col(c));
             }
-            lo_push_col(c, col);
+            lo_push_col(c, col, c->header_col);
             lo_emit(c, EK_LTOK_INDENT, l->tok[0].line, l->tok[0].col);
         } else if (l->tok[0].kind == EK_TOK_DOT && c->chain_col >= 0
                    && c->chain_col != l->tok[0].col) {
@@ -196,6 +225,12 @@ static void line_state(layout_ctx *c, const line_run *l)
         return;
     }
     c->expect_block = last->kind == EK_TOK_COLON || last->kind == EK_TOK_EQ;
+    if (c->expect_block) {
+        c->header_col = l->tok[0].col - 1;
+    }
+    if (l->tok[0].kind == EK_TOK_KW_IF) {
+        c->last_if_col = l->tok[0].col - 1;
+    }
     c->chain_col = first_dot_col(l);
 }
 

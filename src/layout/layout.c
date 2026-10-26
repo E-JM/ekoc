@@ -76,19 +76,33 @@ void lo_emit_source(layout_ctx *c, const ek_token *t)
     c->out.data[c->out.len++] = lt;
 }
 
-void lo_push_col(layout_ctx *c, int col)
+/* Pushes one indentation level: the column its members begin in and
+   the column of the header line that opened it (-1 when unknown). */
+void lo_push_col(layout_ctx *c, int col, int hdr)
 {
     if (c->oom) {
         return;
     }
     if (c->col_count == c->col_cap) {
-        int *p = grow(c, c->cols, c->col_count, &c->col_cap, sizeof *p);
-        if (c->oom) {
+        size_t want = c->col_cap ? c->col_cap * 2 : 64;
+        int *cols = ek_arena_alloc(c->arena, want * sizeof *cols);
+        int *hdr_cols = ek_arena_alloc(c->arena, want * sizeof *hdr_cols);
+
+        if (!cols || !hdr_cols) {
+            lo_oom(c);
             return;
         }
-        c->cols = p;
+        if (c->col_count > 0) {
+            memcpy(cols, c->cols, c->col_count * sizeof *cols);
+            memcpy(hdr_cols, c->hdr, c->col_count * sizeof *hdr_cols);
+        }
+        c->cols = cols;
+        c->hdr = hdr_cols;
+        c->col_cap = want;
     }
-    c->cols[c->col_count++] = col;
+    c->cols[c->col_count] = col;
+    c->hdr[c->col_count] = hdr;
+    c->col_count++;
 }
 
 void lo_push_cb(layout_ctx *c, int header_col, int header_depth)
@@ -160,6 +174,7 @@ ek_layout_result ek_layout(const ek_token *tokens, size_t count, const char *fil
     ctx.arena = arena;
     ctx.diag = diag;
     ctx.chain_col = -1;
+    ctx.last_if_col = -1;
     if (count > 0) {
         ctx.eof = &tokens[count - 1];
     } else {
@@ -168,7 +183,7 @@ ek_layout_result ek_layout(const ek_token *tokens, size_t count, const char *fil
         fallback_eof.col = 1;
         ctx.eof = &fallback_eof;
     }
-    lo_push_col(&ctx, 0);
+    lo_push_col(&ctx, 0, -1);
     lines = split_lines(&ctx, tokens, count, &line_count);
     if (lines) {
         lo_process(&ctx, lines, line_count);
