@@ -20,7 +20,9 @@ members that share one signature.
 
 ## C.1 Free Functions
 
-The implicit import opens exactly six free names (Clause 9.1.2). No other free
+The implicit import opens exactly three free names (Clause 9.1.2). `show`,
+`inspect`, and `panic` are compiler-generated services, not opened names; their
+free-call forms in the table are the identities of Clause 6.5.2. No other free
 function exists in `std` (Clause 9.1.1).
 
 | Function | Signature | Kind | Clause |
