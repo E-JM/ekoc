@@ -48,7 +48,7 @@ static void take_digit(lex_ctx *c, int base, unsigned long long *mag,
     c->col++;
 }
 
-/* Digit { ['_'] Digit }, Clause A.2.4. A stranded underscore is
+/* A stranded underscore is
    diagnosed and ends the literal; the next token starts there. */
 static void scan_digits(lex_ctx *c, int base, unsigned long long *mag,
                         int *overflow)
@@ -70,9 +70,9 @@ static void scan_digits(lex_ctx *c, int base, unsigned long long *mag,
     }
 }
 
-/* Exponent := 'e' [ '+' | '-' ] DecDigit { DecDigit }, Clause A.2.5.
-   Returns 1 when the marker joined the literal; a bare 'e', or a sign
-   without digits, is left for the next token. */
+/* The exponent of a float: 'e', an optional sign, then decimal
+   digits. Returns 1 when the marker joined the literal; a bare 'e', or
+   a sign without digits, is left for the next token. */
 static int scan_exponent(lex_ctx *c)
 {
     int s1 = ctx_byte(c, 1), s2 = ctx_byte(c, 2);
@@ -95,7 +95,7 @@ static int scan_exponent(lex_ctx *c)
     return 1;
 }
 
-/* Decimal digits, then fraction and exponent per Clause A.2.5: a '.'
+/* Decimal digits, then fraction and exponent: a '.'
    joins the literal only between digits, and the exponent admits no
    grouping underscores. */
 static void scan_decimal(lex_ctx *c, unsigned long long *mag, int *overflow,
@@ -114,10 +114,10 @@ static void scan_decimal(lex_ctx *c, unsigned long long *mag, int *overflow,
     }
 }
 
-/* HexInteger | BinaryInteger of A.2.4, called on '0x' or '0b'. Sets
+/* The hex or binary prefix form, called on '0x' or '0b'. Sets
    *base when the prefix joins the literal; a stranded '_' after the
    prefix is diagnosed, and the lone '0' is consumed either way so the
-   rest lexes as its own tokens (Clause 5.10.3). */
+   rest lexes as its own tokens. */
 static void scan_prefix(lex_ctx *c, unsigned long long *mag, int *overflow,
                         int *base)
 {
@@ -156,8 +156,8 @@ static char *strip_underscores(lex_ctx *c, const char *text, size_t len)
     return clean;
 }
 
-/* Emits the token: INT carries magnitude, base, and the overflow mark
-   (Clause 5.7.4 defers E-literal-overflow to check); FLOAT carries the
+/* Emits the token: INT carries magnitude, base, and the overflow mark,
+   leaving E-literal-overflow to the check stage; FLOAT carries the
    value of the cleaned spelling. */
 static int emit_number(lex_ctx *c, gbuf *out, size_t start, int sline,
                        int scol, unsigned long long mag, int overflow,

@@ -1,6 +1,6 @@
 #include "common.h"
 
-/* Character literals: Clause 5.8 and A.2.6. */
+/* Character literals: raw scalars, escapes, the one-scalar rule. */
 
 static void expect_char(const char *src, uint32_t scalar)
 {
@@ -36,7 +36,7 @@ static void test_escapes(void)
     expect_char("'\\\\'", 0x5C);
     expect_char("'\\\"'", 0x22);
     expect_char("'\\''", 0x27);
-    expect_char("'\\{'", 0x7B); /* 5.8: the string escapes all apply */
+    expect_char("'\\{'", 0x7B); /* the string escapes all apply here */
     expect_char("'\\u{41}'", 0x41);
     expect_char("'\\u{1F600}'", 0x1F600);
     expect_char("'\\u{10FFFF}'", 0x10FFFF);
@@ -123,7 +123,7 @@ static void test_context(void)
     FX_KINDS("'a' ++ 'b'", EK_TOK_CHAR, EK_TOK_PLUSPLUS, EK_TOK_CHAR,
              EK_TOK_EOF);
 
-    /* a raw tab is a scalar per A.2.6; only \t is the spelled form */
+    /* a raw tab is a scalar; only \t is the spelled form */
     expect_char("'\t'", 0x09);
 
     fx_begin(&f, "'a\rb'\nx");

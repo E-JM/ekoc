@@ -1,8 +1,8 @@
 #include "lex/internal.h"
 
-/* The shared escape table of Clauses 5.9.2 and 5.8: the prose of 5.8
-   admits every string escape in character literals too, so \{ cooks to
-   a literal brace in both. \' is a character-literal escape only. */
+/* Escapes shared by string and character literals: every string escape
+   also cooks inside a character literal, so \{ is a literal brace in
+   both. \' is a character-literal escape only. */
 
 static int hex_value(int b)
 {

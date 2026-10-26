@@ -19,9 +19,9 @@ static ek_token_kind ident_kind(const char *text)
     return EK_TOK_IDENT;
 }
 
-/* Clause 5.5.1: XID_Start or '_' first, then XID_Continue; '_' already
-   carries XID_Continue in the tables. Contextual words of Clause 5.6.2
-   stay ordinary identifiers. */
+/* XID_Start or '_' first, then XID_Continue; '_' already
+   carries XID_Continue in the tables. Contextual words stay ordinary
+   identifiers. */
 int lex_identifier(lex_ctx *c, gbuf *out)
 {
     size_t start = c->pos;

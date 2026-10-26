@@ -2,8 +2,8 @@
 
 #include "lex/internal.h"
 
-/* String literals: escapes (5.9.2), interpolation (5.9.3), and the
-   single-line rule (5.9.1). */
+/* String literals: escapes, interpolation, and the
+   single-line rule. */
 
 /* Counts literal segments and slot runs of the first token. */
 static void test_plain_strings(void)
@@ -245,7 +245,7 @@ static void test_empty_slot(void)
 }
 
 /* The slot is an expression region: a tab there is whitespace between
-   tokens (Clause 5.2.3), while a tab in literal text is a scalar. */
+   tokens, while a tab in literal text is a scalar. */
 static void test_slot_tab(void)
 {
     lex_fixture f;
@@ -277,7 +277,7 @@ static void test_slot_only_string(void)
     fx_end(&f);
 }
 
-/* The spec sets no nesting bound; past the implementation's own, each
+/* Past the implementation's own nesting bound, each
    refused '{' costs one E-slot-depth. Slot depth needs nested strings:
    "{ "{ x }" }" opens one slot per level. */
 static size_t nest_slots(char *src, int depth)

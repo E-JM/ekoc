@@ -1,7 +1,6 @@
 #include "common.h"
 
-/* Source-level rules: encoding, BOM, CR, tabs, comments, EOF
-   (Clauses 5.1, 5.2.3, 5.4, 5.11). */
+/* Source-level rules: encoding, BOM, CR, tabs, comments, EOF. */
 
 static void test_bom(void)
 {
@@ -88,7 +87,7 @@ static void test_tabs(void)
     EK_CHECK(fx_has_error(&f, "E-tab"));
     fx_end(&f);
 
-    /* a tab inside a comment is ignored (Clause 5.2.3) */
+    /* a tab inside a comment is ignored */
     fx_begin(&f, "// a\tb\nx");
     EK_CHECK_U64(fx_errors(&f), 0);
     fx_end(&f);
@@ -176,7 +175,7 @@ static void test_eof_shapes(void)
     fx_end(&f);
 }
 
-/* Clause 5.1.1 binds the whole source text, comments included, and a
+/* Comment content is scanned like any other source text, so a
    BOM after a comment is outside the start of the file. */
 static void test_comment_content_faults(void)
 {

@@ -90,8 +90,9 @@ char *ctx_slice(lex_ctx *c, size_t start, size_t end)
     return text;
 }
 
-/* Skips one scalar, reporting encoding faults (Clause 5.1.1 binds the
-   whole source text). Returns 0 at end of input. */
+/* Skips one scalar, reporting encoding faults; comments scan through
+   here too, so faults inside them are diagnosed as well. Returns 0 at
+   end of input. */
 static int ctx_skip_checked(lex_ctx *c)
 {
     ek_utf8_decoded d = ek_utf8_decode(c->src + c->pos, c->len - c->pos);
@@ -124,7 +125,7 @@ void lex_skip_line_comment(lex_ctx *c)
     }
 }
 
-/* Consumes one '\r' (Clause 5.1.2). Returns 1 when a line terminator
+/* Consumes one '\r'. Returns 1 when a line terminator
    follows and the literal scanning the CR must end, 0 for a stray CR,
    diagnosed here. */
 int lex_consume_cr(lex_ctx *c)
@@ -151,8 +152,7 @@ int emit_token(lex_ctx *c, gbuf *out, const ek_token *t)
 
 /* One dispatch step of the main loop, with the progress guard. A
    scanner that consumes nothing would spin the loop forever, so a stall
-   costs one diagnostic and one skipped byte; Annex B.3 leaves such
-   implementation-owned codes outside its table. The scanner is injected
+   costs one diagnostic and one skipped byte. The scanner is injected
    so the unit suite can feed the guard a stalling scanner. */
 int lex_step(lex_ctx *c, gbuf *out, ek_scan_fn scan)
 {

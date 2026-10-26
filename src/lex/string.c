@@ -27,7 +27,7 @@ static int flush_literal(lex_ctx *c, gbuf *seg, gbuf *parts)
 }
 
 /* Emits the STRING token when the closing quote was seen; otherwise
-   the single-line rule of Clause 5.9.1 is diagnosed and no token is
+   the unterminated literal is diagnosed and no token is
    emitted. */
 static int emit_string(lex_ctx *c, gbuf *out, gbuf *seg, gbuf *parts,
                        int closed, int sline, int scol)
@@ -89,7 +89,7 @@ static void track_braces(const gbuf *run, int *depth)
 
 /* Slot trivia. Returns 1 when consumed, 0 when a token or the closing
    brace is due, -1 when a line terminator ends the string. A tab is
-   whitespace between slot tokens, so it is E-tab (Clause 5.2.3). */
+   whitespace between slot tokens, so it is E-tab. */
 static int slot_trivia(lex_ctx *c)
 {
     int b = ctx_byte(c, 0);
@@ -126,12 +126,12 @@ static int slot_trivia(lex_ctx *c)
     return 0;
 }
 
-/* Interpolation slot, Clause 5.9.3. Returns 1 when the slot closed at
-   its matching brace, -1 when the string died inside the slot and the
-   caller owes the E-unterminated-string diagnostic, 0 when the arena
-   is exhausted. A surplus of braces always swallows the closing quote,
-   so the failure surfaces as E-unterminated-string and needs no code
-   of its own. */
+/* One interpolation slot, scanned to its matching '}'. Returns 1 when
+   the slot closed at its matching brace, -1 when the string died
+   inside the slot and the caller owes the E-unterminated-string
+   diagnostic, 0 when the arena is exhausted. A surplus of braces
+   always swallows the closing quote, so the failure surfaces as
+   E-unterminated-string and needs no code of its own. */
 static int scan_slot(lex_ctx *c, gbuf *parts)
 {
     int bline = c->line, bcol = c->col;

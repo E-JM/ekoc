@@ -2,8 +2,8 @@
 
 #include "lex/internal.h"
 
-/* The compound spellings of Clause 5.10.3, matched before their
-   prefixes. Returns the spelling length, 0 when b0 begins none. */
+/* Compound spellings, matched before their single-byte prefixes.
+   Returns the spelling length, 0 when b0 begins none. */
 static int match_compound(int b0, int b1, int b2, ek_token_kind *k)
 {
     if (b0 == '!' && b1 == '-' && b2 == '>') { *k = EK_TOK_BANGARROW; return 3; }
@@ -23,8 +23,8 @@ static int match_compound(int b0, int b1, int b2, ek_token_kind *k)
     return 0;
 }
 
-/* The single-byte spellings of Clause 5.10.1 and 5.10.2. A lone '&' is
-   no token (Clause 5.11). Returns the spelling length, 0 when the byte
+/* The single-byte operators and punctuation. A lone '&' is
+   no token. Returns the spelling length, 0 when the byte
    cannot begin any operator or punctuation mark. */
 static int match_single(int b, ek_token_kind *k)
 {

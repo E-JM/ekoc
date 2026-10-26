@@ -3,11 +3,10 @@
 #include "support/xid.h"
 #include "support/xid_tables.h"
 
-/* Spot checks assert what the committed tables say, which is what the
-   host Python's str.isidentifier() derives (Unicode 16.0.0 at
-   generation time). '_' is XID_Continue but not XID_Start: clause 5.5.1
-   adds '_' as a first character at the lex layer, so the raw predicate
-   here stays 0 for it. */
+/* Spot checks assert what the committed tables say. '_' is
+   XID_Continue but not XID_Start: the lexer adds '_' as a first
+   character on top of the raw predicates, so ek_xid_start stays 0 for
+   it here. */
 
 static void test_ascii(void)
 {
@@ -25,7 +24,7 @@ static void test_ascii(void)
 
 static void test_underscore(void)
 {
-    /* raw property: continue yes, start no; 5.5.1's '_' start rule is
+    /* raw property: continue yes, start no; the '_' start rule is
        the lexer's business */
     EK_CHECK_U64(ek_xid_start(0x5F), 0);
     EK_CHECK_U64(ek_xid_continue(0x5F), 1);

@@ -7,11 +7,8 @@
 #include "support/arena.h"
 #include "support/diag.h"
 
-/*
- * Stage 2 (Clause 5, Annex A.2): source bytes -> token stream.
- * The stream always ends with EK_TOK_EOF; line terminators survive as
- * EK_TOK_NEWLINE so the layout stage (Annex A.4) can do its work.
- */
+/* Source bytes -> token stream. The stream ends with EOF; line
+   terminators survive as NEWLINE tokens for the layout stage. */
 
 typedef enum {
     EK_TOK_IDENT = 0,
@@ -23,7 +20,7 @@ typedef enum {
     EK_TOK_KW_CASE,
     EK_TOK_KW_IF,
     EK_TOK_KW_ELSE,
-    /* operators, Clause 5.10.1 */
+    /* operators */
     EK_TOK_PLUS,
     EK_TOK_MINUS,
     EK_TOK_STAR,
@@ -46,7 +43,7 @@ typedef enum {
     EK_TOK_QUESTIONARROW,/* ?-> */
     EK_TOK_DOTDOT,
     EK_TOK_DOTDOTEQ,
-    /* punctuation, Clause 5.10.2 */
+    /* punctuation */
     EK_TOK_LPAREN,
     EK_TOK_RPAREN,
     EK_TOK_LBRACKET,
@@ -84,8 +81,8 @@ typedef struct ek_token {
     size_t len;
     /* EK_TOK_INT: the mathematical value. magnitude is the value modulo
        2^64; overflow is 1 when the value does not fit in 64 bits, so
-       check (Clause 5.7.4) must recover it from text. base is 2, 10 or
-       16. E-literal-overflow is never diagnosed here. */
+       the check stage must recover it from text. base is 2, 10 or 16.
+       E-literal-overflow is never diagnosed here. */
     unsigned long long magnitude;
     int overflow;
     int base;

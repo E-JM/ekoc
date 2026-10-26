@@ -1,7 +1,7 @@
 #include "common.h"
 
-/* Token classes, the longest-match table of Clause 5.10.3 verbatim,
-   punctuation, markers, and stream shape. */
+/* Token classes, longest match, punctuation, markers, and stream
+   shape. */
 
 static void test_punctuation(void)
 {
@@ -21,7 +21,7 @@ static void test_punctuation(void)
              EK_TOK_COLON, EK_TOK_IDENT, EK_TOK_EOF);
 }
 
-/* Each row of 5.10.3 is one token and never splits. */
+/* Each compound spelling is one token and never splits. */
 static void test_longest_match_table(void)
 {
     FX_KINDS("!->", EK_TOK_BANGARROW, EK_TOK_EOF);
@@ -67,7 +67,7 @@ static void test_prefix_splitting(void)
     FX_KINDS(": :", EK_TOK_COLON, EK_TOK_COLON, EK_TOK_EOF);
 }
 
-/* 5.10.3: the dot rule and the worked examples. */
+/* The dot rule and the worked examples around it. */
 static void test_dot_rules(void)
 {
     FX_KINDS("1..2", EK_TOK_INT, EK_TOK_DOTDOT, EK_TOK_INT, EK_TOK_EOF);
@@ -78,7 +78,7 @@ static void test_dot_rules(void)
     FX_KINDS("1.5.2", EK_TOK_FLOAT, EK_TOK_DOT, EK_TOK_INT, EK_TOK_EOF);
 }
 
-/* 5.11: bitwise spellings are not tokens. */
+/* Bitwise spellings are not tokens. */
 static void test_excluded_symbols(void)
 {
     lex_fixture f;
@@ -109,7 +109,7 @@ static void test_excluded_symbols(void)
 }
 
 /* Compound spellings stop where their table stops; the remainder
-   lexes as the shorter tokens (Clause 5.10.3 longest match). */
+   lexes as the shorter tokens. */
 static void test_compound_boundaries(void)
 {
     FX_KINDS("!!->", EK_TOK_BANG, EK_TOK_BANGARROW, EK_TOK_EOF);

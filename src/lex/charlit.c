@@ -27,7 +27,7 @@ static int char_scalar(lex_ctx *c, uint32_t *value, int *count)
 }
 
 /* Emits the CHAR token for exactly one cooked scalar; otherwise the
-   one-scalar rule of Clause 5.8 is diagnosed and no token is emitted. */
+   one-scalar rule is diagnosed and no token is emitted. */
 static int emit_char(lex_ctx *c, gbuf *out, uint32_t value, int count,
                      int sline, int scol)
 {

@@ -1,6 +1,6 @@
 #include "common.h"
 
-/* Identifiers, keywords, contextual words: Clauses 5.5, 5.6. */
+/* Identifiers, keywords, contextual words. */
 
 static void expect_ident(const char *src, const char *name)
 {
@@ -60,7 +60,7 @@ static void test_keywords(void)
 static void test_contextual_words(void)
 {
     /* contextual words are ordinary identifiers even in their special
-       spellings; only Clause 6 positions give them meaning */
+       spellings; only their syntactic position gives them meaning */
     FX_KINDS("x: type = 1", EK_TOK_IDENT, EK_TOK_COLON, EK_TOK_IDENT,
              EK_TOK_EQ, EK_TOK_INT, EK_TOK_EOF);
     FX_KINDS("t: ctype = [v: UInt]",

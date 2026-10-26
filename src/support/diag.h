@@ -9,7 +9,7 @@ typedef enum {
     EK_SEV_WARNING
 } ek_severity;
 
-/* Codes ("E-...", "W-...", Annex B) are opaque strings here; NULL means
+/* Codes ("E-...", "W-...") are opaque strings here; NULL means
    the diagnostic carries no code. code and file are borrowed and must
    outlive the buffer; message is owned by it. */
 typedef struct {

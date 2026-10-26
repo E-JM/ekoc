@@ -12,7 +12,7 @@
 /* Black-box properties over a hostile corpus: every input, however
    broken, lexes to a stream that ends with exactly one EOF token, every
    token carries a 1-based position, slot runs hold no NEWLINE or EOF,
-   and diagnostics stay bounded by the input length (Clause 5). The
+   and diagnostics stay bounded by the input length. The
    corpus is every truncation of each conformance module plus
    deterministic random soups; termination itself is enforced by the
    runner's timeout, not here. */

@@ -2,7 +2,8 @@
 
 #include <math.h>
 
-/* Numeric literals: Clause 5.7 and Annex A.2.4/A.2.5. */
+/* Numeric literals: integers, fractions, exponents, 0x/0b prefixes,
+   digit grouping. */
 
 static void expect_float(const char *src, double v)
 {
@@ -85,7 +86,7 @@ static void test_overflow_carried(void)
     fx_begin(&f, "18446744073709551616");
     EK_CHECK_U64(fx_tok(&f, 0).overflow, 1);
     EK_CHECK_U64(fx_tok(&f, 0).magnitude, 0);
-    EK_CHECK_U64(fx_errors(&f), 0); /* not diagnosable at lex, Clause 5.7.4 */
+    EK_CHECK_U64(fx_errors(&f), 0); /* overflow is carried, not diagnosed */
     fx_end(&f);
 
     fx_begin(&f, "99999999999999999999999999");
@@ -123,7 +124,7 @@ static void test_dot_and_exponent_backtracking(void)
     FX_KINDS("1e", EK_TOK_INT, EK_TOK_IDENT, EK_TOK_EOF);
     FX_KINDS("1e+", EK_TOK_INT, EK_TOK_IDENT, EK_TOK_PLUS, EK_TOK_EOF);
     FX_KINDS("1e-", EK_TOK_INT, EK_TOK_IDENT, EK_TOK_MINUS, EK_TOK_EOF);
-    /* the exponent admits no grouping, A.2.5 */
+    /* the exponent admits no grouping */
     FX_KINDS("1e1_0", EK_TOK_FLOAT, EK_TOK_IDENT, EK_TOK_EOF);
     /* a trailing 'e' that starts no exponent stays an identifier */
     FX_KINDS("1.5e", EK_TOK_FLOAT, EK_TOK_IDENT, EK_TOK_EOF);
@@ -134,15 +135,15 @@ static void test_no_suffixes(void)
 {
     lex_fixture f;
 
-    /* suffix spellings do not exist (Clause 5.11): longest match ends
-       the literal and the letters lex as an identifier; A.3 rejects the
-       rest. */
+    /* suffix spellings do not exist: longest match ends
+       the literal and the trailing letters lex as an identifier for a
+       later stage to reject. */
     FX_KINDS("1u8", EK_TOK_INT, EK_TOK_IDENT, EK_TOK_EOF);
     FX_KINDS("1.0f", EK_TOK_FLOAT, EK_TOK_IDENT, EK_TOK_EOF);
     FX_KINDS("1e3x", EK_TOK_FLOAT, EK_TOK_IDENT, EK_TOK_EOF);
     FX_KINDS("1abc", EK_TOK_INT, EK_TOK_IDENT, EK_TOK_EOF);
 
-    /* incomplete prefixes backtrack the same way, Clause A.2.4 */
+    /* incomplete prefixes backtrack the same way */
     FX_KINDS("0x", EK_TOK_INT, EK_TOK_IDENT, EK_TOK_EOF);
     FX_KINDS("0b", EK_TOK_INT, EK_TOK_IDENT, EK_TOK_EOF);
     FX_KINDS("0b2", EK_TOK_INT, EK_TOK_IDENT, EK_TOK_EOF);
@@ -150,8 +151,8 @@ static void test_no_suffixes(void)
     FX_KINDS("0X", EK_TOK_INT, EK_TOK_IDENT, EK_TOK_EOF);
     FX_KINDS("0x1g", EK_TOK_INT, EK_TOK_IDENT, EK_TOK_EOF);
     FX_KINDS("0x1x", EK_TOK_INT, EK_TOK_IDENT, EK_TOK_EOF);
-    /* hex literals have no fraction: the dot rule of 5.7.2 reads the
-       digits, so the '.' is the member-call dot */
+    /* hex literals have no fraction: the dot joins digits only in
+       decimal literals, so the '.' here is the member-call dot */
     FX_KINDS("0x0.5", EK_TOK_INT, EK_TOK_DOT, EK_TOK_INT, EK_TOK_EOF);
 
     fx_begin(&f, "0x");

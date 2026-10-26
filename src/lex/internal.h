@@ -10,12 +10,11 @@
 #include "support/utf8.h"
 #include "support/xid.h"
 
-/* Guard against stack exhaustion on pathologically nested slots; the
-   spec sets no bound (Clause 5.9.3), so this one is implementation-owned. */
+/* Guard against stack exhaustion on pathologically nested slots. */
 #define EK_LEX_MAX_SLOT_DEPTH 100
 
-/* Growable byte buffer on the arena. Abandoned blocks are reclaimed
-   wholesale with the arena (ARCHITECTURE rule 5). */
+/* Growable byte buffer on the arena; abandoned blocks are reclaimed
+   wholesale when the arena is freed. */
 typedef struct {
     char *data;
     size_t len;

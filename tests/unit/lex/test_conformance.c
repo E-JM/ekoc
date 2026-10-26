@@ -3,8 +3,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-/* Smoke test: every conformance module (Annex D sources, kept under
-   tests/conformance) must lex without a single error
+/* Smoke test: every conformance module kept under
+   tests/conformance must lex without a single error
    diagnostic. */
 
 static const char *const modules[] = {
