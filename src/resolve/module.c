@@ -262,6 +262,40 @@ static void already_loaded(r_ctx *c, r_mod *m, const char *from,
     stem_claimed(c, from, imp, stem, path);
 }
 
+/* The injected list opens exactly these; a list confined to them asks
+   for nothing new. */
+static int std_list_opened(const ek_node *imp)
+{
+    size_t i;
+
+    for (i = 0; i < imp->u.imports.names.count; i++) {
+        if (!r_std_opened_name(imp->u.imports.names.data[i])) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+/* An explicit std import is redundant when it asks for nothing the
+   injection does not already open: a bare line, or a list confined to
+   the injected names. */
+static void std_redundant(r_ctx *c, const char *file, const ek_node *imp)
+{
+    if (imp->u.imports.names.count == 0) {
+        ek_diag_emit(c->diag, EK_SEV_WARNING, "W-redundant-import",
+                     file, imp->line, imp->col,
+                     "explicit `import std`; every file already "
+                     "imports it (Clause 7.2.5)");
+        return;
+    }
+    if (std_list_opened(imp)) {
+        ek_diag_emit(c->diag, EK_SEV_WARNING, "W-redundant-import",
+                     file, imp->line, imp->col,
+                     "explicit `import std` names only free names the "
+                     "implicit import opens (Clauses 7.2.5, 9.1.2)");
+    }
+}
+
 static void load_import(r_ctx *c, r_mod *from, const ek_node *imp)
 {
     const char *file = from->file;
@@ -277,10 +311,7 @@ static void load_import(r_ctx *c, r_mod *from, const ek_node *imp)
         r_mod *held = r_module_find(c, stem);
 
         if (imp->u.imports.path.count == 1) {
-            ek_diag_emit(c->diag, EK_SEV_WARNING, "W-redundant-import",
-                         file, imp->line, imp->col,
-                         "explicit `import std`; every file already "
-                         "imports it (Clause 7.2.5)");
+            std_redundant(c, file, imp);
         }
         if (held && !held->external) {
             /* The std/ path is reserved; a user module already holding

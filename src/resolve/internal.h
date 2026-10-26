@@ -93,7 +93,7 @@ void r_refs_sort(ek_ref *refs, size_t count);
 
 /* std.c: the placeholder std surface (temporary bridge). */
 void r_std_init(r_ctx *c);
-int r_std_free_name(const char *name);
+int r_std_opened_name(const char *name);
 void r_std_open(r_ctx *c, r_file *f);
 const ek_symbol *r_std_find(const ek_surface *s, ek_sym_kind kind,
                             const char *name);
@@ -134,8 +134,9 @@ void r_tops(r_ctx *c, r_file *f, const ek_node *mod);
 /* expr.c: expressions, chains, calls. */
 void r_expr(r_ctx *c, r_file *f, const ek_node *e);
 
-/* The layer lookups, shared with chain.c and type.c: own and opened
-   names first, the std surface as the bottom layer.
+/* The layer lookups, shared with chain.c and type.c. A free name
+   answers from the file's own bindings or the opened table; the std
+   surface still supplies the opened types and constructors.
    r_lookup_type counts visible same-named entries: ambiguity is an
    error at the use site. r_lookup_ctor returns every visible
    same-named constructor, user candidates first and the std

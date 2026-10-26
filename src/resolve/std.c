@@ -3,16 +3,12 @@
 #include "resolve/internal.h"
 
 /* PLACEHOLDER STD SURFACE, standing in until the real interface is
-   derived from lib/std.eko. It holds exactly the names the implicit
-   import opens: the free names, the opened types, the capability module
-   names, and the zero-payload constructors of Bool, Option, Result,
-   Time, and Duration. Everything else a file uses from the implicit
-   import resolves to EK_SYM_EXTERNAL without a diagnostic (the bridge
-   described in resolve.h). */
-
-static const char *free_names[] = {
-    "show", "inspect", "panic", "assert", "assert_eq", "assert_ne", NULL
-};
+   derived from lib/std.eko. It holds exactly what the implicit import
+   opens: the three free names of the injected list, the opened types,
+   the capability module names, and the zero-payload constructors of
+   Bool, Option, Result, Time, and Duration. Everything else a file uses
+   from the implicit import resolves to EK_SYM_EXTERNAL without a
+   diagnostic (the bridge described in resolve.h). */
 
 /* The free names the injected selective import opens. The list is a
    constant of the language definition. */
@@ -40,18 +36,18 @@ static const struct {
     {NULL, NULL}
 };
 
-#define R_STD_COUNT (sizeof free_names / sizeof *free_names \
+#define R_STD_COUNT (sizeof opened_names / sizeof *opened_names \
     + sizeof type_names / sizeof *type_names \
     + sizeof ctor_names / sizeof *ctor_names)
 
-int r_std_free_name(const char *name)
+int r_std_opened_name(const char *name)
 {
     /* The sentinel NULL is not an entry. */
-    size_t n = sizeof free_names / sizeof *free_names - 1;
+    size_t n = sizeof opened_names / sizeof *opened_names - 1;
     size_t i;
 
     for (i = 0; i < n; i++) {
-        if (strcmp(free_names[i], name) == 0) {
+        if (strcmp(opened_names[i], name) == 0) {
             return 1;
         }
     }
@@ -113,7 +109,7 @@ void r_std_init(r_ctx *c)
     }
     s->module = "std";
     s->file = "(std)";
-    n = fill(c, s, 0, free_names, EK_SYM_FUNC);
+    n = fill(c, s, 0, opened_names, EK_SYM_FUNC);
     n = fill(c, s, n, type_names, EK_SYM_TYPE);
     n = fill_ctors(c, s, n);
     if (c->oom) {

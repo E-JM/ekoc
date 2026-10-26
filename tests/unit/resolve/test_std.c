@@ -85,12 +85,61 @@ static void qualified_std(void)
 {
     rfx f;
 
-    /* `std.show` is the qualified spelling of the implicit import. */
+    /* A qualified spelling of a name the import bridge leaves unknown
+       keeps the placeholder reading. */
     rfx_begin(&f,
         "f: () -> _ =\n"
         "    std.show(1)\n"
         "    _\n");
     EK_CHECK_U64(rfx_errors(&f), 0);
+    rfx_end(&f);
+}
+
+/* A service free name that no layer binds is the receiver form of the
+   compiler service; it is not a std surface row. show, inspect, and
+   panic all take that reading. */
+static void service_identity(void)
+{
+    rfx f;
+    const ek_ref *r;
+
+    rfx_begin(&f,
+        "f: () -> _ =\n"
+        "    show(1)\n"
+        "    inspect(1)\n"
+        "    panic(\"x\")\n"
+        "    _\n");
+    EK_CHECK_U64(rfx_errors(&f), 0);
+    r = rfx_ref_at(&f, 2);
+    EK_CHECK(r != NULL);
+    EK_CHECK(r->kind == EK_SYM_MEMBER);
+    EK_CHECK(r->station == EK_ST_RECEIVER);
+    EK_CHECK(r->symbol == NULL);
+    r = rfx_ref_at(&f, 3);
+    EK_CHECK(r != NULL);
+    EK_CHECK(r->kind == EK_SYM_MEMBER);
+    EK_CHECK(r->station == EK_ST_RECEIVER);
+    r = rfx_ref_at(&f, 4);
+    EK_CHECK(r != NULL);
+    EK_CHECK(r->kind == EK_SYM_MEMBER);
+    EK_CHECK(r->station == EK_ST_RECEIVER);
+    rfx_end(&f);
+}
+
+/* A service's spelling is not an opened name, so a top-level binding
+   of it is legal and owns the name. */
+static void top_level_service_name(void)
+{
+    rfx f;
+    const ek_ref *r;
+
+    rfx_begin(&f,
+        "show: Int = 1\n"
+        "v: Int = show\n");
+    EK_CHECK_U64(rfx_errors(&f), 0);
+    r = rfx_ref_named_kind(&f, 2, "show", EK_SYM_FUNC);
+    EK_CHECK(r != NULL);
+    EK_CHECK(r->station == EK_ST_HEAD_TOP);
     rfx_end(&f);
 }
 
@@ -142,6 +191,8 @@ int main(void)
     std_constructors();
     unknown_names();
     qualified_std();
+    service_identity();
+    top_level_service_name();
     qualified_std_constructors();
     local_shadow_free_name();
     return ek_test_report("resolve/std");

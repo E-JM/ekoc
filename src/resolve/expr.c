@@ -3,8 +3,9 @@
 #include "resolve/internal.h"
 
 /* Expressions: the expression-head lookup order (parameter, local
-   binding, file top-level binding, imported module), the constructor
-   reading, and the per-form dispatch. Dotted heads go to chain.c. */
+   binding, file top-level binding or opened free name, imported
+   module, compiler service), the constructor reading, and the per-form
+   dispatch. Dotted heads go to chain.c. */
 
 static const ek_symbol *find(const r_var *vars, size_t n, const char *name)
 {
@@ -18,8 +19,8 @@ static const ek_symbol *find(const r_var *vars, size_t n, const char *name)
     return NULL;
 }
 
-/* The layer lookups: own and opened names answer first, the implicit
-   std import is the bottom layer consulted on a miss. */
+/* The layer lookups. A free name from std answers only when an import
+   opened it, so a file binding of the same spelling owns the name. */
 const ek_symbol *r_lookup_local(const r_file *f, const char *name)
 {
     return r_scope_get(f->locals, name);
@@ -38,7 +39,7 @@ const ek_symbol *r_lookup_top(const r_file *f, const char *name)
             return f->opens[i].sym;
         }
     }
-    return r_std_find(f->std, EK_SYM_FUNC, name);
+    return NULL;
 }
 
 const ek_symbol *r_lookup_mod(const r_file *f, const char *name)
@@ -153,6 +154,15 @@ static void module_value(r_ctx *c, r_file *f, const ek_node *n)
             n->u.path.data[0]);
 }
 
+/* A compiler-generated service on every type namespace. The free-call
+   form of the name denotes the receiver call with its first argument
+   as the receiver, so the chain machinery reads it. */
+static int service_name(const char *name)
+{
+    return strcmp(name, "show") == 0 || strcmp(name, "inspect") == 0
+        || strcmp(name, "panic") == 0;
+}
+
 /* The expression-head lookup. */
 void r_name_head(r_ctx *c, r_file *f, const ek_node *n, int chained,
                  r_head *out)
@@ -191,6 +201,12 @@ void r_name_head(r_ctx *c, r_file *f, const ek_node *n, int chained,
         if (!chained) {
             module_value(c, f, n);
         }
+    } else if (service_name(name)) {
+        /* No layer binds it: the free form of the receiver service.
+           check supplies the receiver and its reading. */
+        out->sym = NULL;
+        out->kind = EK_SYM_MEMBER;
+        out->st = EK_ST_RECEIVER;
     } else {
         r_error(c, f->mod->file, n->line, n->col, "E-unbound-name",
                 "`%s` is not bound in any enclosing scope (Clause 7.4.2)",

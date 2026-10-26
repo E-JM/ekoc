@@ -117,6 +117,39 @@ static void listed_names_checked(void)
     rfx_end(&f);
 }
 
+/* An explicit std list is redundant when it names only what the
+   injected list already opens; an unknown name is unbound, and a
+   redundant line reports no additional warning beside it. */
+static void std_lists(void)
+{
+    rfx f;
+
+    rfx_begin(&f,
+        "import std.{assert}\n"
+        "\n"
+        "v: Int = 1\n");
+    EK_CHECK_U64(rfx_errors(&f), 0);
+    EK_CHECK(rfx_has_code(&f, "W-redundant-import"));
+    rfx_end(&f);
+
+    rfx_begin(&f,
+        "import std.{assert, assert_eq, assert_ne}\n"
+        "\n"
+        "v: Int = 1\n");
+    EK_CHECK_U64(rfx_errors(&f), 0);
+    EK_CHECK(rfx_has_code(&f, "W-redundant-import"));
+    rfx_end(&f);
+
+    rfx_begin(&f,
+        "import std.{show}\n"
+        "\n"
+        "v: Int = 1\n");
+    EK_CHECK_U64(rfx_errors(&f), 1);
+    EK_CHECK(rfx_code_at_line(&f, "E-unbound-member", 1));
+    EK_CHECK(!rfx_has_code(&f, "W-redundant-import"));
+    rfx_end(&f);
+}
+
 /* An import without a list opens no free names. */
 static void plain_import_opens_no_names(void)
 {
@@ -139,6 +172,7 @@ int main(void)
     two_opens();
     local_shadow();
     listed_names_checked();
+    std_lists();
     plain_import_opens_no_names();
     return ek_test_report("resolve/selective");
 }
