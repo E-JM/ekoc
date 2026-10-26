@@ -93,13 +93,18 @@ The standard library is the module `std`, delivered as source and versioned with
 (Clause 9.1.1). Every compilation unit is checked as if it began with `import std`; the injection is unconditional (Clause 9.1.2). An explicit
 `import std` is redundant and reports W-redundant-import (Annex B).
 
-The implicit import opens the public types and constructors of `std` into unqualified scope: `Bool`, `Char`, `String`, `Bytes`, the numeric
+The implicit import opens the public types of `std` into unqualified scope: `Bool`, `Char`, `String`, `Bytes`, the numeric
 types, `Option`, `Result`, `Range`, `Never`, the error types, and the time types. The names of the capability module — the capability types,
-`File`, `OpenMode`, `FileInfo`, `IoError`, `Scope`, and `Task t` — resolve in every file without import (Clause 9.1.2).
+`File`, `OpenMode`, `FileInfo`, `IoError`, `Scope`, and `Task t` — resolve in every file without import (Clause 9.1.2). Opened type
+names — std's and the capability module's — occupy a fallback layer: an explicit import is chosen and may conflict (Clause 7.4.6), but this
+import is unconditional with no opt-out, so it reserves no name; any type declaration of the same spelling shadows one, and the qualified
+spelling `std.T` denotes the opened type. Constructors are not opened as names: a constructor reference is anchored by the expected type in
+value position (Clause 7.5.2) or by the scrutinee type in pattern position (Clause 7.7.1), and the anchor's type supplies its constructor set.
 
 The free names opened by the implicit import are exactly `show`, `inspect`, `panic`, `assert`, `assert_eq`, and `assert_ne`. No other free name
-is opened, and no later version opens one (Clause 9.1.2). An opened free name and a file top-level binding occupy the same layer; a same-name
-collision is E-name-conflict (Clause 7.4.6), and local shadowing is legal. `std.show` is the qualified spelling (Clause 7.4.4).
+is opened, and no later version opens one (Clause 9.1.2). The injection is an ordinary import (Clause 9.1.2), so an opened free name follows
+the import rules of Clause 7.4.6: a file top-level binding of the same name is E-name-conflict, and a local binding shadows it legally.
+`std.show` is the qualified spelling (Clause 7.4.4).
 
 A companion module is imported by its `std/` path, for example `import std/math`; the import opens the final segment's stem (Clause 9.1.3).
 ### 7.2.6 Module Exclusions
@@ -285,7 +290,6 @@ A name conflict is a collision within one layer. The following are conflicts:
   the same head conflicts;
 - an import and a file top-level binding with the same name;
 - two imported modules with the same stem, judged over the compilation unit's import closure and not over one file's import list (Clause 7.2.1);
-- two visible constructors with the same name in one unqualified scope;
 - a type variable with the same name as an imported module;
 - two parameters of `main` with the same capability type (Clause 7.1.3);
 - a repeated binding name within one pattern (Clause 7.7.1).
@@ -293,11 +297,14 @@ A name conflict is a collision within one layer. The following are conflicts:
 Every such conflict is E-name-conflict (Annex B).
 
 Shadowing is not a conflict: an inner binding shadows an outer one, `:=` shadows an earlier binding, and a local binding MAY shadow an imported
-module (Clause 7.4.2).
+module (Clause 7.4.2). An opened standard-library or capability type name is shadowable by any type declaration of the same spelling
+(Clause 7.2.5); an opened free name is not.
 
 Two functions with the same name in different modules coexist and are selected by a qualified name (Clause 7.4.4). Two types with the same name
-coexist; an unqualified use is an error at the use site, and a qualified spelling selects one (Clause 7.4.5). Two constructors with the same name
-in one unqualified scope conflict at the use site; a qualified constructor selects one.
+coexist; an unqualified use is an error at the use site, and a qualified spelling selects one (Clause 7.4.5). Constructors never conflict by
+visibility: same-named constructors of different types coexist, and a reference is anchored by the expected type or the scrutinee type
+(Clauses 7.5.2, 7.7.1). An unanchored reference is legal only when exactly one constructor of that name is visible and it is non-generic
+(self-anchoring, Clause 7.6); otherwise it is an error, and an annotation anchors it. A qualified constructor selects one.
 
 Signature overloading does not exist. One name denotes one binding in its layer, with one signature; the same name with different signatures is
 not admitted (Clause 6.10).
@@ -565,7 +572,8 @@ variable is an error.
 
 Constructor application by juxtaposition is check-only and takes its instantiation from the expected type. A bare generic constructor has no
 self-anchoring type: `Leaf 1.eq(Leaf 2)` has no unique instantiation and is an error. When one side has a known type, the instance is determined.
-A constructor of a non-generic ADT has a unique type and is self-anchoring.
+A constructor of a non-generic ADT has a unique type and is self-anchoring — legal only when it is the sole visible constructor of its name;
+with several, an annotation anchors the reference (Clause 7.4.6).
 ```eko
 Tree: type t = Leaf t | Node [Tree t, Tree t, t]
 
