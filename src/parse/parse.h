@@ -122,8 +122,9 @@ typedef struct {
 
 struct ek_node {
     ek_node_kind kind;
-    int line; /* 1-based, of the construct's first token */
-    int col;  /* 1-based, counted in Unicode scalar values */
+    int line;  /* 1-based, of the construct's first token */
+    int col;   /* 1-based, counted in Unicode scalar values */
+    int depth; /* parse-time tree height; consumers ignore it */
     union {
         ek_nlist kids;    /* MODULE, BLOCK, LAMBDA_PARAMS, P_PAREN, P_OR,
                              T_TUPLE, T_RECORD */

@@ -28,7 +28,7 @@ ek_node *p_member_list(p_ctx *c)
         }
         m = p_member(c, 0);
         if (m) {
-            p_list_add(c, &block->u.kids, m);
+            p_list_add(c, block, &block->u.kids, m);
         }
         if (c->pos == before) {
             p_error_tok(c, "E-syntax", p_peek(c),
@@ -70,14 +70,14 @@ ek_node *p_inline_suite(p_ctx *c)
         return NULL;
     }
     p_list_init(&block->u.kids);
-    p_list_add(c, &block->u.kids, first);
+    p_list_add(c, block, &block->u.kids, first);
     while (p_got(c, EK_TOK_SEMI)) {
         ek_node *e = p_expr(c);
 
         if (!e) {
             break;
         }
-        p_list_add(c, &block->u.kids, e);
+        p_list_add(c, block, &block->u.kids, e);
     }
     return block;
 }
@@ -364,7 +364,7 @@ ek_node *p_namespace_tail(p_ctx *c, const ek_slist *path,
         p_path_add(c, &n->u.namespace.owner, path->data[i]);
     }
     n->u.namespace.name = path->data[path->count - 1];
-    n->u.namespace.type = ann;
-    n->u.namespace.value = p_binding_rhs(c);
+    n->u.namespace.type = p_adopt(c, n, ann);
+    n->u.namespace.value = p_adopt(c, n, p_binding_rhs(c));
     return n;
 }

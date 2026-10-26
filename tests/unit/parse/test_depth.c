@@ -3,14 +3,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-/* The recursion guard: deep but real nesting parses, runaway nesting
-   recovers with E-nesting-depth and terminates. The sources here sit
-   near the guard's two faces -- just under the ceiling and well past
-   it -- for the constructs whose parsers nest with the input:
-   parenthesized expressions, bracket types, brace patterns,
-   constructor application, and lambda parameter groups. The ceiling
-   itself is the parser's private constant; the under cases below sit
-   at half of it, the over cases at double. */
+/* The height guard: deep but real nesting parses, runaway nesting
+   recovers with one E-nesting-depth and terminates. The sources here
+   sit near the guard's two faces -- just under the ceiling and well
+   past it -- for the constructs whose parsers nest with the input:
+   parenthesized expressions, operator chains, member chains, bracket
+   types, brace patterns, constructor application, lambda parameter
+   groups, and nested composites. The ceiling itself is the parser's
+   private constant; the under cases below sit at half of it, the over
+   cases at double or more. */
 
 /* Builds "open" x n + seed + "close" x n in a fresh buffer. */
 static char *nested(size_t n, const char *open, const char *seed,
@@ -120,6 +121,117 @@ static char *lambda_source(size_t n)
     return s;
 }
 
+
+static void run(parse_fixture *f, char *src, int under);
+
+/* A left-leaning operator chain: each `+` adds one tree level. */
+static char *chain_source(size_t terms)
+{
+    char *s = malloc(terms * 2 + 32);
+    size_t i;
+
+    if (!s) {
+        return NULL;
+    }
+    strcpy(s, "_t: Int = ");
+    for (i = 0; i < terms; i++) {
+        strcat(s, i == 0 ? "1" : "+1");
+    }
+    strcat(s, "\n");
+    return s;
+}
+
+/* A left-leaning member chain: each `.b` adds one tree level. */
+static char *member_source(size_t links)
+{
+    char *s = malloc(links * 2 + 32);
+    size_t i;
+
+    if (!s) {
+        return NULL;
+    }
+    strcpy(s, "_t: Int = a");
+    for (i = 0; i < links; i++) {
+        strcat(s, ".b");
+    }
+    strcat(s, "\n");
+    return s;
+}
+
+/* Nested composite literals: each `{a: ` adds one tree level. */
+static char *composite_source(size_t n)
+{
+    char *s = malloc(n * 8 + 32);
+    size_t i;
+
+    if (!s) {
+        return NULL;
+    }
+    strcpy(s, "_t: Int = ");
+    for (i = 0; i < n; i++) {
+        strcat(s, "{a: ");
+    }
+    strcat(s, "1");
+    for (i = 0; i < n; i++) {
+        strcat(s, "}");
+    }
+    strcat(s, "\n");
+    return s;
+}
+
+/* Flat forms are lists, not nesting: they must parse at any length. */
+static char *args_source(size_t n)
+{
+    char *s = malloc(n * 2 + 32);
+    size_t i;
+
+    if (!s) {
+        return NULL;
+    }
+    strcpy(s, "_t: Int = f(");
+    for (i = 0; i < n; i++) {
+        strcat(s, i == 0 ? "1" : ",1");
+    }
+    strcat(s, ")\n");
+    return s;
+}
+
+/* The chain at the ceiling's edge parses; its tree height, including
+   the binding wrapper, is EK_PARSE_MAX_DEPTH - 1. */
+static void chains(void)
+{
+    parse_fixture f;
+
+    run(&f, chain_source(499), 1);
+    run(&f, chain_source(999), 1);
+    run(&f, chain_source(60000), 0);
+}
+
+static void member_chains(void)
+{
+    parse_fixture f;
+
+    /* The head name is one level, so the binding at the edge holds
+       EK_PARSE_MAX_DEPTH - 2 links. */
+    run(&f, member_source(998), 1);
+    run(&f, member_source(60000), 0);
+}
+
+static void composites(void)
+{
+    parse_fixture f;
+
+    run(&f, composite_source(400), 1);
+    run(&f, composite_source(2000), 0);
+}
+
+static void flat_lists(void)
+{
+    parse_fixture f;
+
+    run(&f, args_source(20000), 1);
+}
+
 static void run(parse_fixture *f, char *src, int under)
 {
     if (!src) {
@@ -215,10 +327,14 @@ static void fatal_depth_quiets(void)
 int main(void)
 {
     parens();
+    chains();
+    member_chains();
+    composites();
     list_types();
     brace_patterns();
     applies();
     lambda_groups();
+    flat_lists();
     fatal_depth_quiets();
     return ek_test_report("parse/depth");
 }

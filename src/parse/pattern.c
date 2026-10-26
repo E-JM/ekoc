@@ -31,14 +31,14 @@ ek_node *p_pattern(p_ctx *c)
         return NULL;
     }
     p_list_init(&n->u.kids);
-    p_list_add(c, &n->u.kids, first);
+    p_list_add(c, n, &n->u.kids, first);
     while (p_got(c, EK_TOK_PIPE)) {
         ek_node *alt = primary_pattern(c);
 
         if (!alt) {
             return NULL;
         }
-        p_list_add(c, &n->u.kids, alt);
+        p_list_add(c, n, &n->u.kids, alt);
     }
     return n;
 }
@@ -120,7 +120,7 @@ static ek_node *name_pattern(p_ctx *c, const ek_layout_token *t)
         n->u.cons.name = path;
         n->u.cons.payload = NULL;
         if (p_pattern_start(p_src_kind(p_peek(c)))) {
-            n->u.cons.payload = primary_pattern(c);
+            n->u.cons.payload = p_adopt(c, n, primary_pattern(c));
         }
         return n;
     }
@@ -179,7 +179,10 @@ static ek_node *minus_pattern(p_ctx *c, const ek_layout_token *t)
     if (!neg) {
         return NULL;
     }
-    neg->u.wrap.inner = lit;
+    neg->u.wrap.inner = p_adopt(c, neg, lit);
+    if (!neg->u.wrap.inner) {
+        return NULL;
+    }
     return lit_pattern(c, neg);
 }
 
@@ -193,8 +196,12 @@ static ek_node *lit_pattern(p_ctx *c, ek_node *lit)
         return NULL;
     }
     n = p_node(c, EK_N_P_LIT, lit->line, lit->col);
-    if (n) {
-        n->u.wrap.inner = lit;
+    if (!n) {
+        return NULL;
+    }
+    n->u.wrap.inner = p_adopt(c, n, lit);
+    if (!n->u.wrap.inner) {
+        return NULL;
     }
     return n;
 }
@@ -213,7 +220,7 @@ static ek_node *paren_pattern(p_ctx *c, const ek_layout_token *open)
     for (;;) {
         ek_node *p = p_pattern(c);
 
-        p_list_add(c, &n->u.kids, p);
+        p_list_add(c, n, &n->u.kids, p);
         if (!p || c->oom) {
             return n;
         }
@@ -299,7 +306,7 @@ static void brace_items(p_ctx *c, ek_node *n)
             return;
         }
         item = brace_item(c);
-        p_list_add(c, &n->u.p_brace.items, item);
+        p_list_add(c, n, &n->u.p_brace.items, item);
         if (!item || c->oom) {
             return;
         }
@@ -339,7 +346,7 @@ static ek_node *brace_item(p_ctx *c)
         if (!pat) {
             return NULL;
         }
-        n->u.p_field.pattern = pat;
+        n->u.p_field.pattern = p_adopt(c, n, pat);
         return n;
     }
     return primary_pattern(c);

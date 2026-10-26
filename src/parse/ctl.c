@@ -24,7 +24,7 @@ ek_node *p_case_expr(p_ctx *c)
     for (;;) {
         ek_node *e = p_expr(c);
 
-        p_list_add(c, &n->u.caseexpr.scrutinees, e);
+        p_list_add(c, n, &n->u.caseexpr.scrutinees, e);
         if (!e || c->oom) {
             return n;
         }
@@ -68,7 +68,7 @@ static void arm_lines(p_ctx *c, ek_node *n)
             continue;
         }
         a = arm(c);
-        p_list_add(c, &n->u.caseexpr.arms, a);
+        p_list_add(c, n, &n->u.caseexpr.arms, a);
         if (c->pos == before) {
             p_error_tok(c, "E-syntax", p_peek(c),
                         "expected a case arm; skipped");
@@ -84,7 +84,7 @@ static void arm_inline(p_ctx *c, ek_node *n)
     while (!c->oom) {
         ek_node *a = arm(c);
 
-        p_list_add(c, &n->u.caseexpr.arms, a);
+        p_list_add(c, n, &n->u.caseexpr.arms, a);
         if (!a || c->oom) {
             return;
         }
@@ -108,7 +108,7 @@ static ek_node *arm(p_ctx *c)
     for (;;) {
         ek_node *p = p_pattern(c);
 
-        p_list_add(c, &n->u.arm.patterns, p);
+        p_list_add(c, n, &n->u.arm.patterns, p);
         if (!p || c->oom) {
             return n;
         }
@@ -124,7 +124,7 @@ static ek_node *arm(p_ctx *c)
     n->u.arm.guard = NULL;
     n->u.arm.body = NULL;
     if (p_got(c, EK_TOK_KW_IF)) {
-        n->u.arm.guard = p_expr(c);
+        n->u.arm.guard = p_adopt(c, n, p_expr(c));
         if (!n->u.arm.guard) {
             return n;
         }
@@ -137,7 +137,7 @@ static ek_node *arm(p_ctx *c)
         return n;
     }
     p_take(c);
-    n->u.arm.body = p_expr(c);
+    n->u.arm.body = p_adopt(c, n, p_expr(c));
     return n;
 }
 
@@ -174,9 +174,12 @@ ek_node *p_if_expr(p_ctx *c)
     if (!n) {
         return NULL;
     }
-    n->u.ifexpr.cond = cond;
-    n->u.ifexpr.then = then_body;
-    n->u.ifexpr.els = else_branch(c);
+    n->u.ifexpr.cond = p_adopt(c, n, cond);
+    n->u.ifexpr.then = p_adopt(c, n, then_body);
+    n->u.ifexpr.els = p_adopt(c, n, else_branch(c));
+    if (!n->u.ifexpr.cond || !n->u.ifexpr.then) {
+        return NULL;
+    }
     return n;
 }
 

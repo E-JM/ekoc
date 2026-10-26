@@ -14,7 +14,7 @@ static ek_node *bracket_type(p_ctx *c, const ek_layout_token *open);
 static ek_node *tuple_type(p_ctx *c, const ek_layout_token *open,
                            ek_node *first);
 static ek_node *record_type(p_ctx *c, const ek_layout_token *open);
-static void arg_atom(p_ctx *c, ek_nlist *args);
+static void arg_atom(p_ctx *c, ek_node *owner);
 
 ek_node *p_type(p_ctx *c)
 {
@@ -81,9 +81,12 @@ static ek_node *fn_params(p_ctx *c, ek_node *n)
         param = p_node(c, EK_N_T_PARAM, t->line, t->col);
         if (param) {
             param->u.t_field.name = label;
-            param->u.t_field.type = ty;
+            param->u.t_field.type = p_adopt(c, param, ty);
+            if (!param->u.t_field.type) {
+                return NULL;
+            }
         }
-        p_list_add(c, &n->u.t_fn.params, param);
+        p_list_add(c, n, &n->u.t_fn.params, param);
         p_skip_newlines(c);
         if (p_got(c, EK_TOK_COMMA)) {
             p_skip_newlines(c);
@@ -102,13 +105,13 @@ static ek_node *fn_params(p_ctx *c, ek_node *n)
 static ek_node *fn_arrow(p_ctx *c, ek_node *n)
 {
     if (p_got(c, EK_TOK_ARROW)) {
-        n->u.t_fn.result = p_type(c);
+        n->u.t_fn.result = p_adopt(c, n, p_type(c));
     } else if (p_got(c, EK_TOK_BANGARROW)) {
         n->u.t_fn.arrow = EK_ARROW_WORLD;
-        n->u.t_fn.result = p_type(c);
+        n->u.t_fn.result = p_adopt(c, n, p_type(c));
     } else if (p_got(c, EK_TOK_QUESTIONARROW)) {
         n->u.t_fn.arrow = EK_ARROW_OPEN;
-        n->u.t_fn.result = p_type(c);
+        n->u.t_fn.result = p_adopt(c, n, p_type(c));
     } else if (p_got(c, EK_TOK_BANG)) {
         n->u.t_fn.arrow = EK_ARROW_WORLD;
     } else if (p_got(c, EK_TOK_QUESTION)) {
@@ -149,18 +152,19 @@ static ek_node *applied_type(p_ctx *c)
     if (!n) {
         return NULL;
     }
-    n->u.t_apply.head = head;
+    n->u.t_apply.head = p_adopt(c, n, head);
     p_list_init(&n->u.t_apply.args);
     while (p_atom_start(p_src_kind(p_peek(c))) && !c->oom) {
-        arg_atom(c, &n->u.t_apply.args);
+        arg_atom(c, n);
     }
     return n;
 }
 
 /* An application argument is an atom, and a composite argument must be
    parenthesized. */
-static void arg_atom(p_ctx *c, ek_nlist *args)
+static void arg_atom(p_ctx *c, ek_node *owner)
 {
+    ek_nlist *args = &owner->u.t_apply.args;
     ek_node *a = p_type_atom(c);
 
     if (a && (a->kind == EK_N_T_LIST || a->kind == EK_N_T_DICT
@@ -169,7 +173,7 @@ static void arg_atom(p_ctx *c, ek_nlist *args)
                 "a composite argument of a generic application is "
                 "parenthesized (Clause 6.9.4)");
     }
-    p_list_add(c, args, a);
+    p_list_add(c, owner, args, a);
 }
 
 /* A type atom: a (qualified) name, the unit type, a grouped type, or
@@ -208,8 +212,12 @@ ek_node *p_type_atom(p_ctx *c)
             return NULL;
         }
         n = p_node(c, EK_N_T_PAREN, t->line, t->col);
-        if (n) {
-            n->u.wrap.inner = inner;
+        if (!n) {
+            return NULL;
+        }
+        n->u.wrap.inner = p_adopt(c, n, inner);
+        if (!n->u.wrap.inner) {
+            return NULL;
         }
         return n;
     }
@@ -238,8 +246,12 @@ static ek_node *bracket_type(p_ctx *c, const ek_layout_token *open)
             return NULL;
         }
         n = p_node(c, EK_N_T_LIST, open->line, open->col);
-        if (n) {
-            n->u.wrap.inner = element;
+        if (!n) {
+            return NULL;
+        }
+        n->u.wrap.inner = p_adopt(c, n, element);
+        if (!n->u.wrap.inner) {
+            return NULL;
         }
         return n;
     }
@@ -284,9 +296,13 @@ static ek_node *bracket_tail(p_ctx *c, const ek_layout_token *open,
         return NULL;
     }
     n = p_node(c, EK_N_T_DICT, open->line, open->col);
-    if (n) {
-        n->u.pair.a = key;
-        n->u.pair.b = value;
+    if (!n) {
+        return NULL;
+    }
+    n->u.pair.a = p_adopt(c, n, key);
+    n->u.pair.b = p_adopt(c, n, value);
+    if (!n->u.pair.a || !n->u.pair.b) {
+        return NULL;
     }
     return n;
 }
@@ -301,11 +317,11 @@ static ek_node *tuple_type(p_ctx *c, const ek_layout_token *open,
         return NULL;
     }
     p_list_init(&n->u.kids);
-    p_list_add(c, &n->u.kids, first);
+    p_list_add(c, n, &n->u.kids, first);
     for (;;) {
         ek_node *item = p_type(c);
 
-        p_list_add(c, &n->u.kids, item);
+        p_list_add(c, n, &n->u.kids, item);
         if (!item || c->oom) {
             return n;
         }
@@ -358,8 +374,11 @@ static ek_node *record_type(p_ctx *c, const ek_layout_token *open)
         if (!ty) {
             return NULL;
         }
-        field->u.t_field.type = ty;
-        p_list_add(c, &n->u.kids, field);
+        field->u.t_field.type = p_adopt(c, field, ty);
+        if (!field->u.t_field.type) {
+            return NULL;
+        }
+        p_list_add(c, n, &n->u.kids, field);
         p_skip_newlines(c);
         if (p_got(c, EK_TOK_COMMA)) {
             p_skip_newlines(c);

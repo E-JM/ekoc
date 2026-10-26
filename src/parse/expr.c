@@ -17,10 +17,14 @@ static ek_node *bin(p_ctx *c, ek_binop op, ek_node *lhs, ek_node *rhs)
         return NULL;
     }
     n = p_node(c, EK_N_BINARY, lhs->line, lhs->col);
-    if (n) {
-        n->u.binary.op = op;
-        n->u.binary.lhs = lhs;
-        n->u.binary.rhs = rhs;
+    if (!n) {
+        return NULL;
+    }
+    n->u.binary.op = op;
+    n->u.binary.lhs = p_adopt(c, n, lhs);
+    n->u.binary.rhs = p_adopt(c, n, rhs);
+    if (!n->u.binary.lhs || !n->u.binary.rhs) {
+        return NULL;
     }
     return n;
 }
@@ -129,8 +133,12 @@ static ek_node *unary(p_ctx *c)
         return NULL;
     }
     n = p_node(c, EK_N_UNARY, minus->line, minus->col);
-    if (n) {
-        n->u.wrap.inner = val;
+    if (!n) {
+        return NULL;
+    }
+    n->u.wrap.inner = p_adopt(c, n, val);
+    if (!n->u.wrap.inner) {
+        return NULL;
     }
     return n;
 }

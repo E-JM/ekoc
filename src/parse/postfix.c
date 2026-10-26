@@ -11,7 +11,7 @@
 static ek_node *primary(p_ctx *c);
 static ek_node *apply_ctor(p_ctx *c, ek_node *head);
 static ek_node *dot_link(p_ctx *c, ek_node *e);
-static void call_args(p_ctx *c, ek_nlist *args);
+static void call_args(p_ctx *c, ek_node *call);
 
 /* Is e a name chain that can head a constructor application: every
    segment PascalCase, no call or application yet. */
@@ -45,9 +45,13 @@ static ek_node *apply_ctor(p_ctx *c, ek_node *head)
         return NULL;
     }
     n = p_node(c, EK_N_APPLY, head->line, head->col);
-    if (n) {
-        n->u.pair.a = head;
-        n->u.pair.b = arg;
+    if (!n) {
+        return NULL;
+    }
+    n->u.pair.a = p_adopt(c, n, head);
+    n->u.pair.b = p_adopt(c, n, arg);
+    if (!n->u.pair.a || !n->u.pair.b) {
+        return NULL;
     }
     return n;
 }
@@ -78,8 +82,11 @@ ek_node *p_postfix(p_ctx *c)
                 if (!call) {
                     return NULL;
                 }
-                call->u.call.callee = e;
-                call_args(c, &call->u.call.args);
+                call->u.call.callee = p_adopt(c, call, e);
+                call_args(c, call);
+                if (!call->u.call.callee) {
+                    return NULL;
+                }
                 e = call;
                 continue;
             }
@@ -110,8 +117,11 @@ static ek_node *dot_link(p_ctx *c, ek_node *e)
     if (!field) {
         return NULL;
     }
-    field->u.field.recv = e;
+    field->u.field.recv = p_adopt(c, field, e);
     field->u.field.name = name->tok.text;
+    if (!field->u.field.recv) {
+        return NULL;
+    }
     if (!p_at(c, EK_TOK_LPAREN)) {
         return field;
     }
@@ -121,8 +131,11 @@ static ek_node *dot_link(p_ctx *c, ek_node *e)
         if (!call) {
             return NULL;
         }
-        call->u.call.callee = field;
-        call_args(c, &call->u.call.args);
+        call->u.call.callee = p_adopt(c, call, field);
+        call_args(c, call);
+        if (!call->u.call.callee) {
+            return NULL;
+        }
         return call;
     }
 }
@@ -170,8 +183,10 @@ static ek_node *primary(p_ctx *c)
 
 /* A parenthesized argument list; breaks inside brackets are free
    formatting. The '(' is consumed. */
-static void call_args(p_ctx *c, ek_nlist *args)
+static void call_args(p_ctx *c, ek_node *call)
 {
+    ek_nlist *args = &call->u.call.args;
+
     p_list_init(args);
     p_take(c); /* '(' */
     p_skip_newlines(c);
@@ -181,7 +196,7 @@ static void call_args(p_ctx *c, ek_nlist *args)
     for (;;) {
         ek_node *arg = p_expr(c);
 
-        p_list_add(c, args, arg);
+        p_list_add(c, call, args, arg);
         if (c->oom) {
             return;
         }

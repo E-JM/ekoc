@@ -67,7 +67,7 @@ ek_node *p_variant(p_ctx *c)
     v->u.variant.name = head->tok.text;
     v->u.variant.payload = NULL;
     if (p_atom_start(p_src_kind(p_peek(c)))) {
-        v->u.variant.payload = p_type_atom(c);
+        v->u.variant.payload = p_adopt(c, v, p_type_atom(c));
     }
     return v;
 }
@@ -97,7 +97,7 @@ static void variant_lines(p_ctx *c, ek_node *n)
         }
         p_take(c);
         v = p_variant(c);
-        p_list_add(c, &n->u.type_decl.variants, v);
+        p_list_add(c, n, &n->u.type_decl.variants, v);
         if (c->pos == before) {
             p_take(c);
         }
@@ -111,7 +111,7 @@ static void variant_list(p_ctx *c, ek_node *n)
     for (;;) {
         ek_node *v = p_variant(c);
 
-        p_list_add(c, &n->u.type_decl.variants, v);
+        p_list_add(c, n, &n->u.type_decl.variants, v);
         if (!p_got(c, EK_TOK_PIPE)) {
             return;
         }
@@ -150,12 +150,12 @@ static void type_rhs(p_ctx *c, ek_node *n)
         }
         if (t->kind == EK_N_T_RECORD) {
             n->u.type_decl.rhs = EK_TYPE_RHS_RECORD;
-            n->u.type_decl.type = t;
+            n->u.type_decl.type = p_adopt(c, n, t);
             return;
         }
         if (t->kind == EK_N_T_TUPLE) {
             n->u.type_decl.rhs = EK_TYPE_RHS_TUPLE;
-            n->u.type_decl.type = t;
+            n->u.type_decl.type = p_adopt(c, n, t);
             return;
         }
         p_error(c, "E-type-decl-form", t->line, t->col,
@@ -230,7 +230,7 @@ ek_node *p_ctype_decl(p_ctx *c, const char *name, const ek_layout_token *head)
             p_error(c, "E-syntax", t->line, t->col,
                     "a ctype right-hand side is a record type (Clause 6.3.6)");
         }
-        n->u.decl.body = t;
+        n->u.decl.body = p_adopt(c, n, t);
     }
     return n;
 }
@@ -253,7 +253,7 @@ ek_node *p_test_decl(p_ctx *c, const char *name, const ek_layout_token *head)
         n->u.decl.body = NULL;
         return n;
     }
-    n->u.decl.body = p_binding_rhs(c);
+    n->u.decl.body = p_adopt(c, n, p_binding_rhs(c));
     return n;
 }
 
@@ -274,7 +274,7 @@ ek_node *p_extern_tail(p_ctx *c, const char *name,
                 "(Clause 6.3.8)");
     }
     n->u.extern_decl.name = name;
-    n->u.extern_decl.type = sig;
+    n->u.extern_decl.type = p_adopt(c, n, sig);
     n->u.extern_decl.pure = 0;
     p_take(c); /* the word `extern` */
     n->u.extern_decl.symbol = NULL;

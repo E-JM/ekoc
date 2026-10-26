@@ -62,10 +62,11 @@ ek_node *p_module(p_ctx *c)
             item = p_member(c, 1);
             seen_item = item != NULL;
         }
+        /* The compilation unit is the root, not a nesting level. */
         if (c->fatal) {
             break;
         }
-        p_list_add(c, &mod->u.kids, item);
+        p_list_add(c, NULL, &mod->u.kids, item);
         if (c->pos == before) {
             p_error_tok(c, "E-syntax", p_peek(c),
                         "token cannot begin a top-level item; skipped");
@@ -234,7 +235,7 @@ ek_node *p_invert_bare(p_ctx *c)
     if (n) {
         n->u.bind.pattern = NULL;
         n->u.bind.type = NULL;
-        n->u.bind.value = call;
+        n->u.bind.value = p_adopt(c, n, call);
     }
     return n;
 }

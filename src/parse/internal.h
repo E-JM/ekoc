@@ -25,13 +25,14 @@ typedef struct {
     size_t *match_stack;
 } p_ctx;
 
-/* The recursion ceiling of the expression, type, and pattern parsers.
-   Each nesting level costs the ladder's frame chain, so the bound
-   keeps the worst case a small fraction of the default stack: a
-   nesting level runs about 0.4 KB and the stack overflows only past
-   ~20,000 levels. Real modules nest under a few dozen levels; 1000
-   leaves two orders of magnitude of headroom above them while a
-   runaway input recovers with one diagnostic instead of crashing. */
+/* The height ceiling of the parsed tree. It bounds both the parsers'
+   live recursion and the depth of any chain the parsers build
+   iteratively, so later stages can walk the tree with the default
+   stack. The full pipeline overflows only around 58,000 chain levels
+   under the default 8 MB stack. Real modules nest under a few dozen
+   levels; 1000 leaves more than an order of magnitude of headroom
+   above them while a runaway input recovers with one diagnostic
+   instead of crashing. */
 #define EK_PARSE_MAX_DEPTH 1000
 
 /* util.c: allocation, node construction, diagnostics, cursor. */
@@ -40,7 +41,9 @@ ek_node *p_node(p_ctx *c, ek_node_kind kind, int line, int col);
 ek_node *p_node3(p_ctx *c, ek_node_kind kind, ek_node *pattern, ek_node *type,
                  ek_node *value); /* the u.bind shape */
 void p_list_init(ek_nlist *l);
-void p_list_add(p_ctx *c, ek_nlist *l, ek_node *n);
+/* owner carries the list's height; NULL marks the compilation-unit
+   list, whose root adds no nesting level. */
+void p_list_add(p_ctx *c, ek_node *owner, ek_nlist *l, ek_node *n);
 void p_path_init(ek_slist *l);
 void p_path_add(p_ctx *c, ek_slist *l, const char *s);
 void p_error(p_ctx *c, const char *code, int line, int col,
@@ -49,13 +52,19 @@ void p_error_tok(p_ctx *c, const char *code, const ek_layout_token *t,
                  const char *fmt, ...);
 void p_sync(p_ctx *c);
 
-/* The recursion guard. p_depth_enter counts one level and fails past
-   EK_PARSE_MAX_DEPTH, emitting E-nesting-depth once; every guarded
-   entry that sees the failure returns NULL and the frames unwind.
-   p_depth_leave drops one level. Guarded are the functions whose
-   mutual recursion follows input nesting: the expression, type, and
-   pattern entries, constructor application, constructor-payload
-   patterns, and nested lambda parameter groups. */
+/* p_adopt records child as one level under parent and returns child.
+   A child that would put parent past EK_PARSE_MAX_DEPTH is refused:
+   the ceiling is diagnosed once and the caller unwinds with NULL, so
+   no over-deep tree reaches later stages. */
+ek_node *p_adopt(p_ctx *c, ek_node *parent, ek_node *child);
+
+/* The height guard. p_depth_enter counts one live recursion level and
+   fails past EK_PARSE_MAX_DEPTH; every guarded entry that sees the
+   failure returns NULL and the frames unwind. p_depth_leave drops one
+   level. Guarded are the functions whose mutual recursion follows
+   input nesting: the expression, type, and pattern entries,
+   constructor application, constructor-payload patterns, and nested
+   lambda parameter groups. */
 int p_depth_enter(p_ctx *c);
 void p_depth_leave(p_ctx *c);
 void p_depth_limit(p_ctx *c);

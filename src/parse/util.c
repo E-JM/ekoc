@@ -24,8 +24,27 @@ ek_node *p_node(p_ctx *c, ek_node_kind kind, int line, int col)
         n->kind = kind;
         n->line = line;
         n->col = col;
+        n->depth = 1;
     }
     return n;
+}
+
+ek_node *p_adopt(p_ctx *c, ek_node *parent, ek_node *child)
+{
+    int depth;
+
+    if (!parent || !child) {
+        return child;
+    }
+    depth = child->depth + 1;
+    if (depth > EK_PARSE_MAX_DEPTH) {
+        p_depth_limit(c);
+        return NULL;
+    }
+    if (depth > parent->depth) {
+        parent->depth = depth;
+    }
+    return child;
 }
 
 ek_node *p_node3(p_ctx *c, ek_node_kind kind, ek_node *pattern, ek_node *type,
@@ -34,11 +53,12 @@ ek_node *p_node3(p_ctx *c, ek_node_kind kind, ek_node *pattern, ek_node *type,
     ek_node *n = p_node(c, kind, pattern ? pattern->line : 0,
                         pattern ? pattern->col : 0);
 
-    if (n) {
-        n->u.bind.pattern = pattern;
-        n->u.bind.type = type;
-        n->u.bind.value = value;
+    if (!n) {
+        return NULL;
     }
+    n->u.bind.pattern = p_adopt(c, n, pattern);
+    n->u.bind.type = p_adopt(c, n, type);
+    n->u.bind.value = p_adopt(c, n, value);
     return n;
 }
 
@@ -61,9 +81,9 @@ static void *grow(p_ctx *c, void *data, size_t count, size_t unit)
     return p;
 }
 
-void p_list_add(p_ctx *c, ek_nlist *l, ek_node *n)
+void p_list_add(p_ctx *c, ek_node *owner, ek_nlist *l, ek_node *n)
 {
-    if (!n || c->oom) {
+    if (!n || c->oom || !p_adopt(c, owner, n)) {
         return;
     }
     if (l->count == 0 || (l->count & (l->count - 1)) == 0) {

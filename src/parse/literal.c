@@ -67,7 +67,8 @@ static ek_node *string_lit(p_ctx *c, const ek_layout_token *t)
         seg->text_len = 0;
         seg->expr = NULL;
         if (p->tokens) {
-            seg->expr = p_slot_expr(c, p->tokens, p->token_count);
+            seg->expr = p_adopt(c, n, p_slot_expr(c, p->tokens,
+                                                p->token_count));
         } else {
             seg->text = p->text;
             seg->text_len = p->text_len;
@@ -102,6 +103,8 @@ ek_node *p_slot_expr(p_ctx *c, const ek_token *toks, size_t n)
     sub.count = n + 1;
     sub.pos = 0;
     sub.oom = c->oom;
+    sub.match = NULL;
+    sub.match_stack = NULL;
     e = p_expr(&sub);
     if (!sub.oom && !sub.fatal && e
         && p_peek(&sub)->kind == EK_LTOK_SOURCE) {
@@ -137,7 +140,7 @@ ek_node *p_composite(p_ctx *c)
     for (;;) {
         ek_node *item = composite_item(c);
 
-        p_list_add(c, &n->u.kids, item);
+        p_list_add(c, n, &n->u.kids, item);
         if (c->oom) {
             return n;
         }
@@ -172,10 +175,13 @@ static ek_node *composite_item(p_ctx *c)
         return NULL;
     }
     item->u.pair.a = NULL;
-    item->u.pair.b = first;
+    item->u.pair.b = p_adopt(c, item, first);
     if (p_got(c, EK_TOK_COLON)) {
-        item->u.pair.a = first;
-        item->u.pair.b = p_expr(c);
+        item->u.pair.a = p_adopt(c, item, first);
+        item->u.pair.b = p_adopt(c, item, p_expr(c));
+    }
+    if (!item->u.pair.b) {
+        return NULL;
     }
     return item;
 }
@@ -202,8 +208,12 @@ ek_node *p_paren_primary(p_ctx *c)
             return NULL;
         }
         n = p_node(c, EK_N_PAREN, open->line, open->col);
-        if (n) {
-            n->u.wrap.inner = inner;
+        if (!n) {
+            return NULL;
+        }
+        n->u.wrap.inner = p_adopt(c, n, inner);
+        if (!n->u.wrap.inner) {
+            return NULL;
         }
         return n;
     }
@@ -282,7 +292,7 @@ static ek_node *lambda(p_ctx *c)
         for (;;) {
             ek_node *p = lambda_param(c);
 
-            p_list_add(c, &params->u.kids, p);
+            p_list_add(c, params, &params->u.kids, p);
             p_skip_newlines(c);
             if (!p_got(c, EK_TOK_COMMA)) {
                 break;
@@ -303,9 +313,13 @@ static ek_node *lambda(p_ctx *c)
         return NULL;
     }
     n = p_node(c, EK_N_LAMBDA, open->line, open->col);
-    if (n) {
-        n->u.pair.a = params;
-        n->u.pair.b = body;
+    if (!n) {
+        return NULL;
+    }
+    n->u.pair.a = p_adopt(c, n, params);
+    n->u.pair.b = p_adopt(c, n, body);
+    if (!n->u.pair.a || !n->u.pair.b) {
+        return NULL;
     }
     return n;
 }
@@ -341,7 +355,7 @@ static ek_node *lambda_param(p_ctx *c)
         while (!p_at(c, EK_TOK_RPAREN) && !c->oom) {
             ek_node *p = lambda_param(c);
 
-            p_list_add(c, &g->u.kids, p);
+            p_list_add(c, g, &g->u.kids, p);
             p_skip_newlines(c);
             if (!p_got(c, EK_TOK_COMMA)) {
                 break;
