@@ -52,7 +52,7 @@ static void dedent_to(layout_ctx *c, int col, const line_run *l)
     }
     if (top_col(c) != col) {
         err_at(c, CODE_DEDENT, l,
-               "dedent to column %d matches no open block", col);
+               "dedent to column %d matches no open block", col + 1);
         lo_push_col(c, col, -1);
     }
 }
@@ -82,7 +82,7 @@ static void else_dedent(layout_ctx *c, int col, const line_run *l)
         return;
     }
     err_at(c, CODE_DEDENT, l,
-           "dedent to column %d matches no open block", col);
+           "dedent to column %d matches no open block", col + 1);
     lo_push_col(c, col, -1);
 }
 
@@ -138,7 +138,8 @@ static void bracket_start(layout_ctx *c, const line_run *l, int col)
         lo_emit(c, EK_LTOK_NEWLINE, line, at);
     } else if (col < cb->member_col) {
         err_at(c, CODE_COLUMN, l, "callback body line begins at column %d; "
-               "its members begin in column %d", col, cb->member_col);
+               "its members begin in column %d", col + 1,
+               cb->member_col + 1);
         lo_emit(c, EK_LTOK_NEWLINE, line, at);
     }
 }
