@@ -44,13 +44,17 @@ conflict, the spec governs.
 
 ## Comments
 
-- Comments are rare and state why — a constraint the code cannot show.
-  Never what the next line does, never change narration.
-- Comments carry no history and no process: no milestone or task
-  references, no "was X, now Y", no bug or fix narration, no notes to
-  reviewers. The code states what holds; history lives in git.
+- A comment says what a piece of code does and why, in the code's own
+  terms. It is not language documentation: no clause, annex, or table
+  numbers, no spec quotations.
+- No pipeline-stage or milestone labels ("Stage 2", "M6"), no history
+  ("was X, now Y"), no bug or fix narration, no notes to reviewers. The
+  code states what holds; history lives in git.
+- A public header states each function's contract in a few lines —
+  inputs, ownership, failure behavior — and nothing else.
 - No banner comments, no commented-out code, no license headers per file
-  (LICENSE covers the tree).
+  (LICENSE covers the tree). Diagnostic strings may cite a clause where
+  the suite requires the rejection to name one; comments never do.
 
 ## Tests
 
