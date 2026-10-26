@@ -12,7 +12,9 @@
    with their function type (opacity). */
 static const ek_type *call_opaque(ck_ctx *c, const ek_node *e,
                                   const ek_type *f, const char *member,
-                                  const ek_type *recv, const ek_nlist *args,
+                                  const ek_type *recv,
+                                  const ek_type *bit_recv,
+                                  const ek_nlist *args,
                                   const ek_node **nodes,
                                   const ek_type **types, size_t nargs,
                                   size_t off, int synthesize)
@@ -47,8 +49,8 @@ static const ek_type *call_opaque(ck_ctx *c, const ek_node *e,
                  "a value of type %s is not called (Clause 7.8.1)",
                  ck_type_name(c, f));
     }
-    ck_call_bit(c, e, ck_call_bit_of(c, f, member, recv, nodes, types,
-                                     nargs, off));
+    ck_call_bit(c, e, ck_call_bit_of(c, f, member, bit_recv ? bit_recv : recv,
+                                     nodes, types, nargs, off));
     ck_row(c, e, ret, EK_RD_NONE);
     return ret;
 }
@@ -80,8 +82,8 @@ static void call_args(ck_ctx *c, const ek_type *f, const ek_nlist *args,
 
 static const ek_type *call_fn(ck_ctx *c, const ek_node *e,
                               const ek_type *fntype, const char *member,
-                              const ek_type *recv, const ek_nlist *args,
-                              int synthesize)
+                              const ek_type *recv, const ek_type *bit_recv,
+                              const ek_nlist *args, int synthesize)
 {
     const ek_type *f = ck_prune(fntype);
     const ek_type **types = NULL;
@@ -103,8 +105,8 @@ static const ek_type *call_fn(ck_ctx *c, const ek_node *e,
         }
     }
     if (!f || f->kind != EK_T_FN) {
-        return call_opaque(c, e, f, member, recv, args, nodes, types, nargs,
-                           off, synthesize);
+        return call_opaque(c, e, f, member, recv, bit_recv, args, nodes,
+                           types, nargs, off, synthesize);
     }
     if (f->u.fn.count != nargs) {
         ck_error(c, e, "E-call-arity",
@@ -123,21 +125,46 @@ static const ek_type *call_fn(ck_ctx *c, const ek_node *e,
         }
     }
     ret = f->u.fn.result;
-    ck_call_bit(c, e, ck_call_bit_of(c, f, member, recv, nodes, types,
+    ck_call_bit(c, e, ck_call_bit_of(c, f, member,
+                                     bit_recv ? bit_recv : recv, nodes, types,
                                      args->count, off));
     ck_row(c, e, ret, EK_RD_NONE);
     return ret;
 }
 
-/* The receiver of a direct (symbol-bearing) callee: `Mod.f(x)` has no
-   receiver; `a.Mod.f(x)` is `Mod.f(a, x)`. Returns the value to
-   prepend, or NULL. */
-static const ek_type *direct_receiver(ck_ctx *c, const ek_node *recv)
+/* A type namespace at the head of a callee: `T.f` or `Mod.T.f`. The
+   head names a type, so it is not a value and supplies no receiver;
+   its members are the type's namespace. */
+static int type_head(ck_ctx *c, const ek_node *recv, const ek_type **out)
 {
     const ek_ref *r = NULL;
 
     if (!recv) {
+        return 0;
+    }
+    if (recv->kind != EK_N_NAME && recv->kind != EK_N_FIELD) {
+        return 0;
+    }
+    if (!ck_ref_at(c, recv, EK_SYM_TYPE, &r)) {
+        return 0;
+    }
+    *out = r->symbol ? ck_nominal(c, r->symbol, NULL, 0) : NULL;
+    return 1;
+}
+
+/* The receiver of a direct (symbol-bearing) callee: `Mod.f(x)` and
+   `T.f(x)` have no receiver; `a.Mod.f(x)` is `Mod.f(a, x)`. Returns
+   the value to prepend, or NULL. */
+static const ek_type *direct_receiver(ck_ctx *c, const ek_node *recv)
+{
+    const ek_ref *r = NULL;
+    const ek_type *head = NULL;
+
+    if (!recv) {
         return NULL;
+    }
+    if (type_head(c, recv, &head)) {
+        return NULL; /* the head is a type namespace */
     }
     if (recv->kind == EK_N_NAME && ck_ref_at(c, recv, EK_SYM_MODULE, &r)) {
         return NULL; /* the head is the module itself */
@@ -194,30 +221,36 @@ static const ek_type *call_member(ck_ctx *c, const ek_node *e,
                                   const ek_node *callee)
 {
     ek_reading rd = EK_RD_NONE;
-    const ek_type *recv = direct_receiver(c, callee->u.field.recv);
-    const ek_type *t = ck_link(c, callee, recv, callee->u.field.name, &rd);
+    const ek_type *head = NULL;
+    int qualified = type_head(c, callee->u.field.recv, &head);
+    const ek_type *recv = qualified ? NULL
+                          : direct_receiver(c, callee->u.field.recv);
+    const ek_type *t = ck_link(c, callee, qualified ? head : recv,
+                               callee->u.field.name, &rd);
     const ek_type *pt = rd == EK_RD_FIELD ? ck_prune(t) : NULL;
 
-    if (rd == EK_RD_DERIVED && strcmp(callee->u.field.name, "with") == 0) {
+    if (rd == EK_RD_DERIVED && !qualified
+        && strcmp(callee->u.field.name, "with") == 0) {
         /* The with service takes its literal argument directly; its
            link type is only the expressible stand-in. */
         return call_with(c, e, recv);
     }
     if (rd != EK_RD_FIELD) {
         /* Namespace, module, derived, and opaque readings all take
-           the receiver first. */
+           the receiver first; a type head supplies namespace context,
+           not an argument. */
         return call_fn(c, e, t, callee->u.field.name, recv,
-                       &e->u.call.args, 0);
+                       qualified ? head : NULL, &e->u.call.args, 0);
     }
     if (pt && pt->kind == EK_T_FN) {
-        return call_fn(c, e, t, callee->u.field.name, NULL,
+        return call_fn(c, e, t, callee->u.field.name, NULL, NULL,
                        &e->u.call.args, 0);
     }
     ck_error(c, e, "E-not-callable",
              "the field `%s` is not a function value (Clause 7.4.3)",
              callee->u.field.name);
-    return call_fn(c, e, NULL, callee->u.field.name, NULL, &e->u.call.args,
-                   1);
+    return call_fn(c, e, NULL, callee->u.field.name, NULL, NULL,
+                   &e->u.call.args, 1);
 }
 
 /* The free-call form of a compiler service: its first argument is the
@@ -234,13 +267,13 @@ static const ek_type *call_service(ck_ctx *c, const ek_node *e,
     const ek_type *t;
 
     if (e->u.call.args.count == 0) {
-        return call_fn(c, e, NULL, name, NULL, &e->u.call.args, 1);
+        return call_fn(c, e, NULL, name, NULL, NULL, &e->u.call.args, 1);
     }
     recv = ck_expr(c, e->u.call.args.data[0], NULL);
     t = ck_link(c, callee, recv, name, &rd);
     rest.data = e->u.call.args.data + 1;
     rest.count = e->u.call.args.count - 1;
-    return call_fn(c, e, t, name, recv, &rest, 0);
+    return call_fn(c, e, t, name, recv, NULL, &rest, 0);
 }
 
 /* Typing one EK_N_CALL: a plain head, or the last link of a receiver
@@ -264,13 +297,22 @@ const ek_type *ck_call(ck_ctx *c, const ek_node *e, const ek_type *expected)
         {
             const ek_type *t = ck_expr(c, callee, NULL);
 
-            return call_fn(c, e, t, NULL, NULL, &e->u.call.args, 0);
+            return call_fn(c, e, t, NULL, NULL, NULL, &e->u.call.args, 0);
         }
     }
     if (!callee || callee->kind != EK_N_FIELD) {
         const ek_type *t = ck_expr(c, callee, NULL);
 
-        return call_fn(c, e, t, NULL, NULL, &e->u.call.args, 0);
+        return call_fn(c, e, t, NULL, NULL, NULL, &e->u.call.args, 0);
+    }
+    {
+        const ek_type *head = NULL;
+
+        if (type_head(c, callee->u.field.recv, &head)) {
+            /* A type namespace selects namespace members and derived
+               services, and supplies no receiver value. */
+            return call_member(c, e, callee);
+        }
     }
     if (ck_ref_at(c, callee, 0, &ref) && ref->symbol != NULL
         && (ref->kind == EK_SYM_FUNC || ref->kind == EK_SYM_NAMESPACE
@@ -280,7 +322,7 @@ const ek_type *ck_call(ck_ctx *c, const ek_node *e, const ek_type *expected)
         const ek_type *recv = direct_receiver(c, callee->u.field.recv);
         const ek_type *t = ck_type_of(c, ref->symbol);
 
-        return call_fn(c, e, t, callee->u.field.name, recv,
+        return call_fn(c, e, t, callee->u.field.name, recv, NULL,
                        &e->u.call.args, 0);
     }
     return call_member(c, e, callee);
