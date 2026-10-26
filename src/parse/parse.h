@@ -47,6 +47,10 @@
  *   name for an unlabeled parameter.
  * - EK_N_P_VAR and EK_N_P_CONS are classified by spelling alone:
  *   snake_case is a variable, PascalCase a constructor.
+ * - EK_N_IMPORT carries its module path and, when the line ends in a
+ *   selective list, the listed free names; an empty names list means
+ *   the import carries no list. The list's braces are plain tokens on
+ *   the import's own line, so layout never sees them.
  * - The record-update form `p.with({...})` has no node of its own: the
  *   grammar defines it as an ordinary postfix member call whose one
  *   argument is a composite literal (annex A.3.5 Postfix; Clauses
@@ -123,7 +127,8 @@ struct ek_node {
     union {
         ek_nlist kids;    /* MODULE, BLOCK, LAMBDA_PARAMS, P_PAREN, P_OR,
                              T_TUPLE, T_RECORD */
-        ek_slist path;    /* IMPORT, NAME, T_NAME, P_CONS head */
+        ek_slist path;    /* NAME, T_NAME, P_CONS head */
+        struct { ek_slist path; ek_slist names; } imports; /* IMPORT */
         struct { ek_str_seg *segs; size_t count; } str;
         struct {
             const char *text;

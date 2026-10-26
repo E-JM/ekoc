@@ -173,9 +173,9 @@ static char *find_file(r_ctx *c, const ek_node *imp)
 
         ek_buf_init(&b);
         ok = ek_buf_append_str(&b, c->path[d]);
-        for (i = 0; ok && i < imp->u.path.count; i++) {
+        for (i = 0; ok && i < imp->u.imports.path.count; i++) {
             ok = ek_buf_append_char(&b, '/')
-              && ek_buf_append_str(&b, imp->u.path.data[i]);
+              && ek_buf_append_str(&b, imp->u.imports.path.data[i]);
         }
         ok = ok && ek_buf_append_str(&b, ".eko");
         if (!ok) {
@@ -269,14 +269,14 @@ static void load_import(r_ctx *c, r_mod *from, const ek_node *imp)
     r_mod *m;
     char *path;
 
-    if (c->oom || imp->u.path.count == 0) {
+    if (c->oom || imp->u.imports.path.count == 0) {
         return;
     }
-    stem = imp->u.path.data[imp->u.path.count - 1];
-    if (strcmp(imp->u.path.data[0], "std") == 0) {
+    stem = imp->u.imports.path.data[imp->u.imports.path.count - 1];
+    if (strcmp(imp->u.imports.path.data[0], "std") == 0) {
         r_mod *held = r_module_find(c, stem);
 
-        if (imp->u.path.count == 1) {
+        if (imp->u.imports.path.count == 1) {
             ek_diag_emit(c->diag, EK_SEV_WARNING, "W-redundant-import",
                          file, imp->line, imp->col,
                          "explicit `import std`; every file already "
@@ -331,7 +331,7 @@ void r_closure_walk(r_ctx *c, r_mod *m)
     for (i = 0; i < mod->u.kids.count; i++) {
         const ek_node *imp = mod->u.kids.data[i];
 
-        if (imp->kind != EK_N_IMPORT || imp->u.path.count == 0) {
+        if (imp->kind != EK_N_IMPORT || imp->u.imports.path.count == 0) {
             continue;
         }
         load_import(c, m, imp);

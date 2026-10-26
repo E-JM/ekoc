@@ -105,10 +105,10 @@ static void file_setup(r_ctx *c, r_file *f, r_mod *m)
         const char *stem;
         r_mod *target;
 
-        if (imp->kind != EK_N_IMPORT || imp->u.path.count == 0) {
+        if (imp->kind != EK_N_IMPORT || imp->u.imports.path.count == 0) {
             continue;
         }
-        stem = imp->u.path.data[imp->u.path.count - 1];
+        stem = imp->u.imports.path.data[imp->u.imports.path.count - 1];
         target = r_module_find(c, stem);
         if (!target) {
             continue; /* a failed import is already diagnosed */

@@ -318,10 +318,10 @@ static void import_conflicts(r_surf *s)
     for (i = 0; i < mod->u.kids.count; i++) {
         const ek_node *imp = mod->u.kids.data[i];
 
-        if (imp->kind != EK_N_IMPORT || imp->u.path.count == 0) {
+        if (imp->kind != EK_N_IMPORT || imp->u.imports.path.count == 0) {
             continue;
         }
-        binding_vs_import(s, imp->u.path.data[imp->u.path.count - 1]);
+        binding_vs_import(s, imp->u.imports.path.data[imp->u.imports.path.count - 1]);
     }
 }
 

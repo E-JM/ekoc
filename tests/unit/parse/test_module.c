@@ -14,11 +14,12 @@ static void imports(void)
     EK_CHECK_U64(f.ast.module->u.kids.count, 3);
     imp = pfx_item(&f, 0);
     EK_CHECK_U64(imp->kind, EK_N_IMPORT);
-    EK_CHECK_U64(imp->u.path.count, 1);
-    EK_CHECK_STR(imp->u.path.data[0], "person");
+    EK_CHECK_U64(imp->u.imports.path.count, 1);
+    EK_CHECK_STR(imp->u.imports.path.data[0], "person");
+    EK_CHECK_U64(imp->u.imports.names.count, 0);
     imp = pfx_item(&f, 1);
-    EK_CHECK_U64(imp->u.path.count, 2);
-    EK_CHECK_STR(imp->u.path.data[1], "lex");
+    EK_CHECK_U64(imp->u.imports.path.count, 2);
+    EK_CHECK_STR(imp->u.imports.path.data[1], "lex");
     pfx_end(&f);
 
     /* An import after a binding is an error. */
@@ -34,6 +35,60 @@ static void imports(void)
     EK_CHECK(pfx_errors(&f) > 0);
     pfx_collect(&f);
     EK_CHECK(pfx_has_code(&f, "E-import-order"));
+    pfx_end(&f);
+}
+
+/* Selective import lists: the path and the listed free names come back
+   as written, and the braces are ordinary tokens of the one import
+   line. */
+static void import_lists(void)
+{
+    parse_fixture f;
+    const ek_node *imp;
+
+    pfx_begin(&f,
+        "import geolib.{area, move}\n"
+        "\n"
+        "x: Int = 1\n");
+    EK_CHECK_U64(pfx_errors(&f), 0);
+    EK_CHECK_U64(f.ast.module->u.kids.count, 2);
+    imp = pfx_item(&f, 0);
+    EK_CHECK_U64(imp->kind, EK_N_IMPORT);
+    EK_CHECK_U64(imp->u.imports.path.count, 1);
+    EK_CHECK_STR(imp->u.imports.path.data[0], "geolib");
+    EK_CHECK_U64(imp->u.imports.names.count, 2);
+    EK_CHECK_STR(imp->u.imports.names.data[0], "area");
+    EK_CHECK_STR(imp->u.imports.names.data[1], "move");
+    pfx_end(&f);
+
+    /* One name on a multi-segment path. */
+    pfx_begin(&f, "import sub/geolib.{area}\n");
+    EK_CHECK_U64(pfx_errors(&f), 0);
+    imp = pfx_item(&f, 0);
+    EK_CHECK_U64(imp->u.imports.path.count, 2);
+    EK_CHECK_U64(imp->u.imports.names.count, 1);
+    EK_CHECK_STR(imp->u.imports.names.data[0], "area");
+    pfx_end(&f);
+
+    /* An empty list, a trailing comma, and a non-name in the list are
+       syntax errors at the list. */
+    pfx_begin(&f, "import geolib.{}\n");
+    EK_CHECK(pfx_errors(&f) > 0);
+    pfx_collect(&f);
+    EK_CHECK(pfx_has_code(&f, "E-syntax"));
+    pfx_end(&f);
+
+    pfx_begin(&f, "import geolib.{area,}\n");
+    EK_CHECK(pfx_errors(&f) > 0);
+    pfx_collect(&f);
+    EK_CHECK(pfx_has_code(&f, "E-syntax"));
+    pfx_end(&f);
+
+    pfx_begin(&f, "import geolib.{area, 1}\n");
+    EK_CHECK(pfx_errors(&f) > 0);
+    pfx_collect(&f);
+    EK_CHECK(pfx_has_code(&f, "E-syntax"));
+    EK_CHECK(f.ast.module != NULL);
     pfx_end(&f);
 }
 
@@ -209,6 +264,7 @@ static void deep_nesting(void)
 int main(void)
 {
     imports();
+    import_lists();
     top_level_items();
     semicolon_suites();
     recovery();
