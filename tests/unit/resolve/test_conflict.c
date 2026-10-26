@@ -163,20 +163,27 @@ static void tvar_vs_module(void)
     rfx_end(&f);
 }
 
-static void constructor_clash(void)
+static void constructor_candidates(void)
 {
     rfx f;
+    const ek_ref *r;
 
-    /* Two visible constructors with one name clash at the use site,
-       not at the declarations. */
+    /* Same-named constructors of different types coexist; resolve
+       hands both to check as the candidate set. */
     rfx_begin(&f,
         "A: type = Same Int\n"
         "B: type = Same Int\n"
         "f: Int =\n"
         "    case 0:\n"
         "        Same -> 1\n");
-    EK_CHECK_U64(rfx_errors(&f), 1);
-    EK_CHECK(rfx_code_at_line(&f, "E-name-conflict", 5));
+    EK_CHECK_U64(rfx_errors(&f), 0);
+    r = rfx_ref_named(&f, 5, "Same");
+    EK_CHECK(r != NULL);
+    EK_CHECK(r->kind == EK_SYM_CONSTRUCTOR);
+    EK_CHECK(r->station == EK_ST_CONS);
+    EK_CHECK_U64(r->ncands, 2);
+    EK_CHECK_STR(r->cands[0]->owner, "A");
+    EK_CHECK_STR(r->cands[1]->owner, "B");
     rfx_end(&f);
 }
 
@@ -244,7 +251,7 @@ int main(void)
     namespace_heads();
     pattern_repeats();
     tvar_vs_module();
-    constructor_clash();
+    constructor_candidates();
     same_named_types();
     namespace_owner();
     name_case();

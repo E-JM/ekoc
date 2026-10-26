@@ -21,6 +21,14 @@
  * node. All storage lives in the arena and is valid until it is
  * destroyed.
  *
+ * A constructor reference additionally carries every visible
+ * same-named constructor as a candidate set. Constructors do not
+ * conflict by visibility: which one a reference denotes is decided by
+ * the expected type in value position or by the scrutinee type in
+ * pattern position, so the selection belongs to check and resolve
+ * hands the whole set over. symbol names the first candidate, so a
+ * reader that only wants one symbol keeps a sensible answer.
+ *
  * Receiver-form links whose reading needs the static type of the
  * receiver come back as EK_SYM_MEMBER: resolve verified every
  * name-level fact (the link is not a lexical binding, a module segment
@@ -109,12 +117,20 @@ typedef struct {
 /* One resolved reference site: an EK_N_NAME, EK_N_FIELD, EK_N_CALL, or
    EK_N_APPLY head, an EK_N_T_NAME in type position, or an EK_N_P_CONS
    in pattern position. symbol is NULL when kind is EK_SYM_MEMBER or
-   EK_SYM_EXTERNAL, or when the reference is erroneous. */
+   EK_SYM_EXTERNAL, or when the reference is erroneous.
+
+   cands holds the visible same-named constructors of an unqualified
+   constructor reference -- the file's own and opened ones first, the
+   std placeholder last -- and is NULL elsewhere. A qualified
+   constructor reference names one declaration and carries no set.
+   symbol is cands[0] when cands is non-empty. */
 typedef struct {
     const ek_node *node;
     ek_sym_kind kind;
     ek_station station;
     const ek_symbol *symbol;
+    const ek_symbol *const *cands;
+    size_t ncands;
 } ek_ref;
 
 typedef struct {

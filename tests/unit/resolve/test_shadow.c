@@ -115,11 +115,12 @@ static void unshadowed_std_still_placeholder(void)
     rfx_end(&f);
 }
 
-/* Two of the file's own constructors with one name still clash at the
-   use site; the std layer plays no part. */
-static void duplicate_local_ctors_conflict(void)
+/* Two of the file's own constructors with one name coexist at
+   resolve: the use site is anchored later, by the scrutinee type. */
+static void duplicate_local_ctors_coexist(void)
 {
     rfx f;
+    const ek_ref *r;
 
     rfx_begin(&f,
         "A: type = Ok Int\n"
@@ -127,8 +128,13 @@ static void duplicate_local_ctors_conflict(void)
         "r: Int =\n"
         "    case 0:\n"
         "        Ok -> 1\n");
-    EK_CHECK_U64(rfx_errors(&f), 1);
-    EK_CHECK(rfx_code_at_line(&f, "E-name-conflict", 5));
+    EK_CHECK_U64(rfx_errors(&f), 0);
+    r = rfx_ref_named(&f, 5, "Ok");
+    EK_CHECK(r != NULL);
+    EK_CHECK_U64(r->ncands, 3);
+    EK_CHECK_STR(r->cands[0]->owner, "A");
+    EK_CHECK_STR(r->cands[1]->owner, "B");
+    EK_CHECK_STR(r->cands[2]->owner, "Result");
     rfx_end(&f);
 }
 
@@ -159,7 +165,7 @@ int main(void)
     local_ctors_shadow_std();
     local_type_shadows_std();
     unshadowed_std_still_placeholder();
-    duplicate_local_ctors_conflict();
+    duplicate_local_ctors_coexist();
     cross_module_shadow();
     return ek_test_report("resolve/shadow");
 }

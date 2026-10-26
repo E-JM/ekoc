@@ -65,11 +65,12 @@ static void cons_ref_qualified(r_ctx *c, r_file *f, const ek_node *pat,
 }
 
 /* A pattern constructor head is a constructor reference, unqualified
-   or module-qualified. */
+   or module-qualified. An unqualified head hands every visible
+   same-named constructor to check; a qualified head names one. */
 static void cons_ref(r_ctx *c, r_file *f, const ek_node *pat)
 {
     const ek_slist *path = &pat->u.cons.name;
-    const ek_symbol *first = NULL;
+    const ek_symbol *const *cands = NULL;
     size_t k;
 
     if (path->count > 2) {
@@ -85,20 +86,16 @@ static void cons_ref(r_ctx *c, r_file *f, const ek_node *pat)
         cons_ref_qualified(c, f, pat, path->data[0], path->data[1]);
         return;
     }
-    k = r_lookup_ctor(f, path->count == 1 ? path->data[0] : "", &first);
-    if (k > 1) {
-        r_error(c, f->mod->file, pat->line, pat->col, "E-name-conflict",
-                "`%s` names several visible constructors; qualify one "
-                "(Clause 7.4.6)", path->data[0]);
-        r_add_ref(c, pat, EK_SYM_EXTERNAL, EK_ST_CONS, NULL);
+    k = r_lookup_ctor(c, f, path->count == 1 ? path->data[0] : "",
+                      &cands);
+    if (k == 0) {
+        /* Unknown to the file and to std: the bridge records the
+           miss. */
+        r_add_ref(c, pat, EK_SYM_EXTERNAL, EK_ST_EXTERNAL, NULL);
         return;
     }
-    if (k == 1) {
-        r_add_ref(c, pat, EK_SYM_CONSTRUCTOR, EK_ST_CONS, first);
-        return;
-    }
-    /* Unknown to the file and to std: the bridge records the miss. */
-    r_add_ref(c, pat, EK_SYM_EXTERNAL, EK_ST_EXTERNAL, NULL);
+    r_add_ctor_ref(c, pat, EK_SYM_CONSTRUCTOR, EK_ST_CONS, cands[0],
+                   cands, k);
 }
 
 /* Constructor references at pattern positions. */

@@ -65,28 +65,40 @@ size_t r_lookup_type(const r_file *f, const char *name,
     return n;
 }
 
-size_t r_lookup_ctor(const r_file *f, const char *name,
-                     const ek_symbol **first)
+size_t r_lookup_ctor(r_ctx *c, const r_file *f, const char *name,
+                     const ek_symbol *const **cands)
 {
+    const ek_symbol *std_ct = r_std_find(f->std, EK_SYM_CONSTRUCTOR, name);
+    const ek_symbol **out;
     size_t i, n = 0;
 
-    *first = NULL;
+    *cands = NULL;
     for (i = 0; i < f->nctors; i++) {
         if (strcmp(f->ctors[i].name, name) == 0) {
-            if (n == 0) {
-                *first = f->ctors[i].sym;
-            }
             n++;
         }
     }
+    if (std_ct) {
+        n++;
+    }
     if (n == 0) {
-        const ek_symbol *sym = r_std_find(f->std, EK_SYM_CONSTRUCTOR, name);
-
-        if (sym) {
-            *first = sym;
-            n = 1;
+        return 0;
+    }
+    out = ek_arena_alloc(c->arena, n * sizeof *out);
+    if (!out) {
+        c->oom = 1;
+        return 0;
+    }
+    n = 0;
+    for (i = 0; i < f->nctors; i++) {
+        if (strcmp(f->ctors[i].name, name) == 0) {
+            out[n++] = f->ctors[i].sym;
         }
     }
+    if (std_ct) {
+        out[n++] = std_ct;
+    }
+    *cands = out;
     return n;
 }
 
@@ -98,37 +110,33 @@ static int is_std_placeholder(const ek_symbol *sym)
         && sym->decl == NULL;
 }
 
-/* Constructor value or pattern position: two visible constructors with
-   one name clash at the use site; a std constructor is the placeholder
-   bridge (resolve.h). */
+/* Constructor value position: the visible same-named constructors are
+   handed to check as a candidate set; the first one is the recorded
+   symbol. */
 void r_cons_head(r_ctx *c, r_file *f, const ek_node *n, r_head *out)
 {
     const char *name = n->u.path.count == 1 ? n->u.path.data[0] : "";
-    const ek_symbol *first = NULL;
-    size_t k = r_lookup_ctor(f, name, &first);
+    const ek_symbol *const *cands = NULL;
+    size_t k = r_lookup_ctor(c, f, name, &cands);
 
     memset(out, 0, sizeof *out);
-    if (k > 1) {
-        r_error(c, f->mod->file, n->line, n->col, "E-name-conflict",
-                "`%s` names several visible constructors; qualify one "
-                "(Clause 7.4.6)", name);
+    if (k == 0) {
+        /* Unknown to the file and to std: the unresolved-external
+           bridge (resolve.h). */
         out->kind = EK_SYM_EXTERNAL;
-        r_add_ref(c, n, out->kind, EK_ST_CONS, NULL);
+        out->st = EK_ST_EXTERNAL;
+        r_add_ref(c, n, out->kind, out->st, NULL);
         return;
     }
-    if (k == 1) {
-        out->sym = first;
-        out->kind = is_std_placeholder(first) ? EK_SYM_EXTERNAL
-                                              : EK_SYM_CONSTRUCTOR;
-        out->st = is_std_placeholder(first) ? EK_ST_EXTERNAL : EK_ST_CONS;
-        r_add_ref(c, n, out->kind, out->st, out->sym);
-        return;
+    out->sym = cands[0];
+    if (is_std_placeholder(cands[0])) {
+        out->kind = EK_SYM_EXTERNAL;
+        out->st = EK_ST_EXTERNAL;
+    } else {
+        out->kind = EK_SYM_CONSTRUCTOR;
+        out->st = EK_ST_CONS;
     }
-    /* Unknown to the file and to std: the unresolved-external bridge
-       (resolve.h). */
-    out->kind = EK_SYM_EXTERNAL;
-    out->st = EK_ST_EXTERNAL;
-    r_add_ref(c, n, out->kind, out->st, NULL);
+    r_add_ctor_ref(c, n, out->kind, out->st, out->sym, cands, k);
 }
 
 /* A module name is not a value. */

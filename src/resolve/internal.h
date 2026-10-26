@@ -72,6 +72,10 @@ void r_scope_add(r_ctx *c, scope *s, const char *name, const ek_symbol *sym);
 const ek_symbol *r_scope_get(const scope *s, const char *name);
 void r_add_ref(r_ctx *c, const ek_node *n, ek_sym_kind kind,
                ek_station st, const ek_symbol *sym);
+/* Adds the reference and attaches its constructor candidates. */
+void r_add_ctor_ref(r_ctx *c, const ek_node *n, ek_sym_kind kind,
+                    ek_station st, const ek_symbol *sym,
+                    const ek_symbol *const *cands, size_t ncands);
 void r_error(r_ctx *c, const char *file, int line, int col,
              const char *code, const char *fmt, ...);
 void r_refs_sort(ek_ref *refs, size_t count);
@@ -111,15 +115,17 @@ void r_expr(r_ctx *c, r_file *f, const ek_node *e);
 
 /* The layer lookups, shared with chain.c and type.c: own and opened
    names first, the std surface as the bottom layer.
-   r_lookup_type and r_lookup_ctor count visible same-named entries:
-   ambiguity is an error at the use site. */
+   r_lookup_type counts visible same-named entries: ambiguity is an
+   error at the use site. r_lookup_ctor returns every visible
+   same-named constructor, user candidates first and the std
+   placeholder last, in a fresh arena array. */
 const ek_symbol *r_lookup_local(const r_file *f, const char *name);
 const ek_symbol *r_lookup_top(const r_file *f, const char *name);
 const ek_symbol *r_lookup_mod(const r_file *f, const char *name);
 size_t r_lookup_type(const r_file *f, const char *name,
                      const ek_symbol **first);
-size_t r_lookup_ctor(const r_file *f, const char *name,
-                     const ek_symbol **first);
+size_t r_lookup_ctor(r_ctx *c, const r_file *f, const char *name,
+                     const ek_symbol *const **cands);
 
 /* What one name or constructor head denotes. */
 typedef struct {

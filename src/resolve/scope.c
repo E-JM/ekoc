@@ -121,7 +121,23 @@ void r_add_ref(r_ctx *c, const ek_node *n, ek_sym_kind kind,
     c->refs[c->nrefs].kind = kind;
     c->refs[c->nrefs].station = st;
     c->refs[c->nrefs].symbol = sym;
+    c->refs[c->nrefs].cands = NULL;
+    c->refs[c->nrefs].ncands = 0;
     c->nrefs++;
+}
+
+/* The candidates belong to the reference just added, so the two calls
+   stay adjacent. */
+void r_add_ctor_ref(r_ctx *c, const ek_node *n, ek_sym_kind kind,
+                    ek_station st, const ek_symbol *sym,
+                    const ek_symbol *const *cands, size_t ncands)
+{
+    r_add_ref(c, n, kind, st, sym);
+    if (c->oom || c->nrefs == 0) {
+        return;
+    }
+    c->refs[c->nrefs - 1].cands = cands;
+    c->refs[c->nrefs - 1].ncands = ncands;
 }
 
 void r_error(r_ctx *c, const char *file, int line, int col,

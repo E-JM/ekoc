@@ -21,9 +21,17 @@ static const char *type_names[] = {
     "File", "OpenMode", "FileInfo", "IoError", "Scope", "Task", NULL
 };
 
-static const char *ctor_names[] = {
-    "True", "False", "Some", "None", "Ok", "Err", "Time", "Duration",
-    NULL
+/* The placeholder constructors and the opened type that owns each:
+   the owner spelling is the anchor a reference is matched against. */
+static const struct {
+    const char *name;
+    const char *owner;
+} ctor_names[] = {
+    {"True", "Bool"}, {"False", "Bool"},
+    {"Some", "Option"}, {"None", "Option"},
+    {"Ok", "Result"}, {"Err", "Result"},
+    {"Time", "Time"}, {"Duration", "Duration"},
+    {NULL, NULL}
 };
 
 #define R_STD_COUNT (sizeof free_names / sizeof *free_names \
@@ -61,6 +69,24 @@ static size_t fill(r_ctx *c, ek_surface *s, size_t n, const char **names,
     return n;
 }
 
+/* A constructor row carries the opened type that owns it. */
+static size_t fill_ctors(r_ctx *c, ek_surface *s, size_t n)
+{
+    size_t i;
+
+    for (i = 0; ctor_names[i].name; i++) {
+        ek_symbol *sym = r_sym(c, ctor_names[i].name, EK_SYM_CONSTRUCTOR,
+                               "std", 0, 0);
+
+        if (!sym) {
+            return n;
+        }
+        sym->owner = ctor_names[i].owner;
+        s->syms[n++] = *sym;
+    }
+    return n;
+}
+
 void r_std_init(r_ctx *c)
 {
     ek_surface *s;
@@ -83,7 +109,7 @@ void r_std_init(r_ctx *c)
     s->file = "(std)";
     n = fill(c, s, 0, free_names, EK_SYM_FUNC);
     n = fill(c, s, n, type_names, EK_SYM_TYPE);
-    n = fill(c, s, n, ctor_names, EK_SYM_CONSTRUCTOR);
+    n = fill_ctors(c, s, n);
     if (c->oom) {
         c->std = NULL;
         return;
