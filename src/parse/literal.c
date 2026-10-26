@@ -214,8 +214,25 @@ ek_node *p_paren_primary(p_ctx *c)
 size_t match_bracket(p_ctx *c, size_t from)
 {
     size_t i;
-    int depth = 0;
+    size_t top = 0;
+    size_t last = c->count > 0 ? c->count - 1 : 0;
 
+    if (from >= c->count) {
+        return last;
+    }
+    if (!c->match) {
+        c->match = p_alloc(c, c->count * sizeof *c->match);
+        c->match_stack = p_alloc(c, c->count * sizeof *c->match_stack);
+        if (!c->match || !c->match_stack) {
+            return last;
+        }
+        for (i = 0; i < c->count; i++) {
+            c->match[i] = (size_t)-1;
+        }
+    }
+    if (c->match[from] != (size_t)-1) {
+        return c->match[from];
+    }
     for (i = from; i < c->count; i++) {
         const ek_layout_token *t = &c->toks[i];
 
@@ -226,21 +243,26 @@ size_t match_bracket(p_ctx *c, size_t from)
         case EK_TOK_LPAREN:
         case EK_TOK_LBRACKET:
         case EK_TOK_LBRACE:
-            depth++;
+            c->match_stack[top++] = i;
             break;
         case EK_TOK_RPAREN:
         case EK_TOK_RBRACKET:
         case EK_TOK_RBRACE:
-            depth--;
-            if (depth == 0) {
-                return i;
+            if (top > 0) {
+                size_t open = c->match_stack[--top];
+
+                c->match[open] = i;
+                c->match[i] = open;
+                if (open == from) {
+                    return i;
+                }
             }
             break;
         default:
             break;
         }
     }
-    return c->count > 0 ? c->count - 1 : 0;
+    return last;
 }
 
 /* A lambda: '(' parameters ')' ':' body. */
