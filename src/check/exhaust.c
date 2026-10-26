@@ -62,13 +62,21 @@ size_t ck_pat_flatten(ck_ctx *c, const ek_node *p, const ek_node **out,
     return n;
 }
 
-/* The constructor symbol a pattern row heads; NULL for other rows. */
+/* The constructor symbol a pattern row heads; NULL for other rows.
+   The selected candidate is the one the scrutinee type anchored, so a
+   case over one ADT is not confused by a same-named constructor of
+   another. */
 const ek_symbol *ck_pat_head(ck_ctx *c, const ek_node *p)
 {
     const ek_ref *ref = NULL;
+    const ek_symbol *sel;
 
     if (!p || p->kind != EK_N_P_CONS) {
         return NULL;
+    }
+    sel = ck_map_get(&c->pats, p);
+    if (sel) {
+        return sel;
     }
     if (ck_ref_at(c, p, EK_SYM_CONSTRUCTOR, &ref) && ref->symbol) {
         return ref->symbol;

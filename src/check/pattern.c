@@ -81,45 +81,85 @@ static int cons_slots(ck_ctx *c, size_t n, ek_type ***slots,
     return 1;
 }
 
-/* A constructor pattern's constructor MUST belong to the scrutinee's
-   nominal ADT; a std constructor is opaque. */
-static const ek_type *cons_pattern(ck_ctx *c, const ek_node *p,
-                                   const ek_type *scrut)
+/* The scrutinee's own ADT: a user declaration. A std placeholder
+   type has no declaration and its case structure stays opaque. */
+static int known_adt(const ek_type *s)
 {
-    const ek_ref *ref = NULL;
-    const ck_ctor *ct = NULL;
+    return s && s->kind == EK_T_NOMINAL && s->u.nominal.sym
+        && s->u.nominal.sym->decl != NULL;
+}
 
-    if (ck_ref_at(c, p, EK_SYM_CONSTRUCTOR, &ref) && ref->symbol) {
-        ct = ck_ctor_of(c, ref->symbol);
+/* The scrutinee type anchors an unqualified pattern's constructor;
+   a qualified pattern names one declaration directly. */
+static const ek_symbol *cons_select(const ek_ref *ref,
+                                    const ek_type *scrut)
+{
+    if (!ref) {
+        return NULL;
     }
-    if (ct && ct->owner) {
-        const ck_decl *d = ck_decl_of(c, ct->owner);
-        ek_type **slots = NULL;
-        const ek_type **args = NULL;
-        const ek_type *nom;
-        size_t n = d ? d->nbinders : 0;
-        ck_conform k;
+    if (ref->ncands) {
+        return ck_ctor_pick(ref, scrut);
+    }
+    if (ref->symbol && ref->symbol->kind == EK_SYM_CONSTRUCTOR) {
+        return ref->symbol;
+    }
+    return NULL;
+}
 
-        if (n && !cons_slots(c, n, &slots, &args)) {
-            return scrut;
-        }
-        nom = ck_nominal(c, ct->owner, args, n);
-        k = ck_conforms(c, scrut, nom, 0);
-        if (k != CK_OK) {
-            ck_error(c, p, ck_conform_code(k),
-                     "the constructor `%s` does not match the scrutinee "
-                     "type %s (Clause 7.7.1)", ref->symbol->name,
-                     ck_type_name(c, scrut));
-            return scrut;
-        }
-        if (ct->payload && d) {
-            cons_payload(c, p, slots, ct, d, n);
-        }
+/* A pattern over a known ADT: the selected constructor must belong to
+   the scrutinee's type, and its payload walks at the instantiated
+   payload type. */
+static const ek_type *adt_cons(ck_ctx *c, const ek_node *p,
+                               const ek_type *scrut, const ek_ref *ref,
+                               const ek_symbol *sel)
+{
+    const ck_ctor *ct = sel ? ck_ctor_of(c, sel) : NULL;
+    const ek_symbol *name = sel ? sel : (ref ? ref->symbol : NULL);
+    ek_type **slots = NULL;
+    const ek_type **args = NULL;
+    const ek_type *nom;
+    size_t n;
+    ck_conform k;
+
+    if (!ct || !ct->owner) {
+        ck_error(c, p, ck_conform_code(CK_NOMINAL),
+                 "the constructor `%s` does not match the scrutinee "
+                 "type %s (Clause 7.7.1)",
+                 name ? name->name : "?", ck_type_name(c, scrut));
         return scrut;
     }
-    /* The placeholder-std constructors: opaque, binding freely; the
-       payload is not the scrutinee type, so it gets its own
-       variable. */
+    {
+        const ck_decl *d = ck_decl_of(c, ct->owner);
+
+        n = d ? d->nbinders : 0;
+    }
+    if (n && !cons_slots(c, n, &slots, &args)) {
+        return scrut;
+    }
+    nom = ck_nominal(c, ct->owner, args, n);
+    k = ck_conforms(c, scrut, nom, 0);
+    if (k != CK_OK) {
+        ck_error(c, p, ck_conform_code(k),
+                 "the constructor `%s` does not match the scrutinee "
+                 "type %s (Clause 7.7.1)", name->name,
+                 ck_type_name(c, scrut));
+        return scrut;
+    }
+    if (ct->payload) {
+        const ck_decl *d = ck_decl_of(c, ct->owner);
+
+        if (d) {
+            cons_payload(c, p, slots, ct, d, n);
+        }
+    }
+    return scrut;
+}
+
+/* An opaque scrutinee: the placeholder-std bridge and the unknown
+   readings bind freely, never a new error. */
+static const ek_type *opaque_cons(ck_ctx *c, const ek_node *p,
+                                  const ek_type *scrut)
+{
     if (p->u.cons.payload) {
         const ek_type *whole = ck_ivar(c);
         const ek_type *pl = ck_ivar(c);
@@ -128,6 +168,26 @@ static const ek_type *cons_pattern(ck_ctx *c, const ek_node *p,
         ck_pattern(c, p->u.cons.payload, pl);
     }
     return scrut;
+}
+
+/* A constructor pattern's constructor comes from the scrutinee type;
+   the selection is recorded for coverage. */
+static const ek_type *cons_pattern(ck_ctx *c, const ek_node *p,
+                                   const ek_type *scrut)
+{
+    const ek_ref *ref = NULL;
+    const ek_symbol *sel;
+    const ek_type *s = ck_prune(scrut);
+
+    (void)ck_ref_at(c, p, 0, &ref);
+    sel = cons_select(ref, s);
+    if (sel) {
+        ck_map_put(c, &c->pats, p, sel);
+    }
+    if (known_adt(s)) {
+        return adt_cons(c, p, scrut, ref, sel);
+    }
+    return opaque_cons(c, p, scrut);
 }
 
 /* Record-pattern item: the field name, whether a `f: P` pair or the
