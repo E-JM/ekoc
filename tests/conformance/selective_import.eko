@@ -1,0 +1,27 @@
+// Selective import: `import m.{f}` opens the listed free names into the
+// file's top layer, and the free-call forms of show and panic are the
+// receiver forms of the same services (Clauses 6.5.2, 7.2.3, 9.1.2).
+
+import geolib.{area}
+
+Money: type = [cents: Int, cur: String]
+
+Money.show: (m: Money) -> String = "{m.cur} {m.cents}"
+
+die: () -> Never = panic("boom")
+
+die_member: () -> Never = "boom".panic()
+
+opened_area: test =
+    r: Shape = Rect {2.0, 3.0}
+    c: Shape = Circle 1.0
+    assert_eq(area(r), 6.0)
+    assert(area(c) > 3.0)
+
+services_identity: test =
+    s: String = "hi"
+    assert_eq(show(s), "hi")
+    assert_eq(s.show(), "hi")
+    m: Money = {cents: 12500, cur: "USD"}
+    assert_eq(show(m), "USD 12500")
+    assert_eq(m.show(), "USD 12500")

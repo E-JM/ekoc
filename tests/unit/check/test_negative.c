@@ -10,6 +10,30 @@
 
 #define CONF_DIR "tests/conformance"
 
+/* A resolve-stage rejection at a source line: the check fixture keeps
+   the resolve drain apart from check's. */
+static int resolve_code_at(const cfx *f, const char *code, int line)
+{
+    size_t i;
+
+    for (i = 0; i < f->dn; i++) {
+        if (f->ds[i].code && strcmp(f->ds[i].code, code) == 0
+            && f->ds[i].line == line) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* The geolib fixture on the module path is present and readable. */
+static int have_geolib(void)
+{
+    char *geo = cfx_read_file(CONF_DIR "/geolib.eko");
+
+    free(geo);
+    return geo != NULL;
+}
+
 /* N01 — nominal value into another nominal type. */
 static void n01(void)
 {
@@ -220,6 +244,50 @@ static void n27(void)
     cfx_end(&f);
 }
 
+/* N28 — an opened free name and a file top-level binding share one
+   layer, so the binding is a conflict at its declaration. */
+static void n28(void)
+{
+    static const char *mpath[1] = {CONF_DIR};
+    cfx f;
+
+    if (!have_geolib()) {
+        EK_CHECK(0);
+        return;
+    }
+    cfx_run(&f,
+            "import geolib.{area}\n"
+            "\n"
+            "area: (s: Shape) -> Float = 0.0\n",
+            mpath, 1, "n28.eko");
+    EK_CHECK(resolve_code_at(&f, "E-name-conflict", 3));
+    EK_CHECK(cfx_errors(&f) == 0);
+    cfx_end(&f);
+}
+
+/* N29 — two imports that open one name conflict at the second
+   declaration. */
+static void n29(void)
+{
+    static const char *mpath[1] = {CONF_DIR};
+    cfx f;
+
+    if (!have_geolib()) {
+        EK_CHECK(0);
+        return;
+    }
+    cfx_run(&f,
+            "import geolib.{area}\n"
+            "import geolib.{move, area}\n"
+            "\n"
+            "r: Shape = Rect {2.0, 3.0}\n"
+            "a: Float = area(r)\n",
+            mpath, 1, "n29.eko");
+    EK_CHECK(resolve_code_at(&f, "E-name-conflict", 2));
+    EK_CHECK(cfx_errors(&f) == 0);
+    cfx_end(&f);
+}
+
 int main(void)
 {
     n01();
@@ -235,5 +303,7 @@ int main(void)
     n25();
     n26();
     n27();
+    n28();
+    n29();
     return ek_test_report("check/negative");
 }

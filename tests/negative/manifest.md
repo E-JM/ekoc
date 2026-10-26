@@ -33,6 +33,8 @@ otherwise it names the rejection and the normative clause.
 | N25 | one name bound by two patterns of one case arm | `E-name-conflict` |
 | N26 | floating literal that overflows the finite range | `E-literal-overflow` |
 | N27 | two visible constructors and no anchor | `E-undetermined` |
+| N28 | opened free name and a top-level binding share a name | `E-name-conflict` |
+| N29 | two imports open the same free name | `E-name-conflict` |
 
 ## N01 — nominal mismatch
 
@@ -333,3 +335,36 @@ only when exactly one constructor of that name is visible and it is
 non-generic (`Clause 7.6`); here two are visible, so `x: Bool` and
 `y: MyBool` are legal and `z` is not. Writing `z: Bool = True` or
 `z: MyBool = True` anchors it.
+
+## N28 — opened free name and a top-level binding
+
+`import geolib.{area}` opens `area` into the file's top layer, which a
+top-level binding of the same spelling already occupies.
+
+```eko
+import geolib.{area}
+
+area: (s: Shape) -> Float = 0.0
+```
+
+Expected: `E-name-conflict`, at the binding's declaration. An opened free
+name and a file top-level binding share one layer (`Clause 7.2.3`,
+`Clause 7.4.6`). A local binding of the name stays legal. The snippet
+assumes `geolib.eko` from `tests/conformance/` is on the module path.
+
+## N29 — two imports opening one free name
+
+The second import opens a name the first import already opened.
+
+```eko
+import geolib.{area}
+import geolib.{move, area}
+
+r: Shape = Rect {2.0, 3.0}
+a: Float = area(r)
+```
+
+Expected: `E-name-conflict`, at the second import. Two imports that open
+the same free name conflict at the declaration point (`Clause 7.2.3`).
+The duplicate may sit in one list or across two lists; both are the same
+rejection.

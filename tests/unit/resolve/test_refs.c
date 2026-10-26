@@ -13,7 +13,8 @@
 static const char *modules[] = {
     "access_drilling", "bindings", "case_patterns", "data_services",
     "derived_services", "generics", "geolib", "geolib_use",
-    "lambdas_capture", "result_chains", "types_composites"
+    "lambdas_capture", "result_chains", "selective_import",
+    "types_composites"
 };
 
 static int refs_of_file(const char *path, const char *name,

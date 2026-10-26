@@ -138,7 +138,8 @@ static inline const char *const *fx_modules(size_t *count)
         "tests/conformance/geolib.eko",
         "tests/conformance/geolib_use.eko",
         "tests/conformance/lambdas_capture.eko",
-        "tests/conformance/result_chains.eko",
+            "tests/conformance/result_chains.eko",
+        "tests/conformance/selective_import.eko",
         "tests/conformance/types_composites.eko",
     };
 

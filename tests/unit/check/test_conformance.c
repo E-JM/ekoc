@@ -15,7 +15,7 @@ static const char *modules[] = {
     "access_drilling", "bindings", "case_patterns", "ctor_anchor",
     "ctor_anchor_std", "data_services", "derived_services", "generics",
     "geolib", "geolib_use", "lambdas_capture", "result_chains",
-    "types_composites"
+    "selective_import", "types_composites"
 };
 
 static int check_module(const char *stem)

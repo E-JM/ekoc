@@ -24,6 +24,26 @@ static void free_names(void)
     rfx_end(&f);
 }
 
+/* The injected list opens assert, assert_eq, and assert_ne; a bare
+   call to one resolves through the opened table. */
+static void injected_opens(void)
+{
+    rfx f;
+    const ek_ref *r;
+
+    rfx_begin(&f,
+        "f: () -> _ =\n"
+        "    assert(True)\n"
+        "    _\n");
+    EK_CHECK_U64(rfx_errors(&f), 0);
+    r = rfx_ref_named(&f, 2, "assert");
+    EK_CHECK(r != NULL);
+    EK_CHECK(r->kind == EK_SYM_EXTERNAL);
+    EK_CHECK(r->station == EK_ST_EXTERNAL);
+    EK_CHECK_STR(r->symbol ? r->symbol->module : NULL, "std");
+    rfx_end(&f);
+}
+
 static void opened_types(void)
 {
     rfx f;
@@ -187,6 +207,7 @@ static void local_shadow_free_name(void)
 int main(void)
 {
     free_names();
+    injected_opens();
     opened_types();
     std_constructors();
     unknown_names();
