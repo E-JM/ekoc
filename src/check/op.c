@@ -138,17 +138,37 @@ static const ek_type *binary_range(ck_ctx *c, const ek_node *e,
     return rsym ? ck_nominal(c, rsym, &arg1, 1) : NULL;
 }
 
+/* A composite literal under parentheses. */
+static int literal_operand(const ek_node *e)
+{
+    while (e && e->kind == EK_N_PAREN) {
+        e = e->u.wrap.inner;
+    }
+    return e && e->kind == EK_N_COMPOSITE;
+}
+
 /* Arithmetic and concatenation: the left operand fixes the type and
-   the right must adapt; the domain is judged on the left type. */
+   the right must adapt; the domain is judged on the left type. A
+   composite literal on the left takes its expectation from the right
+   operand when no other expectation exists. */
 static const ek_type *binary_arith(ck_ctx *c, const ek_node *e,
                                    const ek_type *expected)
 {
     ek_binop op = e->u.binary.op;
-    const ek_type *lt = ck_expr(c, e->u.binary.lhs,
-                                operand_expected(expected));
-    const ek_type *rt = ck_expr(c, e->u.binary.rhs, lt);
-    const ek_type *same = ck_unify(c, lt, rt, 1);
+    const ek_type *exp = operand_expected(expected);
+    const ek_type *lt;
+    const ek_type *rt;
+    const ek_type *same;
 
+    if (!exp && literal_operand(e->u.binary.lhs)
+        && !literal_operand(e->u.binary.rhs)) {
+        rt = ck_expr(c, e->u.binary.rhs, expected);
+        lt = ck_expr(c, e->u.binary.lhs, rt);
+    } else {
+        lt = ck_expr(c, e->u.binary.lhs, exp);
+        rt = ck_expr(c, e->u.binary.rhs, lt);
+    }
+    same = ck_unify(c, lt, rt, 1);
     if (!same) {
         same = ck_prune(lt); /* judge the domain on the left type */
     }

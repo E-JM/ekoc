@@ -114,6 +114,14 @@ static void concat(void)
     cfx_begin(&f, "x: []Int = {1} ++ {\"a\"}\n");
     EK_CHECK(cfx_errors(&f) >= 1);
     cfx_end(&f);
+
+    /* Either operand may supply the other's literal expectation. */
+    cfx_begin(&f,
+              "h: (ys: []Int) -> []Int =\n"
+              "    x := {1} ++ ys\n"
+              "    x\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
 }
 
 static void ranges(void)
