@@ -259,7 +259,7 @@ static void test_else_deeper_than_if(void)
     EK_CHECK_U64(fx_errors(&f), 1);
     EK_CHECK_U64(fx_count_code(&f, "E-indent-dedent"), 1);
     got = fx_skeleton(&f);
-    EK_CHECK_STR(got, "S S S N I S S S N D S N D E");
+    EK_CHECK_STR(got, "S S S N I S N S S N D S N D E");
     free(got);
     fx_end(&f);
 }

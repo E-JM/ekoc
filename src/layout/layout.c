@@ -175,6 +175,7 @@ ek_layout_result ek_layout(const ek_token *tokens, size_t count, const char *fil
     ctx.diag = diag;
     ctx.chain_col = -1;
     ctx.last_if_col = -1;
+    ctx.stray_base = -1;
     if (count > 0) {
         ctx.eof = &tokens[count - 1];
     } else {

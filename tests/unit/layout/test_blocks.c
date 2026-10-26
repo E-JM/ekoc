@@ -140,7 +140,8 @@ static void test_arm_body_inline_if_else(void)
     EK_CHECK_STR(got,
         "S S S S S S S S S S N I "
         "S S S N I "
-        "S S S S S S S S S N "
+        "S S S S S S N "
+        "S S S N "
         "S S S N D D E");
     free(got);
     fx_end(&f);

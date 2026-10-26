@@ -43,6 +43,10 @@ typedef struct {
     int expect_block; /* depth-zero line ended in a block terminator */
     int header_col;    /* column of the line that set expect_block */
     int last_if_col;   /* column of the last if line; -1 when none */
+    int case_pending;  /* a case scrutinee is still open */
+    int seen;          /* a significant line was processed */
+    int stray_base;    /* block column below an ignored indent; -1 when none */
+    const line_run *prev; /* previous significant line */
     int chain_col;    /* column of the chain's first '.'; -1 when none */
     int depth;        /* open ( [ { at the current point */
     cb_block *cb;
