@@ -187,8 +187,11 @@ static int opaque_nominal(ck_ctx *c, const ek_type *t)
     if (t->kind != EK_T_NOMINAL) {
         return 0;
     }
-    if (!t->u.nominal.sym || !t->u.nominal.sym->decl) {
+    if (!t->u.nominal.sym) {
         return 1;
+    }
+    if (!t->u.nominal.sym->decl) {
+        return 0; /* a std placeholder still has a known type name */
     }
     d = ck_decl_of(c, t->u.nominal.sym);
     return d && d->rhs == EK_TYPE_RHS_EMPTY;

@@ -239,6 +239,11 @@ static void empty_literals(void)
               "p: [Int, Int] = {}\n");
     EK_CHECK(cfx_code_at_line(&f, "E-type-mismatch", 1));
     cfx_end(&f);
+
+    /* A std type name has no composite literal shape. */
+    cfx_begin(&f, "s: String = {}\n");
+    EK_CHECK(cfx_code_at_line(&f, "E-type-mismatch", 1));
+    cfx_end(&f);
 }
 
 
