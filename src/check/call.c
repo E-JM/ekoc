@@ -17,7 +17,7 @@ static const ek_type *call_opaque(ck_ctx *c, const ek_node *e,
                                   const ek_nlist *args,
                                   const ek_node **nodes,
                                   const ek_type **types, size_t nargs,
-                                  size_t off, int synthesize)
+                                  size_t off, int synthesize, int implicit)
 {
     const ek_type **ps = NULL;
     const ek_type *ret = ck_ivar(c);
@@ -39,6 +39,13 @@ static const ek_type *call_opaque(ck_ctx *c, const ek_node *e,
             nodes[off + i] = args->data[i];
             ps[off + i] = ck_expr(c, args->data[i], ck_ivar(c));
             types[off + i] = ps[off + i];
+        }
+        if (implicit) {
+            size_t slot = nargs - 1;
+
+            nodes[slot] = NULL;
+            ps[slot] = ck_ivar(c);
+            types[slot] = ps[slot];
         }
     }
     built = ck_fn(c, ps, nargs, ret, EK_ARROW_PURE);
@@ -83,12 +90,13 @@ static void call_args(ck_ctx *c, const ek_type *f, const ek_nlist *args,
 static const ek_type *call_fn(ck_ctx *c, const ek_node *e,
                               const ek_type *fntype, const char *member,
                               const ek_type *recv, const ek_type *bit_recv,
-                              const ek_nlist *args, int synthesize)
+                              const ek_nlist *args, int synthesize,
+                              int implicit)
 {
     const ek_type *f = ck_prune(fntype);
     const ek_type **types = NULL;
     const ek_node **nodes = NULL;
-    size_t nargs = args->count + (recv ? 1 : 0);
+    size_t nargs = args->count + (recv ? 1 : 0) + (implicit ? 1 : 0);
     size_t off = recv ? 1 : 0;
     const ek_type *ret;
 
@@ -106,7 +114,14 @@ static const ek_type *call_fn(ck_ctx *c, const ek_node *e,
     }
     if (!f || f->kind != EK_T_FN) {
         return call_opaque(c, e, f, member, recv, bit_recv, args, nodes,
-                           types, nargs, off, synthesize);
+                           types, nargs, off, synthesize, implicit);
+    }
+    if (implicit) {
+        c->invert_fn = f;
+        c->invert_cb = f->u.fn.count
+                           ? f->u.fn.params[f->u.fn.count - 1] : NULL;
+        nodes[nargs - 1] = NULL;
+        types[nargs - 1] = c->invert_cb ? c->invert_cb : ck_ivar(c);
     }
     if (f->u.fn.count != nargs) {
         ck_error(c, e, "E-call-arity",
@@ -218,7 +233,7 @@ static const ek_type *call_with(ck_ctx *c, const ek_node *e,
 /* A receiver-chain call: the link is typed at the receiver, and a
    function-valued field calls its value. */
 static const ek_type *call_member(ck_ctx *c, const ek_node *e,
-                                  const ek_node *callee)
+                                  const ek_node *callee, int implicit)
 {
     ek_reading rd = EK_RD_NONE;
     const ek_type *head = NULL;
@@ -240,17 +255,17 @@ static const ek_type *call_member(ck_ctx *c, const ek_node *e,
            the receiver first; a type head supplies namespace context,
            not an argument. */
         return call_fn(c, e, t, callee->u.field.name, recv,
-                       qualified ? head : NULL, &e->u.call.args, 0);
+                       qualified ? head : NULL, &e->u.call.args, 0, implicit);
     }
     if (pt && pt->kind == EK_T_FN) {
         return call_fn(c, e, t, callee->u.field.name, NULL, NULL,
-                       &e->u.call.args, 0);
+                       &e->u.call.args, 0, implicit);
     }
     ck_error(c, e, "E-not-callable",
              "the field `%s` is not a function value (Clause 7.4.3)",
              callee->u.field.name);
     return call_fn(c, e, NULL, callee->u.field.name, NULL, NULL,
-                   &e->u.call.args, 1);
+                   &e->u.call.args, 1, implicit);
 }
 
 /* The free-call form of a compiler service: its first argument is the
@@ -258,7 +273,7 @@ static const ek_type *call_member(ck_ctx *c, const ek_node *e,
    machinery selects the reading. Without an argument nothing supplies
    a receiver and the call stays opaque. */
 static const ek_type *call_service(ck_ctx *c, const ek_node *e,
-                                   const ek_node *callee)
+                                   const ek_node *callee, int implicit)
 {
     const char *name = callee->u.path.data[0];
     ek_reading rd = EK_RD_NONE;
@@ -267,13 +282,14 @@ static const ek_type *call_service(ck_ctx *c, const ek_node *e,
     const ek_type *t;
 
     if (e->u.call.args.count == 0) {
-        return call_fn(c, e, NULL, name, NULL, NULL, &e->u.call.args, 1);
+        return call_fn(c, e, NULL, name, NULL, NULL, &e->u.call.args, 1,
+                       implicit);
     }
     recv = ck_expr(c, e->u.call.args.data[0], NULL);
     t = ck_link(c, callee, recv, name, &rd);
     rest.data = e->u.call.args.data + 1;
     rest.count = e->u.call.args.count - 1;
-    return call_fn(c, e, t, name, recv, NULL, &rest, 0);
+    return call_fn(c, e, t, name, recv, NULL, &rest, 0, implicit);
 }
 
 /* Typing one EK_N_CALL: a plain head, or the last link of a receiver
@@ -282,28 +298,36 @@ const ek_type *ck_call(ck_ctx *c, const ek_node *e, const ek_type *expected)
 {
     const ek_node *callee = e->u.call.callee;
     const ek_ref *ref = NULL;
+    int implicit = c->invert_call;
 
     (void)expected;
     if (c->oom) {
         return NULL;
+    }
+    c->invert_call = 0;
+    if (implicit) {
+        c->invert_fn = NULL;
+        c->invert_cb = ck_ivar(c);
     }
     if (callee && callee->kind == EK_N_NAME) {
         /* A head the resolver classified; a compiler service carries a
            receiver-form ref and takes the identity reading. */
         if (ck_ref_at(c, callee, EK_SYM_MEMBER, &ref)
             && ref->station == EK_ST_RECEIVER) {
-            return call_service(c, e, callee);
+            return call_service(c, e, callee, implicit);
         }
         {
             const ek_type *t = ck_expr(c, callee, NULL);
 
-            return call_fn(c, e, t, NULL, NULL, NULL, &e->u.call.args, 0);
+            return call_fn(c, e, t, NULL, NULL, NULL, &e->u.call.args, 0,
+                           implicit);
         }
     }
     if (!callee || callee->kind != EK_N_FIELD) {
         const ek_type *t = ck_expr(c, callee, NULL);
 
-        return call_fn(c, e, t, NULL, NULL, NULL, &e->u.call.args, 0);
+        return call_fn(c, e, t, NULL, NULL, NULL, &e->u.call.args, 0,
+                       implicit);
     }
     {
         const ek_type *head = NULL;
@@ -311,7 +335,7 @@ const ek_type *ck_call(ck_ctx *c, const ek_node *e, const ek_type *expected)
         if (type_head(c, callee->u.field.recv, &head)) {
             /* A type namespace selects namespace members and derived
                services, and supplies no receiver value. */
-            return call_member(c, e, callee);
+            return call_member(c, e, callee, implicit);
         }
     }
     if (ck_ref_at(c, callee, 0, &ref) && ref->symbol != NULL
@@ -323,9 +347,9 @@ const ek_type *ck_call(ck_ctx *c, const ek_node *e, const ek_type *expected)
         const ek_type *t = ck_type_of(c, ref->symbol);
 
         return call_fn(c, e, t, callee->u.field.name, recv, NULL,
-                       &e->u.call.args, 0);
+                       &e->u.call.args, 0, implicit);
     }
-    return call_member(c, e, callee);
+    return call_member(c, e, callee, implicit);
 }
 
 /* The lambda's own arrow: the body bit decides it, and a

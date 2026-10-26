@@ -186,29 +186,44 @@ static const ek_type *name_type(ck_ctx *c, const ek_node *n,
     }
 }
 
-const ek_type *ck_block(ck_ctx *c, const ek_node *b, const ek_type *expected)
+/* The members of a block from one index. An inverted binding consumes
+   the remaining members as its callback body, so the loop ends there;
+   the binding's call result is the block's type. */
+const ek_type *ck_members(ck_ctx *c, const ek_node *b, size_t start,
+                          const ek_type *expected)
 {
     const ek_type *t = ck_unit(c);
     size_t i, n = b->u.kids.count;
 
-    ck_scope_push(c);
-    for (i = 0; i < n; i++) {
+    for (i = start; i < n; i++) {
         const ek_node *m = b->u.kids.data[i];
 
         switch (m->kind) {
         case EK_N_LET:
         case EK_N_REBIND:
-        case EK_N_INVERT:
             t = ck_stmt(c, m, 0);
+            break;
+        case EK_N_INVERT:
+            t = ck_invert_block(c, m, b, i + 1);
+            i = n;
             break;
         default:
             t = ck_expr(c, m, i + 1 == n ? expected : NULL);
             break;
         }
     }
-    ck_scope_pop(c);
-    ck_row(c, b, t ? t : ck_unit(c), EK_RD_NONE);
     return t ? t : ck_unit(c);
+}
+
+const ek_type *ck_block(ck_ctx *c, const ek_node *b, const ek_type *expected)
+{
+    const ek_type *t;
+
+    ck_scope_push(c);
+    t = ck_members(c, b, 0, expected);
+    ck_scope_pop(c);
+    ck_row(c, b, t, EK_RD_NONE);
+    return t;
 }
 
 /* The literal cases: placed at the expected type, an interpolated
