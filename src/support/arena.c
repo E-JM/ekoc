@@ -33,7 +33,9 @@ union align_unit {
 static size_t align_up(size_t n)
 {
     const size_t a = sizeof(union align_unit);
-    return (n + a - 1) & ~(a - 1);
+    /* divide, do not mask: sizeof need not be a power of two (a
+       12-byte long double makes it 12 on some hosts) */
+    return (n + a - 1) / a * a;
 }
 
 static struct block *block_new(struct ek_arena *arena, size_t need)

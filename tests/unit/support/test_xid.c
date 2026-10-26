@@ -1,6 +1,7 @@
 #include "harness.h"
 
 #include "support/xid.h"
+#include "support/xid_tables.h"
 
 /* Spot checks assert what the committed tables say, which is what the
    host Python's str.isidentifier() derives (Unicode 16.0.0 at
@@ -87,6 +88,65 @@ static void test_boundaries(void)
     EK_CHECK_U64(ek_xid_continue('z' + 1), 0);
 }
 
+static int ranges_sorted(const struct ek_xid_range *tab, size_t len)
+{
+    size_t i;
+
+    for (i = 0; i < len; i++) {
+        if (tab[i].lo > tab[i].hi) {
+            return 0;
+        }
+        if (i > 0 && tab[i - 1].hi >= tab[i].lo) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static void test_table_invariants(void)
+{
+    /* the binary search only works on sorted, non-overlapping ranges */
+    EK_CHECK(ranges_sorted(ek_xid_start_table, ek_xid_start_table_len));
+    EK_CHECK(ranges_sorted(ek_xid_continue_table,
+                           ek_xid_continue_table_len));
+}
+
+static void test_binary_search_edges(void)
+{
+    /* first and last entries of each table and the code points just
+       outside them */
+    EK_CHECK_U64(ek_xid_start(0x0040), 0);
+    EK_CHECK_U64(ek_xid_start(0x005A), 1);
+    EK_CHECK_U64(ek_xid_start(0x005B), 0);
+    EK_CHECK_U64(ek_xid_continue(0x002F), 0);
+    EK_CHECK_U64(ek_xid_continue(0x0030), 1);
+    EK_CHECK_U64(ek_xid_continue(0x0039), 1);
+    EK_CHECK_U64(ek_xid_continue(0x003A), 0);
+
+    EK_CHECK_U64(ek_xid_start(0x2FFFF), 0);
+    EK_CHECK_U64(ek_xid_start(0x30000), 1);
+    EK_CHECK_U64(ek_xid_start(0x3134A), 1);
+    EK_CHECK_U64(ek_xid_start(0x3134B), 0);
+    EK_CHECK_U64(ek_xid_start(0x3134F), 0);
+    EK_CHECK_U64(ek_xid_start(0x31350), 1);
+    EK_CHECK_U64(ek_xid_start(0x323AF), 1);
+    EK_CHECK_U64(ek_xid_start(0x323B0), 0);
+    EK_CHECK_U64(ek_xid_continue(0x323B0), 0);
+
+    EK_CHECK_U64(ek_xid_continue(0xE00FF), 0);
+    EK_CHECK_U64(ek_xid_continue(0xE0100), 1);
+    EK_CHECK_U64(ek_xid_continue(0xE01EF), 1);
+    EK_CHECK_U64(ek_xid_continue(0xE01F0), 0);
+    EK_CHECK_U64(ek_xid_start(0xE0100), 0);
+
+    EK_CHECK_U64(ek_xid_start(0xD7FF), 0);
+    EK_CHECK_U64(ek_xid_continue(0xD7FF), 0);
+    EK_CHECK_U64(ek_xid_start(0xE000), 0);
+    EK_CHECK_U64(ek_xid_continue(0xE000), 0);
+    EK_CHECK_U64(ek_xid_start(0xFFFE), 0);
+    EK_CHECK_U64(ek_xid_start(0xFFFF), 0);
+}
+
 int main(void)
 {
     test_ascii();
@@ -96,5 +156,7 @@ int main(void)
     test_marks_and_punctuation();
     test_symbols_and_emoji();
     test_boundaries();
+    test_table_invariants();
+    test_binary_search_edges();
     return ek_test_report("support/xid");
 }

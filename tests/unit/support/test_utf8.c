@@ -98,6 +98,24 @@ static void test_decode_beyond_range(void)
                EK_UTF8_INVALID, 1);
 }
 
+static void test_decode_maximal_subpart(void)
+{
+    /* regression: the ill-formed unit ends before the first byte that
+       cannot continue the sequence, not at the lead alone */
+    expect_raw((const unsigned char *)"\xe2\x82?", 3, EK_UTF8_INVALID, 2);
+    expect_raw((const unsigned char *)"\xf0\x9f\x98?", 4,
+               EK_UTF8_INVALID, 3);
+    expect_raw((const unsigned char *)"\xf0\x9f?", 3, EK_UTF8_INVALID, 2);
+    expect_raw((const unsigned char *)"\xf0\x9f\x4a\x80", 4,
+               EK_UTF8_INVALID, 2);
+    /* a valid prefix cut off by end of input stays truncated */
+    expect_raw((const unsigned char *)"\xf0\x9f", 2, EK_UTF8_TRUNCATED, 2);
+    expect_raw((const unsigned char *)"\xf0\x9f\x98", 3,
+               EK_UTF8_TRUNCATED, 3);
+    EK_CHECK_U64(ek_utf8_advance("\xe2\x82?.", 4), 2);
+    EK_CHECK_U64(ek_utf8_advance("\xf0\x9f?.", 4), 2);
+}
+
 static void test_encode_roundtrip(void)
 {
     uint32_t cps[] = { 0x00, 0x24, 0x7F, 0x80, 0x03BB, 0x07FF, 0x0800,
@@ -165,6 +183,7 @@ int main(void)
     test_decode_overlong();
     test_decode_surrogate();
     test_decode_beyond_range();
+    test_decode_maximal_subpart();
     test_encode_roundtrip();
     test_encode_rejects_nonscalars();
     test_lead_len();

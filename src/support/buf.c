@@ -60,6 +60,10 @@ void ek_buf_append_str(ek_buf *buf, const char *str)
 
 void ek_buf_append_char(ek_buf *buf, char c)
 {
+    if (buf->len > SIZE_MAX - 2) { /* keep buf->len + 2 from wrapping,
+                                      as append_bytes guards its own sum */
+        return;
+    }
     if (buf_reserve(buf, buf->len + 2) != 0) {
         return;
     }

@@ -65,20 +65,17 @@ ek_utf8_decoded ek_utf8_decode(const char *bytes, size_t len)
     if (seq == 0) {
         return result;
     }
-    if (seq > len) {
-        for (i = 1; i < len; i++) {
-            if (!is_continuation((unsigned char)bytes[i])) {
-                return result; /* maximal subpart ends before byte i */
-            }
+    for (i = 1; i < seq && i < len; i++) {
+        if (!is_continuation((unsigned char)bytes[i])) {
+            result.len = i; /* the subpart ends before the first byte
+                               that cannot continue it */
+            return result;
         }
+    }
+    if (seq > len) {
         result.status = EK_UTF8_TRUNCATED;
         result.len = len;
         return result;
-    }
-    for (i = 1; i < seq; i++) {
-        if (!is_continuation((unsigned char)bytes[i])) {
-            return result;
-        }
     }
     cp = assemble(bytes, seq);
     if (cp > 0x10FFFF

@@ -15,7 +15,9 @@ typedef struct {
     ek_utf8_result status;
     uint32_t cp; /* the scalar when status is EK_UTF8_OK, else 0 */
     size_t len;  /* consumed bytes: sequence length when OK, bytes
-                    available when truncated, maximal subpart otherwise */
+                    available when truncated, otherwise the ill-formed
+                    unit: a complete sequence whole, or its bytes before
+                    the first one that cannot continue it */
 } ek_utf8_decoded;
 
 ek_utf8_decoded ek_utf8_decode(const char *bytes, size_t len);
