@@ -2,14 +2,14 @@
 
 #include "check/internal.h"
 
-/* Pattern typing (Clause 7.7.1): a pattern is checked against the
-   scrutinee type; the expected type decides the brace family, as it
-   decides a composite literal. A constructor payload is the
-   instantiated payload (Clause 7.6.4). Or-patterns and the value
-   binding shapes live in patbind.c. */
+/* Pattern typing: a pattern is checked against the scrutinee type;
+   the expected type decides the brace family, as it decides a
+   composite literal. A constructor payload is the instantiated
+   payload. Or-patterns and the value binding shapes live in
+   patbind.c. */
 
-/* A literal pattern is placed at the scrutinee type (Clause 5.7.4);
-   against an internally known composite it is a type error. */
+/* A literal pattern is placed at the scrutinee type; against an
+   internally known composite it is a type error. */
 static const ek_type *lit_pattern(ck_ctx *c, const ek_node *p,
                                   const ek_type *scrut)
 {
@@ -37,8 +37,8 @@ static const ek_type *lit_pattern(ck_ctx *c, const ek_node *p,
 
 /* The payload walk of a constructor pattern that matched its ADT: the
    instantiation slots are the fresh variables the scrutinee conformed
-   to, and the payload pattern is checked at the instantiated payload
-   (Clause 7.6.4). */
+   to, and the payload pattern is checked at the instantiated
+   payload. */
 static void cons_payload(ck_ctx *c, const ek_node *p, ek_type **slots,
                          const ck_ctor *ct, const ck_decl *d, size_t n)
 {
@@ -62,7 +62,7 @@ static void cons_payload(ck_ctx *c, const ek_node *p, ek_type **slots,
 }
 
 /* One fresh instantiation slot per binder: the variables the
-   scrutinee conforms to (Clause 7.7.1). */
+   scrutinee conforms to. */
 static int cons_slots(ck_ctx *c, size_t n, ek_type ***slots,
                       const ek_type ***args)
 {
@@ -82,7 +82,7 @@ static int cons_slots(ck_ctx *c, size_t n, ek_type ***slots,
 }
 
 /* A constructor pattern's constructor MUST belong to the scrutinee's
-   nominal ADT (Clause 7.7.1); a std constructor is opaque. */
+   nominal ADT; a std constructor is opaque. */
 static const ek_type *cons_pattern(ck_ctx *c, const ek_node *p,
                                    const ek_type *scrut)
 {
@@ -131,7 +131,7 @@ static const ek_type *cons_pattern(ck_ctx *c, const ek_node *p,
 }
 
 /* Record-pattern item: the field name, whether a `f: P` pair or the
-   shorthand `f` (Clause 6.8.2). */
+   shorthand `f`. */
 static const char *pat_field(const ek_node *item, const ek_node **sub)
 {
     if (item->kind == EK_N_P_FIELD) {

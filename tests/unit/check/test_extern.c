@@ -1,12 +1,11 @@
 #include "common.h"
 
-/* The native interface at compile time (Clause 10): the negative
-   conformance entries N21-N24 at their exact codes, and the positive
-   flows -- pure and world-touching externs, callback parameters, the
-   marshalling whitelist in both directions, and the ctype field
-   predicate. */
+/* The native interface at compile time: the negative conformance
+   entries N21-N24 at their exact codes, and the positive flows -- pure
+   and world-touching externs, callback parameters, the marshalling
+   whitelist in both directions, and the ctype field predicate. */
 
-/* N21 -- extern naming a reserved `eko_` symbol (Clause 10.6). */
+/* N21 -- extern naming a reserved `eko_` symbol. */
 static void n21(void)
 {
     cfx f;
@@ -17,7 +16,7 @@ static void n21(void)
     cfx_end(&f);
 }
 
-/* N22 -- ctype field outside machine words (Clause 10.3.3). */
+/* N22 -- ctype field outside machine words. */
 static void n22(void)
 {
     cfx f;
@@ -28,8 +27,7 @@ static void n22(void)
     cfx_end(&f);
 }
 
-/* N23 -- extern parameter outside the marshalling whitelist (Clause
-   10.3.5). */
+/* N23 -- extern parameter outside the marshalling whitelist. */
 static void n23(void)
 {
     cfx f;
@@ -40,7 +38,7 @@ static void n23(void)
     cfx_end(&f);
 }
 
-/* N24 -- type variable in an extern signature (Clause 10.2.3). */
+/* N24 -- type variable in an extern signature. */
 static void n24(void)
 {
     cfx f;
@@ -52,8 +50,8 @@ static void n24(void)
 }
 
 /* A pure extern over whitelisted words, and a world-touching one with
-   a String parameter and a callback: the shapes of Clause 10.2.1. The
-   extern tail stays on the declaration line (Clause 6.3.8). */
+   a String parameter and a callback. The extern tail stays on the
+   declaration line. */
 static void extern_forms(void)
 {
     cfx f;
@@ -70,7 +68,7 @@ static void extern_forms(void)
 }
 
 /* A ctype result and a unit result are whitelisted; a capability and
-   a Char are not (Clause 10.3.5). */
+   a Char are not. */
 static void whitelist_results(void)
 {
     cfx f;
@@ -111,8 +109,8 @@ static void whitelist_directions(void)
     cfx_end(&f);
 }
 
-/* The arrow rule of Clause 10.2.1: `->` needs `Pure`; an open arrow
-   is not admitted (the violation has no published code). */
+/* The arrow rule: `->` needs `Pure`; an open arrow is not admitted
+   (the violation has no published code). */
 static void arrow_rules(void)
 {
     cfx f;
@@ -128,8 +126,8 @@ static void arrow_rules(void)
     cfx_end(&f);
 }
 
-/* An ordinary record field is rejected; a nested ctype field passes
-   (Clause 10.3.3). */
+/* An ordinary record field is rejected; a nested ctype field
+   passes. */
 static void ctype_fields(void)
 {
     cfx f;

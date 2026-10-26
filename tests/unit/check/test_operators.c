@@ -1,8 +1,8 @@
 #include "common.h"
 
-/* Clause 7.8: the operator grid — arithmetic, equality and ordering
-   domains, logical operators, concatenation, ranges — with same-type
-   operands and no implicit conversion. */
+/* The operator grid — arithmetic, equality and ordering domains,
+   logical operators, concatenation, ranges — with same-type operands
+   and no implicit conversion. */
 
 static void arithmetic(void)
 {
@@ -63,8 +63,7 @@ static void equality_ordering(void)
     EK_CHECK(cfx_has_code(&f, "E-type-mismatch"));
     cfx_end(&f);
 
-    /* A value whose static type is a type variable may use `==`
-       (Clause 7.6.6). */
+    /* A value whose static type is a type variable may use `==`. */
     cfx_begin(&f, "eq: (x: t, y: t) -> Bool = x == y\n");
     EK_CHECK_U64(cfx_errors(&f), 0);
     cfx_end(&f);
@@ -129,7 +128,7 @@ static void ranges(void)
     EK_CHECK_U64(cfx_errors(&f), 0);
     cfx_end(&f);
 
-    /* A Float endpoint does not exist (Clause 6.5.6). */
+    /* A Float endpoint does not exist. */
     cfx_begin(&f, "a: Range Float = 0.0..1.0\n");
     EK_CHECK(cfx_has_code(&f, "E-no-operator"));
     cfx_end(&f);

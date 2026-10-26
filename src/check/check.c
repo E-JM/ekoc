@@ -236,7 +236,3 @@ const char *ck_file(const ck_ctx *c)
 {
     return c->in->module_count ? c->root->file : "test.eko";
 }
-
-/* Replaces each vars[i] with repls[i] through a type: the payload
-   of a constructor applied to the scrutinee's instantiation (Clause
-   7.6.4). */

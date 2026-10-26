@@ -2,15 +2,15 @@
 
 #include "check/internal.h"
 
-/* Multi-scrutinee exhaustiveness (Clauses 7.7.2, 7.7.3) and the
-   ck_exhaust entry. The product of the scrutinee types: an arm covers
-   a combination when each column covers its scrutinee, and the arms
-   must cover every combination. Columns whose type has no internally
-   visible case structure defer; a catch-all covers every combination.
-   The judgment descends column by column over the rows each
-   constructor keeps; its (column, surviving rows) states are memoized,
-   so a wide case over small ADTs costs work proportional to its arms,
-   not to their product. */
+/* Multi-scrutinee exhaustiveness and the ck_exhaust entry. The
+   product of the scrutinee types: an arm covers a combination when
+   each column covers its scrutinee, and the arms must cover every
+   combination. Columns whose type has no internally visible case
+   structure defer; a catch-all covers every combination. The judgment
+   descends column by column over the rows each constructor keeps; its
+   (column, surviving rows) states are memoized, so a wide case over
+   small ADTs costs work proportional to its arms, not to their
+   product. */
 
 /* The live rows of one judgment as a bitmap (at most 128 arms). */
 typedef struct {
@@ -183,8 +183,8 @@ static int covers_prod(ck_ctx *c, prod_table *memo,
     return all;
 }
 
-/* The contributing arms (Clause 7.7.3); a guarded arm contributes no
-   coverage. Returns the live count and sets guarded. */
+/* The contributing arms; a guarded arm contributes no coverage.
+   Returns the live count and sets guarded. */
 static size_t live_arms(const ek_node *const *arms, const int *contrib,
                         size_t narms, const ek_node **live, int *guarded)
 {

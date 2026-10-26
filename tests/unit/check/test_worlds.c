@@ -1,13 +1,13 @@
 #include "common.h"
 
-/* The world bit (Clause 7.9): the negative conformance entries N05-N08,
-   N13, and N20 at their exact codes, and the positive flows -- a pure
-   body declared pure, a world body declared `!`, an open declaration
-   fed by a `?` parameter and instantiated at its uses, the pure
-   factory of Clause 7.9.4, dispatcher propagation, and test bindings
-   that evaluate without reconciliation. */
+/* The world bit: the negative conformance entries N05-N08, N13, and
+   N20 at their exact codes, and the positive flows -- a pure body
+   declared pure, a world body declared `!`, an open declaration fed by
+   a `?` parameter and instantiated at its uses, the pure factory,
+   dispatcher propagation, and test bindings that evaluate without
+   reconciliation. */
 
-/* N05 -- world bit under-declared (Clause 7.9.2). */
+/* N05 -- world bit under-declared. */
 static void n05(void)
 {
     cfx f;
@@ -20,9 +20,9 @@ static void n05(void)
     cfx_end(&f);
 }
 
-/* N06 -- under-declared through a dispatcher (Clause 7.9.6): the
-   opaque `each` instantiates its open bit at `!` from the printing
-   callback (the opacity ruling in check.h). */
+/* N06 -- under-declared through a dispatcher: the opaque `each`
+   instantiates its open bit at `!` from the printing callback (the
+   opacity rule in check.h). */
 static void n06(void)
 {
     cfx f;
@@ -35,9 +35,8 @@ static void n06(void)
     cfx_end(&f);
 }
 
-/* N07 -- world bit over-declared (Clause 7.9.2): a pure body cannot
-   carry a surplus `!`. Bit diagnostics are errors, never warnings
-   (Clause 7.9.9). */
+/* N07 -- world bit over-declared: a pure body cannot carry a surplus
+   `!`. Bit diagnostics are errors, never warnings. */
 static void n07(void)
 {
     cfx f;
@@ -48,7 +47,7 @@ static void n07(void)
     cfx_end(&f);
 }
 
-/* N08 -- open bit not fed by a parameter (Clause 7.9.6). */
+/* N08 -- open bit not fed by a parameter. */
 static void n08(void)
 {
     cfx f;
@@ -59,9 +58,9 @@ static void n08(void)
     cfx_end(&f);
 }
 
-/* N13 -- no equality over capabilities (Clause 9.8.4). The `==` on a
-   capability value is the form that fires under the bridge; the
-   manifest's assert_eq snippet stays opaque (the gap is reported). */
+/* N13 -- no equality over capabilities. The `==` on a capability
+   value is the form that fires under the bridge; the manifest's
+   assert_eq snippet stays opaque (the gap is reported). */
 static void n13_cap(void)
 {
     cfx f;
@@ -100,7 +99,7 @@ static void n13_member(void)
     cfx_end(&f);
 }
 
-/* N20 -- `?` in a container element position (Clause 7.9.6). */
+/* N20 -- `?` in a container element position. */
 static void n20(void)
 {
     cfx f;
@@ -143,7 +142,7 @@ static void pure_declared_pure(void)
 }
 
 /* A world body declared `!` passes, and the world bits show in the
-   rows (Clause 7.9.2). */
+   rows. */
 static void world_declared_world(void)
 {
     cfx f;
@@ -158,8 +157,8 @@ static void world_declared_world(void)
     cfx_end(&f);
 }
 
-/* The pure factory of Clause 7.9.4: a pure body returning a `!`
-   closure. The lambda's calls belong to the closure's arrow. */
+/* The pure factory: a pure body returning a `!` closure. The lambda's
+   calls belong to the closure's arrow. */
 static void pure_factory_world_closure(void)
 {
     cfx f;
@@ -175,7 +174,7 @@ static void pure_factory_world_closure(void)
 
 /* An open declaration fed by a `?` parameter, instantiated at its
    uses: a pure callback keeps the call pure, a world-touching one
-   makes it world (Clauses 7.9.5, 7.9.6). */
+   makes it world. */
 static void open_fed_and_instantiated(void)
 {
     cfx f;
@@ -194,7 +193,7 @@ static void open_fed_and_instantiated(void)
 }
 
 /* A named pure function value also feeds a `?` parameter with a pure
-   instantiation (Clause 7.9.5). */
+   instantiation. */
 static void open_fed_by_value(void)
 {
     cfx f;
@@ -209,8 +208,7 @@ static void open_fed_by_value(void)
 }
 
 /* Under-declaration through a user dispatcher whose own arrow is open:
-   a world-touching callback body makes the use world-touching
-   (Clause 7.9.6). */
+   a world-touching callback body makes the use world-touching. */
 static void user_dispatcher_world_use(void)
 {
     cfx f;
@@ -225,7 +223,7 @@ static void user_dispatcher_world_use(void)
 }
 
 /* A lambda cannot adapt downward: a world-touching body under a pure
-   expected arrow is E-world-bit (Clause 7.9.5). */
+   expected arrow is E-world-bit. */
 static void world_lambda_pure_param(void)
 {
     cfx f;
@@ -238,8 +236,8 @@ static void world_lambda_pure_param(void)
     cfx_end(&f);
 }
 
-/* A world-touching body in a declared open declaration is
-   E-world-bit, the loud_apply shape of Clause 7.9.6. */
+/* A world-touching body in a declared open declaration is E-world-bit
+   (the loud_apply shape). */
 static void world_body_open_decl(void)
 {
     cfx f;
@@ -253,8 +251,8 @@ static void world_body_open_decl(void)
     cfx_end(&f);
 }
 
-/* A pure body under a declared open dispatch is E-world-bit, the
-   twice_fast shape of Clause 7.9.6. */
+/* A pure body under a declared open dispatch is E-world-bit (the
+   twice_fast shape). */
 static void pure_body_open_decl(void)
 {
     cfx f;
@@ -265,8 +263,8 @@ static void pure_body_open_decl(void)
     cfx_end(&f);
 }
 
-/* Test bindings evaluate without reconciliation (Clause 9.14.6): the
-   same world-touching body a `!`-less declaration would reject runs
+/* Test bindings evaluate without reconciliation: the same
+   world-touching body a `!`-less declaration would reject runs
    unchecked, and the rows still carry their bits. */
 static void test_binding_no_reconcile(void)
 {
@@ -283,8 +281,8 @@ static void test_binding_no_reconcile(void)
     cfx_end(&f);
 }
 
-/* An inverted binding has no separate bit rule (Clause 7.9.4): the
-   callback body's world calls surface in the enclosing body. */
+/* An inverted binding has no separate bit rule: the callback body's
+   world calls surface in the enclosing body. */
 static void invert_feeds_dispatcher(void)
 {
     cfx f;

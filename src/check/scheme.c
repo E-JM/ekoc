@@ -2,9 +2,9 @@
 
 #include "check/internal.h"
 
-/* Generalization and instantiation (Clause 7.6). A scheme carries the
-   rigid variables of an annotation; instantiation copies the type,
-   replacing each with a fresh inference variable (Clause 7.6.4). */
+/* Generalization and instantiation. A scheme carries the rigid
+   variables of an annotation; instantiation copies the type, replacing
+   each with a fresh inference variable. */
 
 /* Records one rigid variable, deduplicated, growing the buffer as
    needed. */
@@ -119,8 +119,8 @@ static const ek_type *inst_leaf(ck_ctx *c, const ek_type *t,
     return t;
 }
 
-/* Clause 7.6.5: every type variable of a function annotation MUST
-   occur in at least one parameter type. */
+/* Every type variable of a function annotation MUST occur in at
+   least one parameter type. */
 void ck_check_phantom(ck_ctx *c, const ek_node *ann, const ek_type *t)
 {
     const ek_type **all = NULL;

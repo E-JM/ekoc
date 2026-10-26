@@ -2,10 +2,10 @@
 
 #include "check/internal.h"
 
-/* Operator typing (Clauses 7.8.3-7.8.6). Every operator is notation
-   for a type-namespace member; both operands MUST have the same type,
-   the left fixes it, and the right must adapt. Operands whose type the
-   bridge ruling leaves open defer every domain check. */
+/* Operator typing. Every operator is notation for a type-namespace
+   member; both operands MUST have the same type, the left fixes it,
+   and the right must adapt. Operands whose type the bridge leaves
+   open defer every domain check. */
 
 static int eq_domain(const ek_type *t)
 {
@@ -27,7 +27,7 @@ static int concat_domain(const ek_type *t)
 }
 
 /* True when the operand's type is still open, so no domain check
-   applies (the placeholder-std ruling). */
+   applies (the placeholder-std bridge). */
 static int open_type(const ek_type *t)
 {
     t = ck_prune(t);
@@ -68,7 +68,7 @@ static int is_range(ek_binop op)
 }
 
 /* The expected type an operand takes: the numeric (or list, or range
-   element) expectation flows into literals (Clause 5.7.4). */
+   element) expectation flows into literals. */
 static const ek_type *operand_expected(const ek_type *expected)
 {
     const ek_type *e = ck_prune(expected);
@@ -101,7 +101,7 @@ const ek_type *ck_unary(ck_ctx *c, const ek_node *e, const ek_type *expected)
 }
 
 /* The range operators: the endpoints unify and the result is a Range
-   of the endpoint type (Clauses 6.5.6, 7.8.3). */
+   of the endpoint type. */
 static const ek_type *binary_range(ck_ctx *c, const ek_node *e,
                                    const ek_type *expected)
 {
@@ -139,8 +139,7 @@ static const ek_type *binary_range(ck_ctx *c, const ek_node *e,
 }
 
 /* Arithmetic and concatenation: the left operand fixes the type and
-   the right must adapt; the domain is judged on the left type
-   (Clauses 7.8.4, 7.8.6). */
+   the right must adapt; the domain is judged on the left type. */
 static const ek_type *binary_arith(ck_ctx *c, const ek_node *e,
                                    const ek_type *expected)
 {
@@ -169,8 +168,7 @@ static const ek_type *binary_arith(ck_ctx *c, const ek_node *e,
     return same ? same : ck_prune(lt);
 }
 
-/* Equality and ordering: both operands must have the same type, and
-   the domain rules of Clause 7.8.3 hold. */
+/* Equality and ordering: both operands must have the same type. */
 static const ek_type *binary_cmp(ck_ctx *c, const ek_node *e)
 {
     ek_binop op = e->u.binary.op;
@@ -183,9 +181,9 @@ static const ek_type *binary_cmp(ck_ctx *c, const ek_node *e)
     }
     if (same && !open_type(same)) {
         if (op == EK_BIN_EQ || op == EK_BIN_NE) {
-            /* A type variable may compare: `==` is the derived eq of
-               Clause 7.6.6. Over a type whose derivation halts, the
-               rule of Clause 9.8.4 applies. */
+            /* A type variable may compare: `==` is the derived eq
+               member. Over a type whose derivation halts, the no-eq
+               rule applies. */
             if (ck_no_eq(c, same)) {
                 ck_no_eq_error(c, e, same);
             } else if (!eq_domain(same) && same->kind != EK_T_TVAR) {

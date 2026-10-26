@@ -2,10 +2,9 @@
 
 #include "check/internal.h"
 
-/* Expression typing: the lexical scopes of Clause 7.4.2, the surface
-   schemes of Clause 7.6.3, the name readings, and the dispatch to the
-   per-concern files (operators, literals, calls, patterns, control
-   forms). */
+/* Expression typing: the lexical scopes, the surface schemes, the
+   name readings, and the dispatch to the per-concern files (operators,
+   literals, calls, patterns, control forms). */
 
 void ck_scope_push(ck_ctx *c)
 {
@@ -95,8 +94,8 @@ const ek_type *ck_scope_get(const ck_ctx *c, const char *name)
     return s ? s->type : NULL;
 }
 
-/* The scheme of a surface symbol, built once from its annotation
-   (Clause 7.6.3) and instantiated per use (Clause 7.6.4). */
+/* The scheme of a surface symbol, built once from its annotation and
+   instantiated per use. */
 static ck_scheme *scheme_of(ck_ctx *c, const ek_symbol *sym)
 {
     ck_scheme *s = (ck_scheme *)ck_map_get(&c->schemes, sym);
@@ -137,7 +136,7 @@ const ek_type *ck_type_of(ck_ctx *c, const ek_symbol *sym)
 }
 
 /* A constructor in value position: self-anchoring at zero binders,
-   anchored by the expected type, or undetermined (Clause 7.6.4). */
+   anchored by the expected type, or undetermined. */
 static const ek_type *ctor_type(ck_ctx *c, const ek_node *n,
                                 const ek_ref *ref, const ek_type *expected)
 {
@@ -150,7 +149,7 @@ static const ek_type *ctor_type(ck_ctx *c, const ek_node *n,
     }
     if (exp && exp->kind == EK_T_NOMINAL && ct
         && exp->u.nominal.sym == ct->owner) {
-        return exp; /* the expected type anchors it (7.6.4) */
+        return exp; /* the expected type anchors it */
     }
     if (ct && ct->owner) {
         ck_error(c, n, "E-undetermined",
@@ -235,7 +234,7 @@ const ek_type *ck_block(ck_ctx *c, const ek_node *b, const ek_type *expected)
 }
 
 /* The literal cases: placed at the expected type, an interpolated
-   string's segments are expressions (Clause 5.7.4). */
+   string's segments are expressions. */
 static const ek_type *literal_expr(ck_ctx *c, const ek_node *e,
                                    const ek_type *expected)
 {

@@ -24,8 +24,8 @@ void *r_grow(r_ctx *c, void *old, size_t n, size_t *cap, size_t elem)
     return p;
 }
 
-/* Clause 5.5.2: PascalCase carries identity; the `_` privacy prefix is
-   not part of the case class. */
+/* PascalCase carries identity; the `_` privacy prefix is not part of
+   the case class. */
 int r_is_pascal(const char *s)
 {
     while (*s == '_') {
@@ -90,8 +90,7 @@ void r_scope_add(r_ctx *c, scope *s, const char *name, const ek_symbol *sym)
 }
 
 /* Inner scopes win over outer ones; within one scope the newest
-   binding wins, so a rebinding shadows the binding it rebinds
-   (Clause 8.2.2). */
+   binding wins, so a rebinding shadows the binding it rebinds. */
 const ek_symbol *r_scope_get(const scope *s, const char *name)
 {
     size_t i;

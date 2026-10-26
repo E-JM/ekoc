@@ -2,11 +2,10 @@
 
 #include "check/internal.h"
 
-/* Conformance (Clauses 7.5.7, 7.9.5). Rigid type variables never
-   unify with anything but themselves (Clause 7.6.3); inference
-   variables bind. `allow_shape` admits the nominal-to-anonymous
-   adaptation of Clause 7.5.5; `never_ok` admits bottom adaptation
-   (Clause 7.5.4). Neither holds inside a function type. */
+/* Conformance. Rigid type variables never unify with anything but
+   themselves; inference variables bind. `allow_shape` admits the
+   nominal-to-anonymous adaptation; `never_ok` admits bottom
+   adaptation. Neither holds inside a function type. */
 
 int ck_occurs(const ek_type *v, const ek_type *t)
 {
@@ -71,8 +70,8 @@ static ck_conform conform(ck_ctx *c, const ek_type *a, const ek_type *e,
                           int allow_shape, int never_ok);
 
 /* A component of a composite: invariant, so judged by equality with
-   inference variables binding (Clause 7.5.3); shape adaptation does
-   not enter, and Never only where the position admits it. */
+   inference variables binding; shape adaptation does not enter, and
+   Never only where the position admits it. */
 static ck_conform component(ck_ctx *c, const ek_type *a, const ek_type *e,
                             int never_ok)
 {
@@ -97,14 +96,14 @@ static int is_bottom(const ek_type *t)
 }
 
 /* Function conformance: one-step arrow-bit adaptation, same arity,
-   invariant parameters and result (Clause 7.9.5). */
+   invariant parameters and result. */
 static ck_conform conform_fn(ck_ctx *c, const ek_type *a, const ek_type *e)
 {
     size_t i;
 
     if (a->u.fn.arrow != e->u.fn.arrow
         && !(a->u.fn.arrow == EK_ARROW_PURE && e->u.fn.arrow != EK_ARROW_PURE)) {
-        return CK_MISMATCH; /* bit adaptation is one step (7.9.5) */
+        return CK_MISMATCH; /* bit adaptation is one step */
     }
     if (a->u.fn.count != e->u.fn.count) {
         return CK_MISMATCH;
@@ -119,8 +118,7 @@ static ck_conform conform_fn(ck_ctx *c, const ek_type *a, const ek_type *e)
 }
 
 /* Conformance of the composite kinds, reached with equal kinds: same
-   shape, invariant components, and one-step arrow-bit adaptation
-   (Clause 7.5.7, 7.9.5). */
+   shape, invariant components, and one-step arrow-bit adaptation. */
 static ck_conform conform_composite(ck_ctx *c, const ek_type *a,
                                     const ek_type *e)
 {
@@ -166,7 +164,7 @@ static ck_conform conform_composite(ck_ctx *c, const ek_type *a,
 }
 
 /* The nominal-to-nominal judgment: same declaration, conforming
-   arguments (Clause 7.5.2). */
+   arguments. */
 static ck_conform conform_nominal(ck_ctx *c, const ek_type *a,
                                   const ek_type *e)
 {
@@ -185,7 +183,7 @@ static ck_conform conform_nominal(ck_ctx *c, const ek_type *a,
     return CK_OK;
 }
 
-/* Nominal to anonymous, one direction, exact shape (7.5.5). */
+/* Nominal to anonymous, one direction, exact shape. */
 static ck_conform conform_shape(ck_ctx *c, const ek_type *a,
                                 const ek_type *e)
 {
@@ -213,10 +211,10 @@ static ck_conform conform(ck_ctx *c, const ek_type *a, const ek_type *e,
         return ck_bind(c, e, a) ? CK_OK : CK_MISMATCH;
     }
     if (is_bottom(a) && e->kind != EK_T_FN && never_ok) {
-        return CK_OK; /* bottom adapts at value positions (7.5.4) */
+        return CK_OK; /* bottom adapts at value positions */
     }
     if (a->kind == EK_T_TVAR || e->kind == EK_T_TVAR) {
-        return a == e ? CK_OK : CK_MISMATCH; /* rigid (7.6.3) */
+        return a == e ? CK_OK : CK_MISMATCH; /* rigid */
     }
     if (a->kind == EK_T_NOMINAL && e->kind == EK_T_NOMINAL) {
         return conform_nominal(c, a, e);

@@ -2,12 +2,12 @@
 
 #include "check/internal.h"
 
-/* The entry rules (Clause 7.1.3) and the root pre-pass. A test root
-   has no `main` requirement, so the rules fire only where a binding
-   named `main` exists; entry-module uniqueness belongs to the host. */
+/* The entry rules and the root pre-pass. A test root has no `main`
+   requirement, so the rules fire only where a binding named `main`
+   exists; entry-module uniqueness belongs to the host. */
 
 /* Unannotated top-level bindings are monomorphic: one inference
-   variable per name, shared by every reference (Clause 7.6.3). */
+   variable per name, shared by every reference. */
 void ck_prebind(ck_ctx *c)
 {
     size_t i;
@@ -41,8 +41,7 @@ static int is_capability(const ek_type *t)
     return 0;
 }
 
-/* Notes one capability name of `main`; a repeat is a name conflict
-   (Clauses 7.1.3, 7.4.6). */
+/* Notes one capability name of `main`; a repeat is a name conflict. */
 static void note_capability(ck_ctx *c, const ek_symbol *sym,
                             const char **seen, size_t *nseen,
                             const char *cn)
@@ -133,8 +132,8 @@ static void main_rules(ck_ctx *c)
     }
 }
 
-/* The root's declared types, with the phantom-binder check of Clause
-   7.6.2, and the entry rules. */
+/* The root's declared types, with the phantom-binder check, and the
+   entry rules. */
 void ck_decls(ck_ctx *c)
 {
     size_t i;

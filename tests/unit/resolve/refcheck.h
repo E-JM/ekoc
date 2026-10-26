@@ -7,8 +7,8 @@
    EK_N_FIELD, EK_N_CALL, EK_N_APPLY, EK_N_T_NAME in type position, and
    EK_N_P_CONS in pattern position, each exactly once. `_` is the unit
    value or the unit type, never a name; a lambda parameter is a
-   binding site, not a reference; a composite key resolves in check
-   (Clause 7.5.3). Violations print to stderr; rfx_check_refs returns
+   binding site, not a reference; a composite key resolves in check.
+   Violations print to stderr; rfx_check_refs returns
    their number. */
 
 #include <stdlib.h>

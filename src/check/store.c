@@ -5,7 +5,7 @@
 
 /* Type storage: hash-consed canonical types. Anonymous composites and
    nominal instantiations are interned, so type identity is pointer
-   identity and recursive comparisons terminate (Clause 7.5.1). */
+   identity and recursive comparisons terminate. */
 
 /* One mixed child of a content hash. */
 static size_t fold_ptr(size_t h, const void *p)
@@ -66,7 +66,7 @@ static int slots_eq(const ek_type *const *a, const ek_type *const *b,
 }
 
 /* Record equality: same fields at the same types (name-sorted at
-   construction, 7.5.7). */
+   construction). */
 static int fields_eq(const ek_type *a, const ek_type *b)
 {
     size_t i;
@@ -94,7 +94,7 @@ static int fn_eq(const ek_type *a, const ek_type *b)
 }
 
 /* Two candidates are the same type when kind and canonical children
-   coincide; record fields are name-sorted at construction (7.5.7). */
+   coincide; record fields are name-sorted at construction. */
 static int type_eq(const ek_type *a, const ek_type *b)
 {
     if (a->kind != b->kind) {

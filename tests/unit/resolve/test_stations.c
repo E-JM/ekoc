@@ -1,10 +1,9 @@
 #include "common.h"
 
-/* Resolution stations and classifications: the head order of Clause
-   7.4.2, the receiver form of Clause 7.4.3, and constructor positions. */
+/* Resolution stations and classifications: the expression-head order,
+   the receiver form, and constructor positions. */
 
-/* The receiver position never consults lexical bindings
-   (Clause 7.4.3). */
+/* The receiver position never consults lexical bindings. */
 static void receiver_not_lexical(void)
 {
     rfx f;
@@ -18,9 +17,9 @@ static void receiver_not_lexical(void)
     rfx_end(&f);
 }
 
-/* Station 2 precedes station 3: a namespace member over an equally
-   named current-module function is ordered resolution, not a conflict
-   (Clause 7.4.3). */
+/* A namespace member precedes the current-module function reading: an
+   equally named member and function are ordered resolution, not a
+   conflict. */
 static void namespace_vs_current_module(void)
 {
     rfx f;
@@ -37,7 +36,7 @@ static void namespace_vs_current_module(void)
     rfx_end(&f);
 }
 
-/* A bare `x.f` that is not a call is a field access (Clause 7.4.3). */
+/* A bare `x.f` that is not a call is a field access. */
 static void bare_field_access(void)
 {
     rfx f;
@@ -53,8 +52,7 @@ static void bare_field_access(void)
 }
 
 /* A single receiver link spelled like a module is still a field
-   reading: only a non-last link takes the module segment of station 4
-   (Clause 7.4.3). */
+   reading: only a non-last link takes the module-path reading. */
 static void last_link_is_not_a_module_segment(void)
 {
     rfx f;
@@ -74,7 +72,7 @@ static void constructors(void)
     rfx f;
     const ek_ref *r;
 
-    /* A declared constructor at value position (Clause 7.4.1). */
+    /* A declared constructor at value position. */
     rfx_begin(&f,
         "Color: type = Red | Green\n"
         "f: Color = Red\n");
@@ -86,7 +84,7 @@ static void constructors(void)
     rfx_end(&f);
 
     /* A type name that doubles as constructor: value position denotes
-       the constructor, type position the type (Clause 7.4.1). */
+       the constructor, type position the type. */
     rfx_begin(&f,
         "Age: type = Age UInt\n"
         "f: Age = Age 36\n");
@@ -101,7 +99,7 @@ static void constructors(void)
 }
 
 /* Type position: a bare lowercase name is a type variable of the
-   annotation; a bare PascalCase name a declared type (Clause 7.4.2). */
+   annotation; a bare PascalCase name a declared type. */
 static void type_positions(void)
 {
     rfx f;

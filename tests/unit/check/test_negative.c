@@ -1,15 +1,15 @@
 #include "common.h"
 
 /* The negative conformance entries outside the world-bit and native
-   batches (Annex D.3): each snippet materializes the manifest program,
-   runs the full pipeline, and asserts the exact code at the correct
-   position plus the rejection itself. N11 has two halves: the manifest
+   batches: each snippet materializes the manifest program, runs the
+   full pipeline, and asserts the exact code at the correct position
+   plus the rejection itself. N11 has two halves: the manifest
    declaration (diagnosed in parse) and the check-side type-position
    reference. */
 
 #define CONF_DIR "tests/conformance"
 
-/* N01 — nominal value into another nominal type (Clause 7.5.2). */
+/* N01 — nominal value into another nominal type. */
 static void n01(void)
 {
     cfx f;
@@ -25,7 +25,7 @@ static void n01(void)
     cfx_end(&f);
 }
 
-/* N02 — wrong shape into an anonymous parameter (Clause 7.5.5). */
+/* N02 — wrong shape into an anonymous parameter. */
 static void n02(void)
 {
     cfx f;
@@ -42,7 +42,7 @@ static void n02(void)
     cfx_end(&f);
 }
 
-/* N03 — missing constructor arm (Clause 7.7.2). */
+/* N03 — missing constructor arm. */
 static void n03(void)
 {
     cfx f;
@@ -58,7 +58,7 @@ static void n03(void)
     cfx_end(&f);
 }
 
-/* N09 — result-only generic variable (Clause 7.6.5). */
+/* N09 — result-only generic variable. */
 static void n09(void)
 {
     cfx f;
@@ -69,7 +69,7 @@ static void n09(void)
     cfx_end(&f);
 }
 
-/* N10 — phantom type binder (Clause 7.6.2). */
+/* N10 — phantom type binder. */
 static void n10(void)
 {
     cfx f;
@@ -81,7 +81,7 @@ static void n10(void)
 }
 
 /* N11, first half — the manifest declaration; the name case of a type
-   declaration is diagnosed in parse (Clause 5.5.2). */
+   declaration is diagnosed in parse. */
 static void n11_decl(void)
 {
     cfx f;
@@ -101,8 +101,8 @@ static void n11_decl(void)
 }
 
 /* N11, second half — the check side: a lowercase final segment of a
-   qualified type reference (Clauses 5.5.2, 7.4.1). The fixture is the
-   suite's own geolib.eko on the module path; nothing is written. */
+   qualified type reference. The fixture is the suite's own geolib.eko
+   on the module path; nothing is written. */
 static void n11_use(void)
 {
     static const char *mpath[1] = {CONF_DIR};
@@ -125,7 +125,7 @@ static void n11_use(void)
     cfx_end(&f);
 }
 
-/* N14 — integer literal above Int.max (Clause 5.7.4, 5.7.1). */
+/* N14 — integer literal above Int.max. */
 static void n14(void)
 {
     cfx f;
@@ -136,9 +136,8 @@ static void n14(void)
     cfx_end(&f);
 }
 
-/* N18 — mixed numeric operands; no implicit conversion (Clause
-   7.8.4). The int literal never lands at Float, so the expression is
-   rejected. */
+/* N18 — mixed numeric operands; no implicit conversion. The int
+   literal never lands at Float, so the expression is rejected. */
 static void n18(void)
 {
     cfx f;
@@ -149,7 +148,7 @@ static void n18(void)
     cfx_end(&f);
 }
 
-/* N19 — `:=` on an unannotated lambda (Clauses 6.3.3, 7.6.3). */
+/* N19 — `:=` on an unannotated lambda. */
 static void n19(void)
 {
     cfx f;

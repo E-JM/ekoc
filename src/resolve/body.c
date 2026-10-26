@@ -2,12 +2,11 @@
 
 #include "resolve/internal.h"
 
-/* Body resolution: the lexical scopes of Clause 7.4.2 (the module top
-   level, each block, each lambda body, each case arm with its guard).
-   A local binding is visible from its binding line to the end of the
-   enclosing block, so a value is resolved before its pattern binds;
-   a block-level self-reference therefore reaches only an outer binding
-   (Clauses 7.4.2, 8.2.1). */
+/* Body resolution: the lexical scopes (the module top level, each
+   block, each lambda body, each case arm with its guard). A local
+   binding is visible from its binding line to the end of the enclosing
+   block, so a value is resolved before its pattern binds; a
+   block-level self-reference therefore reaches only an outer binding. */
 
 static void r_let(r_ctx *c, r_file *f, const ek_node *m);
 
@@ -145,7 +144,7 @@ void r_case(r_ctx *c, r_file *f, const ek_node *cs)
 
 /* A named function's parameters come from its annotation; only the
    top-level parameter list binds, not the parameters of nested
-   function types (Clause 7.4.2). */
+   function types. */
 static void bind_annotation_params(r_ctx *c, r_file *f, const ek_node *ann,
                                    scope *into)
 {
@@ -170,10 +169,10 @@ static void bind_annotation_params(r_ctx *c, r_file *f, const ek_node *ann,
 }
 
 /* One annotated binding: the annotation's parameters scope over the
-   right-hand side; the pattern binds in the enclosing scope
-   (Clauses 7.4.2, 8.2.1). At the top level the surface holds the
-   binding and there is no lexical scope to enter, but the pattern's
-   constructor references are still recorded (Clause 7.4.2 row 3). */
+   right-hand side; the pattern binds in the enclosing scope. At the
+   top level the surface holds the binding and there is no lexical
+   scope to enter, but the pattern's constructor references are still
+   recorded. */
 static void r_let(r_ctx *c, r_file *f, const ek_node *m)
 {
     scope *old = f->locals;
@@ -194,7 +193,7 @@ static void r_let(r_ctx *c, r_file *f, const ek_node *m)
 }
 
 /* The top-level bodies of one module: bindings are mutually visible
-   including their own right-hand sides (Clause 7.4.2). */
+   including their own right-hand sides. */
 void r_tops(r_ctx *c, r_file *f, const ek_node *mod)
 {
     size_t i, k;

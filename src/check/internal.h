@@ -18,8 +18,8 @@ typedef struct {
     size_t count, cap;
 } ck_map;
 
-/* A generalized binding type: the annotation plus its rigid variables
-   (Clause 7.6.3). */
+/* A generalized binding type: the annotation plus its rigid
+   variables. */
 typedef struct {
     const ek_type *type;
     const ek_type **vars; /* EK_T_TVAR nodes */
@@ -34,7 +34,7 @@ typedef struct {
     const ek_type *payload; /* NULL for a zero payload */
 } ck_ctor;
 
-/* A declared type's shape (Clause 7.5.2, 7.6.2). */
+/* A declared type's shape. */
 typedef struct {
     const ek_symbol *sym;
     const ek_type **binders; /* rigid tvar nodes, positional */
@@ -46,9 +46,8 @@ typedef struct {
     size_t nctors;
 } ck_decl;
 
-/* One lexical scope frame of checked bindings (Clause 7.4.2); values
-   are generalized schemes so an annotated local binding instantiates
-   at its uses (Clause 7.6.3). */
+/* One lexical scope frame of checked bindings; values are generalized
+   schemes so an annotated local binding instantiates at its uses. */
 typedef struct ck_scope {
     struct ck_scope *parent;
     const char **names;
@@ -76,13 +75,13 @@ typedef struct {
     ck_scope *locals;
     int open_scope;  /* inside the body of a declaration whose signature
                         contains the open bit: calls through `?` arrows
-                        carry that bit (Clause 7.9.6) */
+                        carry that bit */
     ek_ck_row *rows;
     size_t nrows, crows;
     int oom;
 } ck_ctx;
 
-/* A type-position scope: the tvars of one annotation (Clause 7.6.1). */
+/* A type-position scope: the tvars of one annotation. */
 typedef struct ck_tvars {
     struct ck_tvars *parent;
     const char **names;
@@ -113,7 +112,7 @@ const ek_type *ck_fn(ck_ctx *c, const ek_type **params, size_t n,
                      const ek_type *result, ek_arrow arrow);
 const ek_type *ck_prune(const ek_type *t);
 const ek_type *ck_subst(ck_ctx *c, const ek_type *t);
-/* Replaces each vars[i] with repls[i] through a type (Clause 7.6.4). */
+/* Replaces each vars[i] with repls[i] through a type. */
 const ek_type *ck_apply_binders(ck_ctx *c, const ek_type *t,
                                 const ek_type **vars, const ek_type **repls,
                                 size_t n);
@@ -123,8 +122,8 @@ void ck_error(ck_ctx *c, const ek_node *n, const char *code, const char *fmt,
               ...);
 const char *ck_file(const ck_ctx *c); /* the root module's file */
 
-/* unify.c: occurs check, conformance (Clauses 7.5.7, 7.6.3).
-   scheme.c: generalization and instantiation (Clause 7.6). */
+/* unify.c: occurs check and conformance.
+   scheme.c: generalization and instantiation. */
 typedef enum {
     CK_OK = 0,      /* types conform */
     CK_NOMINAL,     /* nominal into a different nominal type */
@@ -144,10 +143,8 @@ void ck_tvars_collect(ck_ctx *c, const ek_type *t, const ek_type ***out,
                       size_t *n, size_t *cap);
 void ck_check_phantom(ck_ctx *c, const ek_node *ann, const ek_type *t);
 
-/* elab.c: annotations and representations (Clauses 7.5.5, 7.6.1,
-   7.6.2). decl.c: declared types, their binder scope, and the phantom
-   rule (Clauses 7.5.2, 7.5.6, 7.6.2). entry.c: entry rules (Clause
-   7.1.3). */
+/* elab.c: annotations and representations. decl.c: declared types,
+   their binder scope, and the phantom rule. entry.c: entry rules. */
 const ek_type *ck_elaborate(ck_ctx *c, const ek_node *t, ck_tvars *tv);
 void ck_tv_add(ck_ctx *c, ck_tvars *tv, const char *name, const ek_type *t,
                const ek_node *first);
@@ -159,8 +156,7 @@ const ck_ctor *ck_ctor_of(ck_ctx *c, const ek_symbol *sym);
 void ck_prebind(ck_ctx *c); /* unannotated top-level rows */
 void ck_decls(ck_ctx *c);   /* root type decls, entry rules */
 
-/* expr.c: expression typing (Clauses 7.5, 7.6.4, 7.7.4). ctl.c: the
-   control forms (Clauses 6.7.4, 7.7.2-7.7.4). */
+/* expr.c: expression typing. ctl.c: the control forms. */
 const ek_type *ck_expr(ck_ctx *c, const ek_node *e, const ek_type *expected);
 const ek_type *ck_block(ck_ctx *c, const ek_node *b, const ek_type *expected);
 const ek_type *ck_if(ck_ctx *c, const ek_node *e, const ek_type *expected);
@@ -172,8 +168,7 @@ void ck_scope_bind_scheme(ck_ctx *c, const char *name, ck_scheme *s);
 ck_scheme *ck_scope_get_scheme(const ck_ctx *c, const char *name);
 const ek_type *ck_scope_get(const ck_ctx *c, const char *name);
 
-/* literal.c: literal placement (Clause 5.7.4) and composite literals
-   (Clause 7.5.3). */
+/* literal.c: literal placement and composite literals. */
 int ck_is_numeric(const ek_type *t);      /* Int, UInt, Float */
 int ck_is_machine_word(const ek_type *t); /* U8..I64 */
 int ck_is_std(const ek_type *t, const char *name);
@@ -184,13 +179,13 @@ const ek_type *ck_place(ck_ctx *c, const ek_node *lit, const ek_type *expected,
 const ek_type *ck_composite(ck_ctx *c, const ek_node *e,
                             const ek_type *expected, int allow_partial);
 
-/* op.c: operator typing (Clauses 7.8.3-7.8.6). */
+/* op.c: operator typing. */
 const ek_type *ck_unary(ck_ctx *c, const ek_node *e, const ek_type *expected);
 const ek_type *ck_binary(ck_ctx *c, const ek_node *e, const ek_type *expected);
 
-/* worlds.c: the world-bit derivation (Clause 7.9). Bits are written
-   during expression checking; reconcile.c judges them at the
-   annotated bindings. */
+/* worlds.c: the world-bit derivation. Bits are written during
+   expression checking; reconcile.c judges them at the annotated
+   bindings. */
 ek_bit ck_arg_bit(ck_ctx *c, const ek_node *arg, const ek_type *arg_type);
 void ck_call_bit(ck_ctx *c, const ek_node *call, ek_bit b);
 void ck_lambda_bit(ck_ctx *c, const ek_node *lam, ek_bit b);
@@ -204,11 +199,10 @@ int ck_type_opens(const ek_type *t); /* contains an open arrow */
 int ck_signature_opens(const ek_type *f); /* own arrow or a feeder */
 void ck_fill_bits(ck_ctx *c); /* the final row pass (check.c) */
 
-/* reconcile.c: the no-eq rule of Clause 9.8.4 and the binding rules
-   of Clauses 7.9.2 and 7.9.6. */
-int ck_is_capability(const ek_type *t); /* the nine of Clause 7.9.1 */
+/* reconcile.c: the no-eq rule and the declared-bit binding rules. */
+int ck_is_capability(const ek_type *t); /* the nine capability types */
 int ck_no_eq(ck_ctx *c, const ek_type *t); /* the eq derivation halts
-                                              here (Clause 9.8.4) */
+                                              here */
 void ck_no_eq_error(ck_ctx *c, const ek_node *at, const ek_type *t);
 void ck_open_positions(ck_ctx *c, const ek_node *t, int allow);
 int ck_annotation_bits(ck_ctx *c, const ek_node *ann, const ek_type *bound);
@@ -216,8 +210,8 @@ ek_bit ck_own_bit(const ek_type *bound);
 void ck_reconcile(ck_ctx *c, const ek_node *at, const ek_type *bound,
                   const ek_node *val);
 
-/* pattern.c: pattern typing (Clause 7.7.1). patbind.c: or-patterns
-   and the binding-shape judgments (Clauses 6.8.3, 7.7.1). */
+/* pattern.c: pattern typing. patbind.c: or-patterns and the
+   binding-shape judgments. */
 int ck_invert_pattern(const ek_node *pat);
 const ek_type *ck_callback_param(ck_ctx *c, const ek_node *m,
                                  const ek_type *call);
@@ -225,8 +219,8 @@ const ek_type *ck_pattern(ck_ctx *c, const ek_node *p, const ek_type *scrut);
 const ek_type *ck_or_pattern(ck_ctx *c, const ek_node *p, const ek_type *scrut);
 int ck_irrefutable(const ek_node *p); /* 0 = refutable in a value binding */
 
-/* exhaust.c: coverage of one scrutinee (Clause 7.7.2). exhaust_prod.c:
-   the multi-scrutinee product and the entry (Clauses 7.7.2, 7.7.3). */
+/* exhaust.c: coverage of one scrutinee. exhaust_prod.c: the
+   multi-scrutinee product and the entry. */
 int ck_covers(ck_ctx *c, const ek_type *t, const ek_node *const *pats,
               size_t n);
 size_t ck_pat_flatten(ck_ctx *c, const ek_node *p, const ek_node **out,
@@ -237,8 +231,8 @@ void ck_exhaust(ck_ctx *c, const ek_node *cs, const ek_type **scrut,
                 size_t nscrut, const ek_node *const *arms, const int *contrib,
                 size_t narms);
 
-/* member.c: receiver stations (Clause 7.4.3). call.c: calls, lambdas,
-   constructor application (Clauses 7.8.1, 7.8.2, 7.6.3, 7.6.4). */
+/* member.c: receiver-station selection. call.c: calls, lambdas,
+   constructor application. */
 const ek_type *ck_call(ck_ctx *c, const ek_node *e, const ek_type *expected);
 const ek_type *ck_field(ck_ctx *c, const ek_node *e);
 const ek_type *ck_link(ck_ctx *c, const ek_node *link, const ek_type *recv,
@@ -248,12 +242,11 @@ const ek_type *ck_apply(ck_ctx *c, const ek_node *e, const ek_type *expected);
 int ck_ref_at(const ck_ctx *c, const ek_node *n, ek_sym_kind kind,
               const ek_ref **out);
 
-/* extern.c: the compile-time checks of Clause 10 (Clauses 10.2.1,
-   10.2.3, 10.3.3, 10.3.5, 10.6) over the root's extern and ctype
+/* extern.c: the compile-time extern and ctype checks over the root's
    declarations. */
 void ck_externs(ck_ctx *c);
 
-/* bind.c: the binding forms (Clauses 7.6.3, 7.6.5, 7.7.1, 7.8.1). */
+/* bind.c: the binding forms. */
 ck_scheme *ck_mono(ck_ctx *c, const ek_type *t);
 const ek_type *ck_stmt(ck_ctx *c, const ek_node *m, int top);
 

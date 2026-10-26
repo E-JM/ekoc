@@ -2,13 +2,12 @@
 
 #include "check/internal.h"
 
-/* The no-eq rule of Clause 9.8.4 and the binding rules of Clause 7.9:
-   where `?` may sit in an annotation (7.9.6), when a signature's open
-   bit is fed, and the reconciliation of the declared bit against the
-   body bit (7.9.2). */
+/* The no-eq rule and the declared-bit binding rules: where `?` may
+   sit in an annotation, when a signature's open bit is fed, and the
+   reconciliation of the declared bit against the body bit. */
 
-/* Capability types (Clause 7.9.1): built-in nominal opaque types,
-   known under the bridge by their placeholder names. */
+/* The capability types: built-in nominal opaque types, known under
+   the bridge by their placeholder names. */
 int ck_is_capability(const ek_type *t)
 {
     static const char *caps[] = {"Out",   "In",   "Fs",    "Env",  "Args",
@@ -28,12 +27,12 @@ int ck_is_capability(const ek_type *t)
     return 0;
 }
 
-/* The eq derivation halts at capabilities and functions, recursively
-   (Clause 9.8.4): a type built over either has no eq. */
+/* The eq derivation halts at capabilities and functions, recursively:
+   a type built over either has no eq. */
 static int no_eq_walk(ck_ctx *c, const ek_type *t, int depth);
 
 /* The eq derivation halts at capabilities and functions, recursively
-   through a nominal representation or payload (Clause 9.8.4). */
+   through a nominal representation or payload. */
 static int no_eq_nominal(ck_ctx *c, const ek_type *t, int depth)
 {
     const ek_type *repr;
@@ -63,9 +62,9 @@ static int no_eq_nominal(ck_ctx *c, const ek_type *t, int depth)
     return 0;
 }
 
-/* The eq derivation halts at capabilities and functions, recursively
-   (Clause 9.8.4): a type built over either has no eq. The depth bound
-   terminates recursive representations. */
+/* The eq derivation halts at capabilities and functions, recursively:
+   a type built over either has no eq. The depth bound terminates
+   recursive representations. */
 static int no_eq_walk(ck_ctx *c, const ek_type *t, int depth)
 {
     size_t i;
@@ -123,7 +122,7 @@ void ck_no_eq_error(ck_ctx *c, const ek_node *at, const ek_type *t)
 
 /* Open arrows are allowed on the annotation's own arrow and inside its
    parameter types; a result type, container element, or record field
-   forbids them (Clause 7.9.6). */
+   forbids them. */
 void ck_open_positions(ck_ctx *c, const ek_node *t, int allow)
 {
     size_t i, n;
@@ -178,8 +177,8 @@ void ck_open_positions(ck_ctx *c, const ek_node *t, int allow)
 
 /* The annotation-side checks of one binding: the position rule, and
    for an open own arrow the feeder rule, judged on the elaborated
-   parameter types (Clause 7.9.6). Returns 1 when the open bit is
-   unfed, so the body must not reconcile. */
+   parameter types. Returns 1 when the open bit is unfed, so the body
+   must not reconcile. */
 int ck_annotation_bits(ck_ctx *c, const ek_node *ann, const ek_type *bound)
 {
     const ek_type *f = ck_prune(bound);
@@ -221,11 +220,11 @@ static const char *bit_name(ek_bit b)
     return b == EK_BIT_OPEN ? "open" : "pure";
 }
 
-/* Clause 7.9.2 at one annotated binding: the declared bit MUST equal
-   the OR of the call bits of the body. A lambda value is the declared
-   body itself (Clause 7.9.4), so its own bit is the body bit; any
-   other value excludes lambda interiors, because a closure's calls
-   belong to the closure's arrow -- the pure factory of Clause 7.9.4. */
+/* At one annotated binding the declared bit MUST equal the OR of the
+   call bits of the body. A lambda value is the declared body itself,
+   so its own bit is the body bit; any other value excludes lambda
+   interiors, because a closure's calls belong to the closure's own
+   declared arrow. */
 void ck_reconcile(ck_ctx *c, const ek_node *at, const ek_type *bound,
                   const ek_node *val)
 {

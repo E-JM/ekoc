@@ -3,12 +3,12 @@
 #include "resolve/internal.h"
 
 /* PLACEHOLDER STD SURFACE, standing in until the real interface is
-   derived from lib/std.eko. It holds exactly the names Clause 7.2.5
-   opens: the free names, the opened types, the capability module names
-   of Clause 9.1.2, and the zero-payload constructors of Bool, Option,
-   Result, Time, and Duration. Everything else a file uses from the
-   implicit import resolves to EK_SYM_EXTERNAL without a diagnostic
-   (the bridge ruling in resolve.h). */
+   derived from lib/std.eko. It holds exactly the names the implicit
+   import opens: the free names, the opened types, the capability module
+   names, and the zero-payload constructors of Bool, Option, Result,
+   Time, and Duration. Everything else a file uses from the implicit
+   import resolves to EK_SYM_EXTERNAL without a diagnostic (the bridge
+   described in resolve.h). */
 
 static const char *free_names[] = {
     "show", "inspect", "panic", "assert", "assert_eq", "assert_ne", NULL
@@ -94,7 +94,7 @@ void r_std_init(r_ctx *c)
 
 /* Opens the implicit import into a file's layers: the free names share
    the top-level layer, the types the identity layer, the constructors
-   the constructor space (Clause 7.2.5). */
+   the constructor space. */
 void r_std_open(r_ctx *c, r_file *f)
 {
     ek_surface *s;

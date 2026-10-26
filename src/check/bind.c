@@ -2,10 +2,10 @@
 
 #include "check/internal.h"
 
-/* The binding forms of Clause 6.3 as check sees them: annotated and
-   plain value bindings, rebinds, inverted bindings, namespace
-   members, tests, and externs (Clauses 7.6.3, 7.7.1, 7.8.1). Type
-   declarations are built in decl.c, entry rules in entry.c. */
+/* The binding forms as check sees them: annotated and plain value
+   bindings, rebinds, inverted bindings, namespace members, tests, and
+   externs. Type declarations are built in decl.c, entry rules in
+   entry.c. */
 
 ck_scheme *ck_mono(ck_ctx *c, const ek_type *t)
 {
@@ -21,8 +21,7 @@ ck_scheme *ck_mono(ck_ctx *c, const ek_type *t)
 }
 
 /* The lambda beneath one level of parentheses, else NULL: a lambda is
-   check-only, so an unannotated binding over one is rejected
-   (Clause 7.6.3). */
+   check-only, so an unannotated binding over one is rejected. */
 static const ek_node *as_lambda(const ek_node *v)
 {
     while (v && v->kind == EK_N_PAREN) {
@@ -42,12 +41,12 @@ static const ek_type *repr_of(ck_ctx *c, const ek_type *t)
     return t;
 }
 
-/* Binds an irrefutable pattern's names (Clause 7.7.1). */
+/* Binds an irrefutable pattern's names. */
 static void bind_pattern(ck_ctx *c, const ek_node *pat, const ek_type *t,
                          ck_scheme *gen);
 
 /* The brace case of a value-binding pattern: fields bind at their
-   field types (Clause 7.7.1). */
+   field types. */
 static void bind_brace(ck_ctx *c, const ek_node *pat, const ek_type *t)
 {
     const ek_type *p = repr_of(c, t);
@@ -83,7 +82,7 @@ static void bind_brace(ck_ctx *c, const ek_node *pat, const ek_type *t)
     }
 }
 
-/* Binds an irrefutable pattern's names (Clause 7.7.1). */
+/* Binds an irrefutable pattern's names. */
 static void bind_pattern(ck_ctx *c, const ek_node *pat, const ek_type *t,
                          ck_scheme *gen)
 {
@@ -124,7 +123,7 @@ static void bind_pattern(ck_ctx *c, const ek_node *pat, const ek_type *t,
 }
 
 /* The inverted form: the value is a call whose last parameter types
-   the pattern (Clause 7.8.1). */
+   the pattern. */
 static const ek_type *invert_binding(ck_ctx *c, const ek_node *m,
                                      const ek_node *pat, int top)
 {
@@ -147,8 +146,7 @@ static const ek_type *invert_binding(ck_ctx *c, const ek_node *m,
 
 /* The right-hand side of an annotated function binding: the
    annotation's parameters bind over it, a lambda is checked against
-   the whole arrow, and any other expression against the result
-   (Clause 7.9.4). */
+   the whole arrow, and any other expression against the result. */
 static void annotated_fn_body(ck_ctx *c, const ek_node *ann,
                               const ek_node *val, const ek_type *bound)
 {
@@ -186,7 +184,7 @@ static void annotated_fn_body(ck_ctx *c, const ek_node *ann,
 }
 
 /* One annotated binding: the annotation types the value, the scheme
-   generalizes, and the body reconciles (Clauses 7.6.3, 7.9.2). */
+   generalizes, and the body reconciles. */
 static const ek_type *annotated_binding(ck_ctx *c, const ek_node *m,
                                         const ek_node *val, ck_scheme *gen)
 {
@@ -227,8 +225,8 @@ static const ek_type *annotated_binding(ck_ctx *c, const ek_node *m,
     return bound;
 }
 
-/* One binding member: LET, REBIND, or INVERT (Clauses 6.3.1-6.3.4).
-   Returns the type the binding introduces. */
+/* One binding member: LET, REBIND, or INVERT. Returns the type the
+   binding introduces. */
 static const ek_type *ck_binding(ck_ctx *c, const ek_node *m, int top)
 {
     const ek_node *pat = m->u.bind.pattern;
@@ -246,8 +244,7 @@ static const ek_type *ck_binding(ck_ctx *c, const ek_node *m, int top)
         const ek_node *lam = as_lambda(val);
 
         if (lam) {
-            /* `:=` does not generalize, and a lambda is check-only
-               (Clause 7.6.3). */
+            /* `:=` does not generalize, and a lambda is check-only. */
             ck_error(c, lam, "E-lambda-check-only",
                      "`:=` does not generalize and a lambda is "
                      "check-only: no expected type supplies the "
@@ -268,9 +265,8 @@ static const ek_type *ck_binding(ck_ctx *c, const ek_node *m, int top)
 }
 
 /* A namespace member or extern: the annotation types the body and the
-   surface symbol alike. A namespace member is an annotated binding
-   (Clauses 7.9.2, 7.9.6); an extern carries no body and its rules are
-   the extern.c set (Clause 10.2). */
+   surface symbol alike. A namespace member is an annotated binding; an
+   extern carries no body and its rules are the extern.c set. */
 static const ek_type *ck_annotated_decl(ck_ctx *c, const ek_node *m,
                                         const ek_node *ann,
                                         const ek_node *body, int binding)

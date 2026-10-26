@@ -2,13 +2,13 @@
 
 #include "check/internal.h"
 
-/* The world-bit derivation (Clause 7.9). A call stores its own bit, a
-   lambda the bit of its body, an annotated binding its declared bit.
-   Every other node's bit is the OR of the call bits in its subtree,
-   lambda interiors excluded, because only calls contribute (Clause
-   7.9.2); the OR is computed on demand and memoized. */
+/* The world-bit derivation. A call stores its own bit, a lambda the
+   bit of its body, an annotated binding its declared bit. Every other
+   node's bit is the OR of the call bits in its subtree, lambda
+   interiors excluded, because only calls contribute; the OR is
+   computed on demand and memoized. */
 
-/* The OR table of Clause 7.9.2. */
+/* The OR over two bits. */
 static ek_bit fold(ek_bit a, ek_bit b)
 {
     if (a == EK_BIT_WORLD || b == EK_BIT_WORLD) {
@@ -53,9 +53,9 @@ ek_bit ck_bit_of(ck_ctx *c, const ek_node *n)
     return map_bit(&c->bits, n);
 }
 
-/* The bit an argument supplies where a `?` is instantiated (Clause
-   7.9.6): a lambda carries its body's bit, a world-touching function
-   value its arrow's bit, anything else nothing (holding is quiet). */
+/* The bit an argument supplies where a `?` is instantiated: a lambda
+   carries its body's bit, a world-touching function value its arrow's
+   bit, anything else nothing (holding is quiet). */
 ek_bit ck_arg_bit(ck_ctx *c, const ek_node *arg, const ek_type *arg_type)
 {
     const ek_type *t;
@@ -116,7 +116,7 @@ int ck_type_opens(const ek_type *t)
 }
 
 /* True when a signature contains the open bit at all: on its own
-   arrow, or fed by a parameter (Clause 7.9.6). */
+   arrow, or fed by a parameter. */
 int ck_signature_opens(const ek_type *f)
 {
     size_t i;
@@ -137,7 +137,7 @@ int ck_signature_opens(const ek_type *f)
 }
 
 /* A lambda child contributes nothing: its calls belong to its own
-   arrow (Clause 7.9.2). */
+   arrow. */
 static ek_bit child(ck_ctx *c, const ek_node *e)
 {
     if (!e || e->kind == EK_N_LAMBDA) {
@@ -250,9 +250,9 @@ ek_bit ck_body_bit(ck_ctx *c, const ek_node *e)
     return b;
 }
 
-/* The pure derivation combinators the spec names (Clauses 7.9.2,
-   8.9.2, 9.12.5, 9.14.5): deriving or observing through them sets no
-   bit. Matched by member name under the opacity ruling (check.h). */
+/* The pure derivation combinators: deriving or observing through them
+   sets no bit. Matched by member name under the opacity rule
+   (check.h). */
 static int is_combinator(const char *member)
 {
     static const char *pure[] = {"null",   "tee",      "empty",
@@ -270,8 +270,8 @@ static int is_combinator(const char *member)
 
 /* The bit of a call the bridge leaves opaque (check.h): world-touching
    when a capability receiver's member is none of the pure combinators
-   -- `Conc` sets no bit (Clause 7.9.1) -- or when an argument carries
-   a world bit; pure otherwise. */
+   -- `Conc` sets no bit -- or when an argument carries a world bit;
+   pure otherwise. */
 static ek_bit opaque_call_bit(ck_ctx *c, const ek_type *recv,
                               const char *member, const ek_node *const *args,
                               const ek_type *const *types, size_t n)
@@ -292,12 +292,12 @@ static ek_bit opaque_call_bit(ck_ctx *c, const ek_type *recv,
     return EK_BIT_PURE;
 }
 
-/* The bit of one call (Clause 7.9.2): through a known arrow its own
-   bit; through an open arrow the instantiation from the feeder
-   arguments (Clause 7.9.6) -- or, inside the body of the declaration
-   that owns the open bit, that bit. A call the bridge leaves opaque
-   takes the opacity ruling of check.h. off is 1 when a receiver is
-   prepended, so parameter i takes argument i - off. */
+/* The bit of one call: through a known arrow its own bit; through an
+   open arrow the instantiation from the feeder arguments -- or, inside
+   the body of the declaration that owns the open bit, that bit. A call
+   the bridge leaves opaque takes the opacity rule of check.h. off is 1
+   when a receiver is prepended, so parameter i takes argument
+   i - off. */
 ek_bit ck_call_bit_of(ck_ctx *c, const ek_type *f, const char *member,
                       const ek_type *recv, const ek_node *const *args,
                       const ek_type *const *types, size_t n, size_t off)

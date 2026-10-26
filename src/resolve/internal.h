@@ -30,7 +30,7 @@ typedef struct {
     int external; /* placeholder std module: no file, no surface */
 } r_mod;
 
-/* The per-file name layers of Clause 7.4.2, in lookup order. */
+/* The per-file name layers, in lookup order. */
 typedef struct {
     r_mod *mod;
     scope *locals; /* innermost lexical scope, NULL at top level */
@@ -53,7 +53,7 @@ typedef struct {
     size_t nmods, cmods;
     ek_ref *refs;
     size_t nrefs, crefs;
-    ek_surface *std; /* the placeholder surface of Clause 7.2.5 */
+    ek_surface *std; /* the placeholder std surface */
     int oom;
 } r_ctx;
 
@@ -72,27 +72,26 @@ void r_error(r_ctx *c, const char *file, int line, int col,
              const char *code, const char *fmt, ...);
 void r_refs_sort(ek_ref *refs, size_t count);
 
-/* std.c: the placeholder surface of Clause 7.2.5 (temporary bridge). */
+/* std.c: the placeholder std surface (temporary bridge). */
 void r_std_init(r_ctx *c);
 int r_std_free_name(const char *name);
 void r_std_open(r_ctx *c, r_file *f);
 const ek_symbol *r_std_type(r_ctx *c, const char *name);
 const ek_symbol *r_std_ctor(r_ctx *c, const char *name);
 
-/* surface.c: the top-level surface of one module (Clause 7.3). */
+/* surface.c: the top-level surface of one module. */
 void r_surface_build(r_ctx *c, r_mod *m);
 
-/* module.c: file loading and the import closure (Clause 7.2). */
+/* module.c: file loading and the import closure. */
 char *r_path_stem(r_ctx *c, const char *file);
 r_mod *r_module_find(r_ctx *c, const char *stem);
 void r_closure_walk(r_ctx *c, r_mod *m);
 void r_closure(r_ctx *c, r_mod *root);
 
-/* type.c: type position (Clauses 7.4.1, 7.4.2, 7.6.1). */
+/* type.c: type positions. */
 void r_type(r_ctx *c, r_file *f, const ek_node *t);
 
-/* body.c: blocks, bindings, patterns, case, lambda (Clauses 7.4.2,
-   7.7.1). */
+/* body.c: blocks, bindings, patterns, case, lambda. */
 void r_block(r_ctx *c, r_file *f, const ek_node *block, scope *parent);
 void r_body(r_ctx *c, r_file *f, const ek_node *body, scope *parent);
 void r_lambda(r_ctx *c, r_file *f, const ek_node *lam);
@@ -102,12 +101,12 @@ void r_pattern_dup(r_ctx *c, r_file *f, const ek_node *pat);
 void r_pattern_refs(r_ctx *c, r_file *f, const ek_node *pat);
 void r_tops(r_ctx *c, r_file *f, const ek_node *mod);
 
-/* expr.c: expressions, chains, calls (Clauses 7.4.3, 7.4.4). */
+/* expr.c: expressions, chains, calls. */
 void r_expr(r_ctx *c, r_file *f, const ek_node *e);
 
-/* The layer lookups of Clause 7.4.2, shared with chain.c and type.c.
+/* The layer lookups, shared with chain.c and type.c.
    r_lookup_type and r_lookup_ctor count visible same-named entries:
-   ambiguity is an error at the use site (Clauses 7.4.5, 7.4.6). */
+   ambiguity is an error at the use site. */
 const ek_symbol *r_lookup_local(const r_file *f, const char *name);
 const ek_symbol *r_lookup_top(const r_file *f, const char *name);
 const ek_symbol *r_lookup_mod(const r_file *f, const char *name);
@@ -123,18 +122,18 @@ typedef struct {
     ek_station st;
 } r_head;
 
-/* Expression head: parameter, local, top-level, module (7.4.2); a
-   Pascal name is a constructor (7.4.1). chained admits the module
-   reading for a qualified head. */
+/* Expression head: parameter, local, top-level, module; a Pascal name
+   is a constructor. chained admits the module reading for a qualified
+   head. */
 void r_name_head(r_ctx *c, r_file *f, const ek_node *n, int chained,
                  r_head *out);
 
-/* Constructor value reading of an all-Pascal APPLY head (7.4.1). */
+/* Constructor value reading of an all-Pascal APPLY head. */
 void r_cons_head(r_ctx *c, r_file *f, const ek_node *n, r_head *out);
 
-/* chain.c: dotted references and receiver chains (Clauses 7.4.3,
-   7.4.4). node is the top EK_N_FIELD or EK_N_CALL; out carries the
-   symbol the whole chain denotes. */
+/* chain.c: dotted references and receiver chains. node is the top
+   EK_N_FIELD or EK_N_CALL; out carries the symbol the whole chain
+   denotes. */
 void r_chain(r_ctx *c, r_file *f, const ek_node *node, int is_call,
              r_head *out);
 const ek_symbol *r_module_member(const r_mod *m, const char *name);

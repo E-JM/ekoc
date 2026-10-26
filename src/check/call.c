@@ -2,12 +2,11 @@
 
 #include "check/internal.h"
 
-/* Calls, lambdas, and constructor application (Clauses 7.8.1, 7.8.2,
-   7.6.3, 7.6.4). A call needs a function type with exactly n
-   parameters; the receiver of a member call is the first argument
-   (Clause 7.8.2). An unknown callee unifies with the function type of
-   its synthesized arguments. Every call records its world bit (Clause
-   7.9.2) and a row. */
+/* Calls, lambdas, and constructor application. A call needs a
+   function type with exactly n parameters; the receiver of a member
+   call is the first argument. An unknown callee unifies with the
+   function type of its synthesized arguments. Every call records its
+   world bit and a row. */
 
 /* An unknown callee: the arguments synthesize and the callee unifies
    with their function type (opacity). */
@@ -34,7 +33,7 @@ static const ek_type *call_opaque(ck_ctx *c, const ek_node *e,
         }
         for (i = 0; i < args->count; i++) {
             /* A fresh expectation per argument: literals and
-               composites stay opaque under it (the ruling). */
+               composites stay opaque under it (the opacity rule). */
             nodes[off + i] = args->data[i];
             ps[off + i] = ck_expr(c, args->data[i], ck_ivar(c));
             types[off + i] = ps[off + i];
@@ -55,7 +54,7 @@ static const ek_type *call_opaque(ck_ctx *c, const ek_node *e,
 }
 
 /* Checks each argument against its parameter, recording the observed
-   types for the world-bit judgment (Clause 7.8.1). */
+   types for the world-bit judgment. */
 static void call_args(ck_ctx *c, const ek_type *f, const ek_nlist *args,
                       const ek_node **nodes, const ek_type **types,
                       size_t off)
@@ -131,8 +130,8 @@ static const ek_type *call_fn(ck_ctx *c, const ek_node *e,
 }
 
 /* The receiver of a direct (symbol-bearing) callee: `Mod.f(x)` has no
-   receiver; `a.Mod.f(x)` is `Mod.f(a, x)` (Clauses 6.5.2, 7.4.4).
-   Returns the value to prepend, or NULL. */
+   receiver; `a.Mod.f(x)` is `Mod.f(a, x)`. Returns the value to
+   prepend, or NULL. */
 static const ek_type *direct_receiver(ck_ctx *c, const ek_node *recv)
 {
     const ek_ref *r = NULL;
@@ -150,7 +149,7 @@ static const ek_type *direct_receiver(ck_ctx *c, const ek_node *recv)
 }
 
 /* A receiver-chain call: the link is typed at the receiver, and a
-   function-valued field calls its value (Clause 7.8.2). */
+   function-valued field calls its value. */
 static const ek_type *call_member(ck_ctx *c, const ek_node *e,
                                   const ek_node *callee)
 {
@@ -177,7 +176,7 @@ static const ek_type *call_member(ck_ctx *c, const ek_node *e,
 }
 
 /* Typing one EK_N_CALL: a plain head, or the last link of a receiver
-   chain (Clause 7.8.2). */
+   chain. */
 const ek_type *ck_call(ck_ctx *c, const ek_node *e, const ek_type *expected)
 {
     const ek_node *callee = e->u.call.callee;
@@ -188,7 +187,7 @@ const ek_type *ck_call(ck_ctx *c, const ek_node *e, const ek_type *expected)
         return NULL;
     }
     if (callee && callee->kind == EK_N_NAME) {
-        /* A head the resolver classified (Clause 7.4.2). */
+        /* A head the resolver classified. */
         const ek_type *t = ck_expr(c, callee, NULL);
 
         return call_fn(c, e, t, NULL, NULL, &e->u.call.args, 0);
@@ -202,7 +201,7 @@ const ek_type *ck_call(ck_ctx *c, const ek_node *e, const ek_type *expected)
         && (ref->kind == EK_SYM_FUNC || ref->kind == EK_SYM_NAMESPACE
             || ref->kind == EK_SYM_EXTERN)) {
         /* A qualified or module-path member: the receiver is the
-           first argument (Clauses 7.4.4, 7.8.2). */
+           first argument. */
         const ek_type *recv = direct_receiver(c, callee->u.field.recv);
         const ek_type *t = ck_type_of(c, ref->symbol);
 
@@ -213,8 +212,7 @@ const ek_type *ck_call(ck_ctx *c, const ek_node *e, const ek_type *expected)
 }
 
 /* The lambda's own arrow: the body bit decides it, and a
-   world-touching body does not adapt to a pure expected arrow
-   (Clauses 7.9.4, 7.9.5). */
+   world-touching body does not adapt to a pure expected arrow. */
 static const ek_type *lambda_arrow(ck_ctx *c, const ek_node *e,
                                    const ek_type *expected,
                                    const ek_type *pe, const ek_type **ps,
@@ -239,7 +237,7 @@ static const ek_type *lambda_arrow(ck_ctx *c, const ek_node *e,
 }
 
 /* The lambda's parameters: names from the surface, types from the
-   expected arrow (Clause 7.6.3). */
+   expected arrow. */
 static void lambda_params(ck_ctx *c, const ek_node *params,
                           const ek_type *pe, const ek_type **ps,
                           const char **names, size_t n)
@@ -256,8 +254,8 @@ static void lambda_params(ck_ctx *c, const ek_node *params,
     }
 }
 
-/* Lambda checking (Clause 7.6.3): check-only against an expected
-   function type; the parameters come from it. */
+/* Lambda checking: check-only against an expected function type; the
+   parameters come from it. */
 const ek_type *ck_lambda(ck_ctx *c, const ek_node *e, const ek_type *expected)
 {
     const ek_node *params = e->u.pair.a;
@@ -309,7 +307,7 @@ const ek_type *ck_lambda(ck_ctx *c, const ek_node *e, const ek_type *expected)
 }
 
 /* A generic constructor anchored by the expected instantiation: the
-   payload is checked at the substituted payload type (Clause 7.6.4). */
+   payload is checked at the substituted payload type. */
 static const ek_type *apply_generic(ck_ctx *c, const ek_node *e,
                                     const ck_ctor *ct, const ck_decl *d,
                                     const ek_node *arg, const ek_type *exp,
@@ -324,7 +322,7 @@ static const ek_type *apply_generic(ck_ctx *c, const ek_node *e,
 }
 
 /* Constructor application by juxtaposition is check-only: it takes
-   its instantiation from the expected type (Clause 7.6.4). */
+   its instantiation from the expected type. */
 const ek_type *ck_apply(ck_ctx *c, const ek_node *e, const ek_type *expected)
 {
     const ek_node *head = e->u.pair.a;
@@ -344,7 +342,7 @@ const ek_type *ck_apply(ck_ctx *c, const ek_node *e, const ek_type *expected)
         const ek_type *exp = ck_prune(expected);
 
         if (nb == 0) {
-            /* Self-anchoring (Clause 7.6.4). */
+            /* Self-anchoring. */
             const ek_type *t = ck_nominal(c, ct->owner, NULL, 0);
 
             if (ct->payload) {

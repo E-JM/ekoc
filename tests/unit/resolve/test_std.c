@@ -1,9 +1,9 @@
 #include "common.h"
 
-/* The placeholder std surface of Clause 7.2.5: the free names and the
-   opened types resolve without diagnostics; everything else a file
-   uses from the implicit import is the unresolved-external bridge
-   (resolve.h; the placeholder stands in for lib/std.eko). */
+/* The placeholder std surface: the free names and the opened types
+   resolve without diagnostics; everything else a file uses from the
+   implicit import is the unresolved-external bridge (resolve.h; the
+   placeholder stands in for lib/std.eko). */
 
 static void free_names(void)
 {
@@ -56,7 +56,7 @@ static void std_constructors(void)
 
 /* A name the placeholder does not know: an unknown bare name is
    unbound; an unknown member of a std type is the bridge
-   (Clause 7.4.2 and the resolve.h ruling). */
+   (resolve.h). */
 static void unknown_names(void)
 {
     rfx f;
@@ -85,8 +85,7 @@ static void qualified_std(void)
 {
     rfx f;
 
-    /* `std.show` is the qualified spelling of the implicit import
-       (Clause 7.2.5). */
+    /* `std.show` is the qualified spelling of the implicit import. */
     rfx_begin(&f,
         "f: () -> _ =\n"
         "    std.show(1)\n"
@@ -96,8 +95,7 @@ static void qualified_std(void)
 }
 
 /* The qualified spelling is legal at every name position, including
-   the pattern constructor position of the bridge (Clauses 7.2.5,
-   7.4.4). */
+   the pattern constructor position of the bridge. */
 static void qualified_std_constructors(void)
 {
     rfx f;
@@ -118,8 +116,7 @@ static void qualified_std_constructors(void)
 }
 
 /* Local shadowing of an opened free name is legal; only a top-level
-   binding collides with the layer it occupies (Clause 7.2.5,
-   7.4.6). */
+   binding collides with the layer it occupies. */
 static void local_shadow_free_name(void)
 {
     rfx f;

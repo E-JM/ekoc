@@ -5,7 +5,7 @@
 #include "check/internal.h"
 
 /* Result plumbing: the closed snapshot of a type, the binder
-   substitution of Clause 7.6.4, and printable names. */
+   substitution, and printable names. */
 
 /* Follows bound inference variables to the solution. */
 const ek_type *ck_prune(const ek_type *t)

@@ -2,10 +2,9 @@
 
 #include "resolve/internal.h"
 
-/* Expressions: the expression-head lookup order of Clause 7.4.2
-   (parameter, local binding, file top-level binding, imported module),
-   the constructor reading of Clause 7.4.1, and the dispatch of
-   Clause 6.5. Dotted heads go to chain.c. */
+/* Expressions: the expression-head lookup order (parameter, local
+   binding, file top-level binding, imported module), the constructor
+   reading, and the per-form dispatch. Dotted heads go to chain.c. */
 
 static const ek_symbol *find(const r_var *vars, size_t n, const char *name)
 {
@@ -69,16 +68,16 @@ size_t r_lookup_ctor(const r_file *f, const char *name,
 }
 
 /* A placeholder std symbol: module std, no declaration behind it
-   (resolve.h bridge ruling). */
+   (the resolve.h bridge). */
 static int is_std_placeholder(const ek_symbol *sym)
 {
     return sym && sym->module && strcmp(sym->module, "std") == 0
         && sym->decl == NULL;
 }
 
-/* Constructor value or pattern position (Clauses 7.4.1, 7.4.2 row 3):
-   two visible constructors with one name clash at the use site; an
-   unknown one may be std's (the placeholder bridge). */
+/* Constructor value or pattern position: two visible constructors with
+   one name clash at the use site; an unknown one may be std's (the
+   placeholder bridge). */
 void r_cons_head(r_ctx *c, r_file *f, const ek_node *n, r_head *out)
 {
     const char *name = n->u.path.count == 1 ? n->u.path.data[0] : "";
@@ -108,7 +107,7 @@ void r_cons_head(r_ctx *c, r_file *f, const ek_node *n, r_head *out)
     r_add_ref(c, n, out->kind, out->st, out->sym);
 }
 
-/* A module name is not a value (Clause 7.2.6). */
+/* A module name is not a value. */
 static void module_value(r_ctx *c, r_file *f, const ek_node *n)
 {
     r_error(c, f->mod->file, n->line, n->col, "E-module-value",
@@ -116,7 +115,7 @@ static void module_value(r_ctx *c, r_file *f, const ek_node *n)
             n->u.path.data[0]);
 }
 
-/* The expression head of Clause 7.4.2. */
+/* The expression-head lookup. */
 void r_name_head(r_ctx *c, r_file *f, const ek_node *n, int chained,
                  r_head *out)
 {
@@ -125,7 +124,7 @@ void r_name_head(r_ctx *c, r_file *f, const ek_node *n, int chained,
 
     memset(out, 0, sizeof *out);
     if (strcmp(name, "_") == 0) {
-        /* The unit value at value position, not a name (7.3.1). */
+        /* The unit value at value position, not a name. */
         return;
     }
     if (!r_is_snake(name)) {
@@ -140,8 +139,7 @@ void r_name_head(r_ctx *c, r_file *f, const ek_node *n, int chained,
         out->sym = sym;
         if (is_std_placeholder(sym)) {
             /* The free names of the implicit import resolve to the
-               unresolved-external placeholder (Clause 7.2.5,
-               resolve.h). */
+               unresolved-external placeholder (resolve.h). */
             out->kind = EK_SYM_EXTERNAL;
             out->st = EK_ST_EXTERNAL;
         } else {
@@ -174,7 +172,7 @@ static void r_apply(r_ctx *c, r_file *f, const ek_node *e)
         r_cons_head(c, f, head, &h);
     } else if (head && head->kind == EK_N_FIELD) {
         /* A qualified all-Pascal head; the chain classifier decides
-           module and namespace readings (Clauses 7.4.4, 7.4.5). */
+           module and namespace readings. */
         r_chain(c, f, head, 0, &h);
     } else {
         memset(&h, 0, sizeof h);
@@ -186,7 +184,7 @@ static void r_apply(r_ctx *c, r_file *f, const ek_node *e)
 
 /* Composite items: the value of every item resolves; a colon item's
    key is a record field or a dictionary key expression, and the
-   expected type decides (Clause 7.5.3), so keys resolve in check. */
+   expected type decides, so keys resolve in check. */
 static void r_items(r_ctx *c, r_file *f, const ek_node *e)
 {
     size_t i;
@@ -200,7 +198,7 @@ static void r_items(r_ctx *c, r_file *f, const ek_node *e)
     }
 }
 
-/* Interpolation slots are full expressions (Clause 5.9.3). */
+/* Interpolation slots are full expressions. */
 static void r_slots(r_ctx *c, r_file *f, const ek_node *e)
 {
     size_t i;

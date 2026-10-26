@@ -2,15 +2,13 @@
 
 #include "resolve/internal.h"
 
-/* Pattern positions of Clause 7.7.1: the names a pattern binds, the
-   duplicate rule of Clause 7.4.6 within one alternative, and the
-   constructor references of Clause 7.4.2 row 3 (unqualified or
-   module-qualified). */
+/* Pattern positions: the names a pattern binds, the duplicate rule
+   within one alternative, and the constructor references (unqualified
+   or module-qualified). */
 
 #define R_PAT_MAX 64
 
-/* A binding name binds a local symbol (Clause 7.7.1 row 1); `_` binds
-   nothing. */
+/* A binding name binds a local symbol; `_` binds nothing. */
 static void bind_var(r_ctx *c, r_file *f, const char *name, int line,
                      int col)
 {
@@ -26,8 +24,7 @@ static void bind_var(r_ctx *c, r_file *f, const char *name, int line,
 }
 
 /* A module-qualified pattern constructor head: `Mod.Ctor` names the
-   constructor even when a type shares the spelling (Clauses 7.4.1,
-   7.4.4). */
+   constructor even when a type shares the spelling. */
 static void cons_ref_qualified(r_ctx *c, r_file *f, const ek_node *pat,
                                const char *mname, const char *cname)
 {
@@ -44,8 +41,8 @@ static void cons_ref_qualified(r_ctx *c, r_file *f, const ek_node *pat,
     target = r_module_find(c, mod->name);
     cs = r_module_ctor(target, cname);
     if (!cs && strcmp(mod->name, "std") == 0) {
-        /* The std placeholder bridge: the companion's surface is
-           pending lib/ (resolve.h). */
+        /* The std placeholder bridge (resolve.h): the companion has
+           no surface. */
         cs = r_std_ctor(c, cname);
         if (cs) {
             r_add_ref(c, pat, EK_SYM_EXTERNAL, EK_ST_EXTERNAL, cs);
@@ -68,7 +65,7 @@ static void cons_ref_qualified(r_ctx *c, r_file *f, const ek_node *pat,
 }
 
 /* A pattern constructor head is a constructor reference, unqualified
-   or module-qualified (Clauses 7.4.2 row 3, 7.4.4). */
+   or module-qualified. */
 static void cons_ref(r_ctx *c, r_file *f, const ek_node *pat)
 {
     const ek_slist *path = &pat->u.cons.name;
@@ -171,7 +168,7 @@ void r_pattern_binds(r_ctx *c, r_file *f, const ek_node *pat)
 }
 
 /* One binding occurrence within one alternative: the second of the
-   same name is the conflict (Clauses 7.4.6, 7.7.1). */
+   same name is the conflict. */
 static void mark_seen(r_ctx *c, const r_file *f, const char *name,
                       int line, int col, const char **seen, size_t *n)
 {
@@ -190,8 +187,8 @@ static void mark_seen(r_ctx *c, const r_file *f, const char *name,
     }
 }
 
-/* Duplicates within one alternative of one pattern (Clauses 7.4.6,
-   7.7.1), diagnosed at the second occurrence. */
+/* Duplicates within one alternative of one pattern, diagnosed at the
+   second occurrence. */
 static void dup_walk(r_ctx *c, const r_file *f, const ek_node *pat,
                      const char **seen, size_t *n)
 {
@@ -240,8 +237,7 @@ void r_pattern_dup(r_ctx *c, r_file *f, const ek_node *pat)
         return;
     }
     if (pat->kind == EK_N_P_OR) {
-        /* The rule applies separately to each or-alternative
-           (Clause 7.7.1). */
+        /* The rule applies separately to each or-alternative. */
         for (i = 0; i < pat->u.kids.count; i++) {
             const char *alt[R_PAT_MAX];
             size_t an = 0;

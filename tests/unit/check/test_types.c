@@ -1,9 +1,8 @@
 #include "common.h"
 
-/* Clause 7.5: nominal vs structural records, shape adaptation in both
-   directions, type equality without field order, tuple shapes into
-   generic instantiations, and literal placement (Clause 5.7.4) with
-   composite literal checks (Clause 7.5.3). */
+/* Nominal vs structural records, shape adaptation in both directions,
+   type equality without field order, tuple shapes into generic
+   instantiations, literal placement, and composite literal checks. */
 
 static void nominal_vs_structural(void)
 {
@@ -27,7 +26,7 @@ static void nominal_vs_structural(void)
     EK_CHECK(cfx_has_code(&f, "E-type-mismatch"));
     cfx_end(&f);
 
-    /* Field order is not part of record equality (Clause 7.5.7). */
+    /* Field order is not part of record equality. */
     cfx_begin(&f,
               "a: [x: Int, y: String] = {x: 1, y: \"s\"}\n"
               "b: [y: String, x: Int] = a\n");
@@ -40,7 +39,7 @@ static void shape_adaptation(void)
     cfx f;
 
     /* Accepted: nominal to same-shape anonymous at an expected-type
-       position (Clause 7.5.5). */
+       position. */
     cfx_begin(&f,
               "Human: type = [name: String, age: Int]\n"
               "h: Human = {name: \"ada\", age: 36}\n"
@@ -101,7 +100,7 @@ static void record_literals(void)
     cfx_end(&f);
 
     /* A composite literal with no expected type requires an
-       annotation (Clause 7.5.3). */
+       annotation. */
     cfx_begin(&f, "x := {1, 2}\n");
     EK_CHECK(cfx_has_code(&f, "E-literal-expected"));
     cfx_end(&f);
@@ -111,10 +110,10 @@ static void literal_placement(void)
 {
     cfx f;
 
-    /* Int, UInt, and Float placements (Clause 5.7.4). The machine
-       words are outside the placeholder std surface, so an `U8`
-       annotation reads as an open type here; their ranges are
-       exercised as soon as the real std interface lands. */
+    /* Int, UInt, and Float placements. The machine words are outside
+       the placeholder std surface, so an `U8` annotation reads as an
+       open type here; their ranges are exercised as soon as the real
+       std interface lands. */
     cfx_begin(&f,
               "a: Int = 255\n"
               "b: UInt = 0xFF\n"
@@ -146,7 +145,7 @@ static void literal_placement(void)
     cfx_end(&f);
 
     /* Placement flows through operators: the whole expression is
-       UInt, so its literals land at UInt (Clause 7.8.4). */
+       UInt, so its literals land at UInt. */
     cfx_begin(&f, "x: UInt = 1 + 2\n");
     EK_CHECK_U64(cfx_errors(&f), 0);
     cfx_end(&f);
@@ -163,7 +162,7 @@ static void never_adaptation(void)
 
     /* A declared result of `Never` adapts at an expected-type
        position; the adaptation applies at value positions, so the
-       `else` arm types as `Int` (Clause 7.5.4). */
+       `else` arm types as `Int`. */
     cfx_begin(&f,
               "die: (msg: String) -> Never = panic(msg)\n"
               "v: Int = if True: 1 else: die(\"no\")\n");
@@ -181,8 +180,8 @@ static void never_adaptation(void)
 }
 
 /* A declared type whose width passes any fixed buffer: every binder
-   occurs in the right-hand side, so the phantom check of Clause 7.6.2
-   must stay silent at any arity. */
+   occurs in the right-hand side, so the phantom check must stay
+   silent at any arity. */
 static void wide_decls(void)
 {
     char buf[8192];

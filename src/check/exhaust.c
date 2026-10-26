@@ -2,13 +2,13 @@
 
 #include "check/internal.h"
 
-/* Coverage of one scrutinee type (Clause 7.7.2), judged by
-   constructors at every depth: an algebraic scrutinee must have every
-   constructor covered, a tuple every component, a record one arm whose
-   named fields are covered, a list both the empty and the non-empty
-   lists. Scrutinee types whose case structure the placeholder bridge
-   leaves unknown (the std scalars and their constructors) defer the
-   judgment. The multi-scrutinee product is in exhaust_prod.c. */
+/* Coverage of one scrutinee type, judged by constructors at every
+   depth: an algebraic scrutinee must have every constructor covered, a
+   tuple every component, a record one arm whose named fields are
+   covered, a list both the empty and the non-empty lists. Scrutinee
+   types whose case structure the placeholder bridge leaves unknown
+   (the std scalars and their constructors) defer the judgment. The
+   multi-scrutinee product is in exhaust_prod.c. */
 
 static int pat_catchall(const ek_node *p)
 {
@@ -32,7 +32,7 @@ static int pat_catchall(const ek_node *p)
         return pat_catchall(p->u.p_field.pattern);
     case EK_N_P_CONS:
         /* A constructor pattern matches only its constructor, payload
-           included or not (Clause 7.7.2). */
+           included or not. */
         return 0;
     default:
         return 0;
@@ -186,7 +186,7 @@ static int covers_record(ck_ctx *c, const ek_type *t,
             }
         }
         if (arm_ok) {
-            return 1; /* a record pattern alone can cover (7.7.2) */
+            return 1; /* a record pattern alone can cover */
         }
     }
     return 0;

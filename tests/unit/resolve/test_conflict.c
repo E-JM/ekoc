@@ -2,8 +2,8 @@
 
 #include <sys/stat.h>
 
-/* Name conflicts of Clause 7.4.6. File-backed cases use one fixture
-   directory under build/ created at test runtime. */
+/* Name conflicts. File-backed cases use one fixture directory under
+   build/ created at test runtime. */
 
 #define CONF_DIR "build/tmp-resolve/conf"
 
@@ -30,7 +30,7 @@ static void run_in(rfx *f, const char *src, const char *name)
     rfx_run(f, src, path, 1, name);
 }
 
-/* N12 (Annex D): an import and a top-level binding share a name. */
+/* N12: an import and a top-level binding share a name. */
 static void n12(void)
 {
     rfx f;
@@ -55,7 +55,7 @@ static void duplicates(void)
     EK_CHECK(rfx_code_at_line(&f, "E-name-conflict", 2));
     rfx_end(&f);
 
-    /* The std free names share the top-level layer (Clause 7.2.5). */
+    /* The std free names share the top-level layer. */
     rfx_begin(&f,
         "assert: Int = 1\n");
     EK_CHECK_U64(rfx_errors(&f), 1);
@@ -63,7 +63,7 @@ static void duplicates(void)
     rfx_end(&f);
 
     /* The implicit import is an import: a top-level `std` collides
-       with it (Clauses 7.2.5, 7.4.6). */
+       with it. */
     rfx_begin(&f,
         "std: Int = 1\n");
     EK_CHECK_U64(rfx_errors(&f), 1);
@@ -72,7 +72,7 @@ static void duplicates(void)
 }
 
 /* A qualified form carries one module segment; a longer dotted name
-   denotes nothing (Clause 7.4.4). */
+   denotes nothing. */
 static void over_qualified_names(void)
 {
     rfx f;
@@ -98,7 +98,7 @@ static void namespace_heads(void)
     rfx f;
 
     /* A namespace binding is keyed by its full head, so Int.add and
-       Float.add coexist (Clause 7.4.6). */
+       Float.add coexist. */
     rfx_begin(&f,
         "A: type = [x: Int]\n"
         "B: type = [y: Int]\n"
@@ -120,8 +120,7 @@ static void pattern_repeats(void)
 {
     rfx f;
 
-    /* A binding name occurs at most once in one pattern
-       (Clauses 7.4.6, 7.7.1). */
+    /* A binding name occurs at most once in one pattern. */
     rfx_begin(&f,
         "f: (p: [Int, Int]) -> Int =\n"
         "    case p:\n"
@@ -139,8 +138,7 @@ static void pattern_repeats(void)
     EK_CHECK_U64(rfx_errors(&f), 0);
     rfx_end(&f);
 
-    /* A rest name is a binding name like any other (Clauses 7.4.6,
-       7.7.1). */
+    /* A rest name is a binding name like any other. */
     rfx_begin(&f,
         "f: (xs: []Int) -> Int =\n"
         "    case xs:\n"
@@ -155,8 +153,7 @@ static void tvar_vs_module(void)
 {
     rfx f;
 
-    /* A type variable with the name of an imported module
-       (Clause 7.4.6). */
+    /* A type variable with the name of an imported module. */
     run_in(&f,
         "import box\n"
         "\n"
@@ -171,7 +168,7 @@ static void constructor_clash(void)
     rfx f;
 
     /* Two visible constructors with one name clash at the use site,
-       not at the declarations (Clause 7.4.6). */
+       not at the declarations. */
     rfx_begin(&f,
         "A: type = Same Int\n"
         "B: type = Same Int\n"
@@ -188,7 +185,7 @@ static void same_named_types(void)
     rfx f;
 
     /* Same-named types coexist; the unqualified use is the point of
-       rejection (Clauses 7.4.5, 7.4.6). */
+       rejection. */
     run_in(&f,
         "import t1\n"
         "import t2\n"
@@ -203,8 +200,7 @@ static void namespace_owner(void)
 {
     rfx f;
 
-    /* A namespace member is legal only in the declaring module
-       (Clause 7.4.5). */
+    /* A namespace member is legal only in the declaring module. */
     rfx_begin(&f,
         "f: Int = 0\n"
         "String.foo: (s: String) -> Int = 0\n");
@@ -217,14 +213,13 @@ static void name_case(void)
 {
     rfx f;
 
-    /* A value binding carries the snake_case case class
-       (Clauses 5.5.2, 7.4.1). */
+    /* A value binding carries the snake_case case class. */
     rfx_begin(&f,
         "Bad: Int = 1\n");
     EK_CHECK_U64(rfx_errors(&f), 1);
     EK_CHECK(rfx_code_at_line(&f, "E-name-case", 1));
     /* The rejected spelling still records its constructor reading at
-       the pattern position (Clause 7.4.2 row 3). */
+       the pattern position. */
     {
         size_t i;
         int seen = 0;

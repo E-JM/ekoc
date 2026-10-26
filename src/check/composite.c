@@ -2,10 +2,10 @@
 
 #include "check/internal.h"
 
-/* Composite literals (Clause 7.5.3): the expected type decides the
-   family, as it decides a brace pattern. A literal under an expected
-   type the bridge ruling leaves open takes the opaque reading: values
-   are checked, fields and keys are not. */
+/* Composite literals: the expected type decides the family, as it
+   decides a brace pattern. A literal under an expected type the bridge
+   leaves open takes the opaque reading: values are checked, fields and
+   keys are not. */
 
 /* The family of a composite literal's items: 1 when the items are
    colon pairs. */
@@ -56,8 +56,7 @@ static void dup_field(ck_ctx *c, const ek_node *e, const ek_node *item,
     }
 }
 
-/* A literal outside `with` must name every field (Clauses 7.5.3,
-   9.8.6). */
+/* A literal outside `with` must name every field. */
 static void check_complete(ck_ctx *c, const ek_node *e, const ek_type *rec)
 {
     size_t found = 0, k, i;
@@ -138,8 +137,8 @@ static const ek_type *record_lit(ck_ctx *c, const ek_node *e,
     return rec;
 }
 
-/* The opaque placements: no expected type, or one the bridge ruling
-   leaves undetermined. Values are still checked; a bare name key
+/* The opaque placements: no expected type, or one the bridge leaves
+   undetermined. Values are still checked; a bare name key
    stays unread (record field or dictionary key is not decidable under
    opacity, and resolve resolved no such key). */
 static const ek_type *composite_opaque(ck_ctx *c, const ek_node *e,
@@ -208,7 +207,7 @@ static const ek_type *composite_colons(ck_ctx *c, const ek_node *e,
     return exp;
 }
 
-/* A tuple literal against its expected arity (Clause 7.5.3). */
+/* A tuple literal against its expected arity. */
 static const ek_type *comma_tuple(ck_ctx *c, const ek_node *e,
                                   const ek_type *exp)
 {
@@ -254,7 +253,7 @@ static const ek_type *composite_comma(ck_ctx *c, const ek_node *e,
         return comma_tuple(c, e, exp);
     case EK_T_NOMINAL: {
         /* A tuple shape extends to a generic instantiation by the
-           shape of its right-hand side (Clause 7.5.5). */
+           shape of its right-hand side. */
         const ek_type *repr = ck_decl_repr(c, exp);
 
         if (repr && repr->kind == EK_T_TUPLE) {

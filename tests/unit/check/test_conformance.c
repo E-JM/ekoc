@@ -1,11 +1,11 @@
 #include "common.h"
 
-/* Conformance smoke test (Annex D.2) through check: all 11 positive
-   modules run the full pipeline (lex, layout, parse, resolve, check)
-   as compilation roots.
+/* Conformance smoke test through check: all 11 positive modules run
+   the full pipeline (lex, layout, parse, resolve, check) as
+   compilation roots.
 
    PASS CONDITION: no error diagnostics from any stage. resolve.h
-   documents the placeholder std surface; by the bridge ruling external
+   documents the placeholder std surface; by the bridge, external
    opacity cannot force a diagnostic, so a rejected conformance module
    is an internal defect. */
 
@@ -36,7 +36,7 @@ static int check_module(const char *stem)
     cfx_run(&f, src, mpath, 1, name);
 
     /* The result table is sorted by node address, and every row
-       carries a defined world bit (Clause 7.9). */
+       carries a defined world bit. */
     EK_CHECK(cfx_rows_sorted(&f));
     EK_CHECK(cfx_bits_filled(&f));
 
@@ -66,9 +66,9 @@ static int check_module(const char *stem)
     return ok;
 }
 
-/* The positive bit flows of lambdas_capture.eko (Clauses 7.9.2,
-   7.9.4): the pure factory's own row stays pure while its closure row
-   and the call of the closure are world-touching. */
+/* The positive bit flows of lambdas_capture.eko: the pure factory's
+   own row stays pure while its closure row and the call of the closure
+   are world-touching. */
 static void check_lambdas_bits(void)
 {
     char path[512], name[512], *src;

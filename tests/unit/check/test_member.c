@@ -1,9 +1,8 @@
 #include "common.h"
 
-/* Receiver-station selection (Clause 7.4.3): the field, namespace,
-   derived-service, and current-module readings, the qualified and
-   module-path calls of Clause 7.4.4, and the derived eq and lt
-   members (Clauses 9.8.4, 9.8.5). Geolib provides the cross-module
+/* Receiver-station selection: the field, namespace, derived-service,
+   and current-module readings, the qualified and module-path calls,
+   and the derived eq and lt members. Geolib provides the cross-module
    fixture. */
 
 #define CONF_DIR "tests/conformance"
@@ -36,7 +35,7 @@ static void station_namespace(void)
 {
     cfx f;
 
-    /* A declared namespace member of Clause 7.4.5. */
+    /* A declared namespace member. */
     cfx_begin(&f,
               "Money: type = [cents: Int, cur: String]\n"
               "Money.show: (m: Money) -> String = \"m\"\n"
@@ -51,8 +50,8 @@ static void station_module_fn(void)
 {
     cfx f;
 
-    /* Station 3: a current-module function whose first parameter is
-       the receiver's type (Clause 7.4.3). */
+    /* A current-module function whose first parameter is the
+       receiver's type. */
     cfx_begin(&f,
               "double: (n: Int) -> Int = n * 2\n"
               "v: Int = 4.double()\n");
@@ -65,7 +64,7 @@ static void derived_services(void)
 {
     cfx f;
 
-    /* Derived eq on a declared ADT (Clause 9.8.4). */
+    /* Derived eq on a declared ADT. */
     cfx_begin(&f,
               "Sex: type = Man | Woman\n"
               "a: Sex = Man\n"
@@ -75,7 +74,7 @@ static void derived_services(void)
     EK_CHECK(cfx_reading_at(&f, 4, EK_RD_DERIVED));
     cfx_end(&f);
 
-    /* Derived lt by declaration order (Clause 9.8.5). */
+    /* Derived lt by declaration order. */
     cfx_begin(&f,
               "Sex: type = Man | Woman\n"
               "a: Sex = Man\n"
@@ -119,8 +118,8 @@ static void qualified_calls(void)
     if (!geo) {
         return;
     }
-    /* Station 4 through a module segment, plus the qualified head
-       (Clauses 7.4.4, 7.8.2). */
+    /* A module-path call through a module segment, plus the qualified
+       head. */
     cfx_run(&f,
             "import geolib\n"
             "\n"

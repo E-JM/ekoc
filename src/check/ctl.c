@@ -2,10 +2,9 @@
 
 #include "check/internal.h"
 
-/* The control forms: `if` (Clause 6.7.4, 7.7.4) and `case`
-   (Clauses 7.7.2-7.7.4). Arm typing unifies the arm bodies, a `Never`
-   arm adapts, and exhaustiveness runs on the unguarded arms whose
-   bodies are not `Never`. */
+/* The control forms: `if` and `case`. Arm typing unifies the arm
+   bodies, a `Never` arm adapts, and exhaustiveness runs on the
+   unguarded arms whose bodies are not `Never`. */
 
 const ek_type *ck_if(ck_ctx *c, const ek_node *e, const ek_type *expected)
 {
@@ -22,7 +21,8 @@ const ek_type *ck_if(ck_ctx *c, const ek_node *e, const ek_type *expected)
     }
     then = ck_expr(c, e->u.ifexpr.then, expected);
     if (!e->u.ifexpr.els) {
-        /* else: _ (Clause 6.7.4): the then-branch is `_` or `Never`. */
+        /* Without `else` the type is `_`: the then-branch is `_` or
+           `Never`. */
         const ek_type *t = ck_prune(then);
 
         if (t && t->kind != EK_T_IVAR && t->kind != EK_T_NEVER
@@ -52,8 +52,7 @@ const ek_type *ck_if(ck_ctx *c, const ek_node *e, const ek_type *expected)
 }
 
 /* One arm: its patterns bind against the anchored scrutinee columns,
-   its guard is `Bool`, and its body is checked (Clauses 7.7.1,
-   7.7.3). */
+   its guard is `Bool`, and its body is checked. */
 static const ek_type *case_arm(ck_ctx *c, const ek_node *arm,
                                const ek_type **scrut, size_t nsc,
                                const ek_type *expected)
@@ -83,7 +82,7 @@ static const ek_type *case_arm(ck_ctx *c, const ek_node *arm,
     return atype;
 }
 
-/* Every arm has the same type; a `Never` arm adapts (7.7.4). */
+/* Every arm has the same type; a `Never` arm adapts. */
 static const ek_type *case_result(ck_ctx *c, const ek_node *e,
                                   const ek_type *const *atypes, size_t na,
                                   const ek_type *expected)

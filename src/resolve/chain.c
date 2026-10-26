@@ -6,17 +6,17 @@
    notes). One walk classifies every link:
 
    - a non-last link spelled like an imported or the current module is
-     a module segment, and the chain continues at station 4 (7.4.3);
+     a module segment, and the chain continues as a module-path access;
    - a snake head carrying a binding value, and every other
-     non-module link, is a receiver-form member of stations 1-3: the
-     receiver position never consults lexical bindings, and the field,
-     namespace, or current-module reading needs the receiver's static
-     type, so check selects it (EK_SYM_MEMBER);
+     non-module link, is a receiver-form member: the receiver position
+     never consults lexical bindings, and the field, namespace, or
+     current-module reading needs the receiver's static type, so check
+     selects it (EK_SYM_MEMBER);
    - a snake head carrying a module continues as a qualified access
-     `Mod.f` (7.4.4);
-   - a Pascal head is the type namespace of Clause 7.4.1; its members
-     live in the declaring module's surface, and unknown members defer
-     to check (derived services, Clause 9.8.7).
+     `Mod.f`;
+   - a Pascal head is a type namespace; its members live in the
+     declaring module's surface, and unknown members defer to check
+     (derived services).
 */
 
 #define R_MAX_LINKS 32
@@ -59,8 +59,7 @@ const ek_symbol *r_module_member(const r_mod *m, const char *name)
     for (i = 0; i < m->surf->count; i++) {
         const ek_symbol *s = &m->surf->syms[i];
 
-        /* tests and namespace members are not module surface names
-           (Clauses 7.3.2, 7.4.4) */
+        /* tests and namespace members are not module surface names */
         if (s->kind != EK_SYM_TEST && s->kind != EK_SYM_NAMESPACE
             && strcmp(s->name, name) == 0) {
             return s;
@@ -70,8 +69,7 @@ const ek_symbol *r_module_member(const r_mod *m, const char *name)
 }
 
 /* A module's constructor of one spelling; a type MAY share the
-   spelling, so the kind is decided here, not by surface order
-   (Clause 7.4.1). */
+   spelling, so the kind is decided here, not by surface order. */
 const ek_symbol *r_module_ctor(const r_mod *m, const char *name)
 {
     size_t i;
@@ -126,7 +124,7 @@ static void member_link(r_ctx *c, r_head *cur, const ek_node *link, int last,
     r_add_ref(c, link, cur->kind, cur->st, NULL);
 }
 
-/* Pascal chain head: the type-namespace reading (Clause 7.4.1). */
+/* Pascal chain head: the type-namespace reading. */
 static void type_head(r_ctx *c, r_file *f, const ek_node *head, r_head *cur,
                       int *state, const ek_symbol **walk_type)
 {
@@ -153,7 +151,8 @@ static void type_head(r_ctx *c, r_file *f, const ek_node *head, r_head *cur,
     r_add_ref(c, head, cur->kind, cur->st, cur->sym);
 }
 
-/* Station 4 from a module segment, or the qualified walk of 7.4.4. */
+/* A module segment continues the walk, as a module-path access from a
+   receiver or a plain qualified access. */
 static int module_walk(r_ctx *c, r_file *f, r_head *cur, const ek_node *link,
                        const char *name, int last, int from_receiver,
                        r_mod **walk_mod, const ek_symbol **walk_type,
@@ -184,8 +183,7 @@ static int module_walk(r_ctx *c, r_file *f, r_head *cur, const ek_node *link,
     }
     if (last && m->kind == EK_SYM_TYPE) {
         /* A qualified spelling at a value position denotes the
-           constructor when one shares the type's spelling
-           (Clause 7.4.1). */
+           constructor when one shares the type's spelling. */
         const ek_symbol *cs = r_module_ctor(*walk_mod, name);
 
         if (cs) {
@@ -224,8 +222,8 @@ static int namespace_walk(r_ctx *c, r_file *f, r_head *cur,
         cur->st = EK_ST_QUALIFIED;
         r_add_ref(c, link, cur->kind, cur->st, cur->sym);
     } else {
-        /* Derived services attach as defaults (Clause 9.8.7); check
-           owns them. external_link records the reference itself. */
+        /* Derived services attach as defaults; check owns them.
+           external_link records the reference itself. */
         external_link(c, cur, link);
     }
     *state = 0;
@@ -262,7 +260,7 @@ static void chain_head(r_ctx *c, r_file *f, const ek_node *head, r_head *cur,
 }
 
 /* The walk over a chain's links: module segments, namespace members,
-   and receiver-form members (Clause 7.4.3). */
+   and receiver-form members. */
 static void walk_links(r_ctx *c, r_file *f, const r_links *l, int is_call,
                        r_head *cur, int *state, r_mod **walk_mod,
                        const ek_symbol **walk_type, int *from_receiver)
@@ -282,8 +280,8 @@ static void walk_links(r_ctx *c, r_file *f, const r_links *l, int is_call,
             namespace_walk(c, f, cur, link, name, *walk_type, *walk_mod,
                            state);
         } else if (!last && (msym = r_lookup_mod(f, name)) != NULL) {
-            /* The module segment of station 4 (Clause 7.4.3); a field
-               of the same name would win at station 1, which check
+            /* A module segment inside the chain; a field of the same
+               name would win at the receiver reading, which check
                decides from the receiver type. */
             cur->sym = msym;
             cur->kind = EK_SYM_MODULE;

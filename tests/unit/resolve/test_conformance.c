@@ -1,7 +1,7 @@
 #include "common.h"
 
-/* Conformance smoke test (Annex D.2): all 11 positive modules resolve
-   as compilation roots with zero error diagnostics. */
+/* Conformance smoke test: all 11 positive modules resolve as
+   compilation roots with zero error diagnostics. */
 
 #define CONF_DIR "tests/conformance"
 

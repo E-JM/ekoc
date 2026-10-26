@@ -1,16 +1,16 @@
 #include "common.h"
 
-/* Clause 7.6: inference through lambdas and generics. Implicit type
-   variables, generalization at annotated bindings, instantiation by
-   unification with argument types and the expected type, and the
-   parameter-binding rule that keeps every variable determined. */
+/* Inference through lambdas and generics: implicit type variables,
+   generalization at annotated bindings, instantiation by unification
+   with argument types and the expected type, and the parameter-binding
+   rule that keeps every variable determined. */
 
 static void implicit_tvars(void)
 {
     cfx f;
 
     /* An unbound lowercase name is a type variable of the function;
-       it occurs in a parameter, so it is determined (7.6.1, 7.6.5). */
+       it occurs in a parameter, so it is determined. */
     cfx_begin(&f,
               "id: (x: t) -> t = x\n"
               "n: Int = id(42)\n");
@@ -41,7 +41,7 @@ static void lambdas(void)
     cfx f;
 
     /* A lambda is checked against its expected function type; its
-       parameters come from that type (Clause 7.6.3). */
+       parameters come from that type. */
     cfx_begin(&f,
               "inc: (Int) -> Int = (n): n + 1\n"
               "twice: (f: (Int) -> Int, n: Int) -> Int = f(f(n))\n"
@@ -80,7 +80,7 @@ static void generic_decls(void)
     cfx f;
 
     /* A recursive generic tree; every reference to the declaration
-       is fully applied (7.5.6, 7.6.2). */
+       is fully applied. */
     cfx_begin(&f,
               "Tree: type t = Leaf t | Node [Tree t, Tree t, t]\n"
               "\n"
@@ -92,15 +92,14 @@ static void generic_decls(void)
     cfx_end(&f);
 
     /* Mutual recursion: each side may call the other before its
-       declaration line (Clause 7.4.2, 7.6.3). */
+       declaration line. */
     cfx_begin(&f,
               "even: (n: Int) -> Bool = case n: 0 -> True; _ -> odd(n)\n"
               "odd: (n: Int) -> Bool = case n: 0 -> False; _ -> even(n)\n");
     EK_CHECK_U64(cfx_errors(&f), 0);
     cfx_end(&f);
 
-    /* A bare generic constructor has no self-anchoring type
-       (Clause 7.6.4). */
+    /* A bare generic constructor has no self-anchoring type. */
     cfx_begin(&f,
               "Tree: type t = Leaf t | Node [Tree t, Tree t, t]\n"
               "x := Leaf 1\n");
@@ -115,16 +114,15 @@ static void generic_decls(void)
     cfx_end(&f);
 
     /* A generic reference must be fully applied, inside its own
-       right-hand side too (Clause 7.6.2). */
+       right-hand side too. */
     cfx_begin(&f, "Tree: type t = Leaf t | Node [Tree, Tree, t]\n");
     EK_CHECK(cfx_has_code(&f, "E-type-arity"));
     cfx_end(&f);
 }
 
-/* Generalization and instantiation at a width past any fixed buffer
-   (Clause 7.6.3, 7.6.4): every distinct variable of an annotation is
-   generalized and replaced at the use, and the phantom-variable rule
-   (Clause 7.6.5) still sees the last one. */
+/* Generalization and instantiation at a width past any fixed buffer:
+   every distinct variable of an annotation is generalized and replaced
+   at the use, and the phantom-variable rule still sees the last one. */
 static void wide_generics(void)
 {
     char buf[8192];

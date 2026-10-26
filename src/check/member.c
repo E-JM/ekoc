@@ -2,12 +2,12 @@
 
 #include "check/internal.h"
 
-/* Receiver stations (Clause 7.4.3). Resolve deferred the selection of
-   stations 1-3 to this stage: with the receiver's static type known, a
-   link is a record field, a declared namespace member, a derived
-   service, or a current-module function taking the receiver first.
-   Everything the placeholder bridge leaves unknown takes the opaque
-   reading. Calls are typed in call.c. */
+/* Receiver stations. Resolve deferred the selection to check: with
+   the receiver's static type known, a link is a record field, a
+   declared namespace member, a derived service, or a current-module
+   function taking the receiver first. Everything the placeholder
+   bridge leaves unknown takes the opaque reading. Calls are typed in
+   call.c. */
 
 /* The first reference of a node, optionally of one kind. */
 int ck_ref_at(const ck_ctx *c, const ek_node *n, ek_sym_kind kind,
@@ -36,8 +36,8 @@ int ck_ref_at(const ck_ctx *c, const ek_node *n, ek_sym_kind kind,
     return 0;
 }
 
-/* Station 2: the declared namespace member of the type's head, found
-   in the declaring module's surface (Clause 7.4.5). */
+/* The declared namespace member of the type's head, found in the
+   declaring module's surface. */
 static const ek_symbol *ns_member(ck_ctx *c, const ek_symbol *type,
                                   const char *name)
 {
@@ -65,8 +65,8 @@ static const ek_symbol *ns_member(ck_ctx *c, const ek_symbol *type,
     return NULL;
 }
 
-/* Station 3: a current-module free function whose first parameter is
-   the receiver's type (Clause 7.4.3). */
+/* A current-module free function whose first parameter is the
+   receiver's type. */
 static const ek_symbol *module_fn(ck_ctx *c, const char *name,
                                   const ek_type *recv)
 {
@@ -118,7 +118,7 @@ static const ek_type *derived_fn(ck_ctx *c, const ek_type *r,
 }
 
 /* The derived eq member: E-no-eq where the derivation halts, the
-   service where it does not (Clause 9.8.4). NULL falls through. */
+   service where it does not. NULL falls through. */
 static const ek_type *derive_eq(ck_ctx *c, const ek_node *at,
                                 const ek_type *r, const char *name,
                                 const ck_decl *d, ek_reading *rd,
@@ -128,8 +128,8 @@ static const ek_type *derive_eq(ck_ctx *c, const ek_node *at,
         return NULL;
     }
     if (ck_no_eq(c, r)) {
-        /* The derivation halts here (Clause 9.8.4): equality over the
-           type is E-no-eq and the member is absent. */
+        /* The derivation halts here: equality over the type is
+           E-no-eq and the member is absent. */
         ck_no_eq_error(c, at, r);
         return NULL;
     }
@@ -137,8 +137,7 @@ static const ek_type *derive_eq(ck_ctx *c, const ek_node *at,
     return derived_fn(c, r, bool_t);
 }
 
-/* The derived order member over a declared ADT (Clause 9.8.5). NULL
-   falls through. */
+/* The derived order member over a declared ADT. NULL falls through. */
 static const ek_type *derive_lt(ck_ctx *c, const ek_type *r,
                                 const char *name, const ck_decl *d,
                                 ek_reading *rd, const ek_type *bool_t)
@@ -150,9 +149,9 @@ static const ek_type *derive_lt(ck_ctx *c, const ek_type *r,
     return derived_fn(c, r, bool_t);
 }
 
-/* The stations over a declared receiver: its representation's fields,
+/* The readings over a declared receiver: its representation's fields,
    its namespace, the derived services, and the extending module
-   function (Clause 7.4.3). */
+   function. */
 static const ek_type *nominal_link(ck_ctx *c, const ek_node *at,
                                    const ek_type *r, const char *name,
                                    ek_reading *rd, const ek_type *bool_t)
@@ -168,7 +167,7 @@ static const ek_type *nominal_link(ck_ctx *c, const ek_node *at,
             return t;
         }
     }
-    /* Station 2: the type's namespace (declared members first). */
+    /* The type's namespace (declared members first). */
     m = ns_member(c, r->u.nominal.sym, name);
     if (m) {
         *rd = EK_RD_NAMESPACE;
@@ -183,7 +182,7 @@ static const ek_type *nominal_link(ck_ctx *c, const ek_node *at,
     if (t) {
         return t;
     }
-    /* Station 3: the current module extends the foreign type. */
+    /* The current module extends the foreign type. */
     m = module_fn(c, name, r);
     if (m) {
         *rd = EK_RD_MODULE_FN;
@@ -192,10 +191,9 @@ static const ek_type *nominal_link(ck_ctx *c, const ek_node *at,
     return ck_ivar(c);
 }
 
-/* The reading of one member link at its receiver's type (Clause
-   7.4.3). Derived services of Clause 9.8.7: eq on every internal type
-   whose derivation does not halt (9.8.4), lt on declared ADTs
-   (9.8.5). */
+/* The reading of one member link at its receiver's type. Derived
+   services: eq on every internal type whose derivation does not halt,
+   lt on declared ADTs. */
 static const ek_type *link_type(ck_ctx *c, const ek_node *at,
                                 const ek_type *recv, const char *name,
                                 ek_reading *rd)
@@ -204,8 +202,8 @@ static const ek_type *link_type(ck_ctx *c, const ek_node *at,
     const ek_type *bool_t = ck_std_type(c, "Bool");
 
     *rd = EK_RD_EXTERNAL;
-    /* Station 1: a record field, on anonymous and record-shaped
-       nominal receivers alike (Clause 7.4.3). */
+    /* A record field, on anonymous and record-shaped nominal receivers
+       alike. */
     if (r && r->kind == EK_T_RECORD) {
         const ek_type *t = field_of(r, name);
 
@@ -223,7 +221,7 @@ static const ek_type *link_type(ck_ctx *c, const ek_node *at,
     return ck_ivar(c);
 }
 
-/* A bare x.f is a field access (Clause 7.4.3). */
+/* A bare x.f is a field access. */
 const ek_type *ck_field(ck_ctx *c, const ek_node *e)
 {
     const ek_type *recv = ck_expr(c, e->u.field.recv, NULL);

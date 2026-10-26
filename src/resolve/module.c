@@ -7,10 +7,9 @@
 #include "resolve/internal.h"
 #include "support/buf.h"
 
-/* Loading modules and walking the import closure (Clause 7.2). Paths
-   resolve against the module path directories in order; the dependency
-   graph is walked depth first, first import first, and must be acyclic
-   (Clause 7.2.4). */
+/* Loading modules and walking the import closure. Paths resolve
+   against the module path directories in order; the dependency graph
+   is walked depth first, first import first, and must be acyclic. */
 
 static char *r_stem_of(r_ctx *c, const char *file)
 {
@@ -107,10 +106,9 @@ static r_mod *register_mod(r_ctx *c, const char *stem, const char *file,
     return m;
 }
 
-/* Two imported modules with the same stem collide over the closure
-   (Clauses 7.2.1, 7.4.6). file may be NULL when the collision surfaces
-   before the second file resolves; the diagnostic still carries the
-   registered module. */
+/* Two imported modules with the same stem collide over the closure.
+   file may be NULL when the collision surfaces before the second file
+   resolves; the diagnostic still carries the registered module. */
 static void stem_claimed(r_ctx *c, const char *from, const ek_node *imp,
                          const char *stem, const char *file)
 {
@@ -126,8 +124,7 @@ static void stem_claimed(r_ctx *c, const char *from, const ek_node *imp,
 
 /* One diagnostic when a stage of the chain hands back no stream or no
    AST. The stage contracts (lex.h, layout.h, parse.h) make that an
-   arena failure, so the walk recovers with the import failed
-   (ARCHITECTURE rule 4). */
+   arena failure, so the walk recovers with the import failed. */
 static void stage_dropped(r_ctx *c, const char *path, const char *stage)
 {
     ek_diag_emit(c->diag, EK_SEV_ERROR, NULL, path, 0, 0,
@@ -136,7 +133,7 @@ static void stage_dropped(r_ctx *c, const char *path, const char *stage)
     c->oom = 1;
 }
 
-/* Lex, layout, and parse one module file (stages before this one). */
+/* Lex, layout, and parse one module file. */
 static ek_node *parse_file(r_ctx *c, const char *path)
 {
     char *src = read_file(c, path);
@@ -164,7 +161,7 @@ static ek_node *parse_file(r_ctx *c, const char *path)
     return mod;
 }
 
-/* Resolves an import path to a file on the module path (7.2.2). */
+/* Resolves an import path to a file on the module path. */
 static char *find_file(r_ctx *c, const ek_node *imp)
 {
     ek_buf b;
@@ -197,9 +194,8 @@ static char *find_file(r_ctx *c, const ek_node *imp)
     return NULL;
 }
 
-/* A stem is snake_case, never begins with `_`, and is never `std`
-   (Clauses 5.5.2, 7.2.1, 7.2.2); the reserved std/ paths return
-   before this call. */
+/* A stem is snake_case, never begins with `_`, and is never `std`; the
+   reserved std/ paths return before this call. */
 static int stem_legal(r_ctx *c, const char *file, const ek_node *imp,
                       const char *stem)
 {
@@ -223,11 +219,11 @@ static int stem_legal(r_ctx *c, const char *file, const ek_node *imp,
     return 1;
 }
 
-/* A stem already registered: a diamond share, a back edge of the walk
-   (Clause 7.2.4), or a collision of two distinct modules with one stem
-   (Clauses 7.2.1, 7.4.6). Two non-root files share a stem legally only
-   when find_file resolves both to one file; the root's file is spelled
-   by the host, so its back edge is judged by stem alone. */
+/* A stem already registered: a diamond share, a back edge of the walk,
+   or a collision of two distinct modules with one stem. Two non-root
+   files share a stem legally only when find_file resolves both to one
+   file; the root's file is spelled by the host, so its back edge is
+   judged by stem alone. */
 static void already_loaded(r_ctx *c, r_mod *m, const char *from,
                            const ek_node *imp, const char *stem)
 {
@@ -235,7 +231,7 @@ static void already_loaded(r_ctx *c, r_mod *m, const char *from,
 
     if (m->external) {
         /* The stem belongs to a std companion; a user module with the
-           same stem collides (Clauses 7.2.2, 7.4.6). */
+           same stem collides. */
         stem_claimed(c, from, imp, stem, "(user)");
         return;
     }
@@ -282,8 +278,8 @@ static void load_import(r_ctx *c, r_mod *from, const ek_node *imp)
         }
         if (held && !held->external) {
             /* The std/ path is reserved; a user module already holding
-               the companion's stem collides over the closure (Clauses
-               7.2.2, 7.4.6), whichever import came first. */
+               the companion's stem collides over the closure, whichever
+               import came first. */
             r_error(c, file, imp->line, imp->col, "E-name-conflict",
                     "module stem `%s` is already imported from `%s` "
                     "(Clauses 7.2.2, 7.4.6)", stem, held->file);

@@ -2,10 +2,10 @@
 
 #include "check/internal.h"
 
-/* Literal placement by expected type (Clause 5.7.4). The std
-   placeholder surface exports no symbols of its own, so the core type
-   symbols are canonicalized per run: the symbol any reference used, or
-   a synthetic stand-in when a module never names the type. */
+/* Literal placement by expected type. The std placeholder surface
+   exports no symbols of its own, so the core type symbols are
+   canonicalized per run: the symbol any reference used, or a synthetic
+   stand-in when a module never names the type. */
 
 static const ek_symbol *std_sym(ck_ctx *c, const char *name);
 
@@ -134,7 +134,7 @@ static int in_range(const ek_type *t, unsigned long long mag, int neg)
 }
 
 /* An integer target from the expected type; NULL when the placement
-   defaults to Int (Clause 5.7.4). */
+   defaults to Int. */
 static const ek_type *int_target(const ek_type *expected)
 {
     expected = ck_prune(expected);

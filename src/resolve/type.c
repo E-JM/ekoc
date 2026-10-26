@@ -2,18 +2,18 @@
 
 #include "resolve/internal.h"
 
-/* Type position (Clause 7.4.2 row 2): a type variable of the enclosing
-   annotation or declaration, a declared type in unqualified scope, or a
+/* Type position: a type variable of the enclosing annotation or
+   declaration, a declared type in unqualified scope, or a
    module-qualified type. A type variable spelled like an imported
-   module is the same-layer conflict of Clause 7.4.6. Lookup order per
-   position: type variables first, then declared types; module segments
-   are prefixes, not lookups. */
+   module is a same-layer conflict. Lookup order per position: type
+   variables first, then declared types; module segments are prefixes,
+   not lookups. */
 
 static void tvar(r_ctx *c, r_file *f, const ek_node *t, const char *name)
 {
     if (strcmp(name, "_") == 0) {
-        /* `_` at type position is the unit type, never a variable
-           (Clause 7.5.4); check owns it. */
+        /* `_` at type position is the unit type, never a variable;
+           check owns it. */
         return;
     }
     if (r_lookup_mod(f, name)) {
@@ -31,7 +31,7 @@ static void declared(r_ctx *c, r_file *f, const ek_node *t, const char *name)
 
     if (n > 1) {
         /* Same-named types coexist; the unqualified spelling is the
-           point of rejection (Clause 7.4.5). */
+           point of rejection. */
         r_error(c, f->mod->file, t->line, t->col, "E-name-conflict",
                 "`%s` names several visible types; qualify one "
                 "(Clauses 7.4.5, 7.4.6)", name);

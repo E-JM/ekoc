@@ -2,15 +2,13 @@
 
 #include "check/internal.h"
 
-/* Type positions (Clauses 7.6.1, 7.6.2): the elaboration of an
-   annotation into a type, and the anonymous representation of a
-   shaped nominal type (Clause 7.5.5). The binder scope of a
-   declaration lives in decl.c. */
+/* Type positions: the elaboration of an annotation into a type, and
+   the anonymous representation of a shaped nominal type. The binder
+   scope of a declaration lives in decl.c. */
 
-/* The machine words of Clauses 9.6.1 and 10.3.1. The placeholder
-   surface does not list them; the check stage owns their identity for
-   literal placement, the ctype field predicate, and the marshalling
-   whitelist. */
+/* The machine words. The placeholder surface does not list them, so
+   check owns their identity for literal placement, the ctype field
+   predicate, and the marshalling whitelist. */
 static int is_word_name(const char *n)
 {
     static const char *words[] = {"I8",  "I16", "I32", "I64",
@@ -41,7 +39,7 @@ static const ek_type *tv_find(const ck_tvars *tv, const char *name)
     return NULL;
 }
 
-/* The arity of an application of a declared type (Clause 7.6.2). */
+/* The arity of an application of a declared type. */
 static size_t type_arity(ck_ctx *c, const ek_symbol *sym)
 {
     const ck_decl *d = sym ? ck_decl_of(c, sym) : NULL;
@@ -68,7 +66,7 @@ static const ek_type *tvar_name(ck_ctx *c, const ek_node *t, const char *n0,
 }
 
 /* A Pascal name at one path segment: a declared type, a machine word,
-   or the placeholder bridge (Clause 7.6.2). */
+   or the placeholder bridge. */
 static const ek_type *type_name(ck_ctx *c, const ek_node *t,
                                 const ek_ref *ref, const char *n0)
 {
@@ -88,8 +86,7 @@ static const ek_type *type_name(ck_ctx *c, const ek_node *t,
     return ck_ivar(c); /* the placeholder std bridge */
 }
 
-/* A type-position name of one or two path segments (Clauses 7.5.4,
-   7.6.1, 7.6.2). */
+/* A type-position name of one or two path segments. */
 static const ek_type *elab_name(ck_ctx *c, const ek_node *t, ck_tvars *tv)
 {
     const char *n0 = t->u.path.count ? t->u.path.data[0] : "";
@@ -97,7 +94,7 @@ static const ek_type *elab_name(ck_ctx *c, const ek_node *t, ck_tvars *tv)
     const ek_type *out = NULL;
 
     if (t->u.path.count == 1 && strcmp(n0, "_") == 0) {
-        out = ck_unit(c); /* `_` is the unit type (7.5.4) */
+        out = ck_unit(c); /* `_` is the unit type */
     } else if (t->u.path.count == 1) {
         if (n0[0] >= 'a' && n0[0] <= 'z') {
             out = tvar_name(c, t, n0, tv);
@@ -109,8 +106,8 @@ static const ek_type *elab_name(ck_ctx *c, const ek_node *t, ck_tvars *tv)
         const char *n1 = t->u.path.data[1];
 
         if (n1[0] >= 'a' && n1[0] <= 'z') {
-            /* The identity space is PascalCase (Clauses 5.5.2,
-               7.4.1): a lowercase name in a qualified type. */
+            /* The identity space is PascalCase: a lowercase name in a
+               qualified type. */
             ck_error(c, t, "E-name-case",
                      "the type name `%s` is not PascalCase "
                      "(Clause 5.5.2)", n1);
@@ -135,7 +132,7 @@ static const ek_type *elab_name(ck_ctx *c, const ek_node *t, ck_tvars *tv)
     return out;
 }
 
-/* An application of a declared type (Clause 7.6.2). */
+/* An application of a declared type. */
 static const ek_type *elab_apply(ck_ctx *c, const ek_node *t, ck_tvars *tv)
 {
     const ek_node *head = t->u.t_apply.head;
@@ -168,7 +165,7 @@ static const ek_type *elab_apply(ck_ctx *c, const ek_node *t, ck_tvars *tv)
 }
 
 /* The parameter types and the result of a function type; an elided
-   result is `_` (Clause 6.9.3). */
+   result is `_`. */
 static const ek_type *elab_fn(ck_ctx *c, const ek_node *t, ck_tvars *tv)
 {
     const ek_type **ps = NULL;
@@ -296,7 +293,7 @@ const ek_type *ck_elaborate(ck_ctx *c, const ek_node *t, ck_tvars *tv)
 }
 
 /* The record representation, binders replaced by the applied
-   arguments (Clause 7.5.5). */
+   arguments. */
 static const ek_type *repr_record(ck_ctx *c, const ck_decl *d,
                                   const ek_node *rec, const ek_type *nom,
                                   ck_tvars *tv)
@@ -352,8 +349,7 @@ static const ek_type *repr_tuple(ck_ctx *c, const ck_decl *d,
 }
 
 /* The anonymous representation of a record- or tuple-shaped nominal
-   type, with its binders replaced by the applied arguments (Clause
-   7.5.5). */
+   type, with its binders replaced by the applied arguments. */
 const ek_type *ck_decl_repr(ck_ctx *c, const ek_type *nom)
 {
     const ck_decl *d;

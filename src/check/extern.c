@@ -2,14 +2,12 @@
 
 #include "check/internal.h"
 
-/* The compile-time checks of Clause 10 over the root's declarations:
-   the extern form and signature rules (Clauses 10.2.1, 10.2.3), the
-   marshalling whitelist (Clause 10.3.5), the ctype field predicate
-   (Clause 10.3.3), the reserved symbols (Clause 10.6), and the
-   open-bit position rule over type declarations (Clause 7.9.6). */
+/* The compile-time checks over the root's declarations: the extern
+   form and signature rules, the marshalling whitelist, the ctype field
+   predicate, the reserved symbols, and the open-bit position rule over
+   type declarations. */
 
-/* The machine words of Clause 10.3.1: the integer words plus the two
-   floats. */
+/* The machine words: the integer words plus the two floats. */
 static int is_word(const ek_type *t)
 {
     return ck_is_machine_word(t) || ck_is_std(t, "F32")
@@ -26,10 +24,9 @@ static int is_ctype(const ek_type *t)
     return t->u.nominal.sym->decl->kind == EK_N_CTYPE_DECL;
 }
 
-/* One type of the marshalling whitelist (Clause 10.3.5). result is 1
-   in a result position: `Bytes` and a closure are parameter-only, `_`
-   is result-only. Inference variables stay opaque (the bridge
-   ruling). */
+/* One type of the marshalling whitelist. result is 1 in a result
+   position: `Bytes` and a closure are parameter-only, `_` is
+   result-only. Inference variables stay opaque (the bridge). */
 static int marshals(ck_ctx *c, const ek_type *t, int result)
 {
     size_t i;
@@ -68,8 +65,7 @@ static int marshals(ck_ctx *c, const ek_type *t, int result)
     }
 }
 
-/* True when an open arrow appears anywhere in the annotation (Clause
-   10.2.3 rule 4). */
+/* True when an open arrow appears anywhere in the annotation. */
 static int has_open_arrow(const ek_node *t)
 {
     size_t i;
@@ -112,9 +108,9 @@ static int has_open_arrow(const ek_node *t)
     }
 }
 
-/* Rule 4 of Clause 10.2.3: the own arrow is `!->` or `!`, or `->` with
-   `Pure`; an open arrow is not admitted. The violation carries no
-   published code; E-extern-arrow names the clause. */
+/* The own arrow is `!->` or `!`, or `->` with `Pure`; an open arrow is
+   not admitted. The open-arrow violation carries no published code and
+   reuses E-extern-arrow. */
 static void check_arrow(ck_ctx *c, const ek_node *dn, const ek_node *ann,
                         int pure)
 {
@@ -140,7 +136,7 @@ static void check_arrow(ck_ctx *c, const ek_node *dn, const ek_node *ann,
 }
 
 /* The whitelist over the annotation, so the diagnostic lands on the
-   offending type (Clause 10.3.5). */
+   offending type. */
 static void check_type(ck_ctx *c, const ek_node *t, int result)
 {
     const ek_type *et;
@@ -182,7 +178,7 @@ static void check_type(ck_ctx *c, const ek_node *t, int result)
     }
 }
 
-/* Symbols beginning `eko_` belong to the host (Clause 10.6). */
+/* Symbols beginning `eko_` belong to the host. */
 static void check_symbol(ck_ctx *c, const ek_node *dn, const char *sym)
 {
     if (sym && strncmp(sym, "eko_", 4) == 0) {
@@ -192,8 +188,8 @@ static void check_symbol(ck_ctx *c, const ek_node *dn, const char *sym)
     }
 }
 
-/* The field predicate of Clause 10.3.3: every field is a machine word
-   or another ctype record. */
+/* The ctype field predicate: every field is a machine word or another
+   ctype record. */
 static void check_ctype(ck_ctx *c, const ek_node *d)
 {
     const ek_node *rec = d->u.decl.body;
@@ -216,7 +212,7 @@ static void check_ctype(ck_ctx *c, const ek_node *d)
 }
 
 /* The open bit generalizes at no type declaration: every position is
-   E-open-bit-position (Clause 7.9.6). */
+   E-open-bit-position. */
 static void check_type_decl(ck_ctx *c, const ek_node *d)
 {
     size_t i;

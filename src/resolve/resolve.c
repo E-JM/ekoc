@@ -2,9 +2,9 @@
 
 #include "resolve/internal.h"
 
-/* The entry point. Per file it assembles the name layers of Clause
-   7.4.2 from the module surface, the opened imports, and the implicit
-   std import; then it resolves the bodies, root first. */
+/* The entry point. Per file it assembles the name layers from the
+   module surface, the opened imports, and the implicit std import;
+   then it resolves the bodies, root first. */
 
 static void push_var(r_ctx *c, r_var **vars, size_t *n, size_t *cap,
                      const char *name, const ek_symbol *sym)
@@ -52,8 +52,8 @@ static void open_surface(r_ctx *c, r_file *f, const ek_surface *s)
 }
 
 /* An import opens the target module's public types and constructors
-   into unqualified scope; functions stay module-qualified
-   (Clause 7.2.3). Variant visibility follows the type (7.3.3). */
+   into unqualified scope; functions stay module-qualified. Variant
+   visibility follows the type. */
 static void open_import(r_ctx *c, r_file *f, const r_mod *target)
 {
     const ek_surface *s = target->surf;
@@ -94,7 +94,7 @@ static void file_setup(r_ctx *c, r_file *f, r_mod *m)
     memset(f, 0, sizeof *f);
     f->mod = m;
     add_module_name(c, f, m->stem);
-    add_module_name(c, f, "std"); /* the implicit import (7.2.5) */
+    add_module_name(c, f, "std"); /* the implicit import */
     r_std_open(c, f);
     open_surface(c, f, m->surf);
     if (!mod) {
@@ -115,7 +115,7 @@ static void file_setup(r_ctx *c, r_file *f, r_mod *m)
         }
         if (r_lookup_mod(f, stem)) {
             continue; /* one open per stem: a repeated import line
-                         opens nothing further (Clause 7.2.3) */
+                         opens nothing further */
         }
         add_module_name(c, f, stem);
         if (!target->external) {
@@ -124,8 +124,8 @@ static void file_setup(r_ctx *c, r_file *f, r_mod *m)
     }
 }
 
-/* Clause 7.2.1: the stem is a snake_case identifier; Clause 7.2.2: a
-   user module is never named std. */
+/* The stem is a snake_case identifier; a user module is never named
+   std. */
 static void check_root_name(r_ctx *c, const char *file, const char *stem)
 {
     if (!r_is_snake(stem)) {

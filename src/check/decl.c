@@ -2,14 +2,14 @@
 
 #include "check/internal.h"
 
-/* Declared types (Clauses 7.5.2, 7.5.6, 7.6.2): the ck_decl and
-   ck_ctor rows behind the surface symbols, built on demand with the
-   shell registered first so a recursive right-hand side sees its own
-   shape. The phantom-binder check runs here. */
+/* Declared types: the ck_decl and ck_ctor rows behind the surface
+   symbols, built on demand with the shell registered first so a
+   recursive right-hand side sees its own shape. The phantom-binder
+   check runs here. */
 
 /* The binder scope of a declared type: the binders themselves, so
    representations and phantom checks elaborate against the nodes
-   substitution replaces (Clause 7.6.4). */
+   substitution replaces. */
 void ck_binder_scope(ck_ctx *c, const ck_decl *d, ck_tvars *tv)
 {
     const ek_node *dn = d->decl;
@@ -117,8 +117,7 @@ static const ck_ctor *build_ctor(ck_ctx *c, const ek_symbol *sym,
     return ct;
 }
 
-/* Phantom binders (Clause 7.6.2): every binder MUST occur in the
-   right-hand side. */
+/* Phantom binders: every binder MUST occur in the right-hand side. */
 static void check_phantom_binders(ck_ctx *c, const ck_decl *info)
 {
     const ek_type **all = NULL;

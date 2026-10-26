@@ -2,10 +2,9 @@
 
 #include "check/internal.h"
 
-/* Or-patterns and the binding-shape judgments (Clauses 6.8.3, 7.7.1).
-   Every alternative binds the same names at the same types; the first
-   alternative's bindings stand. A value binding admits only
-   irrefutable patterns. */
+/* Or-patterns and the binding-shape judgments. Every alternative
+   binds the same names at the same types; the first alternative's
+   bindings stand. A value binding admits only irrefutable patterns. */
 
 typedef struct {
     const char **names;
@@ -115,9 +114,9 @@ const ek_type *ck_or_pattern(ck_ctx *c, const ek_node *p, const ek_type *scrut)
     return scrut;
 }
 
-/* A value binding admits only irrefutable patterns (Clause 7.7.1):
-   `_`, a variable, a tuple or group of irrefutable patterns, and a
-   record pattern whose subpatterns are irrefutable. */
+/* A value binding admits only irrefutable patterns: `_`, a variable,
+   a tuple or group of irrefutable patterns, and a record pattern whose
+   subpatterns are irrefutable. */
 int ck_irrefutable(const ek_node *p)
 {
     size_t i;
@@ -154,8 +153,7 @@ int ck_irrefutable(const ek_node *p)
     }
 }
 
-/* The admitted `<-` patterns are the parameter-position forms
-   (Clauses 7.7.1, 7.8.1). */
+/* The admitted `<-` patterns are the parameter-position forms. */
 int ck_invert_pattern(const ek_node *pat)
 {
     size_t i;
@@ -180,7 +178,7 @@ int ck_invert_pattern(const ek_node *pat)
 }
 
 /* The callback parameter an inverted binding takes: the last
-   parameter of the call's function type (Clause 7.8.1). */
+   parameter of the call's function type. */
 const ek_type *ck_callback_param(ck_ctx *c, const ek_node *m,
                                  const ek_type *call)
 {

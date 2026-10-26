@@ -1,7 +1,7 @@
 #include "common.h"
 
-/* Clause 7.7: pattern typing and exhaustiveness — variants, records,
-   tuples, or-patterns, guards, lists, multiple scrutinees — plus the
+/* Pattern typing and exhaustiveness — variants, records, tuples,
+   or-patterns, guards, lists, multiple scrutinees — plus the
    irrefutability rule for value bindings. */
 
 static void variants(void)
@@ -189,7 +189,7 @@ static void guards_and_scrutinees(void)
     EK_CHECK(cfx_code_at_line(&f, "E-exhaust", 3));
     cfx_end(&f);
 
-    /* Every arm has the same type (Clause 7.7.4). */
+    /* Every arm has the same type. */
     cfx_begin(&f,
               "f: (n: Int) -> String =\n"
               "    case n:\n"
@@ -230,7 +230,7 @@ static void bindings(void)
     EK_CHECK(cfx_code_at_line(&f, "E-refutable-binding", 2));
     cfx_end(&f);
 
-    /* `<-` admits parameter-position patterns only (Clause 7.8.1). */
+    /* `<-` admits parameter-position patterns only. */
     cfx_begin(&f,
               "disp: (cb: (Int) -> Int) -> Int = cb(1)\n"
               "{h, ..t} <- disp((n): n)\n");
@@ -266,7 +266,7 @@ static void wide_case(char *buf, size_t cap, int cols, int mode)
 
 /* Constructor coverage at the top level and the wide product: a
    constructor pattern never acts as a catch-all, and the product
-   judgment terminates over many small scrutinees (Clause 7.7.2). */
+   judgment terminates over many small scrutinees. */
 static void constructor_and_product_coverage(void)
 {
     cfx f;

@@ -1,14 +1,14 @@
 #include "common.h"
 
-/* Scoping of Clause 7.4.2: blocks, lambdas, case arms with guards,
-   shadowing and the binding line. */
+/* Scoping: blocks, lambdas, case arms with guards, shadowing and the
+   binding line. */
 
 static void block_nesting(void)
 {
     rfx f;
     const ek_ref *r;
 
-    /* An inner binding shadows an outer one (Clause 7.4.2). */
+    /* An inner binding shadows an outer one. */
     rfx_begin(&f,
         "x: Int = 1\n"
         "f: Int =\n"
@@ -22,8 +22,7 @@ static void block_nesting(void)
     rfx_end(&f);
 
     /* A local is visible from its binding line onward only; a
-       block-level self-reference reaches nothing (Clauses 7.4.2,
-       8.2.1). */
+       block-level self-reference reaches nothing. */
     rfx_begin(&f,
         "f: Int =\n"
         "    y := x\n"
@@ -33,8 +32,7 @@ static void block_nesting(void)
     EK_CHECK(rfx_code_at_line(&f, "E-unbound-name", 2));
     rfx_end(&f);
 
-    /* A rebinding sees the earlier binding, then shadows it
-       (Clauses 7.4.2, 8.2.2). */
+    /* A rebinding sees the earlier binding, then shadows it. */
     rfx_begin(&f,
         "f: Int =\n"
         "    x: Int = 1\n"
@@ -46,7 +44,7 @@ static void block_nesting(void)
 
 /* A rebinding shadows the binding it rebinds: a use after the `:=`
    denotes the new binding, the rebind's own right-hand side the old
-   one (Clause 8.2.2). */
+   one. */
 static void rebinding_denotation(void)
 {
     rfx f;
@@ -75,7 +73,7 @@ static void top_level_visibility(void)
     const ek_ref *r;
 
     /* Top-level bindings are mutually visible, including forward and
-       self references (Clause 7.4.2). */
+       self references. */
     rfx_begin(&f,
         "a: Int = b\n"
         "b: Int = a\n");
@@ -102,7 +100,7 @@ static void case_arms(void)
     const ek_ref *r;
 
     /* A pattern binding is visible in its arm's guard and result, and
-       in that arm alone (Clause 7.4.2). */
+       in that arm alone. */
     rfx_begin(&f,
         "sign: (n: Int) -> String =\n"
         "    case n:\n"
@@ -130,7 +128,7 @@ static void tuple_split_and_discard(void)
     rfx f;
     const ek_ref *r;
 
-    /* A tuple split binds both names (Clause 7.4.2, 8.2.1). */
+    /* A tuple split binds both names. */
     rfx_begin(&f,
         "pair: [String, Int] = {\"a\", 1}\n"
         "t: () -> Int =\n"
@@ -143,8 +141,7 @@ static void tuple_split_and_discard(void)
     EK_CHECK_STR(r->symbol ? r->symbol->name : NULL, "b");
     rfx_end(&f);
 
-    /* `_` is a discard binding and the unit value; neither binds
-       (Clause 7.3.1). */
+    /* `_` is a discard binding and the unit value; neither binds. */
     rfx_begin(&f,
         "t: (p: [Int, Int]) -> [Int, Int] =\n"
         "    _ := p\n"
@@ -158,7 +155,7 @@ static void lambdas(void)
     rfx f;
     const ek_ref *r;
 
-    /* A lambda parameter binds in its body (Clause 7.4.2). */
+    /* A lambda parameter binds in its body. */
     rfx_begin(&f,
         "twice: (g: (Int) -> Int, v: Int) -> Int = g(g(v))\n"
         "f: Int = twice((n): n * 2, 1)\n");
@@ -184,8 +181,7 @@ static void rest_binding(void)
     rfx f;
     const ek_ref *r;
 
-    /* A list rest binds its name; the wildcard rest binds nothing
-       (Clause 7.7.1). */
+    /* A list rest binds its name; the wildcard rest binds nothing. */
     rfx_begin(&f,
         "head: (xs: []Int) -> Int =\n"
         "    case xs:\n"

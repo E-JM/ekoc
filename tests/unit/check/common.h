@@ -174,7 +174,7 @@ static inline int cfx_reading_at(const cfx *f, int line, ek_reading r)
     return 0;
 }
 
-/* Any row on the line carrying one world bit (Clause 7.9). */
+/* Any row on the line carrying one world bit. */
 static inline int cfx_bit_at(const cfx *f, int line, ek_bit b)
 {
     size_t i;

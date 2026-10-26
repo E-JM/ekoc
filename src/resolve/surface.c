@@ -3,11 +3,10 @@
 #include "resolve/internal.h"
 #include "support/buf.h"
 
-/* The top-level surface of one module (Clauses 7.1.2, 7.3). Types are
-   collected first so namespace ownership does not depend on source
-   order (Clause 7.1.1). Conflicts follow Clause 7.4.6; a namespace
-   binding is keyed by its full head, so `Int.add` and `Float.add`
-   coexist. */
+/* The top-level surface of one module. Types are collected first so
+   namespace ownership does not depend on source order. Duplicate names
+   are conflicts; a namespace binding is keyed by its full head, so
+   `Int.add` and `Float.add` coexist. */
 
 typedef struct {
     const char *key;
@@ -80,8 +79,7 @@ static void emit(r_surf *s, ek_symbol *sym)
     s->syms[s->n++] = *sym;
 }
 
-/* A declared type or ctype: one nominal symbol of the identity layer
-   (Clause 6.3.6). */
+/* A declared type or ctype: one symbol of the identity layer. */
 static void collect_type(r_surf *s, const ek_node *d)
 {
     const char *name = d->kind == EK_N_TYPE_DECL
@@ -124,7 +122,7 @@ static void collect_type(r_surf *s, const ek_node *d)
 }
 
 /* The full head of a namespace binding, segments joined with `.`:
-   `Type.name`, or the qualified spelling `a.Type.name` (7.4.5). */
+   `Type.name`, or the qualified spelling `a.Type.name`. */
 static char *ns_key(r_surf *s, const ek_node *d)
 {
     ek_buf b;
@@ -156,7 +154,7 @@ static char *ns_key(r_surf *s, const ek_node *d)
 }
 
 /* A namespace member is legal only in the module that declares the
-   type (Clause 7.4.5); the qualified spelling does not bypass it. */
+   type; the qualified spelling does not bypass it. */
 static int type_owned(r_surf *s, const char *type)
 {
     size_t i;
@@ -189,8 +187,7 @@ static void leaf_push(r_surf *s, ek_symbol *sym)
     key_push(s, &s->lkeys, &s->nl, &s->clk, sym->name, sym->line, sym->col);
 }
 
-/* A namespace binding: full-head key, ownership, member case
-   (Clauses 7.4.5, 7.4.6). */
+/* A namespace binding: full-head key, ownership, member case. */
 static ek_symbol *collect_namespace(r_surf *s, const ek_node *item)
 {
     const char *type = item->u.namespace.owner.count
@@ -234,7 +231,7 @@ static ek_symbol *collect_namespace(r_surf *s, const ek_node *item)
 }
 
 /* A plain value binding; a PascalCase spelling violates the binding
-   space (Clauses 5.5.2, 7.4.1). */
+   space. */
 static ek_symbol *collect_let(r_surf *s, const ek_node *item)
 {
     const ek_node *pat = item->u.bind.pattern;
@@ -274,7 +271,7 @@ static void collect_member(r_surf *s, const ek_node *item)
                     item->line, item->col);
         if (sym) {
             sym->decl = item;
-            sym->public = 0; /* tests never enter the interface (9.14.6) */
+            sym->public = 0; /* tests never enter the interface */
         }
     } else if (item->kind == EK_N_EXTERN_DECL) {
         sym = r_sym(s->c, item->u.extern_decl.name, EK_SYM_EXTERN,
@@ -287,16 +284,15 @@ static void collect_member(r_surf *s, const ek_node *item)
         }
     }
     /* Namespace members are keyed by their full head and never occupy
-       the leaf layer (Clauses 7.4.1, 7.4.6). */
+       the leaf layer. */
     if (!sym || sym->kind != EK_SYM_NAMESPACE) {
         leaf_push(s, sym);
     }
     emit(s, sym);
 }
 
-/* N12 (Annex D): an import and a file top-level binding share a name;
-   the implicit std import counts as the import (Clauses 7.2.5,
-   7.4.6). */
+/* N12: an import and a file top-level binding share a name; the
+   implicit std import counts as the import. */
 static void binding_vs_import(r_surf *s, const char *stem)
 {
     size_t k;

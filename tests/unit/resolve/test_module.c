@@ -2,9 +2,8 @@
 
 #include <sys/stat.h>
 
-/* Imports and modules (Clause 7.2): resolution on a real module path,
-   privacy of Clause 7.3.1, cycles, stem collisions, and the receiver
-   form of Clause 7.4.3 station 4. */
+/* Imports and modules: resolution on a real module path, privacy,
+   cycles, stem collisions, and module-path receiver chains. */
 
 #define MOD_DIR "build/tmp-resolve/mod"
 
@@ -79,7 +78,7 @@ static void run_in(rfx *f, const char *src, const char *name)
 }
 
 /* The implicit surface of an import: types and constructors open
-   unqualified, functions stay module-qualified (Clause 7.2.3). */
+   unqualified, functions stay module-qualified. */
 static void import_opens(void)
 {
     rfx f;
@@ -111,7 +110,8 @@ static void import_opens(void)
     rfx_end(&f);
 }
 
-/* Station 4: x.Mod.f(args) names an imported module (Clause 7.4.3). */
+/* x.Mod.f(args) names an imported module through the module-path
+   reading. */
 static void ufcs_station(void)
 {
     rfx f;
@@ -130,7 +130,7 @@ static void ufcs_station(void)
     rfx_end(&f);
 }
 
-/* Privacy of Clause 7.3.1 across modules. */
+/* Privacy across modules. */
 static void privacy(void)
 {
     rfx f;
@@ -166,8 +166,7 @@ static void missing_file(void)
     rfx_end(&f);
 }
 
-/* An import path that lands on a directory resolves to no file
-   (Clause 7.2.2; a directory may share a stem, 7.2.1). */
+/* An import path that lands on a directory resolves to no file. */
 static void directory_import(void)
 {
     rfx f;
@@ -194,8 +193,7 @@ static void cycle(void)
     free(src);
 }
 
-/* Two imported modules with the same stem, judged over the closure
-   (Clauses 7.2.1, 7.4.6). */
+/* Two imported modules with the same stem, judged over the closure. */
 static void stem_collision(void)
 {
     rfx f;
@@ -208,7 +206,7 @@ static void stem_collision(void)
     rfx_end(&f);
 }
 
-/* An explicit `import std` is redundant (Clause 7.2.5). */
+/* An explicit `import std` is redundant. */
 static void explicit_std(void)
 {
     rfx f;
@@ -222,8 +220,7 @@ static void explicit_std(void)
     rfx_end(&f);
 }
 
-/* Module names are snake_case and never begin with `_`
-   (Clauses 5.5.2, 7.2.1). */
+/* Module names are snake_case and never begin with `_`. */
 static void bad_names(void)
 {
     rfx f;
@@ -239,7 +236,7 @@ static void bad_names(void)
     rfx_end(&f);
 }
 
-/* A module never enters value position (Clause 7.2.6). */
+/* A module never enters value position. */
 static void module_value(void)
 {
     rfx f;
@@ -254,7 +251,7 @@ static void module_value(void)
 }
 
 /* A repeated import line opens the target once; a duplicated open
-   would fake same-named type and constructor clashes (Clause 7.2.3). */
+   would fake same-named type and constructor clashes. */
 static void duplicate_import(void)
 {
     rfx f;
@@ -271,8 +268,7 @@ static void duplicate_import(void)
 }
 
 /* s.eko and sub/s.eko share a stem; one importing the other is a stem
-   collision over the closure, not a dependency cycle (Clauses 7.2.1,
-   7.2.4, 7.4.6). */
+   collision over the closure, not a dependency cycle. */
 static void same_stem_import_pair(void)
 {
     rfx f;
@@ -284,8 +280,7 @@ static void same_stem_import_pair(void)
     rfx_end(&f);
 }
 
-/* A non-root module importing its own stem closes a cycle
-   (Clause 7.2.4). */
+/* A non-root module importing its own stem closes a cycle. */
 static void self_import_module(void)
 {
     rfx f;
@@ -296,8 +291,7 @@ static void self_import_module(void)
     rfx_end(&f);
 }
 
-/* A cycle reached through five imports is reported once
-   (Clause 7.2.4). */
+/* A cycle reached through five imports is reported once. */
 static void deep_chain_cycle(void)
 {
     rfx f;
@@ -309,7 +303,7 @@ static void deep_chain_cycle(void)
 }
 
 /* The std/ path is reserved: a user module holding a companion's stem
-   collides whichever import comes first (Clauses 7.2.2, 7.4.6). */
+   collides whichever import comes first. */
 static void std_companion_collision(void)
 {
     rfx f;
@@ -326,7 +320,7 @@ static void std_companion_collision(void)
 }
 
 /* A user module is never named `std`, whatever the path spelling; the
-   reserved stem registers nothing (Clause 7.2.2). */
+   reserved stem registers nothing. */
 static void std_stem_import(void)
 {
     rfx f;
@@ -338,8 +332,7 @@ static void std_stem_import(void)
     rfx_end(&f);
 }
 
-/* The compilation root obeys the same stem rules as an import
-   (Clauses 5.5.2, 7.2.1, 7.2.2). */
+/* The compilation root obeys the same stem rules as an import. */
 static void root_name_rules(void)
 {
     rfx f;
@@ -361,8 +354,7 @@ static void root_name_rules(void)
 }
 
 /* A constructor and its type MAY share a spelling; the qualified value
-   and pattern readings denote the constructor (Clauses 7.4.1,
-   7.4.4). */
+   and pattern readings denote the constructor. */
 static void qualified_ctor_shared_spelling(void)
 {
     rfx f;
@@ -395,8 +387,7 @@ static void qualified_ctor_shared_spelling(void)
     rfx_end(&f);
 }
 
-/* A diamond holds the shared module once and reports no cycle
-   (Clause 7.2.4). */
+/* A diamond holds the shared module once and reports no cycle. */
 static void diamond_share(void)
 {
     rfx f;
@@ -417,8 +408,8 @@ static void diamond_share(void)
     rfx_end(&f);
 }
 
-/* An empty module file imports and contributes no names (Clause
-   7.1.2); the stage chain yields a whole empty module. */
+/* An empty module file imports and contributes no names; the stage
+   chain yields a whole empty module. */
 static void empty_module(void)
 {
     rfx f;
@@ -431,7 +422,7 @@ static void empty_module(void)
 }
 
 /* A file that fails to parse still yields its partial AST; the import
-   enters the closure and the walk recovers (ARCHITECTURE rule 4). */
+   enters the closure and the walk recovers. */
 static void broken_import_file(void)
 {
     rfx f;
