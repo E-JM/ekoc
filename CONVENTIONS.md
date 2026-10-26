@@ -46,6 +46,9 @@ conflict, the spec governs.
 
 - Comments are rare and state why — a constraint the code cannot show.
   Never what the next line does, never change narration.
+- Comments carry no history and no process: no milestone or task
+  references, no "was X, now Y", no bug or fix narration, no notes to
+  reviewers. The code states what holds; history lives in git.
 - No banner comments, no commented-out code, no license headers per file
   (LICENSE covers the tree).
 
