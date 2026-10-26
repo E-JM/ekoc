@@ -24,9 +24,9 @@
  * trailing NEWLINE in Annex A.3), except continuations, where no
  * NEWLINE is emitted at the end of the previous line (A.4 rules 6 and
  * 7) and the lines splice. INDENT follows the NEWLINE of the header
- * line (Suite := ':' NEWLINE INDENT ...); DEDENTs follow the NEWLINE of
- * the last member and precede the closing bracket that closes a
- * callback block (A.4 rule 4).
+ * line (Suite := ':' NEWLINE INDENT ...); a stack block's DEDENTs
+ * follow the last member's NEWLINE, and a callback block's DEDENTs
+ * precede the closing bracket that closes it (A.4 rules 4 and 10).
  *
  * Marker positions: NEWLINE sits at the line terminator it encodes;
  * INDENT at the first token of the member opening the block; DEDENT at

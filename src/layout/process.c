@@ -9,9 +9,11 @@
 #define CODE_COLUMN "E-indent-column"
 #define CODE_DEDENT "E-indent-dedent"
 
+/* The stack is empty only while an allocation failure drains the run;
+   the bottom column 0 is the safe answer then. */
 static int top_col(const layout_ctx *c)
 {
-    return c->cols[c->col_count - 1];
+    return c->col_count ? c->cols[c->col_count - 1] : 0;
 }
 
 static void err_at(layout_ctx *c, const char *code, const line_run *l,
