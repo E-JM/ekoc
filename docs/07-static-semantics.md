@@ -646,7 +646,8 @@ Record,
 constructor, list, literal, and or-patterns are rejected there; `<-` inherits the restriction (Clause 7.8.1).
 
 Dictionary patterns, as-patterns, and conjunctive patterns do not exist; a program MUST NOT use them (Clause 6.8.7). A `case` over several scrutinees has one pattern
-per scrutinee; each pattern is checked against its scrutinee's type, and the arm matches when every pattern matches (Clause 6.7.2).
+per scrutinee; each pattern is checked against its scrutinee's type, and the arm matches when every pattern matches (Clause 6.7.2). The arm's patterns bind together
+(Clause 6.8.6); a name repeated across them is a name conflict.
 ### 7.7.2 Exhaustiveness
 A `case` MUST be exhaustive. A non-exhaustive `case` is rejected with E-exhaust (Annex B). A `case` with several scrutinees is checked over
 the product of their types: an arm covers a combination when each component pattern covers its scrutinee, and the arms must cover every
@@ -731,8 +732,8 @@ and variadic parameters are absent. The declaration's own arrow MUST
 be `!->` or `!`, or `->` when it carries `Pure` (Clause 10.2.1). A callback parameter carries its own bit. A `C.In T` parameter requires `T` to
 be a `ctype` record (Clause 10.3.4).
 
-A violation of the whitelist, monomorphism, or variadic rule is E-extern-type. A violation of the arrow rule is E-world-bit (Clauses 10.2.3,
-7.9.2). A call to an extern contributes the bit of its declared arrow (Clause 7.9.2). Signature overloading does not exist; a callee name denotes
+A violation of the whitelist, monomorphism, or variadic rule is E-extern-type. A violation of the arrow rule is
+E-extern-arrow (Clause 10.2.3). A call to an extern contributes the bit of its declared arrow (Clause 7.9.2). Signature overloading does not exist; a callee name denotes
 one binding (Clause 7.4.6).
 ### 7.8.2 UFCS Typing
 The identity `a.f(b, c) ≡ f(a, b, c)` is specified in Clause 6.5.2. This clause specifies its typing.
@@ -959,7 +960,8 @@ NOT appear in a result type, nested in a result type, in a container element, or
 E-open-bit-position (Annex B).
 
 An own `?` arrow MUST be fed by a parameter: at least one parameter type MUST contain a `?` arrow. If no parameter feeds the open bit, the
-declaration is rejected with E-open-bit-unfed (Annex B). The rule is judged after expansion of the parameter types.
+declaration is rejected with E-open-bit-unfed (Annex B). The rule is judged after expansion of the parameter types. When a declaration is rejected
+with E-open-bit-unfed, bit reconciliation of that declaration (Clause 7.9.2) is skipped: one defect yields one diagnostic.
 
 When a parameter type contains `?`, the corresponding argument supplies the instantiation: a `->` argument instantiates the bit pure, and a `!->`
 argument instantiates it world-touching. With several such parameters, their bits are ORed. Lambda arguments are checked last, so the callback's

@@ -110,7 +110,7 @@ collide with a code in the table.
 |---|---|---|
 | `E-tab` | a tab character occurs as whitespace | Clause 5.2.3 |
 | `E-name-case` | an identifier violates the case class of its name space | Clause 5.5.2 |
-| `E-literal-overflow` | a numeric literal lies outside the range of its target type | Clause 5.7.1 |
+| `E-literal-overflow` | a numeric literal lies outside the range of its target type, or a floating literal overflows the finite range | Clause 5.7.1, Clause 5.7.2 |
 | `E-cycle-import` | the module dependency graph contains a cycle | Clause 7.2.4 |
 | `E-namespace-owner` | a type-namespace member is declared outside the module that owns the type | Clause 7.4.5 |
 | `E-name-conflict` | two names conflict at one level, two constructors clash, or two imported module stems collide | Clause 7.4.6 |
@@ -126,6 +126,7 @@ collide with a code in the table.
 | `E-json-shape` | a type has no default JSON isomorphic form, for example a dictionary with a non-string key | Clause 9.9.3 |
 | `E-ctype-field` | a `ctype` field is neither a machine word nor a `ctype` record | Clause 10.3.3 |
 | `E-extern-type` | an `extern` signature uses a type outside the marshalling whitelist, or contains a type variable or variadic parameter | Clause 10.2.3, Clause 10.3.5 |
+| `E-extern-arrow` | an open arrow appears in an extern signature, as the declaration's own arrow or inside a parameter type | Clause 10.2.3 |
 | `E-refutable-binding` | a refutable pattern in a value binding | Clause 7.7.1 |
 | `E-reserved-symbol` | an `extern` names a reserved symbol | Clause 10.6 |
 

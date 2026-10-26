@@ -83,6 +83,13 @@ A **block** is a header line followed by one or more members at one
 indentation level deeper than the header. A **member** is one line or one
 semicolon-terminated unit.
 
+The semicolon-terminated unit is an **inline suite**: one or more expressions
+separated by `;` (Clause 5.3.2).
+
+```ebnf
+InlineSuite := Expression (';' Expression)*
+```
+
 The first member line establishes the block's column. Every subsequent member
 MUST begin in that column. A line that begins at a different column either
 closes the block or is an error.
@@ -423,7 +430,7 @@ body:
 
 ```ebnf
 Lambda := ParameterGroup ':' LambdaBody
-LambdaBody := Expression | IndentedBlock
+LambdaBody := InlineSuite | IndentedBlock
 ```
 
 ```eko
@@ -442,6 +449,11 @@ persons.each_with_index((p, i):
 A lambda carries no annotations: no parameter types, no result type, and no
 bit annotation. Its type and bit are supplied by the expected type and by its
 body (Clause 7.9.4).
+
+An inline lambda body is a single-line suite: `;` separates its expressions
+exactly as it separates the branches of an inline `if` or the arms of an
+inline `case` (Clauses 5.3.2, 6.7.5), so `(n): out.println(n); n + 1` is
+one body of two expressions.
 
 ### 6.4.2 Named Functions
 
@@ -966,7 +978,10 @@ error. `_` is exempt: it binds nothing, so it MAY occur any number of times.
 The rule applies separately to each alternative of an or-pattern.
 Clause 6.8.3 requires all alternatives to bind the same names at the same
 types. Different arms MAY reuse the same names; each arm binds
-independently.
+independently. The patterns of one arm of a multi-scrutinee `case`
+(Clause 6.7.2) bind together as one pattern: a name that occurs in two of
+the arm's patterns is a duplicate and is `E-name-conflict` (Annex B,
+Clause 7.4.6).
 
 ### 6.8.7 Excluded Patterns
 
@@ -1099,8 +1114,9 @@ ts: [Value Int Float, Bool]         // the chain stops at the comma
 o:  Option (Value Int Float)        // a composite argument takes parentheses
 ```
 
-A composite argument MUST be parenthesized. A type variable MUST NOT head an
-application: `t Int` is an error.
+A composite argument MUST be parenthesized; a bare composite atom in
+argument position is an error, and the diagnostic identifies this clause. A
+type variable MUST NOT head an application: `t Int` is an error.
 
 ### 6.9.5 Type Declarations
 

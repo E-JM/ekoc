@@ -241,6 +241,11 @@ Clause 6.5.4, not part of the literal.
 The forms `.5` and `1.` are not floating literals. A `.` is part of a floating
 literal only when it is preceded by a decimal digit and followed by one.
 
+A floating literal denotes a finite `Float`. A literal whose value is not
+finite after conversion — an overflow such as `1e999`, which a naive
+conversion would deliver as infinity — is an error with code
+`E-literal-overflow` (Annex B).
+
 ### 5.7.3 Digit Grouping
 
 An underscore MAY separate digits within an integer or floating literal, as
@@ -407,6 +412,11 @@ decimal digit and immediately followed by a decimal digit (Clause 5.7.2). The
 expression `1..2` is `1`, `..`, `2`; it is not `1.` followed by `.2`. The
 expression `255.to_hex()` is `255`, `.`, `to_hex`, `(` , `)`.
 
+Longest match holds for every token class, numeric prefixes included: `0x`
+followed by no hexadecimal digit is not a hexadecimal literal and lexes as
+the integer `0` followed by the identifier `x`; likewise `0b` with no binary
+digit.
+
 ## 5.11 Lexical Exclusions
 
 The following lexical forms do not exist. Their occurrence is an error.
@@ -422,3 +432,24 @@ The following lexical forms do not exist. Their occurrence is an error.
 | Bitwise operator tokens `&`, `^`, `~`, `<<`, `>>` | no such tokens; use functions (Clause 9.6.5) |
 | Prefix `!` as negation | `!` is the world-bit marker only (Clause 7.9.2) |
 | Unassigned symbols such as `@`, `$`, `` ` `` | not tokens |
+
+## 5.12 Malformed Tokens and Recovery
+
+A malformed maximal token — an unterminated string, an invalid escape, a bad
+digit grouping — is diagnosed, and the lexer resumes so that parsing sees
+token shapes the grammar admits:
+
+- When the malformed span has a prefix that is a valid token of the grammar,
+  the lexer emits that prefix token and resumes after it. `0x` with no
+  hexadecimal digit emits the integer `0` followed by the identifier `x`
+  (Clause 5.10.3).
+- Every other malformed span is consumed to the recovery boundary — the next
+  line terminator or the next bracket — with one diagnostic. A character
+  literal that holds more than one scalar value is consumed to its closing
+  quote and emits no character token; a string that holds an invalid escape
+  emits its string token with the invalid escape dropped.
+
+One lexical defect yields one diagnostic; recovery does not cascade. The
+recovered stream is not a program: the defect is fatal to the compilation
+(Clause 2.4), and the recovered shapes exist so that later stages can name
+later defects.

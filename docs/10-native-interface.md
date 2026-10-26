@@ -154,11 +154,12 @@ An extern signature is subject to the following rules.
 3. The signature MUST be complete. Variadic parameters MUST NOT appear. A
    `printf`-shaped function has no extern declaration.
 4. The declaration's own arrow MUST be `!->` or `!`, or `->` when the
-   declaration carries `Pure`. An open arrow MUST NOT appear on an extern
-   declaration.
+   declaration carries `Pure`. An open arrow MUST NOT appear in an extern
+   signature — neither as the declaration's own arrow nor inside a
+   parameter type.
 
 A violation of rule 1, rule 2, or rule 3 is reported as `E-extern-type`. A
-violation of rule 4 is a compile error (Clause 7.10).
+violation of rule 4 is reported as `E-extern-arrow` (Annex B).
 
 The compiler checks the declaration, not the native symbol. A declaration whose
 signature does not match the native symbol is outside the language guarantee

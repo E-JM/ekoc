@@ -84,7 +84,9 @@ HexDigit        := DecDigit | 'a' | ... | 'f' | 'A' | ... | 'F'
 BinDigit        := '0' | '1'
 ```
 
-An underscore MUST be between two digits.
+An underscore MUST be between two digits. A prefix with no digits is not a
+hexadecimal or binary literal; longest match (Clause 5.10.3) yields the
+integer `0` followed by an identifier.
 
 ### A.2.5 Floating Literals
 
@@ -204,6 +206,9 @@ Suite           := ':' InlineSuite
 InlineSuite     := Expression { ';' Expression }
 ```
 
+`InlineSuite` is the inline suite of Clause 6.2.2: the `;`-separated
+expressions of a single line (Clause 5.3.2).
+
 A `case` block and a `case` arm block use `Arm` rather than `Statement`:
 
 ```ebnf
@@ -220,7 +225,7 @@ The layout algorithm of Annex A.4 supplies `NEWLINE`, `INDENT`, and `DEDENT`.
 
 ```ebnf
 Lambda          := LambdaParameterGroup ':' LambdaBody
-LambdaBody      := Expression
+LambdaBody      := InlineSuite
                  | NEWLINE INDENT { Member } DEDENT
 
 LambdaParameterGroup := '(' [ LambdaParameter { ',' LambdaParameter } ] ')'
@@ -233,7 +238,9 @@ Parameter       := [ Identifier ':' ] Type
 ```
 
 A parameter group in a function type contains types; a lambda parameter group
-contains binding names. The two are distinguished by position.
+contains binding names. The two are distinguished by position. An inline
+lambda body is an inline suite (Clause 6.2.2): `(n): out.println(n); n + 1`
+is one member of two expressions.
 
 ### A.3.5 Expressions
 
@@ -342,7 +349,8 @@ Field           := Identifier ':' Type
 
 `()` is the zero-parameter function type and is an abbreviation of `() -> _`.
 `_` is the unit type. A composite argument of a generic application MUST be
-parenthesized.
+parenthesized; a bare composite atom in argument position is an error
+(Clause 6.9.4).
 
 Parentheses are context-sensitive. When a complete type is expected, a
 parenthesized group is a parameter group: `(Int)` is the unit-returning
@@ -355,14 +363,18 @@ between the two readings.
 
 ```ebnf
 QualifiedName       := Identifier { '.' Identifier }
-QualifiedPascalName := PascalName { '.' PascalName }
+QualifiedPascalName := { Identifier '.' } PascalName
 ```
 
 A dotted name in expression position is resolved by Clause 7.4.4 and may
-carry a call's arguments (Clause 6.5.2). A dotted `PascalName` in type
-position is a module-qualified type (Clause 7.4.5); in pattern position it
-is a qualified constructor (Clause 7.4.6); as the head of a
-`NamespaceBinding` it names the owner type.
+carry a call's arguments (Clause 6.5.2). A `QualifiedPascalName` is a
+dotted name whose last segment is PascalCase and whose head segments form
+a module path of any case class (Clause 5.5.2): in type position
+`geolib.Shape` is a module-qualified type (Clause 7.4.5); in pattern
+position `geolib.Circle` is a module-qualified constructor (Clause 7.4.6).
+As the head of a `NamespaceBinding` it names the owner type. A
+module-qualified constructor application in value position is spelled as a
+call, `geolib.Circle(r)` (Clause 6.5.2).
 
 ## A.4 Layout Algorithm
 
@@ -380,14 +392,20 @@ break ends a member.
    open at the end of a line. A line break at depth greater than zero emits
    no token, and the next line's indentation is ignored — except after a
    callback header (rule 4).
-4. **Callback blocks.** A line inside brackets that ends in a parameter
-   group followed by `:` — a lambda or trailing-callback header
-   (Clause 6.2.5) — opens a block. The block consists of the following lines
-   whose indentation is greater than that of the header line. Before its
-   first member the algorithm emits `NEWLINE INDENT`; at a line indented at
-   or left of the header's column it emits the pending `DEDENT`s. The
-   closing bracket of the call closes any callback block still open and
-   emits its `DEDENT`s.
+4. **Callback blocks.** A line whose final bracket depth is greater than
+   zero and whose last tokens are a parameter group followed by `:` — a
+   lambda or trailing-callback header (Clause 6.2.5) — opens a block. A
+   line whose closing parameter group and colon return the depth to zero
+   is not a callback header; it is a depth-zero line, and its colon opens
+   a block under rule 6 (the case-arm colon of Clause 6.7.1). The block
+   consists of the following lines whose indentation is greater than that
+   of the header line. Before its first member the algorithm emits
+   `NEWLINE INDENT`; the first member fixes the block's column exactly as
+   rule 5 fixes a depth-zero block's (Clause 5.2.2), every later member of
+   the block MUST equal it, and every member ends with a `NEWLINE` token.
+   At a line indented at or left of the header's column the algorithm
+   emits the pending `DEDENT`s. The closing bracket of the call closes any
+   callback block still open and emits its `DEDENT`s.
 5. **Indentation stack.** For a line at bracket depth zero with column `c`,
    against the stack of block columns, initially `[0]`:
    - `c` equals the top: emit `NEWLINE`.
@@ -396,9 +414,24 @@ break ends a member.
      its column, and every later line of that block MUST equal it.
    - `c` is smaller: pop until the top equals `c`, emitting one `DEDENT` per
      pop; if no stack entry equals `c`, the line is an error.
+
+   `NEWLINE` is a terminator, not a separator: the token of this rule ends
+   the previous significant line, so every significant depth-zero line ends
+   with a `NEWLINE` marker, as the productions of Annex A.3 write it
+   (`Arm`, `VariantLine`, `ImportLine`). An `INDENT` follows the header
+   line's `NEWLINE`; the `DEDENT`s that close a block follow the last
+   member's `NEWLINE`, precede the closing bracket of a callback block
+   (rule 4), and precede `EOF` (rule 10).
+
+   The first significant line opens no block, whatever its indentation: the
+   stack remains `[0]`, the line's indentation is ignored, and a line the
+   grammar rejects there is diagnosed at parse. An indented `else` as the
+   first significant line is an error (rule 8).
 6. **Headers and continuation.** A line at depth zero that ends in `:` or `=`
    opens a block (Clause 6.2.3); a deeper following line is the block's
-   first member and is processed by rule 5. A deeper line after a line that
+   first member and is processed by rule 5. The block-opening tokens are
+   `:` and `=`; a line that ends in `:=` opens no block, and a multi-line
+   rebinding right-hand side is a continued expression under Clause 6.2.4. A deeper line after a line that
    opens no block is a continuation: it emits no token, and its indentation
    is ignored. Continuation is licensed by Clause 6.2.4; a deeper line in
    any other position is diagnosed at parse, not by this algorithm.
