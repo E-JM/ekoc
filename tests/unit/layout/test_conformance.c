@@ -3,8 +3,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-/* Smoke test: every conformance module (Annex D sources, currently kept
-   under docs/tests/conformance) must lex and lay out without a single
+/* Smoke test: every conformance module (Annex D sources, kept under
+   tests/conformance) must lex and lay out without a single
    error diagnostic. */
 
 static void layout_module(const char *path)

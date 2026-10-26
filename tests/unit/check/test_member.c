@@ -6,7 +6,7 @@
    members (Clauses 9.8.4, 9.8.5). Geolib provides the cross-module
    fixture. */
 
-#define CONF_DIR "docs/tests/conformance"
+#define CONF_DIR "tests/conformance"
 
 static const char *const geo_path[1] = {CONF_DIR};
 

@@ -10,17 +10,17 @@
    root, and stay inside a finite diagnostic budget. */
 
 static const char *const modules[] = {
-    "docs/tests/conformance/access_drilling.eko",
-    "docs/tests/conformance/bindings.eko",
-    "docs/tests/conformance/case_patterns.eko",
-    "docs/tests/conformance/data_services.eko",
-    "docs/tests/conformance/derived_services.eko",
-    "docs/tests/conformance/generics.eko",
-    "docs/tests/conformance/geolib.eko",
-    "docs/tests/conformance/geolib_use.eko",
-    "docs/tests/conformance/lambdas_capture.eko",
-    "docs/tests/conformance/result_chains.eko",
-    "docs/tests/conformance/types_composites.eko",
+    "tests/conformance/access_drilling.eko",
+    "tests/conformance/bindings.eko",
+    "tests/conformance/case_patterns.eko",
+    "tests/conformance/data_services.eko",
+    "tests/conformance/derived_services.eko",
+    "tests/conformance/generics.eko",
+    "tests/conformance/geolib.eko",
+    "tests/conformance/geolib_use.eko",
+    "tests/conformance/lambdas_capture.eko",
+    "tests/conformance/result_chains.eko",
+    "tests/conformance/types_composites.eko",
 };
 
 #define MUTATIONS_PER_MODULE 300

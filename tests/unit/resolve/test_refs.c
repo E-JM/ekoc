@@ -7,7 +7,7 @@
    order, and exactly one ref per reference site over whole module
    closures (the conformance set plus a fixture tree). */
 
-#define CONF_DIR "docs/tests/conformance"
+#define CONF_DIR "tests/conformance"
 #define MOD_DIR "build/tmp-resolve/refs"
 
 static const char *modules[] = {

@@ -9,7 +9,7 @@
    safety are additionally enforced by the test-runner timeout and the
    sanitized build. */
 
-#define CONF_DIR "docs/tests/conformance"
+#define CONF_DIR "tests/conformance"
 
 #define CORPUS_SEEDED 250
 #define CORPUS_SEED 20261026u

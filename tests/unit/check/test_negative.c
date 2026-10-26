@@ -7,7 +7,7 @@
    declaration (diagnosed in parse) and the check-side type-position
    reference. */
 
-#define CONF_DIR "docs/tests/conformance"
+#define CONF_DIR "tests/conformance"
 
 /* N01 — nominal value into another nominal type (Clause 7.5.2). */
 static void n01(void)

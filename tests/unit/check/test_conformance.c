@@ -9,7 +9,7 @@
    opacity cannot force a diagnostic, so a rejected conformance module
    is an internal defect. */
 
-#define CONF_DIR "docs/tests/conformance"
+#define CONF_DIR "tests/conformance"
 
 static const char *modules[] = {
     "access_drilling", "bindings", "case_patterns", "data_services",

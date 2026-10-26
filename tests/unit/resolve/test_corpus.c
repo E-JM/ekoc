@@ -9,7 +9,7 @@
    are additionally enforced by the test-runner timeout and the
    sanitized build. */
 
-#define CONF_DIR "docs/tests/conformance"
+#define CONF_DIR "tests/conformance"
 
 /* Number of seeded random mutations added to the systematic sweep. */
 #define CORPUS_SEEDED 200

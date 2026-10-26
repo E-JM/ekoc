@@ -44,4 +44,4 @@ CLI, FFI shims. Everything else is colonizable by Eko over time
     cap/          the capability module (Eko source, embedded at build)
     lib/          std.eko and companions (Eko source, release files)
     docs/         the specification
-    tests/        the conformance suite (Annex D)
+    tests/        the conformance suite (Annex D) and unit tests
