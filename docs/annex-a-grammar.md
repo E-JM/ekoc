@@ -140,7 +140,7 @@ mark used only in type declarations and patterns.
 ```ebnf
 CompilationUnit := { ImportLine } { TopLevelItem }
 
-ImportLine      := 'import' ModulePath NEWLINE
+ImportLine      := 'import' ModulePath [ '.{' Identifier { ',' Identifier } '}' ] NEWLINE
 ModulePath      := Identifier { '/' Identifier }
 
 TopLevelItem    := ValueBinding

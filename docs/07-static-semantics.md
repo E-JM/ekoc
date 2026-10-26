@@ -68,12 +68,14 @@ module MUST NOT be named `std` (Clause 9.1.2).
 The final segment's stem is the module's name in code. Importing `csv/lex` opens module `lex` only, not module `csv`. A path that resolves to no
 file is an error.
 ### 7.2.3 Import Effects
-An import has exactly two effects: it adds the target module to the dependency graph, and it opens the target module's types and constructors
-into unqualified scope.
+An import has exactly three effects: it adds the target module to the dependency graph, it opens the target module's types and constructors
+into unqualified scope, and, when the import carries a selective list — `import m.{f, g}` — it opens the listed free names of `m` into the
+importing file's top layer. An opened free name follows the import rules of Clause 7.4.6: a file top-level binding of the same name is
+E-name-conflict, a local binding shadows it legally, and two imports that open the same name are E-name-conflict at the declaration point.
 
-Functions stay module-qualified at the expression head, as in `person.parse(l)`, or use the receiver form with a module segment, as in
-`x.person.parse()` (Clause 7.4.4). Types and constructors are opened; the bare spelling is the normal form, and the qualified spelling is
-legal at every name position (Clause 7.4.4).
+Functions outside a selective list stay module-qualified at the expression head, as in `person.parse(l)`, or use the receiver form with a
+module segment, as in `x.person.parse()` (Clause 7.4.4). Types and constructors are opened; the bare spelling is the normal form, and the
+qualified spelling is legal at every name position (Clause 7.4.4).
 
 There is no implicit visibility and no transitive re-export. An import is a read-only grant: it adds nothing to, removes nothing from, and
 overrides nothing in the imported interface or namespaces (Clause 7.4.5).
@@ -101,10 +103,10 @@ import is unconditional with no opt-out, so it reserves no name; any type declar
 spelling `std.T` denotes the opened type. Constructors are not opened as names: a constructor reference is anchored by the expected type in
 value position (Clause 7.5.2) or by the scrutinee type in pattern position (Clause 7.7.1), and the anchor's type supplies its constructor set.
 
-The free names opened by the implicit import are exactly `show`, `inspect`, `panic`, `assert`, `assert_eq`, and `assert_ne`. No other free name
-is opened, and no later version opens one (Clause 9.1.2). The injection is an ordinary import (Clause 9.1.2), so an opened free name follows
-the import rules of Clause 7.4.6: a file top-level binding of the same name is E-name-conflict, and a local binding shadows it legally.
-`std.show` is the qualified spelling (Clause 7.4.4).
+The free names opened by the implicit import are exactly `assert`, `assert_eq`, and `assert_ne`; the
+injected selective import is a constant of the language definition (Clause 9.1.2). An opened free name
+follows the import rules of Clause 7.4.6: a file top-level binding of the same name is E-name-conflict,
+and a local binding shadows it legally. `std.assert` is the qualified spelling (Clause 7.4.4).
 
 A companion module is imported by its `std/` path, for example `import std/math`; the import opens the final segment's stem (Clause 9.1.3).
 ### 7.2.6 Module Exclusions

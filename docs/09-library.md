@@ -23,9 +23,10 @@ language vocabulary and their namespace members. It declares no free function ot
 family of Clause 9.14.3. The standard library contains no capability content: no capability type, no
 member of a capability namespace, no world-touching declaration.
 The compiler generates the default `show` and `inspect`, structural `eq`, derived `lt`, `with`,
-`to_json`, `from_json` (Clause 9.8), the `panic` intrinsic (Clause 9.2.3), and the memory operations of
-Clause 8.6. These services attach to every type namespace as defaults. Every other standard-library
-service is ordinary Eko source.
+`to_json`, `from_json` (Clause 9.8), and the memory operations of Clause 8.6. These services attach
+to every type namespace as defaults. The `panic` intrinsic (Clause 9.2.3) is likewise
+compiler-generated; it attaches to String's namespace, the type of its parameter. Every other
+standard-library service is ordinary Eko source.
 A standard-library type namespace takes universal members only. Ownership of a type namespace belongs to
 the module that declares the type (Clause 7.4.5). The capability module performs every world contact of
 the shipped surface through the injected primitives of Clause 10.8; the standard library performs none
@@ -33,21 +34,25 @@ and declares no world-touching free function.
 
 ### 9.1.2 Implicit Import
 
-Every source file is compiled as if it began with `import std`. The injection is a constant of the
-language definition and does not depend on the contents of the file. An explicit `import std` is
-redundant and reports `W-redundant-import` (Annex B). The stem `std` and the path prefix `std/` are
-reserved; a user module MUST NOT be named `std` (Clause 7.2.2).
+Every source file is compiled as if it began with `import std.{assert, assert_eq, assert_ne}`. The
+injection is an ordinary selective import (Clause 7.2.3) and a constant of the language definition;
+it does not depend on the contents of the file. Adding a name to the list or removing one is a
+language revision, not a library update. An explicit `import std` — bare, or with a list whose names
+are all opened already — is redundant and reports W-redundant-import (Annex B). The stem `std` and
+the path prefix `std/` are reserved; a user module MUST NOT be named `std` (Clause 7.2.2).
 The names declared by the capability module resolve in every source file without import: the capability
 namespaces through the type namespaces, as `List.map` does, and their types (`File`, `OpenMode`,
 `FileInfo`, `IoError`, `Scope`, `Task t`, and the capability types) as bare names. No import path names
 the capability module (Clause 9.1.1).
-The names opened into unqualified scope are exactly `show`, `inspect`, and `panic`, which are
-compiler-generated, and `assert`, `assert_eq`, and `assert_ne`, which are std source. No later version
-opens another free name. `show` and `inspect` are generic over every type, and the opened name spans all
-type namespaces at once. Type-attached functions such as `List.map` resolve through the type namespace
-and are not opened. An opened name and a file's top-level binding occupy the same layer: a same-name
-collision is an error (Clause 7.4.6), while local shadowing remains legal. The qualified spelling
-`std.show` is legal and denotes the same binding.
+The names opened by the injected list are exactly `assert`, `assert_eq`, and `assert_ne`; all three
+are std source, ordinary Eko source like any other std free function. `show`, `inspect`, and `panic`
+are not opened names: `show` and `inspect` are compiler-generated services attached to every type
+namespace (Clause 9.8.1), and `panic` is the compiler-generated service of String's namespace (Clause
+9.2.3); each free-call form is the identity of Clause 6.5.2 — `show(t)` is `t.show()`, `panic(m)` is
+`m.panic()`. Type-attached functions such as `List.map` resolve through the type namespace and are
+not opened. An opened name and a file's top-level binding occupy the same layer: a same-name collision
+is an error (Clause 7.4.6), while local shadowing remains legal. The qualified spelling `std.assert`
+is legal and denotes the same binding.
 
 ### 9.1.3 Companion Modules
 
@@ -145,6 +150,11 @@ panic: (String) -> Never
 
 `panic` is pure: aborting is not world contact, so the call sets no world bit (Clause 7.9). It aborts
 the process without unwinding (Clause 8.4.2). A panic has no handler and no catch form.
+
+`panic` is compiler-generated (Clause 9.1.1), a service of String's
+namespace, the type of its parameter; `panic(m)` and `m.panic()` are the
+same call (Clause 6.5.2). It is not an opened name and is never std
+source.
 The standard panic origins are `panic`; `Option.unwrap`, `Result.unwrap`, `Option.expect`, and
 `Result.expect`; the assert family; division by zero; arithmetic overflow; `Int.abs` on `Int.min`;
 `String.split` with an empty separator; `Rand.int` with a zero bound; and time arithmetic outside the
@@ -464,6 +474,9 @@ constructor for arbitrary clocks.
 `show` is the display channel used by string interpolation and logging. `inspect` is the structural
 channel used by diagnostics, tests, and debugging. Both are available as free functions and as
 type-namespace members: `show(t)`, `t.show()`, `Money.show(m)`, `inspect(t)`, `t.inspect()`.
+The free-call form is the identity of Clause 6.5.2 — `show(t)` is
+`t.show()` at station 2 (Clause 7.4.3) — and neither name is opened
+(Clause 9.1.2).
 
 ### 9.8.2 Default show and Overrides
 
@@ -916,8 +929,8 @@ assert_ne: (a: t, b: t) -> _
 ```
 
 `assert` panics when its argument is `False`. `assert_eq` panics when the arguments are not equal;
-`assert_ne` panics when they are equal. All three are standard-library free functions in the implicitly
-opened scope (Clause 9.1.2). They are pure, always enabled, and require no configuration.
+`assert_ne` panics when they are equal. All three are std source, opened by the injected selective
+import of Clause 9.1.2. They are pure, always enabled, and require no configuration.
 `assert_eq` and `assert_ne` lock both arguments to the same type. `==`, `inspect`, and the structural
 derivation are compile-time generic dispatch (Clause 9.8.7). Capabilities and functions have no `==`, so
 an assertion over them is a compile error (`E-no-eq`, Annex B).

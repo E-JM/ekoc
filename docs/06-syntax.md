@@ -65,7 +65,9 @@ CompilationUnit := ImportLine* TopLevelItem*
 
 An import line MUST precede every top-level binding. An import after a
 binding is an error. A file with no bindings is legal; it contributes only
-its imports.
+its imports. A trailing `.{f, g}` on an import opens the listed free names
+of the module into the file's top layer (Clause 7.2.3); the braces do not
+participate in layout — an import line is one depth-zero line.
 
 ```eko
 // context: modules `person`, `stats`, and `csv/lex` exist.
