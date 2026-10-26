@@ -117,8 +117,8 @@ The following module-system mechanisms do not exist. Their absence is normative.
   (Clause 7.6.6).
 - **Functors and module-level signatures.** Generics already parameterize types and functions (Clause 7.6).
 - **Modules as values.** Where a value is wanted, a record of closures is used. A module never enters value position.
-- **Opening functions into unqualified scope.** An import opens types and constructors only (Clause 7.2.3). Functions are reached through a
-  module name or a type namespace.
+- **Bulk opening of functions.** An import does not open a module's functions wholesale (Clause 7.2.3); only a selective list opens the named
+  free functions. Every other function is reached through a module name or a type namespace.
 - **Re-export.** An import is read-only, and forwarding is a function (Clause 7.3.2).
 - **`/` paths outside `import`.** In expressions, `/` is division only (Clause 6.5.4).
 - **Conditional compilation.** Platform variance belongs to the host and to ordinary code, not to the module surface.
