@@ -30,6 +30,8 @@ otherwise it names the rejection and the normative clause.
 | N22 | `ctype` field outside machine words | `E-ctype-field` |
 | N23 | extern parameter outside the marshalling whitelist | `E-extern-type` |
 | N24 | type variable in an extern signature | `E-extern-type` |
+| N25 | one name bound by two patterns of one case arm | `E-name-conflict` |
+| N26 | floating literal that overflows the finite range | `E-literal-overflow` |
 
 ## N01 — nominal mismatch
 
@@ -284,3 +286,28 @@ _id: (x: t) !-> t = extern "id_any"
 Expected: `E-extern-type`. C symbols have no template semantics; an extern
 signature is monomorphic and generic wrapping is ordinary library code
 (`Clause 10.2.3`).
+
+## N25 — duplicate binding across one arm's patterns
+
+```eko
+pair: (p: [Int, Int], q: [Int, Int]) -> Int =
+    case p, q:
+        {x, _}, {x, _} -> x
+```
+
+Expected: `E-name-conflict`, at the second occurrence. The patterns of one
+arm of a multi-scrutinee `case` bind together: a name that occurs in two of
+the arm's patterns is a duplicate (`Clause 6.8.6`, `Clause 7.4.6`). Distinct
+names across the arm's patterns, the same name in different arms, and an
+or-pattern's alternatives are not affected.
+
+## N26 — floating literal overflow
+
+```eko
+big: Float = 1e999
+```
+
+Expected: `E-literal-overflow`. The literal's value is not finite after
+conversion — a naive conversion delivers infinity (`Clause 5.7.2`). A
+literal that stays finite, including one that underflows to a subnormal or
+zero, is not affected.

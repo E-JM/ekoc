@@ -1,3 +1,4 @@
+#include <math.h>
 #include <string.h>
 
 #include "check/internal.h"
@@ -181,6 +182,13 @@ const ek_type *ck_place(ck_ctx *c, const ek_node *lit, const ek_type *expected,
     if (lit->kind == EK_N_FLOAT_LIT) {
         const ek_type *t = int_target(expected);
 
+        /* The converted value must be finite: overflow arrives as
+           infinity, and underflow to a subnormal or zero is finite. */
+        if (!isfinite(lit->u.float_lit.value)) {
+            ck_error(c, lit, "E-literal-overflow",
+                     "the floating literal `%s` is not finite after "
+                     "conversion (Clause 5.7.2)", lit->u.float_lit.text);
+        }
         if (t) {
             ck_error(c, lit, "E-type-mismatch",
                      "a floating literal is never an `%s` (Clause 5.7.4)",

@@ -19,7 +19,7 @@ every test (Clause 2.7).
 | Component | Location | Form | Required outcome |
 |---|---|---|---|
 | Positive modules | `tests/conformance/` | 11 Eko modules: 10 test roots and one fixture | compile; every test binding executes without panic |
-| Negative entries | `tests/negative/manifest.md` | 24 minimal programs | compile-time rejection with the stated outcome |
+| Negative entries | `tests/negative/manifest.md` | 26 minimal programs | compile-time rejection with the stated outcome |
 | Runner | host or toolchain | test runner over both classes | per-test report and diagnostic code |
 
 ## D.2 Positive Tests
@@ -94,6 +94,8 @@ the rejection and the violated clause.
 | N22 | `ctype` field outside machine words | `E-ctype-field` | 10.3.3 |
 | N23 | extern parameter outside the marshalling whitelist | `E-extern-type` | 10.3.5 |
 | N24 | type variable in an extern signature | `E-extern-type` | 10.2.3 |
+| N25 | one name bound by two patterns of one case arm | `E-name-conflict` | 6.8.6 |
+| N26 | floating literal that overflows the finite range | `E-literal-overflow` | 5.7.2 |
 
 For an entry with a specified code, the error diagnostic that rejects the
 program MUST carry that code. For an entry without a specified code, the

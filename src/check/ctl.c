@@ -61,6 +61,7 @@ static const ek_type *case_arm(ck_ctx *c, const ek_node *arm,
     size_t k;
 
     ck_scope_push(c);
+    ck_arm_binds_together(c, arm);
     for (k = 0; k < arm->u.arm.patterns.count; k++) {
         size_t col = k < nsc ? k : (nsc ? nsc - 1 : 0);
 

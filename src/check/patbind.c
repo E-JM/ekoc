@@ -114,6 +114,140 @@ const ek_type *ck_or_pattern(ck_ctx *c, const ek_node *p, const ek_type *scrut)
     return scrut;
 }
 
+/* One arm's patterns bind together: a name that two of the arm's
+   patterns bind is a duplicate, judged across the patterns with each
+   pattern's binding set taken whole. Duplicates inside one pattern are
+   judged in the resolver; different arms bind independently. */
+
+typedef struct {
+    const char *name;
+    const ek_node *at;
+} ck_bound;
+
+typedef struct {
+    ck_bound *v;
+    size_t n, cap;
+} ck_seen;
+
+static int seen_has(const ck_seen *s, const char *name)
+{
+    size_t i;
+
+    for (i = 0; i < s->n; i++) {
+        if (strcmp(s->v[i].name, name) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* A binding name joins the set; `_` binds nothing and never
+   conflicts. */
+static void seen_put(ck_ctx *c, ck_seen *s, const char *name,
+                     const ek_node *at)
+{
+    if (c->oom || !name || strcmp(name, "_") == 0) {
+        return;
+    }
+    if (s->n == s->cap) {
+        size_t ncap = s->cap ? s->cap * 2 : 8;
+        ck_bound *nv = ek_arena_alloc(c->arena, ncap * sizeof *nv);
+
+        if (!nv) {
+            c->oom = 1;
+            return;
+        }
+        if (s->n) {
+            memcpy(nv, s->v, s->n * sizeof *nv);
+        }
+        s->v = nv;
+        s->cap = ncap;
+    }
+    s->v[s->n].name = name;
+    s->v[s->n].at = at;
+    s->n++;
+}
+
+/* The binding names one pattern carries, with or-alternatives
+   contributing their (necessarily identical) sets. */
+static void collect_bound(ck_ctx *c, ck_seen *s, const ek_node *p)
+{
+    size_t i;
+
+    if (!p || c->oom) {
+        return;
+    }
+    switch (p->kind) {
+    case EK_N_P_VAR:
+        if (p->u.path.count == 1) {
+            seen_put(c, s, p->u.path.data[0], p);
+        }
+        return;
+    case EK_N_P_OR:
+    case EK_N_P_PAREN:
+        for (i = 0; i < p->u.kids.count; i++) {
+            collect_bound(c, s, p->u.kids.data[i]);
+        }
+        return;
+    case EK_N_P_BRACE:
+        for (i = 0; i < p->u.p_brace.items.count; i++) {
+            collect_bound(c, s, p->u.p_brace.items.data[i]);
+        }
+        seen_put(c, s, p->u.p_brace.rest_name, p);
+        return;
+    case EK_N_P_FIELD:
+        collect_bound(c, s, p->u.p_field.pattern);
+        return;
+    case EK_N_P_CONS:
+        collect_bound(c, s, p->u.cons.payload);
+        return;
+    default:
+        return;
+    }
+}
+
+/* Run before the arm's patterns bind: each pattern is compared against
+   the union of the earlier ones, and a shared name is reported at that
+   occurrence. A name repeated inside one pattern counts once here; the
+   resolver owns within-pattern duplicates. */
+void ck_arm_binds_together(ck_ctx *c, const ek_node *arm)
+{
+    ck_seen seen;
+    size_t k;
+
+    if (c->oom || !arm || arm->u.arm.patterns.count < 2) {
+        return;
+    }
+    memset(&seen, 0, sizeof seen);
+    for (k = 0; k < arm->u.arm.patterns.count; k++) {
+        ck_seen now;
+        size_t i;
+
+        memset(&now, 0, sizeof now);
+        collect_bound(c, &now, arm->u.arm.patterns.data[k]);
+        for (i = 0; i < now.n; i++) {
+            size_t j;
+            int earlier = 0;
+
+            for (j = 0; j < i; j++) {
+                if (strcmp(now.v[j].name, now.v[i].name) == 0) {
+                    earlier = 1;
+                }
+            }
+            if (earlier) {
+                continue;
+            }
+            if (seen_has(&seen, now.v[i].name)) {
+                ck_error(c, now.v[i].at, "E-name-conflict",
+                         "`%s` is bound by two patterns of the arm "
+                         "(Clauses 6.8.6, 7.4.6)", now.v[i].name);
+            } else {
+                seen_put(c, &seen, now.v[i].name, now.v[i].at);
+            }
+        }
+    }
+}
+
 /* A value binding admits only irrefutable patterns: `_`, a variable,
    a tuple or group of irrefutable patterns, and a record pattern whose
    subpatterns are irrefutable. */

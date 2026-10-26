@@ -5,7 +5,8 @@
    full pipeline, and asserts the exact code at the correct position
    plus the rejection itself. N11 has two halves: the manifest
    declaration (diagnosed in parse) and the check-side type-position
-   reference. */
+   reference. N25 and N26 also carry the legal boundary of their
+   checks: the companion programs that must keep compiling. */
 
 #define CONF_DIR "tests/conformance"
 
@@ -159,6 +160,49 @@ static void n19(void)
     cfx_end(&f);
 }
 
+/* N25 — a name bound by two of one arm's patterns. */
+static void n25(void)
+{
+    cfx f;
+
+    cfx_begin(&f,
+              "pair: (p: [Int, Int], q: [Int, Int]) -> Int =\n"
+              "    case p, q:\n"
+              "        {x, _}, {x, _} -> x\n");
+    EK_CHECK(cfx_errors(&f) >= 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-name-conflict", 3));
+    cfx_end(&f);
+}
+
+/* N26 — a floating literal whose converted value is not finite. The
+   boundary stays legal: a magnitude inside the finite range, a plain
+   fraction, and an underflow to zero are all finite; the integer
+   overflow path is untouched. */
+static void n26(void)
+{
+    cfx f;
+
+    cfx_begin(&f, "big: Float = 1e999\n");
+    EK_CHECK(cfx_errors(&f) >= 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-literal-overflow", 1));
+    cfx_end(&f);
+
+    cfx_begin(&f, "big: Float = 1.8e308\n");
+    EK_CHECK(cfx_code_at_line(&f, "E-literal-overflow", 1));
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "a: Float = 1e308\n"
+              "b: Float = 1.5\n"
+              "c: Float = 1e-999\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+
+    cfx_begin(&f, "big: Int = 9223372036854775808\n");
+    EK_CHECK(cfx_code_at_line(&f, "E-literal-overflow", 1));
+    cfx_end(&f);
+}
+
 int main(void)
 {
     n01();
@@ -171,5 +215,7 @@ int main(void)
     n14();
     n18();
     n19();
+    n25();
+    n26();
     return ek_test_report("check/negative");
 }

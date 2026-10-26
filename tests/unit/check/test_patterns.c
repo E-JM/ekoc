@@ -1,8 +1,9 @@
 #include "common.h"
 
 /* Pattern typing and exhaustiveness — variants, records, tuples,
-   or-patterns, guards, lists, multiple scrutinees — plus the
-   irrefutability rule for value bindings. */
+   or-patterns, guards, lists, multiple scrutinees, the together-rule
+   for one arm's patterns — plus the irrefutability rule for value
+   bindings. */
 
 static void variants(void)
 {
@@ -199,6 +200,76 @@ static void guards_and_scrutinees(void)
     cfx_end(&f);
 }
 
+/* One arm of a multi-scrutinee case binds together: a name that two of
+   the arm's patterns bind is a conflict at the later occurrence, an
+   or-pattern's set counts whole, distinct names pass, different arms
+   reuse freely, and twice inside one pattern stays the resolver's. */
+static void cross_pattern(void)
+{
+    cfx f;
+    size_t i;
+    int hit;
+
+    cfx_begin(&f,
+              "pair: (p: [Int, Int], q: [Int, Int]) -> Int =\n"
+              "    case p, q:\n"
+              "        {x, _}, {x, _} -> x\n");
+    EK_CHECK(cfx_code_at_line(&f, "E-name-conflict", 3));
+    cfx_end(&f);
+
+    /* Distinct names across the arm's patterns bind independently. */
+    cfx_begin(&f,
+              "pair: (p: [Int, Int], q: [Int, Int]) -> Int =\n"
+              "    case p, q:\n"
+              "        {x, _}, {y, _} -> x + y\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+
+    /* Different arms may reuse the same names. */
+    cfx_begin(&f,
+              "pair: (p: [Int, Int], q: [Int, Int]) -> Int =\n"
+              "    case p, q:\n"
+              "        {x, _}, {y, _} -> x + y\n"
+              "        {x, _}, {y, _} -> x * y\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+
+    /* The or-pattern's set is whole: its `x` meets `n` as distinct,
+       another `x` as a conflict. */
+    cfx_begin(&f,
+              "B: type = Box Int | Mark Int\n"
+              "unbox: (b: B, n: Int) -> Int =\n"
+              "    case b, n:\n"
+              "        Box x | Mark x, n -> x + n\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "B: type = Box Int | Mark Int\n"
+              "unbox: (b: B, n: Int) -> Int =\n"
+              "    case b, n:\n"
+              "        Box x | Mark x, x -> x\n");
+    EK_CHECK(cfx_code_at_line(&f, "E-name-conflict", 4));
+    cfx_end(&f);
+
+    /* Twice inside one pattern is the resolver's rejection, and the
+       single-pattern arm draws no check-side conflict. */
+    cfx_begin(&f,
+              "pair: (p: [Int, Int]) -> Int =\n"
+              "    case p:\n"
+              "        {x, x} -> x\n");
+    hit = 0;
+    for (i = 0; i < f.dn; i++) {
+        if (f.ds[i].code && strcmp(f.ds[i].code, "E-name-conflict") == 0
+            && f.ds[i].line == 3) {
+            hit = 1;
+        }
+    }
+    EK_CHECK(hit);
+    EK_CHECK(!cfx_has_code(&f, "E-name-conflict"));
+    cfx_end(&f);
+}
+
 static void bindings(void)
 {
     cfx f;
@@ -321,6 +392,7 @@ int main(void)
     records_tuples();
     lists();
     guards_and_scrutinees();
+    cross_pattern();
     bindings();
     constructor_and_product_coverage();
     return ek_test_report("check/patterns");

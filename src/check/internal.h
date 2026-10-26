@@ -220,6 +220,8 @@ const ek_type *ck_callback_param(ck_ctx *c, const ek_node *m,
                                  const ek_type *call);
 const ek_type *ck_pattern(ck_ctx *c, const ek_node *p, const ek_type *scrut);
 const ek_type *ck_or_pattern(ck_ctx *c, const ek_node *p, const ek_type *scrut);
+void ck_arm_binds_together(ck_ctx *c, const ek_node *arm); /* a name two
+                                        of the arm's patterns bind conflicts */
 int ck_irrefutable(const ek_node *p); /* 0 = refutable in a value binding */
 
 /* exhaust.c: coverage of one scrutinee. exhaust_prod.c: the
