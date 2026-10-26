@@ -365,6 +365,82 @@ static void lambda_shapes(void)
     pfx_end(&f);
 }
 
+/* The record-update form: a postfix member call whose one argument is
+   a composite literal (annex A.3.5 Postfix; Clauses 6.6.3, 9.8.6).
+   There is no `with` operator in the ladder; the form sits at level 1
+   with every other postfix link. */
+static void with_updates(void)
+{
+    parse_fixture f;
+    const ek_node *e;
+
+    e = expr_of(&f, "p.with({age: 37})");
+    EK_CHECK_U64(pfx_errors(&f), 0);
+    EK_CHECK_U64(e->kind, EK_N_CALL);
+    EK_CHECK_U64(e->u.call.callee->kind, EK_N_FIELD);
+    EK_CHECK_STR(e->u.call.callee->u.field.name, "with");
+    EK_CHECK_STR(e->u.call.callee->u.field.recv->u.path.data[0], "p");
+    EK_CHECK_U64(e->u.call.args.count, 1);
+    EK_CHECK_U64(e->u.call.args.data[0]->kind, EK_N_COMPOSITE);
+    EK_CHECK_U64(e->u.call.args.data[0]->u.kids.count, 1);
+    pfx_end(&f);
+
+    /* The update is one postfix link: field access composes on it, and
+       the operators bind around the whole chain. */
+    e = expr_of(&f, "p.with({age: 37}).age + 1");
+    EK_CHECK_U64(pfx_errors(&f), 0);
+    EK_CHECK_U64(e->u.binary.op, EK_BIN_ADD);
+    EK_CHECK_U64(e->u.binary.lhs->kind, EK_N_FIELD);
+    EK_CHECK_STR(e->u.binary.lhs->u.field.name, "age");
+    EK_CHECK_U64(e->u.binary.lhs->u.field.recv->kind, EK_N_CALL);
+    pfx_end(&f);
+
+    e = expr_of(&f, "p.with({age: 37}).age == 36");
+    EK_CHECK_U64(pfx_errors(&f), 0);
+    EK_CHECK_U64(e->u.binary.op, EK_BIN_EQ);
+    EK_CHECK_U64(e->u.binary.lhs->kind, EK_N_FIELD);
+    pfx_end(&f);
+
+    e = expr_of(&f, "p.with({age: 37}).age > 0 && q.ok");
+    EK_CHECK_U64(pfx_errors(&f), 0);
+    EK_CHECK_U64(e->u.binary.op, EK_BIN_AND);
+    EK_CHECK_U64(e->u.binary.lhs->u.binary.op, EK_BIN_GT);
+    pfx_end(&f);
+
+    /* an update whose field value is itself a literal */
+    e = expr_of(&f, "p.with({address: {city: \"cd\"}})");
+    EK_CHECK_U64(pfx_errors(&f), 0);
+    EK_CHECK_U64(e->kind, EK_N_CALL);
+    EK_CHECK_U64(e->u.call.args.data[0]->u.kids.data[0]->u.pair.b->kind,
+                 EK_N_COMPOSITE);
+    pfx_end(&f);
+
+    /* breaks inside the argument list are free formatting */
+    e = expr_of(&f, "p.with(\n        {age: 37})");
+    EK_CHECK_U64(pfx_errors(&f), 0);
+    EK_CHECK_U64(e->kind, EK_N_CALL);
+    EK_CHECK_U64(e->u.call.args.count, 1);
+    pfx_end(&f);
+
+    e = expr_of(&f, "p.with({\n        age: 37})");
+    EK_CHECK_U64(pfx_errors(&f), 0);
+    EK_CHECK_U64(e->kind, EK_N_CALL);
+    EK_CHECK_U64(e->u.call.args.data[0]->u.kids.count, 1);
+    pfx_end(&f);
+
+    /* The argument grammar is CompositeItem, so a rest element is no
+       expression and the braces are rejected here; a shorthand item is
+       an element, which only check can reject against the record. */
+    (void)expr_of(&f, "p.with({..})");
+    EK_CHECK(pfx_errors(&f) > 0);
+    pfx_end(&f);
+
+    e = expr_of(&f, "p.with({age})");
+    EK_CHECK_U64(pfx_errors(&f), 0);
+    EK_CHECK_U64(e->u.call.args.data[0]->u.kids.data[0]->u.pair.a, NULL);
+    pfx_end(&f);
+}
+
 int main(void)
 {
     literals_and_names();
@@ -372,6 +448,7 @@ int main(void)
     precedence_corners();
     calls_and_chains();
     composite_literals();
+    with_updates();
     lambdas();
     lambda_shapes();
     operand_blocks();

@@ -148,6 +148,46 @@ static const ek_type *direct_receiver(ck_ctx *c, const ek_node *recv)
     return ck_expr(c, recv, NULL);
 }
 
+/* The derived `with` service (Clause 9.8.6): the receiver's record
+   rebuilt from the partial field literal, the receiver's own type
+   coming back. The service's second parameter has no type-syntax name,
+   so the argument is checked directly as a partial record literal
+   against the receiver's fields, layer by layer; the service is pure,
+   like every derived member (Clause 9.8.7). */
+static const ek_type *call_with(ck_ctx *c, const ek_node *e,
+                                const ek_type *recv)
+{
+    const ek_type *r = ck_prune(recv);
+    const ek_type *rec = r;
+    const ek_node *arg;
+    const ek_type *result = r;
+
+    if (rec->kind == EK_T_NOMINAL) {
+        rec = ck_decl_repr(c, rec);
+    }
+    if (e->u.call.args.count != 1) {
+        ck_error(c, e, "E-call-arity",
+                 "the call supplies %zu arguments, `with` takes the one "
+                 "partial literal (Clauses 6.6.3, 9.8.6)",
+                 e->u.call.args.count);
+    }
+    arg = e->u.call.args.count ? e->u.call.args.data[0] : NULL;
+    if (arg && arg->kind != EK_N_COMPOSITE) {
+        ck_error(c, arg, "E-type-mismatch",
+                 "the argument of `with` is a partial record literal in "
+                 "braces (Clauses 6.6.3, 9.8.6)");
+        ck_expr(c, arg, NULL);
+    } else if (arg && arg->u.kids.count) {
+        /* The empty literal is the empty subset; anything in it goes
+           through the record reading, which allows a subset at every
+           layer of the `with` argument alone. */
+        ck_composite(c, arg, rec, 1);
+    }
+    ck_call_bit(c, e, EK_BIT_PURE);
+    ck_row(c, e, result, EK_RD_NONE);
+    return result;
+}
+
 /* A receiver-chain call: the link is typed at the receiver, and a
    function-valued field calls its value. */
 static const ek_type *call_member(ck_ctx *c, const ek_node *e,
@@ -158,6 +198,11 @@ static const ek_type *call_member(ck_ctx *c, const ek_node *e,
     const ek_type *t = ck_link(c, callee, recv, &rd);
     const ek_type *pt = rd == EK_RD_FIELD ? ck_prune(t) : NULL;
 
+    if (rd == EK_RD_DERIVED && strcmp(callee->u.field.name, "with") == 0) {
+        /* The with service takes its literal argument directly; its
+           link type is only the expressible stand-in. */
+        return call_with(c, e, recv);
+    }
     if (rd != EK_RD_FIELD) {
         /* Namespace, module, derived, and opaque readings all take
            the receiver first. */

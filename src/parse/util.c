@@ -157,6 +157,32 @@ void p_sync(p_ctx *c)
     }
 }
 
+/* One recursion level of the expression, type, or pattern parsers.
+   Past the ceiling the diagnostic fires once per parse -- the deeper
+   levels all sit above the limit, and a per-level diagnostic would
+   bury the cause -- and the caller gives the level back as NULL. */
+int p_depth_enter(p_ctx *c)
+{
+    if (c->depth >= EK_PARSE_MAX_DEPTH) {
+        if (!c->depth_hit) {
+            const ek_layout_token *t = p_peek(c);
+
+            c->depth_hit = 1;
+            p_error(c, "E-nesting-depth", t->line, t->col,
+                    "nesting exceeds %d levels; bind intermediate values "
+                    "or split the construct", EK_PARSE_MAX_DEPTH);
+        }
+        return 0;
+    }
+    c->depth++;
+    return 1;
+}
+
+void p_depth_leave(p_ctx *c)
+{
+    c->depth--;
+}
+
 const ek_layout_token *p_peek(p_ctx *c)
 {
     if (c->pos >= c->count) {

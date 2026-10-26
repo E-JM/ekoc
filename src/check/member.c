@@ -149,6 +149,64 @@ static const ek_type *derive_lt(ck_ctx *c, const ek_type *r,
     return derived_fn(c, r, bool_t);
 }
 
+/* The closest expressible arrow of the `with` service: the service's
+   second parameter (the partial fields) has no type-syntax name, so
+   the link row carries (t, t) -> t as a stand-in; the call itself is
+   typed in call.c, which checks the literal against t directly. */
+static const ek_type *with_fn(ck_ctx *c, const ek_type *r)
+{
+    const ek_type **ps = ek_arena_alloc(c->arena, 2 * sizeof *ps);
+
+    if (ps) {
+        ps[0] = r;
+        ps[1] = r;
+        return ck_fn(c, ps, 2, r, EK_ARROW_PURE);
+    }
+    c->oom = 1;
+    return ck_ivar(c);
+}
+
+/* True when the nominal is a std placeholder: it has no declaration,
+   so its shape is opaque and nothing is diagnosed about it. */
+static int std_placeholder(const ek_type *r)
+{
+    return r->u.nominal.sym->decl == NULL;
+}
+
+/* The derived with member over a record receiver: an anonymous record
+   or a record-shaped nominal. A receiver whose type is otherwise known
+   is rejected here; a placeholder or undetermined receiver falls
+   through to opacity. NULL falls through. */
+static const ek_type *derive_with(ck_ctx *c, const ek_node *at,
+                                  const ek_type *r, const char *name,
+                                  ek_reading *rd)
+{
+    const ek_type *rec = r;
+
+    if (strcmp(name, "with") != 0) {
+        return NULL;
+    }
+    if (rec->kind == EK_T_NOMINAL) {
+        if (std_placeholder(rec)) {
+            return NULL;
+        }
+        rec = ck_decl_repr(c, rec);
+        if (!rec || rec->kind != EK_T_RECORD) {
+            ck_error(c, at, "E-type-mismatch",
+                     "`with` constructs a record from a record, not %s "
+                     "(Clause 9.8.6)", ck_type_name(c, r));
+            return NULL;
+        }
+    } else if (rec->kind != EK_T_RECORD) {
+        ck_error(c, at, "E-type-mismatch",
+                 "`with` constructs a record from a record, not %s "
+                 "(Clause 9.8.6)", ck_type_name(c, r));
+        return NULL;
+    }
+    *rd = EK_RD_DERIVED;
+    return with_fn(c, r);
+}
+
 /* The readings over a declared receiver: its representation's fields,
    its namespace, the derived services, and the extending module
    function. */
@@ -182,6 +240,10 @@ static const ek_type *nominal_link(ck_ctx *c, const ek_node *at,
     if (t) {
         return t;
     }
+    t = derive_with(c, at, r, name, rd);
+    if (t) {
+        return t;
+    }
     /* The current module extends the foreign type. */
     m = module_fn(c, name, r);
     if (m) {
@@ -193,7 +255,7 @@ static const ek_type *nominal_link(ck_ctx *c, const ek_node *at,
 
 /* The reading of one member link at its receiver's type. Derived
    services: eq on every internal type whose derivation does not halt,
-   lt on declared ADTs. */
+   lt on declared ADTs, with on record receivers. */
 static const ek_type *link_type(ck_ctx *c, const ek_node *at,
                                 const ek_type *recv, const char *name,
                                 ek_reading *rd)
@@ -209,6 +271,10 @@ static const ek_type *link_type(ck_ctx *c, const ek_node *at,
 
         if (t) {
             *rd = EK_RD_FIELD;
+            return t;
+        }
+        t = derive_with(c, at, r, name, rd);
+        if (t) {
             return t;
         }
     }

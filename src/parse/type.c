@@ -18,13 +18,21 @@ static void arg_atom(p_ctx *c, ek_nlist *args);
 
 ek_node *p_type(p_ctx *c)
 {
+    ek_node *t;
+
     if (c->oom) {
         return NULL;
     }
-    if (p_at(c, EK_TOK_LPAREN)) {
-        return fn_type(c, p_peek(c));
+    if (!p_depth_enter(c)) {
+        return NULL;
     }
-    return applied_type(c);
+    if (p_at(c, EK_TOK_LPAREN)) {
+        t = fn_type(c, p_peek(c));
+    } else {
+        t = applied_type(c);
+    }
+    p_depth_leave(c);
+    return t;
 }
 
 /* A parameter group followed by an arrow and a result type, by a bare

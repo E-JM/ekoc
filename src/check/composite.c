@@ -83,11 +83,20 @@ static void check_complete(ck_ctx *c, const ek_node *e, const ek_type *rec)
 }
 
 /* One item value at its expected type, conformed back: a placement
-   alone cannot catch a String where an Int was expected. */
-static void item_value(ck_ctx *c, const ek_node *val, const ek_type *expected)
+   alone cannot catch a String where an Int was expected. Inside a
+   `with` argument the partial-literal permission follows the field
+   values down, layer by layer (Clause 9.8.6); every other position
+   resets it, so a partial literal nested under a list or dictionary
+   element stays illegal. */
+static void item_value(ck_ctx *c, const ek_node *val, const ek_type *expected,
+                       int allow_partial)
 {
-    const ek_type *vt = ck_expr(c, val, expected);
+    int saved = c->partial_ok;
+    const ek_type *vt;
 
+    c->partial_ok = allow_partial;
+    vt = ck_expr(c, val, expected);
+    c->partial_ok = saved;
     if (expected && ck_conforms(c, vt, expected, 1) != CK_OK) {
         ck_error(c, val, "E-type-mismatch",
                  "the item is %s, the expected type is %s (Clause 7.5.3)",
@@ -129,7 +138,7 @@ static const ek_type *record_lit(ck_ctx *c, const ek_node *e,
             continue;
         }
         dup_field(c, e, item, i, field);
-        item_value(c, item->u.pair.b, ft);
+        item_value(c, item->u.pair.b, ft, allow_partial);
     }
     if (!allow_partial && rec->u.record.count) {
         check_complete(c, e, rec);
@@ -188,8 +197,8 @@ static const ek_type *composite_colons(ck_ctx *c, const ek_node *e,
             const ek_node *item = e->u.kids.data[i];
 
             if (item->kind == EK_N_COMPOSITE_ITEM) {
-                item_value(c, item->u.pair.a, exp->u.dict.key);
-                item_value(c, item->u.pair.b, exp->u.dict.val);
+                item_value(c, item->u.pair.a, exp->u.dict.key, 0);
+                item_value(c, item->u.pair.b, exp->u.dict.val, 0);
             }
         }
         return exp;
@@ -227,7 +236,7 @@ static const ek_type *comma_tuple(ck_ctx *c, const ek_node *e,
         const ek_node *item = e->u.kids.data[i];
 
         if (item->kind == EK_N_COMPOSITE_ITEM) {
-            item_value(c, item->u.pair.b, exp->u.tuple.items[i]);
+            item_value(c, item->u.pair.b, exp->u.tuple.items[i], 0);
         }
     }
     return exp;
@@ -245,7 +254,7 @@ static const ek_type *composite_comma(ck_ctx *c, const ek_node *e,
             const ek_node *item = e->u.kids.data[i];
 
             if (item->kind == EK_N_COMPOSITE_ITEM) {
-                item_value(c, item->u.pair.b, exp->u.list.elem);
+                item_value(c, item->u.pair.b, exp->u.list.elem, 0);
             }
         }
         return exp;
@@ -286,6 +295,7 @@ const ek_type *ck_composite(ck_ctx *c, const ek_node *e,
 {
     const ek_type *exp = ck_prune(expected);
     int colons = has_colons(e);
+    int partial = allow_partial || c->partial_ok;
 
     if (c->oom) {
         return NULL;
@@ -295,7 +305,7 @@ const ek_type *ck_composite(ck_ctx *c, const ek_node *e,
         return composite_opaque(c, e, exp);
     }
     if (colons) {
-        return composite_colons(c, e, exp, allow_partial);
+        return composite_colons(c, e, exp, partial);
     }
     return composite_comma(c, e, exp);
 }

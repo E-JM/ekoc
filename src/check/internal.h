@@ -76,6 +76,9 @@ typedef struct {
     int open_scope;  /* inside the body of a declaration whose signature
                         contains the open bit: calls through `?` arrows
                         carry that bit */
+    int partial_ok;  /* inside a `with` argument: the partial-literal
+                        permission extends layer by layer through the
+                        record field values it contains */
     ek_ck_row *rows;
     size_t nrows, crows;
     int oom;

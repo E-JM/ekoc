@@ -59,30 +59,46 @@ static void dotted_name(p_ctx *c, const ek_layout_token *first,
     }
 }
 
-/* One primary pattern. */
+/* One primary pattern. The guard sits here rather than on p_pattern
+   because every pattern recursion edge -- paren and brace groups and
+   constructor payloads -- passes through this frame exactly once per
+   nesting level. */
 static ek_node *primary_pattern(p_ctx *c)
 {
     const ek_layout_token *t = p_peek(c);
+    ek_node *p;
 
+    if (!p_depth_enter(c)) {
+        return NULL;
+    }
     switch (p_src_kind(t)) {
     case EK_TOK_IDENT:
-        return name_pattern(c, t);
+        p = name_pattern(c, t);
+        break;
     case EK_TOK_INT:
     case EK_TOK_FLOAT:
     case EK_TOK_CHAR:
-        return lit_pattern(c, p_literal(c, p_take(c)));
+        p = lit_pattern(c, p_literal(c, p_take(c)));
+        break;
     case EK_TOK_STRING:
-        return string_pattern(c, t);
+        p = string_pattern(c, t);
+        break;
     case EK_TOK_MINUS:
-        return minus_pattern(c, t);
+        p = minus_pattern(c, t);
+        break;
     case EK_TOK_LPAREN:
-        return paren_pattern(c, t);
+        p = paren_pattern(c, t);
+        break;
     case EK_TOK_LBRACE:
-        return brace_pattern(c, t);
+        p = brace_pattern(c, t);
+        break;
     default:
         p_error_tok(c, "E-syntax", t, "expected a pattern");
-        return NULL;
+        p = NULL;
+        break;
     }
+    p_depth_leave(c);
+    return p;
 }
 
 /* An identifier pattern: a (qualified) constructor or a variable,

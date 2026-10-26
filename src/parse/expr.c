@@ -208,8 +208,15 @@ static ek_node *or_expr(p_ctx *c)
 
 ek_node *p_expr(p_ctx *c)
 {
+    ek_node *e;
+
     if (c->oom) {
         return NULL;
     }
-    return or_expr(c);
+    if (!p_depth_enter(c)) {
+        return NULL;
+    }
+    e = or_expr(c);
+    p_depth_leave(c);
+    return e;
 }

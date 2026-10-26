@@ -132,12 +132,145 @@ static void qualified_calls(void)
     cfx_end(&f);
 }
 
+/* Any row on the line typed at the named nominal: the type an update
+   lands at. */
+static int nominal_at_line(const cfx *f, int line, const char *name)
+{
+    size_t i;
+
+    for (i = 0; i < f->chk.count; i++) {
+        const ek_type *t = f->chk.rows[i].type;
+
+        if (f->chk.rows[i].node && f->chk.rows[i].node->line == line
+            && t && t->kind == EK_T_NOMINAL && t->u.nominal.sym
+            && strcmp(t->u.nominal.sym->name, name) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* The derived with service: the receiver's record type comes back, the
+   argument is a partial record literal checked field by field, layer
+   by layer, and the service is pure (Clauses 6.6.3, 9.8.6, 9.8.7). */
+static void derived_with(void)
+{
+    cfx f;
+
+    /* A nominal record receiver: the update reads as the derived
+       service and types at the receiver's own type. */
+    cfx_begin(&f,
+              "Human: type = [name: String, age: Int]\n"
+              "p: Human = {name: \"ada\", age: 36}\n"
+              "q := p.with({age: 37})\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    EK_CHECK(cfx_reading_at(&f, 3, EK_RD_DERIVED));
+    EK_CHECK(cfx_bit_at(&f, 3, EK_BIT_PURE));
+    EK_CHECK(nominal_at_line(&f, 3, "Human"));
+    cfx_end(&f);
+
+    /* An anonymous record receiver. */
+    cfx_begin(&f,
+              "p: [name: String, age: Int] = {name: \"ada\", age: 36}\n"
+              "q := p.with({age: 37})\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    EK_CHECK(cfx_reading_at(&f, 2, EK_RD_DERIVED));
+    cfx_end(&f);
+
+    /* The partial reading extends layer by layer through the field
+       values: the inner literal may name a subset too. */
+    cfx_begin(&f,
+              "Address: type = [city: String, zip: String]\n"
+              "Person: type = [name: String, age: Int, address: Address]\n"
+              "p: Person = {name: \"ada\", age: 36, "
+              "address: {city: \"x\", zip: \"1\"}}\n"
+              "m := p.with({address: {city: \"y\"}})\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    EK_CHECK(cfx_reading_at(&f, 4, EK_RD_DERIVED));
+    EK_CHECK(nominal_at_line(&f, 4, "Person"));
+    cfx_end(&f);
+
+    /* An unknown field is named once, at its layer. */
+    cfx_begin(&f,
+              "Human: type = [name: String, age: Int]\n"
+              "p: Human = {name: \"ada\", age: 36}\n"
+              "q := p.with({ag: 37})\n");
+    EK_CHECK(cfx_has_code(&f, "E-field-missing"));
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "Address: type = [city: String, zip: String]\n"
+              "Person: type = [name: String, age: Int, address: Address]\n"
+              "p: Person = {name: \"ada\", age: 36, "
+              "address: {city: \"x\", zip: \"1\"}}\n"
+              "m := p.with({address: {cityy: \"y\"}})\n");
+    EK_CHECK(cfx_has_code(&f, "E-field-missing"));
+    cfx_end(&f);
+
+    /* A field value keeps its own type. */
+    cfx_begin(&f,
+              "Human: type = [name: String, age: Int]\n"
+              "p: Human = {name: \"ada\", age: 36}\n"
+              "q := p.with({age: \"37\"})\n");
+    EK_CHECK(cfx_has_code(&f, "E-type-mismatch"));
+    cfx_end(&f);
+
+    /* Shorthand braces are the comma family, not a record reading. */
+    cfx_begin(&f,
+              "Human: type = [name: String, age: Int]\n"
+              "p: Human = {name: \"ada\", age: 36}\n"
+              "q := p.with({age})\n");
+    EK_CHECK(cfx_has_code(&f, "E-type-mismatch"));
+    cfx_end(&f);
+
+    /* The literal argument alone: a value in hand is not a partial
+       literal. */
+    cfx_begin(&f,
+              "Human: type = [name: String, age: Int]\n"
+              "p: Human = {name: \"ada\", age: 36}\n"
+              "q := p.with(37)\n");
+    EK_CHECK(cfx_has_code(&f, "E-type-mismatch"));
+    cfx_end(&f);
+
+    /* One argument: the partial literal. */
+    cfx_begin(&f,
+              "Human: type = [name: String, age: Int]\n"
+              "p: Human = {name: \"ada\", age: 36}\n"
+              "q := p.with()\n");
+    EK_CHECK(cfx_has_code(&f, "E-call-arity"));
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "Human: type = [name: String, age: Int]\n"
+              "p: Human = {name: \"ada\", age: 36}\n"
+              "q := p.with({age: 37}, 1)\n");
+    EK_CHECK(cfx_has_code(&f, "E-call-arity"));
+    cfx_end(&f);
+
+    /* A receiver whose known type is not a record is rejected. */
+    cfx_begin(&f,
+              "Sex: type = Man | Woman\n"
+              "s: Sex = Man\n"
+              "q := s.with({a: 1})\n");
+    EK_CHECK(cfx_has_code(&f, "E-type-mismatch"));
+    cfx_end(&f);
+
+    /* A duplicate field inside the update literal. */
+    cfx_begin(&f,
+              "Human: type = [name: String, age: Int]\n"
+              "p: Human = {name: \"ada\", age: 36}\n"
+              "q := p.with({age: 37, age: 38})\n");
+    EK_CHECK(cfx_has_code(&f, "E-field-duplicate"));
+    cfx_end(&f);
+}
+
 int main(void)
 {
     station_field();
     station_namespace();
     station_module_fn();
     derived_services();
+    derived_with();
     opaque_members();
     qualified_calls();
     return ek_test_report("check/member");

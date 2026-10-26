@@ -283,7 +283,8 @@ static ek_node *lambda(p_ctx *c)
     return n;
 }
 
-/* A lambda parameter: a name, '_', or a nested parameter group. */
+/* A lambda parameter: a name, '_', or a nested parameter group. The
+   nested group is the recursion edge, so it carries the guard. */
 static ek_node *lambda_param(p_ctx *c)
 {
     const ek_layout_token *t = p_peek(c);
@@ -305,6 +306,9 @@ static ek_node *lambda_param(p_ctx *c)
         if (!g) {
             return NULL;
         }
+        if (!p_depth_enter(c)) {
+            return NULL;
+        }
         p_list_init(&g->u.kids);
         p_skip_newlines(c);
         while (!p_at(c, EK_TOK_RPAREN) && !c->oom) {
@@ -317,6 +321,7 @@ static ek_node *lambda_param(p_ctx *c)
             }
             p_skip_newlines(c);
         }
+        p_depth_leave(c);
         p_expect(c, EK_TOK_RPAREN, "')'");
         return g;
     }

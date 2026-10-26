@@ -47,6 +47,12 @@
  *   name for an unlabeled parameter.
  * - EK_N_P_VAR and EK_N_P_CONS are classified by spelling alone:
  *   snake_case is a variable, PascalCase a constructor.
+ * - The record-update form `p.with({...})` has no node of its own: the
+ *   grammar defines it as an ordinary postfix member call whose one
+ *   argument is a composite literal (annex A.3.5 Postfix; Clauses
+ *   6.6.3, 9.8.6), so it parses to CALL(FIELD(p, "with"), [COMPOSITE])
+ *   and the partial-literal reading is check's concern. A member or
+ *   field actually named `with` is indistinguishable here by design.
  */
 
 typedef enum {

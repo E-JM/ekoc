@@ -29,12 +29,18 @@ static int cons_head(const ek_node *e)
 
 /* Constructor application: an all-Pascal name head followed by one
    postfix expression, so juxtaposition binds tighter than every
-   operator. */
+   operator. The recursion edge back into p_postfix is guarded: a run
+   of juxtapped constructors nests one level per token. */
 static ek_node *apply_ctor(p_ctx *c, ek_node *head)
 {
-    ek_node *arg = p_postfix(c);
+    ek_node *arg;
     ek_node *n;
 
+    if (!p_depth_enter(c)) {
+        return NULL;
+    }
+    arg = p_postfix(c);
+    p_depth_leave(c);
     if (!arg) {
         return NULL;
     }
