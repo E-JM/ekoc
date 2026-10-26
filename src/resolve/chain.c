@@ -144,7 +144,8 @@ static void type_head(r_ctx *c, r_file *f, const ek_node *head, r_head *cur,
         *state = 2;
         *walk_type = first;
     } else {
-        cur->sym = r_std_type(c, name);
+        /* Unknown to the file and to std: check owns the members of
+           an external head. */
         cur->kind = EK_SYM_EXTERNAL;
         cur->st = EK_ST_EXTERNAL;
     }

@@ -1,0 +1,165 @@
+#include "common.h"
+
+#include <sys/stat.h>
+
+/* A binding spelled like a std open name shadows the implicit import:
+   unqualified uses bind locally with no diagnostic, while a same-name
+   pair among the file's own and opened names still conflicts at the
+   use site. */
+
+#define CONF_DIR "build/tmp-resolve/shadow"
+
+static void put_fixtures(void)
+{
+    mkdir("build/tmp-resolve", 0755);
+    mkdir(CONF_DIR, 0755);
+    EK_CHECK(rfx_put(CONF_DIR, "res.eko",
+        "Res: type = Ok Int | Err String\n"));
+}
+
+static void run_in(rfx *f, const char *src, const char *name)
+{
+    const char *path[1] = { CONF_DIR };
+
+    rfx_run(f, src, path, 1, name);
+}
+
+/* Local constructor bindings shadow the std surface in value and
+   pattern position; the refs point at the local symbols. */
+static void local_ctors_shadow_std(void)
+{
+    rfx f;
+    const ek_ref *r;
+
+    rfx_begin(&f,
+        "Opt: type = Some Int | None\n"
+        "pick: (o: Opt) -> Int =\n"
+        "    case o:\n"
+        "        Some x -> x\n"
+        "        None -> 0\n"
+        "v: Opt = Some 1\n");
+    EK_CHECK_U64(rfx_errors(&f), 0);
+    r = rfx_ref_named(&f, 4, "Some");
+    EK_CHECK(r != NULL);
+    EK_CHECK(r->kind == EK_SYM_CONSTRUCTOR);
+    EK_CHECK(r->station == EK_ST_CONS);
+    EK_CHECK_STR(r->symbol ? r->symbol->module : NULL, "test");
+    EK_CHECK(r->symbol ? r->symbol->decl != NULL : 0);
+    r = rfx_ref_named(&f, 6, "Some");
+    EK_CHECK(r != NULL);
+    EK_CHECK(r->kind == EK_SYM_CONSTRUCTOR);
+    EK_CHECK_STR(r->symbol ? r->symbol->module : NULL, "test");
+    rfx_end(&f);
+
+    rfx_begin(&f,
+        "Res: type = Ok Int | Err String\n"
+        "good: Res = Ok 1\n"
+        "bad: Res = Err \"x\"\n");
+    EK_CHECK_U64(rfx_errors(&f), 0);
+    r = rfx_ref_named(&f, 2, "Ok");
+    EK_CHECK(r != NULL);
+    EK_CHECK(r->kind == EK_SYM_CONSTRUCTOR);
+    EK_CHECK_STR(r->symbol ? r->symbol->module : NULL, "test");
+    r = rfx_ref_named(&f, 3, "Err");
+    EK_CHECK(r != NULL);
+    EK_CHECK_STR(r->symbol ? r->symbol->module : NULL, "test");
+    rfx_end(&f);
+}
+
+/* A local type shadowing a std open type: the annotation binds the
+   local declaration. */
+static void local_type_shadows_std(void)
+{
+    rfx f;
+    const ek_ref *r;
+
+    rfx_begin(&f,
+        "Clock: type = [ticks: Int]\n"
+        "now: Clock = {ticks: 0}\n");
+    EK_CHECK_U64(rfx_errors(&f), 0);
+    r = rfx_ref_at(&f, 2);
+    EK_CHECK(r != NULL);
+    EK_CHECK(r->kind == EK_SYM_TYPE);
+    EK_CHECK_STR(r->symbol ? r->symbol->module : NULL, "test");
+    rfx_end(&f);
+
+    /* Time is both a std type and a std constructor; one local
+       declaration shadows both readings. */
+    rfx_begin(&f,
+        "Time: type = [ms: Int]\n"
+        "t: Time = {ms: 1}\n");
+    EK_CHECK_U64(rfx_errors(&f), 0);
+    r = rfx_ref_at(&f, 2);
+    EK_CHECK(r != NULL);
+    EK_CHECK(r->kind == EK_SYM_TYPE);
+    EK_CHECK_STR(r->symbol ? r->symbol->module : NULL, "test");
+    rfx_end(&f);
+}
+
+/* Without a shadowing binding, a std open name resolves to the
+   placeholder exactly as before. */
+static void unshadowed_std_still_placeholder(void)
+{
+    rfx f;
+    const ek_ref *r;
+
+    rfx_begin(&f,
+        "Opt: type = Some Int | None\n"
+        "r: Result Int String = Ok 1\n");
+    EK_CHECK_U64(rfx_errors(&f), 0);
+    r = rfx_ref_named(&f, 2, "Ok");
+    EK_CHECK(r != NULL);
+    EK_CHECK(r->kind == EK_SYM_EXTERNAL);
+    EK_CHECK(r->station == EK_ST_EXTERNAL);
+    EK_CHECK_STR(r->symbol ? r->symbol->module : NULL, "std");
+    rfx_end(&f);
+}
+
+/* Two of the file's own constructors with one name still clash at the
+   use site; the std layer plays no part. */
+static void duplicate_local_ctors_conflict(void)
+{
+    rfx f;
+
+    rfx_begin(&f,
+        "A: type = Ok Int\n"
+        "B: type = Ok String\n"
+        "r: Int =\n"
+        "    case 0:\n"
+        "        Ok -> 1\n");
+    EK_CHECK_U64(rfx_errors(&f), 1);
+    EK_CHECK(rfx_code_at_line(&f, "E-name-conflict", 5));
+    rfx_end(&f);
+}
+
+/* An importing file sees a shadowed name through the exporter's
+   surface, not the std layer. */
+static void cross_module_shadow(void)
+{
+    rfx f;
+    const ek_ref *r;
+
+    run_in(&f,
+        "import res\n"
+        "\n"
+        "r: Res Int String = Ok 1\n", "use.eko");
+    EK_CHECK_U64(rfx_errors(&f), 0);
+    r = rfx_ref_named(&f, 3, "Ok");
+    EK_CHECK(r != NULL);
+    EK_CHECK(r->kind == EK_SYM_CONSTRUCTOR);
+    EK_CHECK(r->station == EK_ST_CONS);
+    EK_CHECK_STR(r->symbol ? r->symbol->module : NULL, "res");
+    EK_CHECK(r->symbol ? r->symbol->decl != NULL : 0);
+    rfx_end(&f);
+}
+
+int main(void)
+{
+    put_fixtures();
+    local_ctors_shadow_std();
+    local_type_shadows_std();
+    unshadowed_std_still_placeholder();
+    duplicate_local_ctors_conflict();
+    cross_module_shadow();
+    return ek_test_report("resolve/shadow");
+}

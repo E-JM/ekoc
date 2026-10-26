@@ -97,8 +97,8 @@ static void cons_ref(r_ctx *c, r_file *f, const ek_node *pat)
         r_add_ref(c, pat, EK_SYM_CONSTRUCTOR, EK_ST_CONS, first);
         return;
     }
-    r_add_ref(c, pat, EK_SYM_EXTERNAL, EK_ST_EXTERNAL,
-              r_std_ctor(c, path->count == 1 ? path->data[0] : ""));
+    /* Unknown to the file and to std: the bridge records the miss. */
+    r_add_ref(c, pat, EK_SYM_EXTERNAL, EK_ST_EXTERNAL, NULL);
 }
 
 /* Constructor references at pattern positions. */

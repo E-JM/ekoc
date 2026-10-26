@@ -18,6 +18,8 @@ static const ek_symbol *find(const r_var *vars, size_t n, const char *name)
     return NULL;
 }
 
+/* The layer lookups: own and opened names answer first, the implicit
+   std import is the bottom layer consulted on a miss. */
 const ek_symbol *r_lookup_local(const r_file *f, const char *name)
 {
     return r_scope_get(f->locals, name);
@@ -25,7 +27,12 @@ const ek_symbol *r_lookup_local(const r_file *f, const char *name)
 
 const ek_symbol *r_lookup_top(const r_file *f, const char *name)
 {
-    return find(f->tops, f->ntops, name);
+    const ek_symbol *sym = find(f->tops, f->ntops, name);
+
+    if (!sym) {
+        sym = r_std_find(f->std, EK_SYM_FUNC, name);
+    }
+    return sym;
 }
 
 const ek_symbol *r_lookup_mod(const r_file *f, const char *name)
@@ -47,6 +54,14 @@ size_t r_lookup_type(const r_file *f, const char *name,
             n++;
         }
     }
+    if (n == 0) {
+        const ek_symbol *sym = r_std_find(f->std, EK_SYM_TYPE, name);
+
+        if (sym) {
+            *first = sym;
+            n = 1;
+        }
+    }
     return n;
 }
 
@@ -64,6 +79,14 @@ size_t r_lookup_ctor(const r_file *f, const char *name,
             n++;
         }
     }
+    if (n == 0) {
+        const ek_symbol *sym = r_std_find(f->std, EK_SYM_CONSTRUCTOR, name);
+
+        if (sym) {
+            *first = sym;
+            n = 1;
+        }
+    }
     return n;
 }
 
@@ -76,8 +99,8 @@ static int is_std_placeholder(const ek_symbol *sym)
 }
 
 /* Constructor value or pattern position: two visible constructors with
-   one name clash at the use site; an unknown one may be std's (the
-   placeholder bridge). */
+   one name clash at the use site; a std constructor is the placeholder
+   bridge (resolve.h). */
 void r_cons_head(r_ctx *c, r_file *f, const ek_node *n, r_head *out)
 {
     const char *name = n->u.path.count == 1 ? n->u.path.data[0] : "";
@@ -101,10 +124,11 @@ void r_cons_head(r_ctx *c, r_file *f, const ek_node *n, r_head *out)
         r_add_ref(c, n, out->kind, out->st, out->sym);
         return;
     }
-    out->sym = r_std_ctor(c, name);
+    /* Unknown to the file and to std: the unresolved-external bridge
+       (resolve.h). */
     out->kind = EK_SYM_EXTERNAL;
     out->st = EK_ST_EXTERNAL;
-    r_add_ref(c, n, out->kind, out->st, out->sym);
+    r_add_ref(c, n, out->kind, out->st, NULL);
 }
 
 /* A module name is not a value. */

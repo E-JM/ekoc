@@ -122,31 +122,33 @@ static void collect_type(r_surf *s, const ek_node *d)
 }
 
 /* The full head of a namespace binding, segments joined with `.`:
-   `Type.name`, or the qualified spelling `a.Type.name`. */
+   `Type.name`, or the qualified spelling `a.Type.name`. NULL when the
+   key cannot be built; the context records the failure. */
 static char *ns_key(r_surf *s, const ek_node *d)
 {
     ek_buf b;
-    char *out;
+    char *out = NULL;
+    int ok = 1;
+    size_t i;
 
     ek_buf_init(&b);
-    {
-        size_t i;
-
-        for (i = 0; i < d->u.namespace.owner.count; i++) {
-            if (b.len) {
-                ek_buf_append_char(&b, '.');
-            }
-            ek_buf_append_str(&b, d->u.namespace.owner.data[i]);
-        }
+    for (i = 0; ok && i < d->u.namespace.owner.count; i++) {
         if (b.len) {
-            ek_buf_append_char(&b, '.');
+            ok = ek_buf_append_char(&b, '.');
         }
-        ek_buf_append_str(&b, d->u.namespace.name);
+        ok = ok && ek_buf_append_str(&b, d->u.namespace.owner.data[i]);
     }
-    out = ek_arena_alloc(s->c->arena, b.len + 1);
-    if (out) {
-        memcpy(out, b.data ? b.data : "", b.len + 1);
-    } else {
+    if (ok && b.len) {
+        ok = ek_buf_append_char(&b, '.');
+    }
+    ok = ok && ek_buf_append_str(&b, d->u.namespace.name);
+    if (ok) {
+        out = ek_arena_alloc(s->c->arena, b.len + 1);
+        if (out) {
+            memcpy(out, b.data ? b.data : "", b.len + 1);
+        }
+    }
+    if (!out) {
         s->c->oom = 1;
     }
     ek_buf_destroy(&b);

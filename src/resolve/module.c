@@ -169,23 +169,29 @@ static char *find_file(r_ctx *c, const ek_node *imp)
 
     for (d = 0; d < c->path_count; d++) {
         char *path;
+        int ok;
 
         ek_buf_init(&b);
-        ek_buf_append_str(&b, c->path[d]);
-        for (i = 0; i < imp->u.path.count; i++) {
-            ek_buf_append_char(&b, '/');
-            ek_buf_append_str(&b, imp->u.path.data[i]);
+        ok = ek_buf_append_str(&b, c->path[d]);
+        for (i = 0; ok && i < imp->u.path.count; i++) {
+            ok = ek_buf_append_char(&b, '/')
+              && ek_buf_append_str(&b, imp->u.path.data[i]);
         }
-        ek_buf_append_str(&b, ".eko");
+        ok = ok && ek_buf_append_str(&b, ".eko");
+        if (!ok) {
+            /* Without the full path the import cannot be resolved or
+               named; the walk recovers as on arena exhaustion. */
+            ek_buf_destroy(&b);
+            c->oom = 1;
+            return NULL;
+        }
         path = ek_arena_alloc(c->arena, b.len + 1);
         if (!path) {
             c->oom = 1;
             ek_buf_destroy(&b);
             return NULL;
         }
-        /* Appends are best effort (buf.h): a failed first append
-           leaves the buffer empty with data NULL. */
-        memcpy(path, b.data ? b.data : "", b.len + 1);
+        memcpy(path, b.data, b.len + 1);
         ek_buf_destroy(&b);
         if (read_file(c, path)) {
             return path;

@@ -42,8 +42,8 @@ static void declared(r_ctx *c, r_file *f, const ek_node *t, const char *name)
         r_add_ref(c, t, EK_SYM_TYPE, EK_ST_TYPE, first);
         return;
     }
-    /* Unknown here: the placeholder std bridge (resolve.h). */
-    r_add_ref(c, t, EK_SYM_EXTERNAL, EK_ST_TYPE, r_std_type(c, name));
+    /* Unknown here and in std: the unresolved bridge (resolve.h). */
+    r_add_ref(c, t, EK_SYM_EXTERNAL, EK_ST_TYPE, NULL);
 }
 
 static void qualified(r_ctx *c, r_file *f, const ek_node *t)

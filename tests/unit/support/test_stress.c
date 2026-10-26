@@ -159,13 +159,13 @@ static void test_buf_absurd_lengths(void)
     ek_buf b;
 
     ek_buf_init(&b);
-    ek_buf_append_bytes(&b, "skip", SIZE_MAX);
-    ek_buf_append_bytes(&b, "skip", SIZE_MAX - 1);
-    ek_buf_append_bytes(&b, "skip", SIZE_MAX - 4);
+    EK_CHECK(ek_buf_append_bytes(&b, "skip", SIZE_MAX) == 0);
+    EK_CHECK(ek_buf_append_bytes(&b, "skip", SIZE_MAX - 1) == 0);
+    EK_CHECK(ek_buf_append_bytes(&b, "skip", SIZE_MAX - 4) == 0);
     EK_CHECK(b.data == NULL); /* nothing ever fit, nothing was read */
     EK_CHECK_U64(b.len, 0);
 
-    ek_buf_append_char(&b, 'x');
+    EK_CHECK(ek_buf_append_char(&b, 'x') == 1);
     EK_CHECK_STR(b.data, "x");
     ek_buf_destroy(&b);
 }
@@ -175,11 +175,11 @@ static void test_buf_empty_and_percent_formats(void)
     ek_buf b;
 
     ek_buf_init(&b);
-    ek_buf_printf(&b, "");
+    EK_CHECK(ek_buf_printf(&b, "") == 1); /* empty rendering succeeds */
     EK_CHECK(b.data == NULL); /* nothing stored keeps data NULL */
     EK_CHECK_U64(b.len, 0);
 
-    ek_buf_printf(&b, "100%%%% %s%%%c", "ok", '%');
+    EK_CHECK(ek_buf_printf(&b, "100%%%% %s%%%c", "ok", '%') == 1);
     EK_CHECK_STR(b.data, "100%% ok%%");
     EK_CHECK_U64(b.len, 10);
     ek_buf_destroy(&b);
@@ -190,7 +190,7 @@ static void test_buf_printf_embedded_nul(void)
     ek_buf b;
 
     ek_buf_init(&b);
-    ek_buf_printf(&b, "a%cb", '\0');
+    EK_CHECK(ek_buf_printf(&b, "a%cb", '\0') == 1);
     EK_CHECK_U64(b.len, 3);
     EK_CHECK(b.data != NULL);
     EK_CHECK_U64((unsigned char)b.data[1], 0); /* %c wrote a NUL byte */
@@ -204,14 +204,14 @@ static void test_buf_reuse_after_destroy(void)
     ek_buf b;
 
     ek_buf_init(&b);
-    ek_buf_append_str(&b, "first");
+    EK_CHECK(ek_buf_append_str(&b, "first") == 1);
     ek_buf_destroy(&b);
     EK_CHECK(b.data == NULL);
     EK_CHECK_U64(b.len, 0);
     EK_CHECK_U64(b.cap, 0);
     /* destroy reinitializes, so the buffer is usable again; the header
        does not promise this, the test pins what the code does */
-    ek_buf_append_str(&b, "second");
+    EK_CHECK(ek_buf_append_str(&b, "second") == 1);
     EK_CHECK_STR(b.data, "second");
     ek_buf_destroy(&b);
 }

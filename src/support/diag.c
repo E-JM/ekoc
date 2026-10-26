@@ -86,7 +86,7 @@ void ek_diag_emitv(ek_diag *diag, ek_severity severity, const char *code,
     ek_buf buf;
 
     ek_buf_init(&buf);
-    ek_buf_vprintf(&buf, fmt, args);
+    (void)ek_buf_vprintf(&buf, fmt, args);
     diag_store(diag, severity, code, file, line, col,
                buf.data != NULL ? buf.data : "");
     ek_buf_destroy(&buf);

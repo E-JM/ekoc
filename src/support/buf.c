@@ -40,38 +40,43 @@ static int buf_reserve(ek_buf *buf, size_t total)
     return 0;
 }
 
-void ek_buf_append_bytes(ek_buf *buf, const void *data, size_t len)
+int ek_buf_append_bytes(ek_buf *buf, const void *data, size_t len)
 {
-    if (len == 0 || len > SIZE_MAX - buf->len - 1) {
-        return;
+    if (len == 0) {
+        return 1; /* storing nothing is a completed append */
+    }
+    if (len > SIZE_MAX - buf->len - 1) {
+        return 0;
     }
     if (buf_reserve(buf, buf->len + len + 1) != 0) {
-        return;
+        return 0;
     }
     memcpy(buf->data + buf->len, data, len);
     buf->len += len;
     buf->data[buf->len] = '\0';
+    return 1;
 }
 
-void ek_buf_append_str(ek_buf *buf, const char *str)
+int ek_buf_append_str(ek_buf *buf, const char *str)
 {
-    ek_buf_append_bytes(buf, str, strlen(str));
+    return ek_buf_append_bytes(buf, str, strlen(str));
 }
 
-void ek_buf_append_char(ek_buf *buf, char c)
+int ek_buf_append_char(ek_buf *buf, char c)
 {
     if (buf->len > SIZE_MAX - 2) { /* keep buf->len + 2 from wrapping,
                                       as append_bytes guards its own sum */
-        return;
+        return 0;
     }
     if (buf_reserve(buf, buf->len + 2) != 0) {
-        return;
+        return 0;
     }
     buf->data[buf->len++] = c;
     buf->data[buf->len] = '\0';
+    return 1;
 }
 
-void ek_buf_vprintf(ek_buf *buf, const char *fmt, va_list args)
+int ek_buf_vprintf(ek_buf *buf, const char *fmt, va_list args)
 {
     va_list measure;
     int need;
@@ -79,23 +84,30 @@ void ek_buf_vprintf(ek_buf *buf, const char *fmt, va_list args)
     va_copy(measure, args);
     need = vsnprintf(NULL, 0, fmt, measure);
     va_end(measure);
-    if (need <= 0 || (size_t)need > SIZE_MAX - buf->len - 1) {
-        return;
+    if (need < 0) {
+        return 0; /* the rendering itself failed, so nothing to store */
     }
-    if (buf_reserve(buf, buf->len + (size_t)need + 1) != 0) {
-        return;
+    if (need == 0) {
+        return 1; /* an empty rendering stores nothing */
+    }
+    if ((size_t)need > SIZE_MAX - buf->len - 1
+        || buf_reserve(buf, buf->len + (size_t)need + 1) != 0) {
+        return 0;
     }
     vsnprintf(buf->data + buf->len, (size_t)need + 1, fmt, args);
     buf->len += (size_t)need;
+    return 1;
 }
 
-void ek_buf_printf(ek_buf *buf, const char *fmt, ...)
+int ek_buf_printf(ek_buf *buf, const char *fmt, ...)
 {
     va_list args;
+    int ok;
 
     va_start(args, fmt);
-    ek_buf_vprintf(buf, fmt, args);
+    ok = ek_buf_vprintf(buf, fmt, args);
     va_end(args);
+    return ok;
 }
 
 void ek_buf_destroy(ek_buf *buf)

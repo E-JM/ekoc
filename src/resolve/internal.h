@@ -30,18 +30,22 @@ typedef struct {
     int external; /* placeholder std module: no file, no surface */
 } r_mod;
 
-/* The per-file name layers, in lookup order. */
+/* The per-file name layers, in lookup order. The std surface sits
+   below them all: it answers a lookup only when own and opened names
+   have no match, so a binding of a std open name shadows it without a
+   diagnostic. */
 typedef struct {
     r_mod *mod;
     scope *locals; /* innermost lexical scope, NULL at top level */
-    r_var *tops;   /* plain top-level bindings + std free names */
+    r_var *tops;   /* plain top-level bindings */
     size_t ntops, ctops;
-    r_var *types;  /* identity layer: own + opened + std types */
+    r_var *types;  /* identity layer: own + opened types */
     size_t ntypes, ctypes;
-    r_var *ctors;  /* constructor multiset: own + opened + std */
+    r_var *ctors;  /* constructor multiset: own + opened */
     size_t nctors, cctors;
     r_var *mods;   /* module layer: own stem + imports + std */
     size_t nmods, cmods;
+    const ek_surface *std; /* the implicit import, the bottom layer */
 } r_file;
 
 typedef struct {
@@ -76,7 +80,8 @@ void r_refs_sort(ek_ref *refs, size_t count);
 void r_std_init(r_ctx *c);
 int r_std_free_name(const char *name);
 void r_std_open(r_ctx *c, r_file *f);
-const ek_symbol *r_std_type(r_ctx *c, const char *name);
+const ek_symbol *r_std_find(const ek_surface *s, ek_sym_kind kind,
+                            const char *name);
 const ek_symbol *r_std_ctor(r_ctx *c, const char *name);
 
 /* surface.c: the top-level surface of one module. */
@@ -104,7 +109,8 @@ void r_tops(r_ctx *c, r_file *f, const ek_node *mod);
 /* expr.c: expressions, chains, calls. */
 void r_expr(r_ctx *c, r_file *f, const ek_node *e);
 
-/* The layer lookups, shared with chain.c and type.c.
+/* The layer lookups, shared with chain.c and type.c: own and opened
+   names first, the std surface as the bottom layer.
    r_lookup_type and r_lookup_ctor count visible same-named entries:
    ambiguity is an error at the use site. */
 const ek_symbol *r_lookup_local(const r_file *f, const char *name);
