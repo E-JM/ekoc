@@ -19,6 +19,21 @@ static const ek_ck_row *row_of_kind(const cfx *f, int line,
     return NULL;
 }
 
+/* Any call row on the line carries the bit. */
+static int call_bit_at(const cfx *f, int line, ek_bit bit)
+{
+    size_t i;
+
+    for (i = 0; i < f->chk.count; i++) {
+        if (f->chk.rows[i].node && f->chk.rows[i].node->line == line
+            && f->chk.rows[i].node->kind == EK_N_CALL
+            && f->chk.rows[i].bit == bit) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 /* A callback in the last position is supplied implicitly, and the
    continuation is checked at the callback's result type. */
 static void user_dispatcher(void)
@@ -69,6 +84,16 @@ static void continuation_body(void)
               "    \"s\"\n");
     EK_CHECK(cfx_has_code(&f, "E-nominal-mismatch"));
     EK_CHECK(cfx_code_at_line(&f, "E-nominal-mismatch", 4));
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "f: () -> Result Int String = (): Ok 1\n"
+              "save: (out: Out) !-> Result _ String =\n"
+              "    x <- f().try()\n"
+              "    Out.println(out, show(x))\n"
+              "    Ok _\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    EK_CHECK(call_bit_at(&f, 3, EK_BIT_WORLD));
     cfx_end(&f);
 }
 

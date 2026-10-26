@@ -235,6 +235,20 @@ static ek_bit rest_bit(ck_ctx *c, const ek_node *block, size_t start)
     return b;
 }
 
+/* A callback body runs inside the dispatcher call: an open dispatcher
+   instantiates from it, and an opaque dispatcher takes it by OR. */
+static void invert_call_bit(ck_ctx *c, const ek_node *call,
+                            const ek_type *fn, ek_bit body)
+{
+    ek_bit b = ck_bit_of(c, call);
+    const ek_type *f = ck_prune(fn);
+
+    if (!f || f->kind != EK_T_FN || f->u.fn.arrow == EK_ARROW_OPEN) {
+        b = bit_or(b, body);
+    }
+    ck_call_bit(c, call, b);
+}
+
 /* The inverted form outside a block: the call is checked and the
    pattern's callback shape is judged, with no continuation. */
 static const ek_type *invert_binding(ck_ctx *c, const ek_node *m,
@@ -266,6 +280,7 @@ const ek_type *ck_invert_block(ck_ctx *c, const ek_node *m,
                                const ek_node *block, size_t start)
 {
     const ek_node *pat = m->u.bind.pattern;
+    const ek_node *call = m->u.bind.value;
     const ek_type *fn, *cb, *vt, *res, *body;
     const ek_node *last = NULL;
     ek_bit b = EK_BIT_PURE;
@@ -305,6 +320,7 @@ const ek_type *ck_invert_block(ck_ctx *c, const ek_node *m,
                      "the callback body is world-touching, the callback "
                      "parameter is pure (Clause 7.9.5)");
         }
+        invert_call_bit(c, call, fn, b);
     }
     ck_scope_pop(c);
     ck_row(c, m, vt, EK_RD_NONE);
