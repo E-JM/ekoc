@@ -57,6 +57,7 @@ append_two: (a: String, b: String) -> Result _ String =
     Ok _
 
 wildcard_links: test =
+    rows: []String = {"x", "y"}
     assert_eq(append_two("x", "y"), Ok _)
     rows.each_with_index((_, i):
         assert(i >= 0))
