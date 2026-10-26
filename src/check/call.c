@@ -195,7 +195,7 @@ static const ek_type *call_member(ck_ctx *c, const ek_node *e,
 {
     ek_reading rd = EK_RD_NONE;
     const ek_type *recv = direct_receiver(c, callee->u.field.recv);
-    const ek_type *t = ck_link(c, callee, recv, &rd);
+    const ek_type *t = ck_link(c, callee, recv, callee->u.field.name, &rd);
     const ek_type *pt = rd == EK_RD_FIELD ? ck_prune(t) : NULL;
 
     if (rd == EK_RD_DERIVED && strcmp(callee->u.field.name, "with") == 0) {
@@ -220,6 +220,29 @@ static const ek_type *call_member(ck_ctx *c, const ek_node *e,
                    1);
 }
 
+/* The free-call form of a compiler service: its first argument is the
+   receiver, exactly as the receiver form passes it, so the same member
+   machinery selects the reading. Without an argument nothing supplies
+   a receiver and the call stays opaque. */
+static const ek_type *call_service(ck_ctx *c, const ek_node *e,
+                                   const ek_node *callee)
+{
+    const char *name = callee->u.path.data[0];
+    ek_reading rd = EK_RD_NONE;
+    ek_nlist rest;
+    const ek_type *recv;
+    const ek_type *t;
+
+    if (e->u.call.args.count == 0) {
+        return call_fn(c, e, NULL, name, NULL, &e->u.call.args, 1);
+    }
+    recv = ck_expr(c, e->u.call.args.data[0], NULL);
+    t = ck_link(c, callee, recv, name, &rd);
+    rest.data = e->u.call.args.data + 1;
+    rest.count = e->u.call.args.count - 1;
+    return call_fn(c, e, t, name, recv, &rest, 0);
+}
+
 /* Typing one EK_N_CALL: a plain head, or the last link of a receiver
    chain. */
 const ek_type *ck_call(ck_ctx *c, const ek_node *e, const ek_type *expected)
@@ -232,10 +255,17 @@ const ek_type *ck_call(ck_ctx *c, const ek_node *e, const ek_type *expected)
         return NULL;
     }
     if (callee && callee->kind == EK_N_NAME) {
-        /* A head the resolver classified. */
-        const ek_type *t = ck_expr(c, callee, NULL);
+        /* A head the resolver classified; a compiler service carries a
+           receiver-form ref and takes the identity reading. */
+        if (ck_ref_at(c, callee, EK_SYM_MEMBER, &ref)
+            && ref->station == EK_ST_RECEIVER) {
+            return call_service(c, e, callee);
+        }
+        {
+            const ek_type *t = ck_expr(c, callee, NULL);
 
-        return call_fn(c, e, t, NULL, NULL, &e->u.call.args, 0);
+            return call_fn(c, e, t, NULL, NULL, &e->u.call.args, 0);
+        }
     }
     if (!callee || callee->kind != EK_N_FIELD) {
         const ek_type *t = ck_expr(c, callee, NULL);

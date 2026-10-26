@@ -257,7 +257,7 @@ void ck_exhaust(ck_ctx *c, const ek_node *cs, const ek_type **scrut,
 const ek_type *ck_call(ck_ctx *c, const ek_node *e, const ek_type *expected);
 const ek_type *ck_field(ck_ctx *c, const ek_node *e);
 const ek_type *ck_link(ck_ctx *c, const ek_node *link, const ek_type *recv,
-                       ek_reading *rd);
+                       const char *name, ek_reading *rd);
 const ek_type *ck_lambda(ck_ctx *c, const ek_node *e, const ek_type *expected);
 const ek_type *ck_apply(ck_ctx *c, const ek_node *e, const ek_type *expected);
 int ck_ref_at(const ck_ctx *c, const ek_node *n, ek_sym_kind kind,

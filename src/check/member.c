@@ -292,17 +292,17 @@ const ek_type *ck_field(ck_ctx *c, const ek_node *e)
 {
     const ek_type *recv = ck_expr(c, e->u.field.recv, NULL);
     ek_reading rd = EK_RD_NONE;
-    const ek_type *t = link_type(c, e, recv, e->u.field.name, &rd);
 
-    ck_row(c, e, t, rd);
-    return t;
+    return ck_link(c, e, recv, e->u.field.name, &rd);
 }
 
-/* The last link of a receiver chain, typed for the caller in call.c. */
+/* One member link at its receiver's type. The caller supplies the
+   spelling: a chain link carries it, and the free-call form of a
+   service carries it on its name head. */
 const ek_type *ck_link(ck_ctx *c, const ek_node *link, const ek_type *recv,
-                       ek_reading *rd)
+                       const char *name, ek_reading *rd)
 {
-    const ek_type *t = link_type(c, link, recv, link->u.field.name, rd);
+    const ek_type *t = link_type(c, link, recv, name, rd);
 
     ck_row(c, link, t, *rd);
     return t;
