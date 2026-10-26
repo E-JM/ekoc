@@ -21,6 +21,25 @@ static const ek_type *tv_find(const ck_tvars *tv, const char *name)
     return NULL;
 }
 
+/* The machine words of Clauses 9.6.1 and 10.3.1. The placeholder
+   surface does not list them; the check stage owns their identity for
+   literal placement, the ctype field predicate, and the marshalling
+   whitelist. */
+static int is_word_name(const char *n)
+{
+    static const char *words[] = {"I8",  "I16", "I32", "I64",
+                                  "U8",  "U16", "U32", "U64",
+                                  "F32", "F64"};
+    size_t i;
+
+    for (i = 0; i < sizeof words / sizeof *words; i++) {
+        if (strcmp(words[i], n) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 void ck_tv_add(ck_ctx *c, ck_tvars *tv, const char *name, const ek_type *t,
                const ek_node *first)
 {
@@ -105,6 +124,8 @@ const ek_type *ck_elaborate(ck_ctx *c, const ek_node *t, ck_tvars *tv)
                              arity);
                 }
                 out = ck_nominal(c, ref->symbol, NULL, 0);
+            } else if (is_word_name(n0)) {
+                out = ck_std_type(c, n0);
             } else {
                 out = ck_ivar(c); /* the placeholder std bridge */
             }

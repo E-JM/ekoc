@@ -80,9 +80,13 @@ static void emit(r_surf *s, ek_symbol *sym)
     s->syms[s->n++] = *sym;
 }
 
+/* A declared type or ctype: one nominal symbol of the identity layer
+   (Clause 6.3.6). */
 static void collect_type(r_surf *s, const ek_node *d)
 {
-    ek_symbol *sym = r_sym(s->c, d->u.type_decl.name, EK_SYM_TYPE,
+    const char *name = d->kind == EK_N_TYPE_DECL
+                           ? d->u.type_decl.name : d->u.decl.name;
+    ek_symbol *sym = r_sym(s->c, name, EK_SYM_TYPE,
                            s->m->stem, d->line, d->col);
     size_t i;
     int seen;
@@ -91,17 +95,19 @@ static void collect_type(r_surf *s, const ek_node *d)
         return;
     }
     sym->decl = d;
-    sym->public = d->u.type_decl.name[0] != '_';
-    seen = key_seen(s->tkeys, s->nt, d->u.type_decl.name);
+    sym->public = name[0] != '_';
+    seen = key_seen(s->tkeys, s->nt, name);
     if (seen >= 0) {
         r_error(s->c, s->m->file, d->line, d->col, "E-name-conflict",
                 "`%s` is declared twice in this module (Clause 7.4.6)",
-                d->u.type_decl.name);
+                name);
     } else {
-        key_push(s, &s->tkeys, &s->nt, &s->ctk, d->u.type_decl.name,
-                 d->line, d->col);
+        key_push(s, &s->tkeys, &s->nt, &s->ctk, name, d->line, d->col);
     }
     emit(s, sym);
+    if (d->kind != EK_N_TYPE_DECL) {
+        return;
+    }
     for (i = 0; i < d->u.type_decl.variants.count; i++) {
         const ek_node *v = d->u.type_decl.variants.data[i];
         ek_symbol *cs = r_sym(s->c, v->u.variant.name, EK_SYM_CONSTRUCTOR,
@@ -340,8 +346,10 @@ void r_surface_build(r_ctx *c, r_mod *m)
     m->surf->file = m->file;
     mod = m->ast;
     for (i = 0; i < mod->u.kids.count; i++) {
-        if (mod->u.kids.data[i]->kind == EK_N_TYPE_DECL) {
-            collect_type(&s, mod->u.kids.data[i]);
+        const ek_node *d = mod->u.kids.data[i];
+
+        if (d->kind == EK_N_TYPE_DECL || d->kind == EK_N_CTYPE_DECL) {
+            collect_type(&s, d);
         }
     }
     for (i = 0; i < mod->u.kids.count; i++) {

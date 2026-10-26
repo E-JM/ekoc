@@ -63,12 +63,13 @@ ek_check_result ek_check(ek_resolve_result in, ek_arena *arena,
             break;
         }
     }
+    ck_externs(&c);
     if (c.nrows) {
         qsort(c.rows, c.nrows, sizeof *c.rows, row_cmp);
         for (i = 0; i < c.nrows; i++) {
             c.rows[i].type = ck_subst(&c, c.rows[i].type);
-            c.rows[i].bit = EK_BIT_UNSET; /* M6b fills the bit slots */
         }
+        ck_fill_bits(&c);
     }
     r.rows = c.rows;
     r.count = c.nrows;

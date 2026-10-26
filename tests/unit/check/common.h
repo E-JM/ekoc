@@ -161,6 +161,34 @@ static inline int cfx_reading_at(const cfx *f, int line, ek_reading r)
     return 0;
 }
 
+/* Any row on the line carrying one world bit (Clause 7.9). */
+static inline int cfx_bit_at(const cfx *f, int line, ek_bit b)
+{
+    size_t i;
+
+    for (i = 0; i < f->chk.count; i++) {
+        if (f->chk.rows[i].node && f->chk.rows[i].node->line == line
+            && f->chk.rows[i].bit == b) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* Every row carries a defined bit: EK_BIT_UNSET survives only on a
+   failed run. */
+static inline int cfx_bits_filled(const cfx *f)
+{
+    size_t i;
+
+    for (i = 0; i < f->chk.count; i++) {
+        if (f->chk.rows[i].bit == EK_BIT_UNSET) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 /* The rows are sorted by node address. */
 static inline int cfx_rows_sorted(const cfx *f)
 {

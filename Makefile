@@ -61,16 +61,19 @@ CHECK_SRC := \
 	src/check/entry.c \
 	src/check/exhaust.c \
 	src/check/exhaust_prod.c \
+	src/check/extern.c \
 	src/check/expr.c \
 	src/check/literal.c \
 	src/check/member.c \
 	src/check/op.c \
 	src/check/patbind.c \
 	src/check/pattern.c \
+	src/check/reconcile.c \
 	src/check/scheme.c \
 	src/check/store.c \
 	src/check/subst.c \
-	src/check/unify.c
+	src/check/unify.c \
+	src/check/worlds.c
 
 LIB_SUPPORT := $(BUILD)/libek_support.a
 SUPPORT_OBJ := $(SUPPORT_SRC:src/%.c=$(BUILD)/%.o)

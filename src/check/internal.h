@@ -59,14 +59,21 @@ typedef struct {
     const ek_resolve_result *in;
     const ek_surface *root; /* in->modules[0] */
     unsigned next_ivar;
-    ck_map types;   /* intern table: candidate node -> canonical */
-    ck_map schemes; /* ek_symbol -> ck_scheme */
-    ck_map decls;   /* TYPE symbol -> ck_decl */
-    ck_map ctors;   /* CONSTRUCTOR symbol -> ck_ctor */
-    ck_map firsts;  /* tvar node -> first T_NAME node (E-phantom) */
-    ck_map stdsyms; /* std type name -> canonical placeholder symbol */
-    ck_map subst;   /* final substitution memo */
+    ck_map types;    /* intern table: candidate node -> canonical */
+    ck_map schemes;  /* ek_symbol -> ck_scheme */
+    ck_map decls;    /* TYPE symbol -> ck_decl */
+    ck_map ctors;    /* CONSTRUCTOR symbol -> ck_ctor */
+    ck_map firsts;   /* tvar node -> first T_NAME node (E-phantom) */
+    ck_map stdsyms;  /* std type name -> canonical placeholder symbol */
+    ck_map subst;    /* final substitution memo */
+    ck_map bits;     /* node -> own bit: a call's bit, a lambda's body
+                        bit, a binding's declared bit (worlds.c) */
+    ck_map contrib;  /* node -> OR of call bits in its subtree, lambda
+                        interiors excluded (memo) */
     ck_scope *locals;
+    int open_scope;  /* inside the body of a declaration whose signature
+                        contains the open bit: calls through `?` arrows
+                        carry that bit (Clause 7.9.6) */
     ek_ck_row *rows;
     size_t nrows, crows;
     int oom;
@@ -172,6 +179,34 @@ const ek_type *ck_composite(ck_ctx *c, const ek_node *e,
 const ek_type *ck_unary(ck_ctx *c, const ek_node *e, const ek_type *expected);
 const ek_type *ck_binary(ck_ctx *c, const ek_node *e, const ek_type *expected);
 
+/* worlds.c: the world-bit derivation (Clause 7.9). Bits are written
+   during expression checking; reconcile.c judges them at the
+   annotated bindings. */
+ek_bit ck_arg_bit(ck_ctx *c, const ek_node *arg, const ek_type *arg_type);
+void ck_call_bit(ck_ctx *c, const ek_node *call, ek_bit b);
+void ck_lambda_bit(ck_ctx *c, const ek_node *lam, ek_bit b);
+void ck_declare_bit(ck_ctx *c, const ek_node *decl, ek_bit b);
+ek_bit ck_bit_of(ck_ctx *c, const ek_node *n); /* recorded own bit */
+ek_bit ck_body_bit(ck_ctx *c, const ek_node *e); /* subtree OR */
+ek_bit ck_call_bit_of(ck_ctx *c, const ek_type *f, const char *member,
+                      const ek_type *recv, const ek_node *const *args,
+                      const ek_type *const *types, size_t n, size_t off);
+int ck_type_opens(const ek_type *t); /* contains an open arrow */
+int ck_signature_opens(const ek_type *f); /* own arrow or a feeder */
+void ck_fill_bits(ck_ctx *c); /* the final row pass (check.c) */
+
+/* reconcile.c: the no-eq rule of Clause 9.8.4 and the binding rules
+   of Clauses 7.9.2 and 7.9.6. */
+int ck_is_capability(const ek_type *t); /* the nine of Clause 7.9.1 */
+int ck_no_eq(ck_ctx *c, const ek_type *t); /* the eq derivation halts
+                                              here (Clause 9.8.4) */
+void ck_no_eq_error(ck_ctx *c, const ek_node *at, const ek_type *t);
+void ck_open_positions(ck_ctx *c, const ek_node *t, int allow);
+int ck_annotation_bits(ck_ctx *c, const ek_node *ann, const ek_type *bound);
+ek_bit ck_own_bit(const ek_type *bound);
+void ck_reconcile(ck_ctx *c, const ek_node *at, const ek_type *bound,
+                  const ek_node *val);
+
 /* pattern.c: pattern typing (Clause 7.7.1). patbind.c: or-patterns
    and the binding-shape judgments (Clauses 6.8.3, 7.7.1). */
 const ek_type *ck_pattern(ck_ctx *c, const ek_node *p, const ek_type *scrut);
@@ -200,6 +235,11 @@ const ek_type *ck_lambda(ck_ctx *c, const ek_node *e, const ek_type *expected);
 const ek_type *ck_apply(ck_ctx *c, const ek_node *e, const ek_type *expected);
 int ck_ref_at(const ck_ctx *c, const ek_node *n, ek_sym_kind kind,
               const ek_ref **out);
+
+/* extern.c: the compile-time checks of Clause 10 (Clauses 10.2.1,
+   10.2.3, 10.3.3, 10.3.5, 10.6) over the root's extern and ctype
+   declarations. */
+void ck_externs(ck_ctx *c);
 
 /* bind.c: the binding forms (Clauses 7.6.3, 7.6.5, 7.7.1, 7.8.1). */
 ck_scheme *ck_mono(ck_ctx *c, const ek_type *t);

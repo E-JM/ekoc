@@ -36,8 +36,10 @@ static int check_module(const char *stem)
     }
     cfx_run(&f, src, mpath, 1, name);
 
-    /* The result table is sorted by node address. */
+    /* The result table is sorted by node address, and every row
+       carries a defined world bit (Clause 7.9). */
     EK_CHECK(cfx_rows_sorted(&f));
+    EK_CHECK(cfx_bits_filled(&f));
 
     ok = cfx_stage_errors(f.ds, f.dn) == 0 && cfx_errors(&f) == 0;
     if (ok) {
@@ -65,6 +67,33 @@ static int check_module(const char *stem)
     return ok;
 }
 
+/* The positive bit flows of lambdas_capture.eko (Clauses 7.9.2,
+   7.9.4): the pure factory's own row stays pure while its closure row
+   and the call of the closure are world-touching. */
+static void check_lambdas_bits(void)
+{
+    char path[512], name[512], *src;
+    static const char *mpath[1] = {CONF_DIR};
+    cfx f;
+
+    snprintf(path, sizeof path, "%s/lambdas_capture.eko", CONF_DIR);
+    snprintf(name, sizeof name, "%s", "lambdas_capture.eko");
+    src = cfx_read_file(path);
+    if (!src) {
+        fprintf(stderr, "check/conformance: cannot read %s\n", path);
+        EK_CHECK(0);
+        return;
+    }
+    cfx_run(&f, src, mpath, 1, name);
+    EK_CHECK(cfx_errors(&f) == 0);
+    EK_CHECK(cfx_bit_at(&f, 5, EK_BIT_PURE));  /* inc */
+    EK_CHECK(cfx_bit_at(&f, 7, EK_BIT_PURE));  /* mk_logger's own arrow */
+    EK_CHECK(cfx_bit_at(&f, 8, EK_BIT_WORLD)); /* the `!` closure */
+    EK_CHECK(cfx_bit_at(&f, 20, EK_BIT_WORLD)); /* log(3) */
+    cfx_end(&f);
+    free(src);
+}
+
 int main(void)
 {
     size_t i;
@@ -74,5 +103,6 @@ int main(void)
             fprintf(stderr, "check/conformance: %s failed\n", modules[i]);
         }
     }
+    check_lambdas_bits();
     return ek_test_report("check/conformance");
 }

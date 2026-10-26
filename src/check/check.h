@@ -9,9 +9,9 @@
 #include "support/diag.h"
 
 /*
- * Stage 6 (Clauses 7.5-7.8, plus the 9.8/5.7 parts of the M6a negative
- * list): resolved AST -> types. ek_check is a pure entry point,
- * (input, arena, diag) -> output; it never aborts (ARCHITECTURE rule 4).
+ * Stage 6 (Clauses 7.5-7.9, with the equality rule of Clause 9.8.4):
+ * resolved AST -> types. ek_check is a pure entry point, (input,
+ * arena, diag) -> output; it never aborts (ARCHITECTURE rule 4).
  *
  * The input is the resolve result. ek_check checks the compilation
  * ROOT's module body against the closure's interfaces (Clause 7.3.2);
@@ -34,8 +34,40 @@
  * inference variables are substituted away; a remaining EK_T_IVAR is
  * one the ruling above leaves undetermined. `reading` is the selected
  * station of Clause 7.4.3 for member links, EK_RD_NONE otherwise.
- * `bit` is reserved for M6b (Clause 7.9 world bits) and is always
- * EK_BIT_UNSET in this milestone.
+ *
+ * `bit` is the world bit of Clause 7.9. Every row carries one:
+ * - a CALL row carries the bit of the call itself: pure through `->`,
+ *   world-touching through `!->`, and through `?->` the instantiation
+ *   from the feeder arguments (Clause 7.9.6); inside the body of a
+ *   declaration whose signature contains the open bit, a call through
+ *   a `?` arrow carries that bit.
+ * - a LAMBDA row carries the bit derived from its body (Clause 7.9.4).
+ * - an annotated binding row (LET/REBIND/NAMESPACE over a function
+ *   annotation) carries the declared arrow's bit, open included.
+ * - every other row carries the OR of the call bits in its subtree,
+ *   lambda interiors excluded: only calls contribute (Clause 7.9.2),
+ *   so a reference to a function value is pure. PURE where nothing
+ *   contributes.
+ *
+ * Test bindings have no arrow and nothing to reconcile (Clause 9.14.6);
+ * their rows carry derived bits all the same, and no bit diagnostic
+ * fires inside them.
+ *
+ * OPACITY RULING for the placeholder-std bridge (temporary until lib/
+ * lands, revise then): Clause 7.9.2 fixes a call's bit only through
+ * known arrows ("through `->` it is pure; through `!->` it is
+ * world-touching"); it does not cover a callee of unknown signature.
+ * The ruling here: a call through an unknown callee contributes
+ * world-touching when its receiver has a capability type (Clause
+ * 7.9.1) other than `Conc`, which sets no bit, and the member is not
+ * one of the pure derivation combinators the spec names (Out.null/
+ * tee, In.empty/from_lines, Fs.null/root, Env/Args/Clock.frozen,
+ * Rand.with_seed, Task.join/cancel), or when an argument is a lambda
+ * whose body is world-touching (the open-bit instantiation of Clause
+ * 7.9.6 applied at opaque dispatchers); it contributes pure otherwise.
+ * No diagnostic ever arises from the opacity itself: an unknown callee
+ * is never rejected, it only feeds the OR that an annotated binding
+ * reconciles against.
  */
 
 typedef enum {
@@ -97,8 +129,8 @@ typedef enum {
     EK_RD_UNKNOWN       /* receiver type undetermined (opacity) */
 } ek_reading;
 
-/* The world-bit slots of Clause 7.9. M6b fills them; M6a leaves every
-   row at EK_BIT_UNSET. */
+/* The world-bit slots of Clause 7.9. EK_BIT_UNSET remains only where a
+   failed run produced no row content. */
 typedef enum {
     EK_BIT_UNSET = -1,
     EK_BIT_PURE = 0,
@@ -110,7 +142,7 @@ typedef struct {
     const ek_node *node;
     const ek_type *type;   /* NULL where the node carries no type */
     ek_reading reading;    /* selected reading of a member link */
-    ek_bit bit;            /* reserved for M6b; EK_BIT_UNSET here */
+    ek_bit bit;            /* the world bit of the node (Clause 7.9) */
 } ek_ck_row;
 
 typedef struct {

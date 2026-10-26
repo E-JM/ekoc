@@ -1,10 +1,11 @@
 #include "common.h"
 
-/* The nine negative conformance entries of the M6a batch (Annex D.3):
-   each snippet materializes the manifest program, runs the full
-   pipeline, and asserts the exact code at the correct position plus
-   the rejection itself. N11 has two halves: the manifest declaration
-   (diagnosed in parse) and the check-side type-position reference. */
+/* The negative conformance entries outside the world-bit and native
+   batches (Annex D.3): each snippet materializes the manifest program,
+   runs the full pipeline, and asserts the exact code at the correct
+   position plus the rejection itself. N11 has two halves: the manifest
+   declaration (diagnosed in parse) and the check-side type-position
+   reference. */
 
 #define CONF_DIR "docs/tests/conformance"
 

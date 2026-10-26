@@ -179,7 +179,7 @@ static ck_conform conform(ck_ctx *c, const ek_type *a, const ek_type *e,
     case EK_T_FN:
         if (a->u.fn.arrow != e->u.fn.arrow
             && !(a->u.fn.arrow == EK_ARROW_PURE
-                 && e->u.fn.arrow == EK_ARROW_WORLD)) {
+                 && e->u.fn.arrow != EK_ARROW_PURE)) {
             return CK_MISMATCH; /* bit adaptation is one step (7.9.5) */
         }
         if (a->u.fn.count != e->u.fn.count) {

@@ -90,11 +90,12 @@ static const ek_symbol *module_fn(ck_ctx *c, const char *name,
 }
 
 /* The reading of one member link at its receiver's type (Clause
-   7.4.3). Derived services of Clause 9.8.7 that M6a types: eq on every
-   internal type (9.8.4; the E-no-eq rule is M6b), lt on declared
-   ADTs (9.8.5). */
-static const ek_type *link_type(ck_ctx *c, const ek_type *recv,
-                                const char *name, ek_reading *rd)
+   7.4.3). Derived services of Clause 9.8.7: eq on every internal type
+   whose derivation does not halt (9.8.4), lt on declared ADTs
+   (9.8.5). */
+static const ek_type *link_type(ck_ctx *c, const ek_node *at,
+                                const ek_type *recv, const char *name,
+                                ek_reading *rd)
 {
     const ek_type *r = ck_prune(recv);
     const ek_type *bool_t = ck_std_type(c, "Bool");
@@ -135,17 +136,24 @@ static const ek_type *link_type(ck_ctx *c, const ek_type *recv,
         }
         d = ck_decl_of(c, r->u.nominal.sym);
         if (d && strcmp(name, "eq") == 0) {
-            const ek_type **ps = ek_arena_alloc(c->arena, 2 * sizeof *ps);
-            const ek_type *a = r, *b = r;
+            if (ck_no_eq(c, r)) {
+                /* The derivation halts here (Clause 9.8.4): equality
+                   over the type is E-no-eq and the member is absent. */
+                ck_no_eq_error(c, at, r);
+            } else {
+                const ek_type **ps = ek_arena_alloc(c->arena,
+                                                    2 * sizeof *ps);
+                const ek_type *a = r, *b = r;
 
-            if (ps) {
-                ps[0] = a;
-                ps[1] = b;
-                *rd = EK_RD_DERIVED;
-                return ck_fn(c, ps, 2, bool_t, EK_ARROW_PURE);
+                if (ps) {
+                    ps[0] = a;
+                    ps[1] = b;
+                    *rd = EK_RD_DERIVED;
+                    return ck_fn(c, ps, 2, bool_t, EK_ARROW_PURE);
+                }
+                c->oom = 1;
+                return ck_ivar(c);
             }
-            c->oom = 1;
-            return ck_ivar(c);
         }
         if (d && d->rhs == EK_TYPE_RHS_VARIANTS && strcmp(name, "lt") == 0) {
             const ek_type **ps = ek_arena_alloc(c->arena, 2 * sizeof *ps);
@@ -178,7 +186,7 @@ const ek_type *ck_field(ck_ctx *c, const ek_node *e)
 {
     const ek_type *recv = ck_expr(c, e->u.field.recv, NULL);
     ek_reading rd = EK_RD_NONE;
-    const ek_type *t = link_type(c, recv, e->u.field.name, &rd);
+    const ek_type *t = link_type(c, e, recv, e->u.field.name, &rd);
 
     ck_row(c, e, t, rd);
     return t;
@@ -188,7 +196,7 @@ const ek_type *ck_field(ck_ctx *c, const ek_node *e)
 const ek_type *ck_link(ck_ctx *c, const ek_node *link, const ek_type *recv,
                        ek_reading *rd)
 {
-    const ek_type *t = link_type(c, recv, link->u.field.name, rd);
+    const ek_type *t = link_type(c, link, recv, link->u.field.name, rd);
 
     ck_row(c, link, t, *rd);
     return t;

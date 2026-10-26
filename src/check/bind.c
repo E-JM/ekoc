@@ -231,15 +231,19 @@ static const ek_type *ck_binding(ck_ctx *c, const ek_node *m, int top)
         return bound;
     }
     if (ann) {
+        int unfed, saved_open;
         ck_tvars tv;
 
         memset(&tv, 0, sizeof tv);
         bound = ck_elaborate(c, ann, &tv);
         check_phantom(c, ann, bound);
+        unfed = ck_annotation_bits(c, ann, bound);
         gen = ck_mono(c, NULL);
         if (gen) {
             *gen = ck_generalize(c, bound);
         }
+        saved_open = c->open_scope;
+        c->open_scope = ck_signature_opens(bound);
         if (val && bound && bound->kind == EK_T_FN) {
             /* The RHS is the function body (Clause 7.9.4): the
                annotation's parameters bind over it, a lambda is
@@ -291,6 +295,13 @@ static const ek_type *ck_binding(ck_ctx *c, const ek_node *m, int top)
                          ck_type_name(c, bound));
             }
         }
+        c->open_scope = saved_open;
+        if (val) {
+            ck_declare_bit(c, m, ck_own_bit(bound));
+            if (!unfed) {
+                ck_reconcile(c, m, bound, val);
+            }
+        }
     } else {
         const ek_node *lam = as_lambda(val);
 
@@ -317,15 +328,23 @@ static const ek_type *ck_binding(ck_ctx *c, const ek_node *m, int top)
 }
 
 /* A namespace member or extern: the annotation types the body and the
-   surface symbol alike. */
-static const ek_type *ck_annotated_decl(ck_ctx *c, const ek_node *ann,
-                                        const ek_node *body)
+   surface symbol alike. A namespace member is an annotated binding
+   (Clauses 7.9.2, 7.9.6); an extern carries no body and its rules are
+   the extern.c set (Clause 10.2). */
+static const ek_type *ck_annotated_decl(ck_ctx *c, const ek_node *m,
+                                        const ek_node *ann,
+                                        const ek_node *body, int binding)
 {
     ck_tvars tv;
     const ek_type *t;
+    int saved_open = c->open_scope;
 
     memset(&tv, 0, sizeof tv);
     t = ck_elaborate(c, ann, &tv);
+    if (binding) {
+        ck_annotation_bits(c, ann, t);
+        c->open_scope = ck_signature_opens(t);
+    }
     if (body && ann->kind == EK_N_T_FN) {
         size_t i, n = ann->u.t_fn.params.count;
 
@@ -344,6 +363,11 @@ static const ek_type *ck_annotated_decl(ck_ctx *c, const ek_node *ann,
     } else if (body) {
         ck_expr(c, body, t);
     }
+    c->open_scope = saved_open;
+    if (binding && body) {
+        ck_declare_bit(c, m, ck_own_bit(t));
+        ck_reconcile(c, m, t, body);
+    }
     return t;
 }
 
@@ -358,13 +382,13 @@ const ek_type *ck_stmt(ck_ctx *c, const ek_node *m, int top)
     case EK_N_INVERT:
         return ck_binding(c, m, top);
     case EK_N_NAMESPACE:
-        return ck_annotated_decl(c, m->u.namespace.type,
-                                 m->u.namespace.value);
+        return ck_annotated_decl(c, m, m->u.namespace.type,
+                                 m->u.namespace.value, 1);
     case EK_N_TEST_DECL:
         ck_block(c, m->u.decl.body, NULL);
         return ck_unit(c);
     case EK_N_EXTERN_DECL:
-        return ck_annotated_decl(c, m->u.extern_decl.type, NULL);
+        return ck_annotated_decl(c, m, m->u.extern_decl.type, NULL, 0);
     default:
         return NULL;
     }

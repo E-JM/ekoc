@@ -180,8 +180,11 @@ const ek_type *ck_binary(ck_ctx *c, const ek_node *e, const ek_type *expected)
     if (same && !open_type(same)) {
         if (op == EK_BIN_EQ || op == EK_BIN_NE) {
             /* A type variable may compare: `==` is the derived eq of
-               Clause 7.6.6. */
-            if (!eq_domain(same) && same->kind != EK_T_TVAR) {
+               Clause 7.6.6. Over a type whose derivation halts, the
+               rule of Clause 9.8.4 applies. */
+            if (ck_no_eq(c, same)) {
+                ck_no_eq_error(c, e, same);
+            } else if (!eq_domain(same) && same->kind != EK_T_TVAR) {
                 ck_error(c, e, "E-no-operator",
                          "`==` and `!=` are defined on the value layer "
                          "only; equality on %s is the member `%s.eq` "

@@ -180,7 +180,7 @@ static const ck_decl *build_decl(ck_ctx *c, const ek_symbol *sym)
         check_phantom_binders(c, info);
     } else if (dn->kind == EK_N_CTYPE_DECL) {
         info->rhs = EK_TYPE_RHS_RECORD;
-        info->rec = dn->u.decl.body; /* the field predicate is M6b */
+        info->rec = dn->u.decl.body; /* fields judged in extern.c */
     }
     return info;
 }
