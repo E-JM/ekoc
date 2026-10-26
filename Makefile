@@ -35,6 +35,7 @@ PARSE_SRC := \
 	src/parse/literal.c \
 	src/parse/parse.c \
 	src/parse/pattern.c \
+	src/parse/postfix.c \
 	src/parse/type.c \
 	src/parse/util.c
 

@@ -89,8 +89,9 @@ ek_node *p_variant(p_ctx *c);
 
 /* expr.c */
 ek_node *p_expr(p_ctx *c);
-void p_call_args(p_ctx *c, ek_nlist *args); /* '(' consumed */
-int p_cons_head(const ek_node *e);          /* all-Pascal name chain */
+
+/* postfix.c: the level-1 operand layer of A.3.5. */
+ek_node *p_postfix(p_ctx *c);
 
 /* literal.c */
 ek_node *p_literal(p_ctx *c, const ek_layout_token *t);

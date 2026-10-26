@@ -183,6 +183,73 @@ static void case_as_value(void)
     pfx_end(&f);
 }
 
+static void arm_corners(void)
+{
+    parse_fixture f;
+    const ek_node *ce;
+
+    /* Three or-alternatives flatten into one arm (A.3.6). */
+    pfx_begin(&f,
+        "f: (k: Key) -> String =\n"
+        "    case k:\n"
+        "        Up | Down | Left -> \"move\"\n"
+        "        _ -> \"other\"\n");
+    EK_CHECK_U64(pfx_errors(&f), 0);
+    ce = pfx_find(f.ast.module, EK_N_CASE);
+    EK_CHECK(ce != NULL);
+    EK_CHECK_U64(ce->u.caseexpr.arms.data[0]->u.arm.patterns.data[0]->kind,
+                 EK_N_P_OR);
+    EK_CHECK_U64(ce->u.caseexpr.arms.data[0]->u.arm.patterns.data[0]->u.kids.count,
+                 3);
+    pfx_end(&f);
+
+    /* A guard over multiple scrutinees (Clause 6.7.2). */
+    pfx_begin(&f,
+        "f: (a: Bool, b: Bool) -> String =\n"
+        "    case a, b:\n"
+        "        True, False if go -> \"go\"\n"
+        "        _, _ -> \"stay\"\n");
+    EK_CHECK_U64(pfx_errors(&f), 0);
+    ce = pfx_find(f.ast.module, EK_N_CASE);
+    EK_CHECK(ce != NULL);
+    EK_CHECK_U64(ce->u.caseexpr.arms.data[0]->u.arm.patterns.count, 2);
+    EK_CHECK(ce->u.caseexpr.arms.data[0]->u.arm.guard != NULL);
+    pfx_end(&f);
+
+    /* `;` separates arms inside an indented block, too (Clause 5.3.2). */
+    pfx_begin(&f,
+        "f: (r: Result Int String) -> Int =\n"
+        "    case r:\n"
+        "        Ok v -> v; Err e -> e.length()\n");
+    EK_CHECK_U64(pfx_errors(&f), 0);
+    ce = pfx_find(f.ast.module, EK_N_CASE);
+    EK_CHECK(ce != NULL);
+    EK_CHECK_U64(ce->u.caseexpr.arms.count, 2);
+    pfx_end(&f);
+}
+
+static void else_chains(void)
+{
+    parse_fixture f;
+    const ek_node *ie;
+
+    /* `else` nests through the suite (A.3.5). */
+    pfx_begin(&f, "f: Int =\n    if a: 1 else: if b: 2 else: 3\n    0\n");
+    EK_CHECK_U64(pfx_errors(&f), 0);
+    ie = pfx_find(f.ast.module, EK_N_IF);
+    EK_CHECK(ie != NULL);
+    EK_CHECK_U64(ie->u.ifexpr.els->kind, EK_N_IF);
+    EK_CHECK_U64(ie->u.ifexpr.els->u.ifexpr.els->kind, EK_N_INT_LIT);
+    pfx_end(&f);
+
+    /* An `else` guarding nothing is diagnosed (Clause 6.7.4). */
+    pfx_begin(&f, "f: Int =\n    if a: 1 else if b: 2\n    0\n");
+    EK_CHECK(pfx_errors(&f) > 0);
+    pfx_collect(&f);
+    EK_CHECK(pfx_msg_has(&f, "6.7.4"));
+    pfx_end(&f);
+}
+
 int main(void)
 {
     case_arms();
@@ -190,5 +257,7 @@ int main(void)
     if_forms();
     else_reattachment();
     case_as_value();
+    arm_corners();
+    else_chains();
     return ek_test_report("parse/ctl");
 }

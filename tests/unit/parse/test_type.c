@@ -105,6 +105,25 @@ static void brackets(void)
     t = ann_of(&f, "[Int]");
     EK_CHECK(pfx_errors(&f) > 0);
     pfx_end(&f);
+
+    /* A field is `name :`; junk after a comma recovers at `]` without
+       being eaten as a field name. */
+    t = ann_of(&f, "[a: Int, 5]");
+    EK_CHECK(pfx_errors(&f) > 0);
+    pfx_collect(&f);
+    EK_CHECK(pfx_msg_has(&f, "expected a field in the record type"));
+    pfx_end(&f);
+
+    t = ann_of(&f, "[a: Int, ]");
+    EK_CHECK(pfx_errors(&f) > 0);
+    pfx_end(&f);
+
+    /* A dictionary value may be an arrow (Clause 6.9.2). */
+    t = ann_of(&f, "[String](Int) -> Int");
+    EK_CHECK_U64(pfx_errors(&f), 0);
+    EK_CHECK_U64(t->kind, EK_N_T_DICT);
+    EK_CHECK_U64(t->u.pair.b->kind, EK_N_T_FN);
+    pfx_end(&f);
 }
 
 static void arrows(void)
@@ -224,6 +243,14 @@ static void generic_application(void)
     /* A composite argument without parentheses is rejected. */
     t = ann_of(&f, "Option [Value Int Float]");
     EK_CHECK(pfx_errors(&f) > 0);
+    pfx_end(&f);
+
+    /* Application depth: parenthesized composite arguments nest. */
+    t = ann_of(&f, "Value (Option Int) (Pair Int Bool)");
+    EK_CHECK_U64(pfx_errors(&f), 0);
+    EK_CHECK_U64(t->u.t_apply.args.count, 2);
+    EK_CHECK_U64(t->u.t_apply.args.data[0]->kind, EK_N_T_PAREN);
+    EK_CHECK_U64(t->u.t_apply.args.data[1]->u.wrap.inner->kind, EK_N_T_APPLY);
     pfx_end(&f);
 }
 

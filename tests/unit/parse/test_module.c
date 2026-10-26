@@ -155,6 +155,58 @@ static void member_shapes(void)
     pfx_end(&f);
 }
 
+/* A stream from a stage that could not allocate must not crash the
+   parser: ek_parse returns an empty MODULE root with a diagnostic
+   (ARCHITECTURE rule 4). */
+static void empty_stream(void)
+{
+    parse_fixture f;
+
+    memset(&f, 0, sizeof f);
+    f.arena = ek_arena_create();
+    f.diag = ek_diag_create();
+    f.ast = ek_parse(NULL, 0, "test.eko", f.arena, f.diag);
+    EK_CHECK(f.ast.module != NULL);
+    EK_CHECK_U64(f.ast.module->kind, EK_N_MODULE);
+    EK_CHECK_U64(f.ast.module->u.kids.count, 0);
+    EK_CHECK(pfx_errors(&f) >= 1);
+    pfx_end(&f);
+}
+
+/* Recursion depth stays linear and safe at depths far past anything
+   the conformance corpus contains. */
+static void deep_nesting(void)
+{
+    parse_fixture f;
+    char src[640];
+    size_t used;
+    size_t i;
+
+    used = (size_t)snprintf(src, sizeof src, "f: Int =\n    ");
+    for (i = 0; i < 100; i++) {
+        used += (size_t)snprintf(src + used, sizeof src - used, "(");
+    }
+    used += (size_t)snprintf(src + used, sizeof src - used, "1");
+    for (i = 0; i < 100; i++) {
+        used += (size_t)snprintf(src + used, sizeof src - used, ")");
+    }
+    snprintf(src + used, sizeof src - used, "\n");
+    pfx_begin(&f, src);
+    EK_CHECK_U64(pfx_errors(&f), 0);
+    EK_CHECK(f.ast.module != NULL);
+    pfx_end(&f);
+
+    used = (size_t)snprintf(src, sizeof src, "x: ");
+    for (i = 0; i < 100; i++) {
+        used += (size_t)snprintf(src + used, sizeof src - used, "[]");
+    }
+    snprintf(src + used, sizeof src - used, "Int = 1\n");
+    pfx_begin(&f, src);
+    EK_CHECK_U64(pfx_errors(&f), 0);
+    EK_CHECK_U64(pfx_ann(&f)->u.wrap.inner->kind, EK_N_T_LIST);
+    pfx_end(&f);
+}
+
 int main(void)
 {
     imports();
@@ -162,5 +214,7 @@ int main(void)
     semicolon_suites();
     recovery();
     member_shapes();
+    empty_stream();
+    deep_nesting();
     return ek_test_report("parse/module");
 }

@@ -333,6 +333,14 @@ static ek_node *record_type(p_ctx *c, const ek_layout_token *open)
         ek_node *ty;
         ek_node *field;
 
+        if (p_src_kind(name) != EK_TOK_IDENT
+            || p_src_kind(p_peek_at(c, 1)) != EK_TOK_COLON) {
+            p_error_tok(c, "E-syntax", name,
+                        "expected a field in the record type (Clause 6.9.2)");
+            p_sync(c);
+            p_got(c, EK_TOK_RBRACKET);
+            return n;
+        }
         p_take(c); /* the field name */
         p_take(c); /* ':' */
         field = p_node(c, EK_N_T_FIELD, name->line, name->col);

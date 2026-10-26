@@ -3,14 +3,17 @@
 /* Expression forms of 6.4 to 6.9 with the precedence ladder of
    Clause 6.5.5, postfix and receiver chains, and lambdas. */
 
-/* Parses `_t: Int = <expr>` and returns the right-hand side. */
+/* Parses `_t: Int = <expr>` and returns the right-hand side, or NULL
+   when the failed RHS takes the whole binding with it. */
 static const ek_node *expr_of(parse_fixture *f, const char *rhs)
 {
     char line[256];
+    const ek_node *item;
 
     snprintf(line, sizeof line, "_t: Int = %s\n", rhs);
     pfx_begin(f, line);
-    return pfx_item(f, 0)->u.bind.value;
+    item = pfx_item(f, 0);
+    return item && item->kind == EK_N_LET ? item->u.bind.value : NULL;
 }
 
 static void literals_and_names(void)
@@ -276,13 +279,101 @@ static void operand_blocks(void)
     pfx_end(&f);
 }
 
+static void precedence_corners(void)
+{
+    parse_fixture f;
+    const ek_node *e;
+
+    /* Unary minus never chains (Clause 6.5.4). */
+    (void)expr_of(&f, "- -x");
+    EK_CHECK(pfx_errors(&f) > 0);
+    pfx_end(&f);
+
+    /* A binary minus feeds a unary operand: `a - -b` is `a - (-b)`. */
+    e = expr_of(&f, "a - -b");
+    EK_CHECK_U64(pfx_errors(&f), 0);
+    EK_CHECK_U64(e->u.binary.op, EK_BIN_SUB);
+    EK_CHECK_U64(e->u.binary.rhs->kind, EK_N_UNARY);
+    pfx_end(&f);
+
+    /* Range chains are diagnosed (Clause 6.5.5). */
+    (void)expr_of(&f, "1..2..3");
+    EK_CHECK(pfx_errors(&f) > 0);
+    pfx_collect(&f);
+    EK_CHECK(pfx_has_code(&f, "E-chained-range"));
+    pfx_end(&f);
+
+    /* Comparison over a range folds without error (Clause 6.5.5). */
+    e = expr_of(&f, "a < b..c");
+    EK_CHECK_U64(pfx_errors(&f), 0);
+    EK_CHECK_U64(e->u.binary.op, EK_BIN_LT);
+    EK_CHECK_U64(e->u.binary.rhs->u.binary.op, EK_BIN_RANGE_EXC);
+    pfx_end(&f);
+
+    /* The juxtaposition argument is one postfix expression, so the
+       chain under it binds first (Clause 6.5.2). */
+    e = expr_of(&f, "Ok x.f()");
+    EK_CHECK_U64(pfx_errors(&f), 0);
+    EK_CHECK_U64(e->kind, EK_N_APPLY);
+    EK_CHECK_U64(e->u.pair.b->kind, EK_N_CALL);
+    EK_CHECK_U64(e->u.pair.b->u.call.callee->kind, EK_N_FIELD);
+    pfx_end(&f);
+
+    e = expr_of(&f, "Succ (Succ Zero)");
+    EK_CHECK_U64(pfx_errors(&f), 0);
+    EK_CHECK_U64(e->kind, EK_N_APPLY);
+    EK_CHECK_U64(e->u.pair.b->kind, EK_N_PAREN);
+    EK_CHECK_U64(e->u.pair.b->u.wrap.inner->kind, EK_N_APPLY);
+    pfx_end(&f);
+
+    /* A `case`/`if` is admitted as the whole juxtaposed argument
+       (Clause 6.5.1); only an operator operand must be parenthesized. */
+    e = expr_of(&f, "Ok if c: 1 else: 2");
+    EK_CHECK_U64(pfx_errors(&f), 0);
+    EK_CHECK_U64(e->kind, EK_N_APPLY);
+    EK_CHECK_U64(e->u.pair.b->kind, EK_N_IF);
+    pfx_end(&f);
+}
+
+static void lambda_shapes(void)
+{
+    parse_fixture f;
+    const ek_node *e;
+
+    /* Several parameters, flat and grouped (A.3.4). */
+    e = expr_of(&f, "(a, b, c): a");
+    EK_CHECK_U64(pfx_errors(&f), 0);
+    EK_CHECK_U64(e->u.pair.a->u.kids.count, 3);
+    pfx_end(&f);
+
+    /* Lambda parameters carry no types; `(a: Int)` is not a group. */
+    (void)expr_of(&f, "(a: Int): a");
+    EK_CHECK(pfx_errors(&f) > 0);
+    pfx_end(&f);
+
+    /* An anonymous parameter (A.3.4). */
+    e = expr_of(&f, "(_): 1");
+    EK_CHECK_U64(pfx_errors(&f), 0);
+    EK_CHECK_STR(e->u.pair.a->u.kids.data[0]->u.path.data[0], "_");
+    pfx_end(&f);
+
+    /* A lambda body may be a `;` suite (Clause 6.7.5). */
+    e = expr_of(&f, "(n): a(); n");
+    EK_CHECK_U64(pfx_errors(&f), 0);
+    EK_CHECK_U64(e->u.pair.b->kind, EK_N_BLOCK);
+    EK_CHECK_U64(e->u.pair.b->u.kids.count, 2);
+    pfx_end(&f);
+}
+
 int main(void)
 {
     literals_and_names();
     precedence();
+    precedence_corners();
     calls_and_chains();
     composite_literals();
     lambdas();
+    lambda_shapes();
     operand_blocks();
     return ek_test_report("parse/expr");
 }

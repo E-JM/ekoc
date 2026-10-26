@@ -264,11 +264,23 @@ static void brace_items(p_ctx *c, ek_node *n)
         }
         if (p_at(c, EK_TOK_DOTDOT)) {
             p_take(c);
+            if (n->u.p_brace.rest != EK_REST_NONE) {
+                p_error_tok(c, "E-syntax", p_peek(c),
+                            "a brace pattern admits one rest (Clause 6.8.4)");
+                p_sync(c);
+                p_got(c, EK_TOK_RBRACE);
+                return;
+            }
             n->u.p_brace.rest = EK_REST_SUFFIX;
             if (p_at(c, EK_TOK_IDENT)) {
                 n->u.p_brace.rest_name = p_take(c)->tok.text;
             }
-            p_got(c, EK_TOK_RBRACE);
+            if (!p_got(c, EK_TOK_RBRACE)) {
+                p_error_tok(c, "E-syntax", p_peek(c),
+                            "expected `}` after the rest (Clause 6.8.4)");
+                p_sync(c);
+                p_got(c, EK_TOK_RBRACE);
+            }
             return;
         }
         item = brace_item(c);

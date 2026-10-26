@@ -217,6 +217,35 @@ static void excluded_patterns(void)
     pfx_end(&f);
 }
 
+/* Rest forms that A.3.6 does not admit must be diagnosed, not
+   silently reshaped: one rest per brace pattern, and a suffix rest
+   closes the brace. */
+static void rest_edges(void)
+{
+    parse_fixture f;
+
+    (void)arm_pattern(&f, "{.., 1, ..} -> 1");
+    EK_CHECK(pfx_errors(&f) > 0);
+    pfx_collect(&f);
+    EK_CHECK(pfx_msg_has(&f, "one rest"));
+    pfx_end(&f);
+
+    (void)arm_pattern(&f, "{1, ..t, 2} -> 1");
+    EK_CHECK(pfx_errors(&f) > 0);
+    pfx_collect(&f);
+    EK_CHECK(pfx_msg_has(&f, "expected `}` after the rest"));
+    pfx_end(&f);
+
+    /* The legal placements of Clause 6.8.4 stay clean. */
+    (void)arm_pattern(&f, "{h, ..t} -> h");
+    EK_CHECK_U64(pfx_errors(&f), 0);
+    pfx_end(&f);
+
+    (void)arm_pattern(&f, "{.., 42} -> 1");
+    EK_CHECK_U64(pfx_errors(&f), 0);
+    pfx_end(&f);
+}
+
 int main(void)
 {
     simple_patterns();
@@ -225,5 +254,6 @@ int main(void)
     or_patterns();
     paren_patterns();
     excluded_patterns();
+    rest_edges();
     return ek_test_report("parse/pattern");
 }

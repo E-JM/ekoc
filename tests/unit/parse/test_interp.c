@@ -117,11 +117,46 @@ static void slot_positions(void)
     pfx_end(&f);
 }
 
+static void slot_forms(void)
+{
+    parse_fixture f;
+    const ek_node *s;
+
+    /* A slot re-enters the whole expression grammar: lambda (A.3.4). */
+    s = str_of(&f, "\"{(n): n + 1}\"");
+    EK_CHECK_U64(pfx_errors(&f), 0);
+    EK_CHECK_U64(s->u.str.count, 1);
+    EK_CHECK_U64(s->u.str.segs[0].expr->kind, EK_N_LAMBDA);
+    pfx_end(&f);
+
+    /* A slot holding an if (Clause 6.5.1: the whole slot is it). */
+    s = str_of(&f, "\"{if c: 1 else: 2}\"");
+    EK_CHECK_U64(pfx_errors(&f), 0);
+    EK_CHECK_U64(s->u.str.segs[0].expr->kind, EK_N_IF);
+    pfx_end(&f);
+
+    /* Braces balance inside a slot (Clause 5.9.3). */
+    s = str_of(&f, "\"{ {1, 2} }\"");
+    EK_CHECK_U64(pfx_errors(&f), 0);
+    EK_CHECK_U64(s->u.str.count, 1);
+    EK_CHECK_U64(s->u.str.segs[0].expr->kind, EK_N_COMPOSITE);
+    EK_CHECK_U64(s->u.str.segs[0].expr->u.kids.count, 2);
+    pfx_end(&f);
+
+    /* A slot holding a case with two inline arms (Clause 6.7.5). */
+    s = str_of(&f, "\"{case x: 1 -> 2; _ -> 3}\"");
+    EK_CHECK_U64(pfx_errors(&f), 0);
+    EK_CHECK_U64(s->u.str.segs[0].expr->kind, EK_N_CASE);
+    EK_CHECK_U64(s->u.str.segs[0].expr->u.caseexpr.arms.count, 2);
+    pfx_end(&f);
+}
+
 int main(void)
 {
     plain_segments();
     slots();
     slot_errors();
     slot_positions();
+    slot_forms();
     return ek_test_report("parse/interp");
 }

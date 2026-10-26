@@ -14,6 +14,18 @@ ek_parse_result ek_parse(const ek_layout_token *tokens, size_t count,
     ctx.diag = diag;
     ctx.toks = tokens;
     ctx.count = tokens && count > 0 ? count : 1;
+    if (!tokens || count == 0) {
+        /* No stream from layout (allocation failure upstream): the
+           pipeline still drains, so hand back an empty module. */
+        ek_diag_emit(diag, EK_SEV_ERROR, NULL, file, 0, 0,
+                     "the layout stage produced no token stream; the "
+                     "module is empty");
+        r.module = p_node(&ctx, EK_N_MODULE, 1, 1);
+        if (r.module) {
+            p_list_init(&r.module->u.kids);
+        }
+        return r;
+    }
     r.module = p_module(&ctx);
     return r;
 }
