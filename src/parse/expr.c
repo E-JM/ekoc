@@ -77,7 +77,8 @@ static ek_node *operand(p_ctx *c, ek_node *e)
 {
     if (e && (e->kind == EK_N_IF || e->kind == EK_N_CASE)) {
         p_error(c, "E-operand-block", e->line, e->col,
-                "a `case` or `if` operand is parenthesized (Clause 6.5.1)");
+                "a `case` or `if` operand must be parenthesized "
+                "(Clause 6.5.1)");
     }
     return e;
 }

@@ -146,7 +146,8 @@ ek_node *p_binding_after_pattern(p_ctx *c, ek_node *pat)
         }
         if (call->kind != EK_N_CALL) {
             p_error(c, "E-invert-call", call->line, call->col,
-                    "the right-hand side of `<-` is a call (Clause 6.3.1)");
+                    "the right-hand side of `<-` must be a call "
+                    "(Clause 6.3.1)");
         }
         return p_node3(c, EK_N_INVERT, pat, NULL, call);
     }
@@ -199,7 +200,8 @@ static ek_node *invert_tail(p_ctx *c, const ek_slist *path,
     }
     if (call->kind != EK_N_CALL) {
         p_error(c, "E-invert-call", call->line, call->col,
-                "the right-hand side of `<-` is a call (Clause 6.3.1)");
+                "the right-hand side of `<-` must be a call "
+                "(Clause 6.3.1)");
     }
     return p_node3(c, EK_N_INVERT, pat, NULL, call);
 }

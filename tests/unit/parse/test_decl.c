@@ -84,6 +84,7 @@ static void inverted_bindings(void)
     EK_CHECK(pfx_errors(&f) > 0);
     pfx_collect(&f);
     EK_CHECK(pfx_has_code(&f, "E-invert-call"));
+    EK_CHECK(pfx_msg_has(&f, "must be a call"));
     pfx_end(&f);
 }
 

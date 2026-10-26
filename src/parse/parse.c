@@ -229,7 +229,7 @@ ek_node *p_invert_bare(p_ctx *c)
     }
     if (call->kind != EK_N_CALL) {
         p_error(c, "E-invert-call", call->line, call->col,
-                "the right-hand side of `<-` is a call (Clause 6.3.1)");
+                "the right-hand side of `<-` must be a call (Clause 6.3.1)");
     }
     n = p_node(c, EK_N_INVERT, arrow->line, arrow->col);
     if (n) {
@@ -352,7 +352,7 @@ void p_check_invert_pattern(p_ctx *c, const ek_node *pat)
     case EK_N_P_VAR:
         if (!p_is_snake(pat->u.path.data[0])) {
             p_error(c, "E-invert-pattern", pat->line, pat->col,
-                    "`<-` binds a snake_case name (Clause 6.3.4)");
+                    "`<-` binds only a snake_case name (Clause 6.3.4)");
         }
         return;
     case EK_N_P_PAREN:

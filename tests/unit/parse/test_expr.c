@@ -264,11 +264,12 @@ static void operand_blocks(void)
     parse_fixture f;
     const ek_node *e;
 
-    /* a case or if operand is parenthesized */
+    /* a case or if operand must be parenthesized */
     e = expr_of(&f, "1 + if c: 2 else: 3");
     EK_CHECK(pfx_errors(&f) > 0);
     pfx_collect(&f);
     EK_CHECK(pfx_has_code(&f, "E-operand-block"));
+    EK_CHECK(pfx_msg_has(&f, "must be parenthesized"));
     pfx_end(&f);
 
     /* the whole argument is fine */
