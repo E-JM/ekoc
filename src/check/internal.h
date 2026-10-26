@@ -171,6 +171,18 @@ void ck_scope_bind_scheme(ck_ctx *c, const char *name, ck_scheme *s);
 ck_scheme *ck_scope_get_scheme(const ck_ctx *c, const char *name);
 const ek_type *ck_scope_get(const ck_ctx *c, const char *name);
 
+/* Constructor candidates. A reference carries every visible same-named
+   constructor; the expected nominal type anchors one, and without an
+   anchor only a sole non-generic candidate stands on its own. */
+typedef struct {
+    const ek_symbol *sym; /* the chosen candidate, NULL when none */
+    int anchored;         /* the expected nominal type picked it */
+} ck_ctorsel;
+ck_ctorsel ck_ctor_select(ck_ctx *c, const ek_node *n, const ek_ref *ref,
+                          const ek_type *expected);
+const ek_symbol *ck_ctor_pick(const ek_ref *ref, const ek_type *expected);
+int ck_ctor_generic(ck_ctx *c, const ek_symbol *cand);
+
 /* literal.c: literal placement and composite literals. */
 int ck_is_numeric(const ek_type *t);      /* Int, UInt, Float */
 int ck_is_machine_word(const ek_type *t); /* U8..I64 */

@@ -366,56 +366,97 @@ static const ek_type *apply_generic(ck_ctx *c, const ek_node *e,
     return exp;
 }
 
+/* An opaque constructor application: the std placeholder bridge, and
+   the reading an unknown declaration falls back to. The payload binds
+   loosely and the value conforms into the expected type. */
+static const ek_type *apply_opaque(ck_ctx *c, const ek_node *e,
+                                   const ek_type *expected)
+{
+    const ek_type *iv = ck_ivar(c);
+
+    ck_expr(c, e->u.pair.b, iv);
+    if (expected) {
+        ck_conforms(c, iv, expected, 1);
+    }
+    ck_row(c, e, iv, EK_RD_NONE);
+    return iv;
+}
+
+/* A constructor with a known declaration: a zero-binder owner
+   self-anchors, a generic one takes its instantiation from the
+   anchor. NULL when the declaration carries no owner. */
+static const ek_type *apply_known(ck_ctx *c, const ek_node *e,
+                                  const ck_ctor *ct, const ek_type *expected)
+{
+    const ek_node *arg = e->u.pair.b;
+    const ek_type *exp = ck_prune(expected);
+    const ck_decl *d;
+    size_t nb;
+
+    if (!ct || !ct->owner) {
+        return NULL;
+    }
+    d = ck_decl_of(c, ct->owner);
+    nb = d ? d->nbinders : 0;
+    if (nb == 0) {
+        const ek_type *t = ck_nominal(c, ct->owner, NULL, 0);
+
+        if (ct->payload) {
+            ck_expr(c, arg, ct->payload);
+        }
+        ck_row(c, e, t, EK_RD_NONE);
+        return t;
+    }
+    if (exp && exp->kind == EK_T_NOMINAL && exp->u.nominal.sym == ct->owner
+        && exp->u.nominal.argc == nb) {
+        return apply_generic(c, e, ct, d, arg, exp, nb);
+    }
+    ck_error(c, e->u.pair.a, "E-undetermined",
+             "the constructor `%s` has no unique instantiation; an "
+             "expected type determines it (Clause 7.6.4)",
+             ct->sym ? ct->sym->name : "?");
+    ck_expr(c, arg, NULL);
+    return ck_ivar(c);
+}
+
+/* A constructor application over the reference's candidate set. */
+static const ek_type *apply_candidates(ck_ctx *c, const ek_node *e,
+                                       const ek_ref *ref,
+                                       const ek_type *expected)
+{
+    ck_ctorsel sel = ck_ctor_select(c, e->u.pair.a, ref, expected);
+    const ek_type *t;
+
+    if (!sel.sym) {
+        const ek_type *iv = ck_ivar(c);
+
+        ck_expr(c, e->u.pair.b, NULL);
+        ck_row(c, e, iv, EK_RD_NONE);
+        return iv;
+    }
+    if (sel.sym->decl == NULL) {
+        return apply_opaque(c, e, expected);
+    }
+    t = apply_known(c, e, ck_ctor_of(c, sel.sym), expected);
+    return t ? t : apply_opaque(c, e, expected);
+}
+
 /* Constructor application by juxtaposition is check-only: it takes
    its instantiation from the expected type. */
 const ek_type *ck_apply(ck_ctx *c, const ek_node *e, const ek_type *expected)
 {
     const ek_node *head = e->u.pair.a;
-    const ek_node *arg = e->u.pair.b;
     const ek_ref *ref = NULL;
-    const ck_ctor *ct = NULL;
+    const ek_type *t;
 
     if (c->oom) {
         return expected;
     }
-    if (head && ck_ref_at(c, head, EK_SYM_CONSTRUCTOR, &ref) && ref->symbol) {
-        ct = ck_ctor_of(c, ref->symbol);
+    if (head && ck_ref_at(c, head, 0, &ref) && ref->ncands) {
+        return apply_candidates(c, e, ref, expected);
     }
-    if (ct && ct->owner) {
-        const ck_decl *d = ck_decl_of(c, ct->owner);
-        size_t nb = d ? d->nbinders : 0;
-        const ek_type *exp = ck_prune(expected);
-
-        if (nb == 0) {
-            /* Self-anchoring. */
-            const ek_type *t = ck_nominal(c, ct->owner, NULL, 0);
-
-            if (ct->payload) {
-                ck_expr(c, arg, ct->payload);
-            }
-            ck_row(c, e, t, EK_RD_NONE);
-            return t;
-        }
-        if (exp && exp->kind == EK_T_NOMINAL && exp->u.nominal.sym == ct->owner
-            && exp->u.nominal.argc == nb) {
-            return apply_generic(c, e, ct, d, arg, exp, nb);
-        }
-        ck_error(c, head, "E-undetermined",
-                 "the constructor `%s` has no unique instantiation; an "
-                 "expected type determines it (Clause 7.6.4)",
-                 ref->symbol->name);
-        ck_expr(c, arg, NULL);
-        return ck_ivar(c);
-    }
-    /* An external constructor (the std placeholders): opaque. */
-    {
-        const ek_type *iv = ck_ivar(c);
-
-        ck_expr(c, arg, iv);
-        if (expected) {
-            ck_conforms(c, iv, expected, 1);
-        }
-        ck_row(c, e, iv, EK_RD_NONE);
-        return iv;
-    }
+    (void)ck_ref_at(c, head, EK_SYM_CONSTRUCTOR, &ref);
+    t = ref && ref->symbol ? apply_known(c, e, ck_ctor_of(c, ref->symbol),
+                                        expected) : NULL;
+    return t ? t : apply_opaque(c, e, expected);
 }
