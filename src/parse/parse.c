@@ -64,6 +64,7 @@ ek_node *p_module(p_ctx *c)
         }
         /* The compilation unit is the root, not a nesting level. */
         if (c->fatal) {
+            p_sync(c);
             break;
         }
         p_list_add(c, NULL, &mod->u.kids, item);
