@@ -18,30 +18,29 @@ static int hex_value(int b)
     return -1;
 }
 
-static esc_result scan_unicode(lex_ctx *c, int line, int col, uint32_t *out)
+/* The braced digits of \u, entered on '{'. Returns ESC_OK with the
+   value and the digit count; ESC_ERROR after diagnosing, leaving a
+   line terminator or end of input for the caller. */
+static esc_result scan_unicode_braces(lex_ctx *c, int line, int col,
+                                      uint32_t *out, int *digits)
 {
     uint32_t value = 0;
-    int digits = 0;
 
-    if (ctx_byte(c, 0) != '{') {
-        ctx_error(c, "E-escape", line, col,
-                  "escape \\u expects a braced scalar value");
-        return ESC_ERROR;
-    }
-    c->pos++;
+    *digits = 0;
+    c->pos++; /* '{' */
     c->col++;
     for (;;) {
         int b = ctx_byte(c, 0);
         int d = hex_value(b);
 
         if (d >= 0) {
-            if (digits == 6) {
+            if (*digits == 6) {
                 ctx_error(c, "E-escape", line, col,
                           "escape \\u takes at most six digits");
                 return ESC_ERROR;
             }
             value = value * 16 + (uint32_t)d;
-            digits++;
+            (*digits)++;
             c->pos++;
             c->col++;
             continue;
@@ -49,7 +48,8 @@ static esc_result scan_unicode(lex_ctx *c, int line, int col, uint32_t *out)
         if (b == '}') {
             c->pos++;
             c->col++;
-            break;
+            *out = value;
+            return ESC_OK;
         }
         if (b < 0 || b == '\n' || b == '\r') {
             ctx_error(c, "E-escape", line, col,
@@ -60,6 +60,21 @@ static esc_result scan_unicode(lex_ctx *c, int line, int col, uint32_t *out)
                   "escape \\u has a non-hexadecimal digit");
         c->pos++;
         c->col++;
+        return ESC_ERROR;
+    }
+}
+
+static esc_result scan_unicode(lex_ctx *c, int line, int col, uint32_t *out)
+{
+    uint32_t value = 0;
+    int digits = 0;
+
+    if (ctx_byte(c, 0) != '{') {
+        ctx_error(c, "E-escape", line, col,
+                  "escape \\u expects a braced scalar value");
+        return ESC_ERROR;
+    }
+    if (scan_unicode_braces(c, line, col, &value, &digits) != ESC_OK) {
         return ESC_ERROR;
     }
     if (digits == 0) {

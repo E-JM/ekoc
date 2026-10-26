@@ -1,5 +1,7 @@
 #include "common.h"
 
+#include "lex/internal.h"
+
 /* String literals: escapes (5.9.2), interpolation (5.9.3), and the
    single-line rule (5.9.1). */
 
@@ -77,7 +79,7 @@ static void test_invalid_escapes(void)
         "\"\\q\"", "\"\\x\"", "\"\\1\"", "\"\\'",
         "\"\\u{}\"", "\"\\u{110000}\"", "\"\\u{D800}\"",
         "\"\\u{DFFF}\"", "\"\\u{1234567}\"", "\"\\u{ag}\"",
-        "\"\\u{ 41}\"", "\"\\u41\"", "\"\\u{123",
+        "\"\\u{ 41}\"", "\"\\u41\"", "\"\\u{123", "\"\\u",
     };
     size_t i;
 
@@ -242,6 +244,98 @@ static void test_empty_slot(void)
     fx_end(&f);
 }
 
+/* The slot is an expression region: a tab there is whitespace between
+   tokens (Clause 5.2.3), while a tab in literal text is a scalar. */
+static void test_slot_tab(void)
+{
+    lex_fixture f;
+
+    fx_begin(&f, "\"{a\tb}\"");
+    EK_CHECK(fx_has_error(&f, "E-tab"));
+    fx_end(&f);
+
+    fx_begin(&f, "\"a\t{name}\"");
+    EK_CHECK_U64(fx_errors(&f), 0);
+    fx_end(&f);
+}
+
+/* A string may hold nothing but slots. */
+static void test_slot_only_string(void)
+{
+    lex_fixture f;
+    const ek_token *t;
+
+    fx_begin(&f, "\"{x}\"");
+    EK_CHECK_U64(fx_errors(&f), 0);
+    t = &f.r.tokens[0];
+    EK_CHECK_U64(t->kind, EK_TOK_STRING);
+    EK_CHECK_U64(t->part_count, 1);
+    if (t->part_count == 1) {
+        EK_CHECK_U64(t->parts[0].token_count, 1);
+        EK_CHECK_U64(t->parts[0].tokens[0].kind, EK_TOK_IDENT);
+    }
+    fx_end(&f);
+}
+
+/* The spec sets no nesting bound; past the implementation's own, each
+   refused '{' costs one E-slot-depth. Slot depth needs nested strings:
+   "{ "{ x }" }" opens one slot per level. */
+static size_t nest_slots(char *src, int depth)
+{
+    size_t used = 0, k;
+
+    src[used++] = '"';
+    for (k = 0; k < (size_t)depth; k++) {
+        src[used++] = '{';
+        src[used++] = '"';
+    }
+    src[used++] = 'x';
+    for (k = 0; k < (size_t)depth; k++) {
+        src[used++] = '"';
+        src[used++] = '}';
+    }
+    src[used++] = '"';
+    src[used] = '\0';
+    return used;
+}
+
+static void test_slot_depth(void)
+{
+    char src[512];
+    lex_fixture f;
+
+    nest_slots(src, 60);
+    fx_begin(&f, src);
+    EK_CHECK_U64(fx_errors(&f), 0);
+    fx_end(&f);
+
+    nest_slots(src, EK_LEX_MAX_SLOT_DEPTH + 5);
+    fx_begin(&f, src);
+    EK_CHECK(fx_has_error(&f, "E-slot-depth"));
+    fx_end(&f);
+}
+
+/* A surplus of '}' swallows the closing quote; the string then dies at
+   end of line (see scan_slot). */
+static void test_surplus_brace_in_slot(void)
+{
+    lex_fixture f;
+
+    fx_begin(&f, "\"{x}}\n");
+    EK_CHECK(fx_has_error(&f, "E-unterminated-string"));
+    fx_end(&f);
+}
+
+/* A slot comment runs to end of line and takes the string's close. */
+static void test_slot_comment_to_eol(void)
+{
+    lex_fixture f;
+
+    fx_begin(&f, "\"{// x}");
+    EK_CHECK(fx_has_error(&f, "E-unterminated-string"));
+    fx_end(&f);
+}
+
 /* Unbalanced braces swallow the closing quote, so the string always
    dies at end of line and E-unterminated-string is the diagnosis. */
 static void test_unbalanced_slot(void)
@@ -282,6 +376,11 @@ int main(void)
     test_slot_tokens();
     test_stray_brace_is_ordinary();
     test_empty_slot();
+    test_slot_tab();
+    test_slot_only_string();
+    test_slot_depth();
+    test_surplus_brace_in_slot();
+    test_slot_comment_to_eol();
     test_unbalanced_slot();
     test_string_position();
     return ek_test_report("lex/strings");

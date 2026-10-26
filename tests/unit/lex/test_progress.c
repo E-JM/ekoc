@@ -8,8 +8,7 @@
    nothing must cost one E-lex-stall diagnostic and one skipped byte,
    never a hang. White-box on purpose; the guard only fires on a latent
    scanner bug, so the suite feeds one to it through the injected
-   scanner. A regression like the zero-length `0x` literal would have
-   surfaced here as a stall diagnostic instead of a hung runner. */
+   scanner. */
 
 static int stall(lex_ctx *c, gbuf *out)
 {

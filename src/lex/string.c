@@ -26,13 +26,113 @@ static int flush_literal(lex_ctx *c, gbuf *seg, gbuf *parts)
     return 1;
 }
 
+/* Emits the STRING token when the closing quote was seen; otherwise
+   the single-line rule of Clause 5.9.1 is diagnosed and no token is
+   emitted. */
+static int emit_string(lex_ctx *c, gbuf *out, gbuf *seg, gbuf *parts,
+                       int closed, int sline, int scol)
+{
+    ek_token t;
+
+    if (!closed) {
+        unterminated(c, sline, scol);
+        return 1;
+    }
+    if (!flush_literal(c, seg, parts)) {
+        return 0;
+    }
+    memset(&t, 0, sizeof t);
+    t.kind = EK_TOK_STRING;
+    t.line = sline;
+    t.col = scol;
+    t.parts = (ek_string_part *)parts->data;
+    t.part_count = parts->len / sizeof(ek_string_part);
+    return emit_token(c, out, &t);
+}
+
+/* Closes the slot at its matching '}'. An empty run is E-empty-slot. */
+static int close_slot(lex_ctx *c, gbuf *parts, gbuf *run, int bline,
+                      int bcol)
+{
+    ek_string_part p;
+
+    c->pos++;
+    c->col++;
+    if (run->len == 0) {
+        ctx_error(c, "E-empty-slot", bline, bcol,
+                  "interpolation slot is empty");
+        return 1;
+    }
+    memset(&p, 0, sizeof p);
+    p.tokens = (ek_token *)run->data;
+    p.token_count = run->len / sizeof(ek_token);
+    if (!gbuf_put(parts, &p, sizeof p)) {
+        ctx_oom(c);
+        return 0;
+    }
+    return 1;
+}
+
+/* Braces of a composite literal balance through the LBRACE/RBRACE
+   token count. */
+static void track_braces(const gbuf *run, int *depth)
+{
+    ek_token_kind k = ((const ek_token *)(run->data + run->len
+                                          - sizeof(ek_token)))->kind;
+
+    if (k == EK_TOK_LBRACE) {
+        (*depth)++;
+    } else if (k == EK_TOK_RBRACE) {
+        (*depth)--;
+    }
+}
+
+/* Slot trivia. Returns 1 when consumed, 0 when a token or the closing
+   brace is due, -1 when a line terminator ends the string. A tab is
+   whitespace between slot tokens, so it is E-tab (Clause 5.2.3). */
+static int slot_trivia(lex_ctx *c)
+{
+    int b = ctx_byte(c, 0);
+
+    if (b == ' ') {
+        c->pos++;
+        c->col++;
+        return 1;
+    }
+    if (b == '\t') {
+        ctx_error(c, "E-tab", c->line, c->col,
+                  "tab is not valid whitespace");
+        c->pos++;
+        c->col++;
+        return 1;
+    }
+    if (b == '\r') {
+        return lex_consume_cr(c) ? -1 : 1;
+    }
+    if (b < 0 || b == '\n') {
+        return -1;
+    }
+    if (b == '/' && ctx_byte(c, 1) == '/') {
+        lex_skip_line_comment(c);
+        return 1;
+    }
+    if (b == '/' && ctx_byte(c, 1) == '*') {
+        ctx_error(c, "E-block-comment", c->line, c->col,
+                  "block comments do not exist; use //");
+        c->pos += 2;
+        c->col += 2;
+        return 1;
+    }
+    return 0;
+}
+
 /* Interpolation slot, Clause 5.9.3. Returns 1 when the slot closed at
-   its matching brace, -1 when the string died inside the slot, 0 when
-   the arena is exhausted. An empty run is E-empty-slot; braces inside
-   the run balance through the LBRACE/RBRACE token count. A surplus of
-   braces always swallows the closing quote, so the failure surfaces as
-   E-unterminated-string and needs no code of its own. */
-static int scan_slot(lex_ctx *c, gbuf *parts, int sline, int scol)
+   its matching brace, -1 when the string died inside the slot and the
+   caller owes the E-unterminated-string diagnostic, 0 when the arena
+   is exhausted. A surplus of braces always swallows the closing quote,
+   so the failure surfaces as E-unterminated-string and needs no code
+   of its own. */
+static int scan_slot(lex_ctx *c, gbuf *parts)
 {
     int bline = c->line, bcol = c->col;
     gbuf run;
@@ -42,74 +142,25 @@ static int scan_slot(lex_ctx *c, gbuf *parts, int sline, int scol)
     c->pos++; /* '{' */
     c->col++;
     for (;;) {
-        int b = ctx_byte(c, 0);
+        int t = slot_trivia(c);
 
-        if (b == ' ' || b == '\t') {
-            c->pos++;
-            c->col++;
-            continue;
-        }
-        if (b == '\r') {
-            int line = c->line, col = c->col;
-
-            c->pos++;
-            if (ctx_byte(c, 0) == '\n') {
-                unterminated(c, sline, scol);
-                return -1;
-            }
-            ctx_error(c, "E-stray-cr", line, col,
-                      "carriage return outside a line terminator");
-            continue;
-        }
-        if (b < 0 || b == '\n') {
-            unterminated(c, sline, scol);
+        if (t < 0) {
             return -1;
         }
-        if (b == '/' && ctx_byte(c, 1) == '/') {
-            lex_skip_line_comment(c);
+        if (t > 0) {
             continue;
         }
-        if (b == '/' && ctx_byte(c, 1) == '*') {
-            ctx_error(c, "E-block-comment", c->line, c->col,
-                      "block comments do not exist; use //");
-            c->pos += 2;
-            c->col += 2;
-            continue;
-        }
-        if (b == '}' && depth == 0) {
-            ek_string_part p;
-
-            c->pos++;
-            c->col++;
-            if (run.len == 0) {
-                ctx_error(c, "E-empty-slot", bline, bcol,
-                          "interpolation slot is empty");
-                return 1;
-            }
-            memset(&p, 0, sizeof p);
-            p.tokens = (ek_token *)run.data;
-            p.token_count = run.len / sizeof(ek_token);
-            if (!gbuf_put(parts, &p, sizeof p)) {
-                ctx_oom(c);
-                return 0;
-            }
-            return 1;
+        if (ctx_byte(c, 0) == '}' && depth == 0) {
+            return close_slot(c, parts, &run, bline, bcol);
         }
         {
             size_t before = run.len;
-            ek_token_kind k;
 
             if (!lex_step(c, &run, lex_token)) {
                 return 0;
             }
             if (run.len > before) {
-                k = ((const ek_token *)(run.data + run.len
-                                        - sizeof(ek_token)))->kind;
-                if (k == EK_TOK_LBRACE) {
-                    depth++;
-                } else if (k == EK_TOK_RBRACE) {
-                    depth--;
-                }
+                track_braces(&run, &depth);
             }
         }
     }
@@ -136,11 +187,59 @@ static int cook_scalar(lex_ctx *c, gbuf *seg)
     return 1;
 }
 
+/* '\\' at the current position. Returns 1 to continue, 0 on arena
+   exhaustion, -1 when the literal ends here unconsumed. */
+static int string_escape(lex_ctx *c, gbuf *seg)
+{
+    uint32_t cp;
+    esc_result r = scan_escape(c, 0, &cp);
+    char buf[4];
+    size_t n;
+
+    if (r == ESC_END) {
+        return -1;
+    }
+    if (r == ESC_OK) {
+        n = ek_utf8_encode(cp, buf);
+        if (!gbuf_put(seg, buf, n)) {
+            ctx_oom(c);
+            return 0;
+        }
+    }
+    return 1;
+}
+
+/* '{' at the current position: flush, honor the depth bound, scan one
+   slot. Returns 1 to continue, 0 on arena exhaustion, -1 when the
+   string died in the slot. */
+static int open_slot(lex_ctx *c, gbuf *seg, gbuf *parts)
+{
+    int r;
+
+    if (!flush_literal(c, seg, parts)) {
+        return 0;
+    }
+    if (c->depth >= EK_LEX_MAX_SLOT_DEPTH) {
+        ctx_error(c, "E-slot-depth", c->line, c->col,
+                  "interpolation slots are nested too deeply");
+        c->pos++;
+        c->col++;
+        return 1;
+    }
+    c->depth++;
+    r = scan_slot(c, parts);
+    c->depth--;
+    if (r == 0) {
+        return 0;
+    }
+    return r < 0 ? -1 : 1;
+}
+
 int lex_string_literal(lex_ctx *c, gbuf *out)
 {
     int sline = c->line, scol = c->col;
     gbuf seg, parts;
-    ek_token t;
+    int closed = 0;
 
     gbuf_init(&seg, c->arena);
     gbuf_init(&parts, c->arena);
@@ -148,69 +247,24 @@ int lex_string_literal(lex_ctx *c, gbuf *out)
     c->col++;
     for (;;) {
         int b = ctx_byte(c, 0);
+        int r;
 
         if (b < 0 || b == '\n') {
-            unterminated(c, sline, scol);
-            return 1;
-        }
-        if (b == '\r') {
-            int line = c->line, col = c->col;
-
-            c->pos++;
-            if (ctx_byte(c, 0) == '\n') {
-                unterminated(c, sline, scol);
-                return 1;
-            }
-            ctx_error(c, "E-stray-cr", line, col,
-                      "carriage return outside a line terminator");
-            continue;
+            break;
         }
         if (b == '"') {
             c->pos++;
             c->col++;
+            closed = 1;
             break;
         }
-        if (b == '\\') {
-            uint32_t cp;
-            esc_result r = scan_escape(c, 0, &cp);
-            char buf[4];
-            size_t n;
-
-            if (r == ESC_END) {
-                unterminated(c, sline, scol);
-                return 1;
-            }
-            if (r == ESC_OK) {
-                n = ek_utf8_encode(cp, buf);
-                if (!gbuf_put(&seg, buf, n)) {
-                    ctx_oom(c);
-                    return 0;
-                }
-            }
-            continue;
-        }
-        if (b == '{') {
-            if (!flush_literal(c, &seg, &parts)) {
-                return 0;
-            }
-            if (c->depth >= EK_LEX_MAX_SLOT_DEPTH) {
-                ctx_error(c, "E-slot-depth", c->line, c->col,
-                          "interpolation slots are nested too deeply");
-                c->pos++;
-                c->col++;
-                continue;
-            }
-            c->depth++;
-            {
-                int r = scan_slot(c, &parts, sline, scol);
-                c->depth--;
-                if (r <= 0) {
-                    return r == 0 ? 0 : 1;
-                }
-            }
-            continue;
-        }
-        if (b == '}') {
+        if (b == '\r') {
+            r = lex_consume_cr(c) ? -1 : 1;
+        } else if (b == '\\') {
+            r = string_escape(c, &seg);
+        } else if (b == '{') {
+            r = open_slot(c, &seg, &parts);
+        } else if (b == '}') {
             if (!gbuf_char(&seg, '}')) {
                 ctx_oom(c);
                 return 0;
@@ -218,19 +272,16 @@ int lex_string_literal(lex_ctx *c, gbuf *out)
             c->pos++;
             c->col++;
             continue;
+        } else {
+            r = cook_scalar(c, &seg) ? 1 : 0;
         }
-        if (!cook_scalar(c, &seg)) {
+        if (r < 0) {
+            unterminated(c, sline, scol);
+            return 1;
+        }
+        if (r == 0) {
             return 0;
         }
     }
-    if (!flush_literal(c, &seg, &parts)) {
-        return 0;
-    }
-    memset(&t, 0, sizeof t);
-    t.kind = EK_TOK_STRING;
-    t.line = sline;
-    t.col = scol;
-    t.parts = (ek_string_part *)parts.data;
-    t.part_count = parts.len / sizeof(ek_string_part);
-    return emit_token(c, out, &t);
+    return emit_string(c, out, &seg, &parts, closed, sline, scol);
 }

@@ -124,6 +124,22 @@ void lex_skip_line_comment(lex_ctx *c)
     }
 }
 
+/* Consumes one '\r' (Clause 5.1.2). Returns 1 when a line terminator
+   follows and the literal scanning the CR must end, 0 for a stray CR,
+   diagnosed here. */
+int lex_consume_cr(lex_ctx *c)
+{
+    int line = c->line, col = c->col;
+
+    c->pos++;
+    if (ctx_byte(c, 0) == '\n') {
+        return 1;
+    }
+    ctx_error(c, "E-stray-cr", line, col,
+              "carriage return outside a line terminator");
+    return 0;
+}
+
 int emit_token(lex_ctx *c, gbuf *out, const ek_token *t)
 {
     if (!gbuf_put(out, t, sizeof *t)) {
@@ -154,28 +170,12 @@ int lex_step(lex_ctx *c, gbuf *out, ek_scan_fn scan)
     return 1;
 }
 
-/* Lexes one token from a non-whitespace position; also handles the
-   characters that cannot begin any token. Returns 0 only when the
-   arena is exhausted. */
-int lex_token(lex_ctx *c, gbuf *out)
+/* One decoded scalar at the token position: BOM, identifier start, or
+   a character that cannot begin a token. */
+static int lex_unicode(lex_ctx *c, gbuf *out)
 {
-    int b = ctx_byte(c, 0);
-    ek_utf8_decoded d;
+    ek_utf8_decoded d = ek_utf8_decode(c->src + c->pos, c->len - c->pos);
 
-    if ((b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || b == '_') {
-        return lex_identifier(c, out);
-    }
-    if (b >= '0' && b <= '9') {
-        return lex_number(c, out);
-    }
-    if (b == '"') {
-        return lex_string_literal(c, out);
-    }
-    if (b == '\'') {
-        return lex_char_literal(c, out);
-    }
-
-    d = ek_utf8_decode(c->src + c->pos, c->len - c->pos);
     if (d.len == 0) {
         return 1; /* unreachable: callers check for end of input */
     }
@@ -213,6 +213,54 @@ int lex_token(lex_ctx *c, gbuf *out)
     return 1;
 }
 
+/* Lexes one token from a non-whitespace position; also handles the
+   characters that cannot begin any token. Returns 0 only when the
+   arena is exhausted. */
+int lex_token(lex_ctx *c, gbuf *out)
+{
+    int b = ctx_byte(c, 0);
+
+    if ((b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || b == '_') {
+        return lex_identifier(c, out);
+    }
+    if (b >= '0' && b <= '9') {
+        return lex_number(c, out);
+    }
+    if (b == '"') {
+        return lex_string_literal(c, out);
+    }
+    if (b == '\'') {
+        return lex_char_literal(c, out);
+    }
+    if (b < 0) {
+        return 1; /* unreachable: callers check for end of input */
+    }
+    return lex_unicode(c, out);
+}
+
+/* The comment spellings at a '/'. Returns 1 when consumed, 0 when the
+   byte is no comment. */
+static int scan_comment(lex_ctx *c)
+{
+    int b = ctx_byte(c, 0);
+
+    if (b != '/') {
+        return 0;
+    }
+    if (ctx_byte(c, 1) == '/') {
+        lex_skip_line_comment(c);
+        return 1;
+    }
+    if (ctx_byte(c, 1) == '*') {
+        ctx_error(c, "E-block-comment", c->line, c->col,
+                  "block comments do not exist; use //");
+        c->pos += 2;
+        c->col += 2;
+        return 1;
+    }
+    return 0;
+}
+
 /* Whitespace, line terminators, and comments: bytes the token stream
    drops or reshapes. Returns 1 when the byte was consumed as trivia,
    0 when a token must be lexed, -1 when the arena is exhausted. */
@@ -233,13 +281,7 @@ static int scan_trivia(lex_ctx *c, gbuf *out)
         return 1;
     }
     if (b == '\r') {
-        int line = c->line, col = c->col;
-
-        c->pos++;
-        if (ctx_byte(c, 0) != '\n') {
-            ctx_error(c, "E-stray-cr", line, col,
-                      "carriage return outside a line terminator");
-        }
+        lex_consume_cr(c);
         return 1; /* the ignored half of a terminator takes no column */
     }
     if (b == '\n') {
@@ -257,18 +299,7 @@ static int scan_trivia(lex_ctx *c, gbuf *out)
         c->col = 1;
         return 1;
     }
-    if (b == '/' && ctx_byte(c, 1) == '/') {
-        lex_skip_line_comment(c);
-        return 1;
-    }
-    if (b == '/' && ctx_byte(c, 1) == '*') {
-        ctx_error(c, "E-block-comment", c->line, c->col,
-                  "block comments do not exist; use //");
-        c->pos += 2;
-        c->col += 2;
-        return 1;
-    }
-    return 0;
+    return scan_comment(c);
 }
 
 static void scan_all(lex_ctx *c, gbuf *out)

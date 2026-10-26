@@ -125,6 +125,9 @@ static void test_dot_and_exponent_backtracking(void)
     FX_KINDS("1e-", EK_TOK_INT, EK_TOK_IDENT, EK_TOK_MINUS, EK_TOK_EOF);
     /* the exponent admits no grouping, A.2.5 */
     FX_KINDS("1e1_0", EK_TOK_FLOAT, EK_TOK_IDENT, EK_TOK_EOF);
+    /* a trailing 'e' that starts no exponent stays an identifier */
+    FX_KINDS("1.5e", EK_TOK_FLOAT, EK_TOK_IDENT, EK_TOK_EOF);
+    FX_KINDS("1.5e-", EK_TOK_FLOAT, EK_TOK_IDENT, EK_TOK_MINUS, EK_TOK_EOF);
 }
 
 static void test_no_suffixes(void)
@@ -145,10 +148,20 @@ static void test_no_suffixes(void)
     FX_KINDS("0b2", EK_TOK_INT, EK_TOK_IDENT, EK_TOK_EOF);
     FX_KINDS("0xg", EK_TOK_INT, EK_TOK_IDENT, EK_TOK_EOF);
     FX_KINDS("0X", EK_TOK_INT, EK_TOK_IDENT, EK_TOK_EOF);
+    FX_KINDS("0x1g", EK_TOK_INT, EK_TOK_IDENT, EK_TOK_EOF);
+    FX_KINDS("0x1x", EK_TOK_INT, EK_TOK_IDENT, EK_TOK_EOF);
+    /* hex literals have no fraction: the dot rule of 5.7.2 reads the
+       digits, so the '.' is the member-call dot */
+    FX_KINDS("0x0.5", EK_TOK_INT, EK_TOK_DOT, EK_TOK_INT, EK_TOK_EOF);
 
     fx_begin(&f, "0x");
     EK_CHECK_U64(fx_tok(&f, 0).magnitude, 0);
     EK_CHECK_U64(fx_errors(&f), 0);
+    fx_end(&f);
+
+    fx_begin(&f, "0x1g");
+    EK_CHECK_U64(fx_tok(&f, 0).magnitude, 1);
+    EK_CHECK(fx_tok(&f, 1).text != NULL);
     fx_end(&f);
 }
 static void test_grouping_violations(void)
@@ -183,6 +196,22 @@ static void test_grouping_violations(void)
     EK_CHECK(fx_has_error(&f, "E-digit-grouping"));
     EK_CHECK_U64(fx_tok(&f, 0).kind, EK_TOK_FLOAT);
     EK_CHECK_STR(fx_tok(&f, 0).text, "1_000.000");
+    fx_end(&f);
+
+    fx_begin(&f, "0x_1");
+    EK_CHECK(fx_has_error(&f, "E-digit-grouping"));
+    fx_end(&f);
+
+    /* '0' alone takes no prefix, so '_' starts an identifier after the
+       diagnosed stranded underscore */
+    fx_begin(&f, "0_x");
+    EK_CHECK(fx_has_error(&f, "E-digit-grouping"));
+    fx_end(&f);
+
+    fx_begin(&f, "0b1_0");
+    EK_CHECK_U64(fx_tok(&f, 0).magnitude, 2);
+    EK_CHECK_U64(fx_tok(&f, 0).base, 2);
+    EK_CHECK_U64(fx_errors(&f), 0);
     fx_end(&f);
 }
 

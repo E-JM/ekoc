@@ -154,6 +154,60 @@ static void test_eof_shapes(void)
     EK_CHECK_U64(fx_tok(&f, 1).line, 1);
     EK_CHECK_U64(fx_tok(&f, 1).col, 2);
     fx_end(&f);
+
+    /* input that is only comments */
+    fx_begin(&f, "// nothing here");
+    EK_CHECK_U64(fx_count(&f), 1);
+    EK_CHECK_U64(fx_tok(&f, 0).kind, EK_TOK_EOF);
+    EK_CHECK_U64(fx_errors(&f), 0);
+    fx_end(&f);
+
+    fx_begin(&f, "// one\n// two\n");
+    EK_CHECK_U64(fx_count(&f), 3);
+    EK_CHECK_U64(fx_tok(&f, 0).kind, EK_TOK_NEWLINE);
+    EK_CHECK_U64(fx_tok(&f, 1).kind, EK_TOK_NEWLINE);
+    EK_CHECK_U64(fx_tok(&f, 2).kind, EK_TOK_EOF);
+    EK_CHECK_U64(fx_errors(&f), 0);
+    fx_end(&f);
+
+    /* a lone CR is a fault even as the whole input */
+    fx_begin(&f, "\r");
+    EK_CHECK(fx_has_error(&f, "E-stray-cr"));
+    fx_end(&f);
+}
+
+/* Clause 5.1.1 binds the whole source text, comments included, and a
+   BOM after a comment is outside the start of the file. */
+static void test_comment_content_faults(void)
+{
+    lex_fixture f;
+
+    fx_begin(&f, "// c\n\xEF\xBB\xBFx");
+    EK_CHECK(fx_has_error(&f, "E-stray-bom"));
+    fx_end(&f);
+
+    fx_begin(&f, "// \xFF\nx");
+    EK_CHECK(fx_has_error(&f, "E-utf8"));
+    fx_end(&f);
+
+    fx_begin(&f, "/*\n");
+    EK_CHECK(fx_has_error(&f, "E-block-comment"));
+    fx_end(&f);
+}
+
+/* A NUL byte is an ordinary byte that cannot begin a token; it ends
+   neither the scan nor a token (fx_begin cannot carry it, so this
+   calls ek_lex with an explicit length). */
+static void test_embedded_nul(void)
+{
+    lex_fixture f;
+
+    f.arena = ek_arena_create();
+    f.diag = ek_diag_create();
+    f.r = ek_lex("a\0b", 3, "test.eko", f.arena, f.diag);
+    EK_CHECK_U64(fx_count(&f), 3); /* IDENT IDENT EOF */
+    EK_CHECK(fx_has_error(&f, "E-character"));
+    fx_end(&f);
 }
 
 int main(void)
@@ -164,5 +218,7 @@ int main(void)
     test_tabs();
     test_comments();
     test_eof_shapes();
+    test_comment_content_faults();
+    test_embedded_nul();
     return ek_test_report("lex/source");
 }

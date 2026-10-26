@@ -77,6 +77,7 @@ static void test_boundaries(void)
 {
     /* a combining mark continues but cannot start */
     expect_ident("a\xCC\x81", "a\xCC\x81");
+    expect_ident("_\xCC\x81", "_\xCC\x81");
     {
         lex_fixture f;
 

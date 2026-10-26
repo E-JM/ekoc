@@ -108,6 +108,25 @@ static void test_excluded_symbols(void)
              EK_TOK_OROR, EK_TOK_IDENT, EK_TOK_EOF);
 }
 
+/* Compound spellings stop where their table stops; the remainder
+   lexes as the shorter tokens (Clause 5.10.3 longest match). */
+static void test_compound_boundaries(void)
+{
+    FX_KINDS("!!->", EK_TOK_BANG, EK_TOK_BANGARROW, EK_TOK_EOF);
+    FX_KINDS("-->", EK_TOK_MINUS, EK_TOK_ARROW, EK_TOK_EOF);
+    FX_KINDS("->>", EK_TOK_ARROW, EK_TOK_GT, EK_TOK_EOF);
+    FX_KINDS("<->", EK_TOK_LARROW, EK_TOK_GT, EK_TOK_EOF);
+    FX_KINDS("!-", EK_TOK_BANG, EK_TOK_MINUS, EK_TOK_EOF);
+    FX_KINDS("!!", EK_TOK_BANG, EK_TOK_BANG, EK_TOK_EOF);
+    FX_KINDS("??", EK_TOK_QUESTION, EK_TOK_QUESTION, EK_TOK_EOF);
+    FX_KINDS("\?\?->", EK_TOK_QUESTION, EK_TOK_QUESTIONARROW, EK_TOK_EOF);
+    FX_KINDS("<=>", EK_TOK_LTEQ, EK_TOK_GT, EK_TOK_EOF);
+    FX_KINDS(":==", EK_TOK_COLONEQ, EK_TOK_EQ, EK_TOK_EOF);
+    FX_KINDS("!==", EK_TOK_BANGEQ, EK_TOK_EQ, EK_TOK_EOF);
+    FX_KINDS("..==", EK_TOK_DOTDOTEQ, EK_TOK_EQ, EK_TOK_EOF);
+    FX_KINDS("|||", EK_TOK_OROR, EK_TOK_PIPE, EK_TOK_EOF);
+}
+
 static void test_stream_shape(void)
 {
     lex_fixture f;
@@ -150,6 +169,7 @@ int main(void)
     test_punctuation();
     test_longest_match_table();
     test_prefix_splitting();
+    test_compound_boundaries();
     test_dot_rules();
     test_excluded_symbols();
     test_stream_shape();

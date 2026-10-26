@@ -48,6 +48,7 @@ void ctx_error(lex_ctx *c, const char *code, int line, int col,
 void ctx_oom(lex_ctx *c);
 char *ctx_slice(lex_ctx *c, size_t start, size_t end);
 void lex_skip_line_comment(lex_ctx *c);
+int lex_consume_cr(lex_ctx *c);
 int lex_token(lex_ctx *c, gbuf *out);
 int lex_step(lex_ctx *c, gbuf *out, ek_scan_fn scan);
 int emit_token(lex_ctx *c, gbuf *out, const ek_token *t);
@@ -63,7 +64,6 @@ int lex_identifier(lex_ctx *c, gbuf *out);
 
 /* number.c */
 int lex_number(lex_ctx *c, gbuf *out);
-int lex_hex_value(int b);
 
 /* operator.c */
 int lex_operator(lex_ctx *c, gbuf *out);

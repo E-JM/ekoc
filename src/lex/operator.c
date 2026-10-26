@@ -2,78 +2,70 @@
 
 #include "lex/internal.h"
 
-/* Longest match over the tables of Clause 5.10.3 and A.2.2. Returns 0
-   when the byte cannot begin any operator or punctuation mark. */
+/* The compound spellings of Clause 5.10.3, matched before their
+   prefixes. Returns the spelling length, 0 when b0 begins none. */
+static int match_compound(int b0, int b1, int b2, ek_token_kind *k)
+{
+    if (b0 == '!' && b1 == '-' && b2 == '>') { *k = EK_TOK_BANGARROW; return 3; }
+    if (b0 == '?' && b1 == '-' && b2 == '>') { *k = EK_TOK_QUESTIONARROW; return 3; }
+    if (b0 == '.' && b1 == '.' && b2 == '=') { *k = EK_TOK_DOTDOTEQ; return 3; }
+    if (b0 == '-' && b1 == '>') { *k = EK_TOK_ARROW; return 2; }
+    if (b0 == '<' && b1 == '-') { *k = EK_TOK_LARROW; return 2; }
+    if (b0 == '+' && b1 == '+') { *k = EK_TOK_PLUSPLUS; return 2; }
+    if (b0 == '=' && b1 == '=') { *k = EK_TOK_EQEQ; return 2; }
+    if (b0 == '!' && b1 == '=') { *k = EK_TOK_BANGEQ; return 2; }
+    if (b0 == '<' && b1 == '=') { *k = EK_TOK_LTEQ; return 2; }
+    if (b0 == '>' && b1 == '=') { *k = EK_TOK_GTEQ; return 2; }
+    if (b0 == '&' && b1 == '&') { *k = EK_TOK_ANDAND; return 2; }
+    if (b0 == '|' && b1 == '|') { *k = EK_TOK_OROR; return 2; }
+    if (b0 == ':' && b1 == '=') { *k = EK_TOK_COLONEQ; return 2; }
+    if (b0 == '.' && b1 == '.') { *k = EK_TOK_DOTDOT; return 2; }
+    return 0;
+}
+
+/* The single-byte spellings of Clause 5.10.1 and 5.10.2. A lone '&' is
+   no token (Clause 5.11). Returns the spelling length, 0 when the byte
+   cannot begin any operator or punctuation mark. */
+static int match_single(int b, ek_token_kind *k)
+{
+    switch (b) {
+    case '+': *k = EK_TOK_PLUS; return 1;
+    case '-': *k = EK_TOK_MINUS; return 1;
+    case '*': *k = EK_TOK_STAR; return 1;
+    case '/': *k = EK_TOK_SLASH; return 1;
+    case '%': *k = EK_TOK_PERCENT; return 1;
+    case '!': *k = EK_TOK_BANG; return 1;
+    case '?': *k = EK_TOK_QUESTION; return 1;
+    case '<': *k = EK_TOK_LT; return 1;
+    case '>': *k = EK_TOK_GT; return 1;
+    case '=': *k = EK_TOK_EQ; return 1;
+    case ':': *k = EK_TOK_COLON; return 1;
+    case '.': *k = EK_TOK_DOT; return 1;
+    case '|': *k = EK_TOK_PIPE; return 1;
+    case '(': *k = EK_TOK_LPAREN; return 1;
+    case ')': *k = EK_TOK_RPAREN; return 1;
+    case '[': *k = EK_TOK_LBRACKET; return 1;
+    case ']': *k = EK_TOK_RBRACKET; return 1;
+    case '{': *k = EK_TOK_LBRACE; return 1;
+    case '}': *k = EK_TOK_RBRACE; return 1;
+    case ',': *k = EK_TOK_COMMA; return 1;
+    case ';': *k = EK_TOK_SEMI; return 1;
+    default: return 0;
+    }
+}
+
 int lex_operator(lex_ctx *c, gbuf *out)
 {
-    int b0 = ctx_byte(c, 0), b1 = ctx_byte(c, 1), b2 = ctx_byte(c, 2);
     ek_token_kind k;
-    int n = 1;
+    int n;
     ek_token t;
 
-    switch (b0) {
-    case '+':
-        k = EK_TOK_PLUS;
-        if (b1 == '+') { k = EK_TOK_PLUSPLUS; n = 2; }
-        break;
-    case '-':
-        k = EK_TOK_MINUS;
-        if (b1 == '>') { k = EK_TOK_ARROW; n = 2; }
-        break;
-    case '*': k = EK_TOK_STAR; break;
-    case '/': k = EK_TOK_SLASH; break;
-    case '%': k = EK_TOK_PERCENT; break;
-    case '!':
-        if (b1 == '-' && b2 == '>') { k = EK_TOK_BANGARROW; n = 3; }
-        else if (b1 == '=') { k = EK_TOK_BANGEQ; n = 2; }
-        else { k = EK_TOK_BANG; }
-        break;
-    case '?':
-        if (b1 == '-' && b2 == '>') { k = EK_TOK_QUESTIONARROW; n = 3; }
-        else { k = EK_TOK_QUESTION; }
-        break;
-    case '<':
-        if (b1 == '-') { k = EK_TOK_LARROW; n = 2; }
-        else if (b1 == '=') { k = EK_TOK_LTEQ; n = 2; }
-        else { k = EK_TOK_LT; }
-        break;
-    case '>':
-        k = EK_TOK_GT;
-        if (b1 == '=') { k = EK_TOK_GTEQ; n = 2; }
-        break;
-    case '=':
-        k = EK_TOK_EQ;
-        if (b1 == '=') { k = EK_TOK_EQEQ; n = 2; }
-        break;
-    case ':':
-        k = EK_TOK_COLON;
-        if (b1 == '=') { k = EK_TOK_COLONEQ; n = 2; }
-        break;
-    case '.':
-        if (b1 == '.' && b2 == '=') { k = EK_TOK_DOTDOTEQ; n = 3; }
-        else if (b1 == '.') { k = EK_TOK_DOTDOT; n = 2; }
-        else { k = EK_TOK_DOT; }
-        break;
-    case '&':
-        if (b1 != '&') {
-            return 0; /* lone & is no token (Clause 5.11) */
-        }
-        k = EK_TOK_ANDAND;
-        n = 2;
-        break;
-    case '|':
-        k = EK_TOK_PIPE;
-        if (b1 == '|') { k = EK_TOK_OROR; n = 2; }
-        break;
-    case '(': k = EK_TOK_LPAREN; break;
-    case ')': k = EK_TOK_RPAREN; break;
-    case '[': k = EK_TOK_LBRACKET; break;
-    case ']': k = EK_TOK_RBRACKET; break;
-    case '{': k = EK_TOK_LBRACE; break;
-    case '}': k = EK_TOK_RBRACE; break;
-    case ',': k = EK_TOK_COMMA; break;
-    case ';': k = EK_TOK_SEMI; break;
-    default: return 0;
+    n = match_compound(ctx_byte(c, 0), ctx_byte(c, 1), ctx_byte(c, 2), &k);
+    if (n == 0) {
+        n = match_single(ctx_byte(c, 0), &k);
+    }
+    if (n == 0) {
+        return 0;
     }
     memset(&t, 0, sizeof t);
     t.kind = k;

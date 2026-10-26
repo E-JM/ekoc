@@ -4,7 +4,7 @@
 
 #include "lex/internal.h"
 
-int lex_hex_value(int b)
+static int hex_value(int b)
 {
     if (b >= '0' && b <= '9') {
         return b - '0';
@@ -21,7 +21,7 @@ int lex_hex_value(int b)
 static int digit_value(int b, int base)
 {
     if (base == 16) {
-        return lex_hex_value(b);
+        return hex_value(b);
     }
     if (b < '0' || b > '9') {
         return -1;
@@ -114,6 +114,30 @@ static void scan_decimal(lex_ctx *c, unsigned long long *mag, int *overflow,
     }
 }
 
+/* HexInteger | BinaryInteger of A.2.4, called on '0x' or '0b'. Sets
+   *base when the prefix joins the literal; a stranded '_' after the
+   prefix is diagnosed, and the lone '0' is consumed either way so the
+   rest lexes as its own tokens (Clause 5.10.3). */
+static void scan_prefix(lex_ctx *c, unsigned long long *mag, int *overflow,
+                        int *base)
+{
+    int pbase = ctx_byte(c, 1) == 'x' ? 16 : 2;
+
+    if (digit_value(ctx_byte(c, 2), pbase) >= 0) {
+        *base = pbase;
+        c->pos += 2;
+        c->col += 2;
+        scan_digits(c, pbase, mag, overflow);
+        return;
+    }
+    if (ctx_byte(c, 2) == '_') {
+        ctx_error(c, "E-digit-grouping", c->line, c->col + 2,
+                  "underscore must lie between two digits");
+    }
+    c->pos++;
+    c->col++;
+}
+
 static char *strip_underscores(lex_ctx *c, const char *text, size_t len)
 {
     char *clean = ek_arena_alloc(c->arena, len + 1);
@@ -132,41 +156,17 @@ static char *strip_underscores(lex_ctx *c, const char *text, size_t len)
     return clean;
 }
 
-int lex_number(lex_ctx *c, gbuf *out)
+/* Emits the token: INT carries magnitude, base, and the overflow mark
+   (Clause 5.7.4 defers E-literal-overflow to check); FLOAT carries the
+   value of the cleaned spelling. */
+static int emit_number(lex_ctx *c, gbuf *out, size_t start, int sline,
+                       int scol, unsigned long long mag, int overflow,
+                       int is_float, int base)
 {
-    size_t start = c->pos;
-    int sline = c->line, scol = c->col;
-    unsigned long long mag = 0;
-    int overflow = 0, is_float = 0, base = 10;
-    const char *text;
-    double fvalue = 0.0;
+    const char *text = ctx_slice(c, start, c->pos);
     ek_token t;
+    double fvalue = 0.0;
 
-    if (ctx_byte(c, 0) == '0'
-        && (ctx_byte(c, 1) == 'x' || ctx_byte(c, 1) == 'b')) {
-        int pbase = ctx_byte(c, 1) == 'x' ? 16 : 2;
-
-        if (digit_value(ctx_byte(c, 2), pbase) >= 0) {
-            base = pbase;
-            c->pos += 2;
-            c->col += 2;
-            scan_digits(c, base, &mag, &overflow);
-        } else {
-            if (ctx_byte(c, 2) == '_') {
-                ctx_error(c, "E-digit-grouping", c->line, c->col + 2,
-                          "underscore must lie between two digits");
-            }
-            /* A.2.4 needs a digit after the prefix, so longest match
-               (Clause 5.10.3) keeps the lone `0` and hands `x`/`b` to
-               the next token; the `0` itself is still consumed. */
-            c->pos++;
-            c->col++;
-        }
-    } else {
-        scan_decimal(c, &mag, &overflow, &is_float);
-    }
-
-    text = ctx_slice(c, start, c->pos);
     if (!text) {
         return 0;
     }
@@ -189,4 +189,21 @@ int lex_number(lex_ctx *c, gbuf *out)
     t.base = base;
     t.fvalue = fvalue;
     return emit_token(c, out, &t);
+}
+
+int lex_number(lex_ctx *c, gbuf *out)
+{
+    size_t start = c->pos;
+    int sline = c->line, scol = c->col;
+    unsigned long long mag = 0;
+    int overflow = 0, is_float = 0, base = 10;
+
+    if (ctx_byte(c, 0) == '0'
+        && (ctx_byte(c, 1) == 'x' || ctx_byte(c, 1) == 'b')) {
+        scan_prefix(c, &mag, &overflow, &base);
+    } else {
+        scan_decimal(c, &mag, &overflow, &is_float);
+    }
+    return emit_number(c, out, start, sline, scol, mag, overflow, is_float,
+                       base);
 }

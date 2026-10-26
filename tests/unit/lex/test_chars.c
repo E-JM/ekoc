@@ -79,6 +79,15 @@ static void test_one_scalar_rule(void)
     fx_begin(&f, "'\\n\\n'");
     EK_CHECK(fx_has_error(&f, "E-char-literal"));
     fx_end(&f);
+
+    /* raw and escaped scalars count alike */
+    fx_begin(&f, "'a\\n'");
+    EK_CHECK(fx_has_error(&f, "E-char-literal"));
+    fx_end(&f);
+
+    fx_begin(&f, "'\\u{41}x'");
+    EK_CHECK(fx_has_error(&f, "E-char-literal"));
+    fx_end(&f);
 }
 
 static void test_unterminated(void)
