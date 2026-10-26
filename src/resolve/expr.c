@@ -28,11 +28,17 @@ const ek_symbol *r_lookup_local(const r_file *f, const char *name)
 const ek_symbol *r_lookup_top(const r_file *f, const char *name)
 {
     const ek_symbol *sym = find(f->tops, f->ntops, name);
+    size_t i;
 
-    if (!sym) {
-        sym = r_std_find(f->std, EK_SYM_FUNC, name);
+    if (sym) {
+        return sym;
     }
-    return sym;
+    for (i = 0; i < f->nopens; i++) {
+        if (strcmp(f->opens[i].name, name) == 0) {
+            return f->opens[i].sym;
+        }
+    }
+    return r_std_find(f->std, EK_SYM_FUNC, name);
 }
 
 const ek_symbol *r_lookup_mod(const r_file *f, const char *name)

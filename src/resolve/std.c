@@ -14,6 +14,12 @@ static const char *free_names[] = {
     "show", "inspect", "panic", "assert", "assert_eq", "assert_ne", NULL
 };
 
+/* The free names the injected selective import opens. The list is a
+   constant of the language definition. */
+static const char *opened_names[] = {
+    "assert", "assert_eq", "assert_ne", NULL
+};
+
 static const char *type_names[] = {
     "Bool", "Char", "String", "Bytes", "Int", "UInt", "Float",
     "Option", "Result", "Range", "Never", "Json", "Time", "Duration",
@@ -118,13 +124,23 @@ void r_std_init(r_ctx *c)
     c->std = s;
 }
 
-/* Binds the implicit import into a file as its bottom name layer; the
-   shared surface is read in place, no per-file copy, so any binding
-   the file owns or opens shadows a std open name. */
+/* Binds the implicit import into a file: the shared surface stays the
+   bottom layer for types and constructors, and the three injected free
+   names enter the file's opened table. */
 void r_std_open(r_ctx *c, r_file *f)
 {
+    size_t i;
+
     r_std_init(c);
     f->std = c->std;
+    for (i = 0; opened_names[i]; i++) {
+        const ek_symbol *sym = r_std_find(c->std, EK_SYM_FUNC,
+                                          opened_names[i]);
+
+        if (sym) {
+            r_open_name(c, f, opened_names[i], sym, "std", NULL);
+        }
+    }
 }
 
 /* The std surface symbol of one kind and name, or NULL. */

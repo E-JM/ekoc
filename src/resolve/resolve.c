@@ -97,31 +97,33 @@ static void file_setup(r_ctx *c, r_file *f, r_mod *m)
     add_module_name(c, f, "std"); /* the implicit import */
     r_std_open(c, f);
     open_surface(c, f, m->surf);
-    if (!mod) {
-        return;
-    }
-    for (i = 0; i < mod->u.kids.count; i++) {
-        const ek_node *imp = mod->u.kids.data[i];
-        const char *stem;
-        r_mod *target;
+    if (mod) {
+        for (i = 0; i < mod->u.kids.count; i++) {
+            const ek_node *imp = mod->u.kids.data[i];
+            const char *stem;
+            r_mod *target;
 
-        if (imp->kind != EK_N_IMPORT || imp->u.imports.path.count == 0) {
-            continue;
-        }
-        stem = imp->u.imports.path.data[imp->u.imports.path.count - 1];
-        target = r_module_find(c, stem);
-        if (!target) {
-            continue; /* a failed import is already diagnosed */
-        }
-        if (r_lookup_mod(f, stem)) {
-            continue; /* one open per stem: a repeated import line
-                         opens nothing further */
-        }
-        add_module_name(c, f, stem);
-        if (!target->external) {
-            open_import(c, f, target);
+            if (imp->kind != EK_N_IMPORT
+                || imp->u.imports.path.count == 0) {
+                continue;
+            }
+            stem = imp->u.imports.path.data[imp->u.imports.path.count - 1];
+            target = r_module_find(c, stem);
+            if (!target) {
+                continue; /* a failed import is already diagnosed */
+            }
+            if (!r_lookup_mod(f, stem)) {
+                /* One open per stem: a repeated import line opens no
+                   type or constructor twice. */
+                add_module_name(c, f, stem);
+                if (!target->external) {
+                    open_import(c, f, target);
+                }
+            }
+            r_opened_import(c, f, target, imp);
         }
     }
+    r_opened_vs_tops(c, f);
 }
 
 /* The stem is a snake_case identifier; a user module is never named

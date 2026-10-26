@@ -30,15 +30,26 @@ typedef struct {
     int external; /* placeholder std module: no file, no surface */
 } r_mod;
 
-/* The per-file name layers, in lookup order. The std surface sits
-   below them all: it answers a lookup only when own and opened names
-   have no match, so a binding of a std open name shadows it without a
-   diagnostic. */
+/* A free name an import opened into the file's top layer, with the
+   import line that opened it so a declaration-point collision can name
+   its position. at is NULL for the injected std import. */
+typedef struct {
+    const char *name;
+    const ek_symbol *sym;
+    const char *module;
+    const ek_node *at;
+} r_open;
+
+/* The per-file name layers, in lookup order. Top-level bindings and
+   the free names the imports opened share one layer; the std surface
+   supplies the type and constructor fallback below it. */
 typedef struct {
     r_mod *mod;
     scope *locals; /* innermost lexical scope, NULL at top level */
     r_var *tops;   /* plain top-level bindings */
     size_t ntops, ctops;
+    r_open *opens; /* free names opened by the imports */
+    size_t nopens, copens;
     r_var *types;  /* identity layer: own + opened types */
     size_t ntypes, ctypes;
     r_var *ctors;  /* constructor multiset: own + opened */
@@ -87,6 +98,16 @@ void r_std_open(r_ctx *c, r_file *f);
 const ek_symbol *r_std_find(const ek_surface *s, ek_sym_kind kind,
                             const char *name);
 const ek_symbol *r_std_ctor(r_ctx *c, const char *name);
+
+/* opens.c: the per-file opened free-name table. One import's list is
+   validated against the target surface and each eligible name enters
+   the file's top layer; duplicates are declaration-point conflicts. */
+void r_open_name(r_ctx *c, r_file *f, const char *name,
+                 const ek_symbol *sym, const char *module,
+                 const ek_node *at);
+void r_opened_import(r_ctx *c, r_file *f, const r_mod *target,
+                     const ek_node *imp);
+void r_opened_vs_tops(r_ctx *c, r_file *f);
 
 /* surface.c: the top-level surface of one module. */
 void r_surface_build(r_ctx *c, r_mod *m);

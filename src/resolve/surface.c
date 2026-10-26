@@ -181,11 +181,6 @@ static void leaf_push(r_surf *s, ek_symbol *sym)
                 sym->name);
         return;
     }
-    if (r_std_free_name(sym->name)) {
-        r_error(s->c, s->m->file, sym->line, sym->col, "E-name-conflict",
-                "`%s` collides with a free name the implicit std import "
-                "opens (Clauses 7.2.5, 7.4.6)", sym->name);
-    }
     key_push(s, &s->lkeys, &s->nl, &s->clk, sym->name, sym->line, sym->col);
 }
 

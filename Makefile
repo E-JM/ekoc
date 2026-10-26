@@ -44,6 +44,7 @@ RESOLVE_SRC := \
 	src/resolve/chain.c \
 	src/resolve/expr.c \
 	src/resolve/module.c \
+	src/resolve/opens.c \
 	src/resolve/pattern.c \
 	src/resolve/resolve.c \
 	src/resolve/scope.c \

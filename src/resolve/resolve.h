@@ -38,11 +38,11 @@
  *
  * PLACEHOLDER STD SURFACE, standing in until the real interface is
  * derived from lib/std.eko. resolve answers the implicit `import std`
- * from a built-in surface holding the free names and type names it
- * opens. A name the placeholder does not know resolves to
- * EK_SYM_EXTERNAL with no diagnostic; this bridge must be replaced
- * when lib/std.eko lands. Explicit imports of user modules resolve
- * for real and are diagnosed.
+ * from a built-in surface holding the free names the injected list
+ * opens and the type names the import opens. A name the placeholder
+ * does not know resolves to EK_SYM_EXTERNAL with no diagnostic; this
+ * bridge must be replaced when lib/std.eko lands. Explicit imports of
+ * user modules resolve for real and are diagnosed.
  */
 
 /* What a resolved name denotes; the trailing kinds carry data only
@@ -69,8 +69,8 @@ typedef enum {
    or receiver form. */
 typedef enum {
     EK_ST_HEAD_LOCAL,   /* expression head: parameter or local binding */
-    EK_ST_HEAD_TOP,     /* expression head: file top-level binding (the
-                           std free names share this layer) */
+    EK_ST_HEAD_TOP,     /* expression head: file top-level binding or
+                           a free name an import opened */
     EK_ST_HEAD_MODULE,  /* expression head: imported module */
     EK_ST_QUALIFIED,    /* Mod.f / Mod.Type / T.m at a head */
     EK_ST_TYPE,         /* type position: type variable or declared type
