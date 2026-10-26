@@ -121,10 +121,49 @@ static void generic_decls(void)
     cfx_end(&f);
 }
 
+/* Generalization and instantiation at a width past any fixed buffer
+   (Clause 7.6.3, 7.6.4): every distinct variable of an annotation is
+   generalized and replaced at the use, and the phantom-variable rule
+   (Clause 7.6.5) still sees the last one. */
+static void wide_generics(void)
+{
+    char buf[8192];
+    size_t o = 0;
+    int i;
+    cfx f;
+
+    o += (size_t)snprintf(buf + o, sizeof buf - o, "pick: (");
+    for (i = 1; i <= 65; i++) {
+        o += (size_t)snprintf(buf + o, sizeof buf - o, "p%d: t%d%s", i, i,
+                              i == 65 ? ")" : ", ");
+    }
+    o += (size_t)snprintf(buf + o, sizeof buf - o, " -> t1 = p1\nuse: ");
+    o += (size_t)snprintf(buf + o, sizeof buf - o,
+                          "Int = pick(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,"
+                          " 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,"
+                          " 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36,"
+                          " 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48,"
+                          " 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60,"
+                          " 61, 62, 63, 64, 65)\n");
+    cfx_begin(&f, buf);
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+
+    o = (size_t)snprintf(buf, sizeof buf, "f: (");
+    for (i = 1; i <= 64; i++) {
+        o += (size_t)snprintf(buf + o, sizeof buf - o, "p%d: t%d, ", i, i);
+    }
+    snprintf(buf + o, sizeof buf - o, "p65: Int) -> t65 = p65\n");
+    cfx_begin(&f, buf);
+    EK_CHECK(cfx_has_code(&f, "E-phantom"));
+    cfx_end(&f);
+}
+
 int main(void)
 {
     implicit_tvars();
     lambdas();
     generic_decls();
+    wide_generics();
     return ek_test_report("check/inference");
 }

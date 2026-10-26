@@ -29,12 +29,45 @@ int ck_is_capability(const ek_type *t)
 }
 
 /* The eq derivation halts at capabilities and functions, recursively
+   (Clause 9.8.4): a type built over either has no eq. */
+static int no_eq_walk(ck_ctx *c, const ek_type *t, int depth);
+
+/* The eq derivation halts at capabilities and functions, recursively
+   through a nominal representation or payload (Clause 9.8.4). */
+static int no_eq_nominal(ck_ctx *c, const ek_type *t, int depth)
+{
+    const ek_type *repr;
+    const ck_decl *d;
+    size_t i;
+
+    if (ck_is_capability(t)) {
+        return 1;
+    }
+    if (!t->u.nominal.sym) {
+        return 0;
+    }
+    repr = ck_decl_repr(c, t);
+    if (repr) {
+        return no_eq_walk(c, repr, depth - 1);
+    }
+    d = ck_decl_of(c, t->u.nominal.sym);
+    if (!d || d->nbinders) {
+        return 0;
+    }
+    for (i = 0; i < d->nctors; i++) {
+        if (d->ctors[i] && d->ctors[i]->payload
+            && no_eq_walk(c, d->ctors[i]->payload, depth - 1)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* The eq derivation halts at capabilities and functions, recursively
    (Clause 9.8.4): a type built over either has no eq. The depth bound
    terminates recursive representations. */
 static int no_eq_walk(ck_ctx *c, const ek_type *t, int depth)
 {
-    const ek_type *repr;
-    const ck_decl *d;
     size_t i;
 
     if (depth <= 0) {
@@ -67,27 +100,7 @@ static int no_eq_walk(ck_ctx *c, const ek_type *t, int depth)
         }
         return 0;
     case EK_T_NOMINAL:
-        if (ck_is_capability(t)) {
-            return 1;
-        }
-        if (!t->u.nominal.sym) {
-            return 0;
-        }
-        repr = ck_decl_repr(c, t);
-        if (repr) {
-            return no_eq_walk(c, repr, depth - 1);
-        }
-        d = ck_decl_of(c, t->u.nominal.sym);
-        if (!d || d->nbinders) {
-            return 0;
-        }
-        for (i = 0; i < d->nctors; i++) {
-            if (d->ctors[i] && d->ctors[i]->payload
-                && no_eq_walk(c, d->ctors[i]->payload, depth - 1)) {
-                return 1;
-            }
-        }
-        return 0;
+        return no_eq_nominal(c, t, depth);
     default:
         return 0;
     }

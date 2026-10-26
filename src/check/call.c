@@ -9,72 +9,59 @@
    its synthesized arguments. Every call records its world bit (Clause
    7.9.2) and a row. */
 
-static const ek_type *call_fn(ck_ctx *c, const ek_node *e,
-                              const ek_type *fntype, const char *member,
-                              const ek_type *recv, const ek_nlist *args,
-                              int synthesize)
+/* An unknown callee: the arguments synthesize and the callee unifies
+   with their function type (opacity). */
+static const ek_type *call_opaque(ck_ctx *c, const ek_node *e,
+                                  const ek_type *f, const char *member,
+                                  const ek_type *recv, const ek_nlist *args,
+                                  const ek_node **nodes,
+                                  const ek_type **types, size_t nargs,
+                                  size_t off, int synthesize)
 {
-    const ek_type *f = ck_prune(fntype);
-    const ek_type **types = NULL;
-    const ek_node **nodes = NULL;
-    size_t nargs = args->count + (recv ? 1 : 0);
-    size_t i, off = recv ? 1 : 0;
-    const ek_type *ret;
+    const ek_type **ps = NULL;
+    const ek_type *ret = ck_ivar(c);
+    const ek_type *built;
+    size_t i;
 
     if (nargs) {
-        types = ek_arena_alloc(c->arena, nargs * sizeof *types);
-        nodes = ek_arena_alloc(c->arena, nargs * sizeof *nodes);
-        if (!types || !nodes) {
+        ps = ek_arena_alloc(c->arena, nargs * sizeof *ps);
+        if (!ps) {
             c->oom = 1;
-            return ck_ivar(c);
+            return ret;
         }
         if (recv) {
-            nodes[0] = NULL;
-            types[0] = recv;
+            ps[0] = recv;
+        }
+        for (i = 0; i < args->count; i++) {
+            /* A fresh expectation per argument: literals and
+               composites stay opaque under it (the ruling). */
+            nodes[off + i] = args->data[i];
+            ps[off + i] = ck_expr(c, args->data[i], ck_ivar(c));
+            types[off + i] = ps[off + i];
         }
     }
-    if (!f || f->kind != EK_T_FN) {
-        /* Unknown callee: the arguments synthesize and the callee
-           unifies with their function type (opacity). */
-        const ek_type **ps = NULL;
-        const ek_type *ret = ck_ivar(c);
-        const ek_type *built;
+    built = ck_fn(c, ps, nargs, ret, EK_ARROW_PURE);
+    if (f && f->kind == EK_T_IVAR) {
+        ck_conforms(c, built, f, 0);
+    } else if (f && !synthesize) {
+        ck_error(c, e, "E-not-callable",
+                 "a value of type %s is not called (Clause 7.8.1)",
+                 ck_type_name(c, f));
+    }
+    ck_call_bit(c, e, ck_call_bit_of(c, f, member, recv, nodes, types,
+                                     nargs, off));
+    ck_row(c, e, ret, EK_RD_NONE);
+    return ret;
+}
 
-        if (nargs) {
-            ps = ek_arena_alloc(c->arena, nargs * sizeof *ps);
-            if (!ps) {
-                c->oom = 1;
-                return ret;
-            }
-            if (recv) {
-                ps[0] = recv;
-            }
-            for (i = 0; i < args->count; i++) {
-                /* A fresh expectation per argument: literals and
-                   composites stay opaque under it (the ruling). */
-                nodes[off + i] = args->data[i];
-                ps[off + i] = ck_expr(c, args->data[i], ck_ivar(c));
-                types[off + i] = ps[off + i];
-            }
-        }
-        built = ck_fn(c, ps, nargs, ret, EK_ARROW_PURE);
-        if (f && f->kind == EK_T_IVAR) {
-            ck_conforms(c, built, f, 0);
-        } else if (f && !synthesize) {
-            ck_error(c, e, "E-not-callable",
-                     "a value of type %s is not called (Clause 7.8.1)",
-                     ck_type_name(c, f));
-        }
-        ck_call_bit(c, e, ck_call_bit_of(c, f, member, recv, nodes, types,
-                                         nargs, off));
-        ck_row(c, e, ret, EK_RD_NONE);
-        return ret;
-    }
-    if (f->u.fn.count != nargs) {
-        ck_error(c, e, "E-call-arity",
-                 "the call supplies %zu arguments, the function takes %zu "
-                 "(Clause 7.8.1)", nargs, f->u.fn.count);
-    }
+/* Checks each argument against its parameter, recording the observed
+   types for the world-bit judgment (Clause 7.8.1). */
+static void call_args(ck_ctx *c, const ek_type *f, const ek_nlist *args,
+                      const ek_node **nodes, const ek_type **types,
+                      size_t off)
+{
+    size_t i;
+
     for (i = 0; i < args->count && off + i < f->u.fn.count; i++) {
         const ek_node *arg = args->data[i];
         const ek_type *at = ck_expr(c, arg, f->u.fn.params[off + i]);
@@ -90,6 +77,42 @@ static const ek_type *call_fn(ck_ctx *c, const ek_node *e,
                      ck_type_name(c, f->u.fn.params[off + i]));
         }
     }
+}
+
+static const ek_type *call_fn(ck_ctx *c, const ek_node *e,
+                              const ek_type *fntype, const char *member,
+                              const ek_type *recv, const ek_nlist *args,
+                              int synthesize)
+{
+    const ek_type *f = ck_prune(fntype);
+    const ek_type **types = NULL;
+    const ek_node **nodes = NULL;
+    size_t nargs = args->count + (recv ? 1 : 0);
+    size_t off = recv ? 1 : 0;
+    const ek_type *ret;
+
+    if (nargs) {
+        types = ek_arena_alloc(c->arena, nargs * sizeof *types);
+        nodes = ek_arena_alloc(c->arena, nargs * sizeof *nodes);
+        if (!types || !nodes) {
+            c->oom = 1;
+            return ck_ivar(c);
+        }
+        if (recv) {
+            nodes[0] = NULL;
+            types[0] = recv;
+        }
+    }
+    if (!f || f->kind != EK_T_FN) {
+        return call_opaque(c, e, f, member, recv, args, nodes, types, nargs,
+                           off, synthesize);
+    }
+    if (f->u.fn.count != nargs) {
+        ck_error(c, e, "E-call-arity",
+                 "the call supplies %zu arguments, the function takes %zu "
+                 "(Clause 7.8.1)", nargs, f->u.fn.count);
+    }
+    call_args(c, f, args, nodes, types, off);
     if (recv && f->u.fn.count >= 1) {
         ck_conform k = ck_conforms(c, recv, f->u.fn.params[0], 1);
 
@@ -126,6 +149,33 @@ static const ek_type *direct_receiver(ck_ctx *c, const ek_node *recv)
     return ck_expr(c, recv, NULL);
 }
 
+/* A receiver-chain call: the link is typed at the receiver, and a
+   function-valued field calls its value (Clause 7.8.2). */
+static const ek_type *call_member(ck_ctx *c, const ek_node *e,
+                                  const ek_node *callee)
+{
+    ek_reading rd = EK_RD_NONE;
+    const ek_type *recv = direct_receiver(c, callee->u.field.recv);
+    const ek_type *t = ck_link(c, callee, recv, &rd);
+    const ek_type *pt = rd == EK_RD_FIELD ? ck_prune(t) : NULL;
+
+    if (rd != EK_RD_FIELD) {
+        /* Namespace, module, derived, and opaque readings all take
+           the receiver first. */
+        return call_fn(c, e, t, callee->u.field.name, recv,
+                       &e->u.call.args, 0);
+    }
+    if (pt && pt->kind == EK_T_FN) {
+        return call_fn(c, e, t, callee->u.field.name, NULL,
+                       &e->u.call.args, 0);
+    }
+    ck_error(c, e, "E-not-callable",
+             "the field `%s` is not a function value (Clause 7.4.3)",
+             callee->u.field.name);
+    return call_fn(c, e, NULL, callee->u.field.name, NULL, &e->u.call.args,
+                   1);
+}
+
 /* Typing one EK_N_CALL: a plain head, or the last link of a receiver
    chain (Clause 7.8.2). */
 const ek_type *ck_call(ck_ctx *c, const ek_node *e, const ek_type *expected)
@@ -148,44 +198,61 @@ const ek_type *ck_call(ck_ctx *c, const ek_node *e, const ek_type *expected)
 
         return call_fn(c, e, t, NULL, NULL, &e->u.call.args, 0);
     }
-    {
-        int direct = ck_ref_at(c, callee, 0, &ref) && ref->symbol != NULL
-            && (ref->kind == EK_SYM_FUNC || ref->kind == EK_SYM_NAMESPACE
-                || ref->kind == EK_SYM_EXTERN);
+    if (ck_ref_at(c, callee, 0, &ref) && ref->symbol != NULL
+        && (ref->kind == EK_SYM_FUNC || ref->kind == EK_SYM_NAMESPACE
+            || ref->kind == EK_SYM_EXTERN)) {
+        /* A qualified or module-path member: the receiver is the
+           first argument (Clauses 7.4.4, 7.8.2). */
+        const ek_type *recv = direct_receiver(c, callee->u.field.recv);
+        const ek_type *t = ck_type_of(c, ref->symbol);
 
-        if (direct) {
-            /* A qualified or module-path member: the receiver is the
-               first argument (Clauses 7.4.4, 7.8.2). */
-            const ek_type *recv = direct_receiver(c, callee->u.field.recv);
-            const ek_type *t = ck_type_of(c, ref->symbol);
+        return call_fn(c, e, t, callee->u.field.name, recv,
+                       &e->u.call.args, 0);
+    }
+    return call_member(c, e, callee);
+}
 
-            return call_fn(c, e, t, callee->u.field.name, recv,
-                           &e->u.call.args, 0);
+/* The lambda's own arrow: the body bit decides it, and a
+   world-touching body does not adapt to a pure expected arrow
+   (Clauses 7.9.4, 7.9.5). */
+static const ek_type *lambda_arrow(ck_ctx *c, const ek_node *e,
+                                   const ek_type *expected,
+                                   const ek_type *pe, const ek_type **ps,
+                                   size_t n, const ek_type *ret, ek_bit b)
+{
+    ck_lambda_bit(c, e, b);
+    if (pe && pe->u.fn.arrow == EK_ARROW_PURE && b == EK_BIT_WORLD) {
+        ck_error(c, e, "E-world-bit",
+                 "the lambda body is world-touching, the expected "
+                 "arrow is pure (Clause 7.9.5)");
+    }
+    if (!pe) {
+        pe = ck_fn(c, ps, n, ret,
+                   b == EK_BIT_WORLD ? EK_ARROW_WORLD
+                       : b == EK_BIT_OPEN ? EK_ARROW_OPEN
+                                          : EK_ARROW_PURE);
+        if (expected && ck_prune(expected)->kind == EK_T_IVAR) {
+            ck_conforms(c, pe, expected, 0);
         }
-        {
-            ek_reading rd = EK_RD_NONE;
-            const ek_type *recv = direct_receiver(c, callee->u.field.recv);
-            const ek_type *t = ck_link(c, callee, recv, &rd);
-            const ek_type *pt = rd == EK_RD_FIELD ? ck_prune(t) : NULL;
+    }
+    return pe;
+}
 
-            if (rd == EK_RD_FIELD) {
-                if (pt && pt->kind == EK_T_FN) {
-                    /* x.f(args) on a function-valued field calls the
-                       value (Clause 7.4.3 station 1). */
-                    return call_fn(c, e, t, callee->u.field.name, NULL,
-                                   &e->u.call.args, 0);
-                }
-                ck_error(c, e, "E-not-callable",
-                         "the field `%s` is not a function value "
-                         "(Clause 7.4.3)", callee->u.field.name);
-                return call_fn(c, e, NULL, callee->u.field.name, NULL,
-                               &e->u.call.args, 1);
-            }
-            /* Namespace, module, derived, and opaque readings all
-               take the receiver first. */
-            return call_fn(c, e, t, callee->u.field.name, recv,
-                           &e->u.call.args, 0);
-        }
+/* The lambda's parameters: names from the surface, types from the
+   expected arrow (Clause 7.6.3). */
+static void lambda_params(ck_ctx *c, const ek_node *params,
+                          const ek_type *pe, const ek_type **ps,
+                          const char **names, size_t n)
+{
+    size_t i;
+
+    for (i = 0; i < n; i++) {
+        const ek_node *p = params->u.kids.data[i];
+
+        names[i] = p->kind == EK_N_NAME && p->u.path.count == 1
+                       && strcmp(p->u.path.data[0], "_") != 0
+                   ? p->u.path.data[0] : NULL;
+        ps[i] = pe && i < pe->u.fn.count ? pe->u.fn.params[i] : ck_ivar(c);
     }
 }
 
@@ -199,7 +266,7 @@ const ek_type *ck_lambda(ck_ctx *c, const ek_node *e, const ek_type *expected)
     const ek_type **ps = NULL;
     const char **names = NULL;
     const ek_type *ret;
-    size_t i, n = 0;
+    size_t n = params ? params->u.kids.count : 0;
 
     if (!pe || pe->kind != EK_T_FN) {
         if (!pe || pe->kind != EK_T_IVAR) {
@@ -210,9 +277,6 @@ const ek_type *ck_lambda(ck_ctx *c, const ek_node *e, const ek_type *expected)
         }
         pe = NULL;
     }
-    if (params) {
-        n = params->u.kids.count;
-    }
     if (n) {
         ps = ek_arena_alloc(c->arena, n * sizeof *ps);
         names = ek_arena_alloc(c->arena, n * sizeof *names);
@@ -220,14 +284,7 @@ const ek_type *ck_lambda(ck_ctx *c, const ek_node *e, const ek_type *expected)
             c->oom = 1;
             return expected;
         }
-    }
-    for (i = 0; i < n; i++) {
-        const ek_node *p = params->u.kids.data[i];
-
-        names[i] = p->kind == EK_N_NAME && p->u.path.count == 1
-                       && strcmp(p->u.path.data[0], "_") != 0
-                   ? p->u.path.data[0] : NULL;
-        ps[i] = pe && i < pe->u.fn.count ? pe->u.fn.params[i] : ck_ivar(c);
+        lambda_params(c, params, pe, ps, names, n);
     }
     if (pe && pe->u.fn.count != n) {
         ck_error(c, e, "E-call-arity",
@@ -235,37 +292,35 @@ const ek_type *ck_lambda(ck_ctx *c, const ek_node *e, const ek_type *expected)
                  "type has %zu (Clause 7.8.1)", n, pe->u.fn.count);
     }
     ck_scope_push(c);
-    for (i = 0; i < n; i++) {
-        if (names[i]) {
-            ck_scope_bind(c, names[i], ps[i]);
+    {
+        size_t i;
+
+        for (i = 0; i < n; i++) {
+            if (names[i]) {
+                ck_scope_bind(c, names[i], ps[i]);
+            }
         }
     }
     ret = ck_expr(c, body, pe ? pe->u.fn.result : NULL);
     ck_scope_pop(c);
-    /* The lambda's bit is the OR of the calls in its body (Clause
-       7.9.4). A world-touching body does not adapt to a pure expected
-       arrow (Clause 7.9.5). */
-    {
-        ek_bit b = ck_body_bit(c, body);
-
-        ck_lambda_bit(c, e, b);
-        if (pe && pe->u.fn.arrow == EK_ARROW_PURE && b == EK_BIT_WORLD) {
-            ck_error(c, e, "E-world-bit",
-                     "the lambda body is world-touching, the expected "
-                     "arrow is pure (Clause 7.9.5)");
-        }
-        if (!pe) {
-            pe = ck_fn(c, ps, n, ret,
-                       b == EK_BIT_WORLD ? EK_ARROW_WORLD
-                           : b == EK_BIT_OPEN ? EK_ARROW_OPEN
-                                              : EK_ARROW_PURE);
-            if (expected && ck_prune(expected)->kind == EK_T_IVAR) {
-                ck_conforms(c, pe, expected, 0);
-            }
-        }
-    }
+    pe = lambda_arrow(c, e, expected, pe, ps, n, ret, ck_body_bit(c, body));
     ck_row(c, e, pe, EK_RD_NONE);
     return pe;
+}
+
+/* A generic constructor anchored by the expected instantiation: the
+   payload is checked at the substituted payload type (Clause 7.6.4). */
+static const ek_type *apply_generic(ck_ctx *c, const ek_node *e,
+                                    const ck_ctor *ct, const ck_decl *d,
+                                    const ek_node *arg, const ek_type *exp,
+                                    size_t nb)
+{
+    const ek_type *pt = ck_apply_binders(c, ct->payload, d->binders,
+                                         exp->u.nominal.args, nb);
+
+    ck_expr(c, arg, pt);
+    ck_row(c, e, exp, EK_RD_NONE);
+    return exp;
 }
 
 /* Constructor application by juxtaposition is check-only: it takes
@@ -300,12 +355,7 @@ const ek_type *ck_apply(ck_ctx *c, const ek_node *e, const ek_type *expected)
         }
         if (exp && exp->kind == EK_T_NOMINAL && exp->u.nominal.sym == ct->owner
             && exp->u.nominal.argc == nb) {
-            const ek_type *pt = ck_apply_binders(c, ct->payload, d->binders,
-                                                 exp->u.nominal.args, nb);
-
-            ck_expr(c, arg, pt);
-            ck_row(c, e, exp, EK_RD_NONE);
-            return exp;
+            return apply_generic(c, e, ct, d, arg, exp, nb);
         }
         ck_error(c, head, "E-undetermined",
                  "the constructor `%s` has no unique instantiation; an "

@@ -146,11 +146,96 @@ static ek_bit child(ck_ctx *c, const ek_node *e)
     return ck_body_bit(c, e);
 }
 
+/* The subtree OR folded over a kid sequence. */
+static ek_bit bit_kids(ck_ctx *c, ek_node *const *kids, size_t n)
+{
+    ek_bit b = EK_BIT_PURE;
+    size_t i;
+
+    for (i = 0; i < n; i++) {
+        b = fold(b, child(c, kids[i]));
+    }
+    return b;
+}
+
+/* The subtree OR over one or two children. */
+static ek_bit fold2(ck_ctx *c, const ek_node *a, const ek_node *b)
+{
+    return fold(child(c, a), child(c, b));
+}
+
+static ek_bit fold3(ck_ctx *c, const ek_node *a, const ek_node *b,
+                    const ek_node *d)
+{
+    return fold(fold2(c, a, b), child(c, d));
+}
+
+/* The subtree OR of an interpolated string's segments. */
+static ek_bit bit_str(ck_ctx *c, const ek_node *e)
+{
+    ek_bit b = EK_BIT_PURE;
+    size_t i;
+
+    for (i = 0; i < e->u.str.count; i++) {
+        b = fold(b, child(c, e->u.str.segs[i].expr));
+    }
+    return b;
+}
+
+/* The subtree OR of one node's own children; the node's own call bit
+   is the caller's concern. */
+static ek_bit body_children(ck_ctx *c, const ek_node *e)
+{
+    switch (e->kind) {
+    case EK_N_MODULE:
+    case EK_N_BLOCK:
+    case EK_N_COMPOSITE:
+    case EK_N_LAMBDA_PARAMS:
+        return bit_kids(c, e->u.kids.data, e->u.kids.count);
+    case EK_N_LET:
+    case EK_N_REBIND:
+    case EK_N_INVERT:
+        return child(c, e->u.bind.value);
+    case EK_N_NAMESPACE:
+        return child(c, e->u.namespace.value);
+    case EK_N_TEST_DECL:
+    case EK_N_EXTERN_DECL:
+    case EK_N_CTYPE_DECL:
+        return child(c, e->u.decl.body);
+    case EK_N_STRING_LIT:
+        return bit_str(c, e);
+    case EK_N_FIELD:
+        return child(c, e->u.field.recv);
+    case EK_N_CALL:
+        return fold(child(c, e->u.call.callee),
+                    bit_kids(c, e->u.call.args.data, e->u.call.args.count));
+    case EK_N_APPLY:
+    case EK_N_COMPOSITE_ITEM:
+        return fold2(c, e->u.pair.a, e->u.pair.b);
+    case EK_N_PAREN:
+    case EK_N_UNARY:
+        return child(c, e->u.wrap.inner);
+    case EK_N_BINARY:
+        return fold2(c, e->u.binary.lhs, e->u.binary.rhs);
+    case EK_N_IF:
+        return fold3(c, e->u.ifexpr.cond, e->u.ifexpr.then,
+                     e->u.ifexpr.els);
+    case EK_N_CASE:
+        return fold(bit_kids(c, e->u.caseexpr.scrutinees.data,
+                             e->u.caseexpr.scrutinees.count),
+                    bit_kids(c, e->u.caseexpr.arms.data,
+                             e->u.caseexpr.arms.count));
+    case EK_N_ARM:
+        return fold2(c, e->u.arm.guard, e->u.arm.body);
+    default:
+        return EK_BIT_PURE; /* patterns and type positions carry no calls */
+    }
+}
+
 ek_bit ck_body_bit(ck_ctx *c, const ek_node *e)
 {
     const void *memo;
     ek_bit b;
-    size_t i;
 
     if (!e) {
         return EK_BIT_PURE;
@@ -160,75 +245,7 @@ ek_bit ck_body_bit(ck_ctx *c, const ek_node *e)
         return (ek_bit)((size_t)memo - 1);
     }
     b = e->kind == EK_N_CALL ? map_bit(&c->bits, e) : EK_BIT_PURE;
-    switch (e->kind) {
-    case EK_N_MODULE:
-    case EK_N_BLOCK:
-    case EK_N_COMPOSITE:
-    case EK_N_LAMBDA_PARAMS:
-        for (i = 0; i < e->u.kids.count; i++) {
-            b = fold(b, child(c, e->u.kids.data[i]));
-        }
-        break;
-    case EK_N_LET:
-    case EK_N_REBIND:
-    case EK_N_INVERT:
-        b = fold(b, child(c, e->u.bind.value));
-        break;
-    case EK_N_NAMESPACE:
-        b = fold(b, child(c, e->u.namespace.value));
-        break;
-    case EK_N_TEST_DECL:
-    case EK_N_EXTERN_DECL:
-    case EK_N_CTYPE_DECL:
-        b = fold(b, child(c, e->u.decl.body));
-        break;
-    case EK_N_STRING_LIT:
-        for (i = 0; i < e->u.str.count; i++) {
-            b = fold(b, child(c, e->u.str.segs[i].expr));
-        }
-        break;
-    case EK_N_FIELD:
-        b = fold(b, child(c, e->u.field.recv));
-        break;
-    case EK_N_CALL:
-        b = fold(b, child(c, e->u.call.callee));
-        for (i = 0; i < e->u.call.args.count; i++) {
-            b = fold(b, child(c, e->u.call.args.data[i]));
-        }
-        break;
-    case EK_N_APPLY:
-    case EK_N_COMPOSITE_ITEM:
-        b = fold(b, child(c, e->u.pair.a));
-        b = fold(b, child(c, e->u.pair.b));
-        break;
-    case EK_N_PAREN:
-    case EK_N_UNARY:
-        b = fold(b, child(c, e->u.wrap.inner));
-        break;
-    case EK_N_BINARY:
-        b = fold(b, child(c, e->u.binary.lhs));
-        b = fold(b, child(c, e->u.binary.rhs));
-        break;
-    case EK_N_IF:
-        b = fold(b, child(c, e->u.ifexpr.cond));
-        b = fold(b, child(c, e->u.ifexpr.then));
-        b = fold(b, child(c, e->u.ifexpr.els));
-        break;
-    case EK_N_CASE:
-        for (i = 0; i < e->u.caseexpr.scrutinees.count; i++) {
-            b = fold(b, child(c, e->u.caseexpr.scrutinees.data[i]));
-        }
-        for (i = 0; i < e->u.caseexpr.arms.count; i++) {
-            b = fold(b, child(c, e->u.caseexpr.arms.data[i]));
-        }
-        break;
-    case EK_N_ARM:
-        b = fold(b, child(c, e->u.arm.guard));
-        b = fold(b, child(c, e->u.arm.body));
-        break;
-    default:
-        break; /* patterns and type positions carry no calls */
-    }
+    b = fold(b, body_children(c, e));
     put_bit(c, &c->contrib, e, b);
     return b;
 }

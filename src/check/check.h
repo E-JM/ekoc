@@ -30,7 +30,7 @@
  * unknown std namespace members) takes the same opaque reading.
  *
  * Output: one row per typed AST node, sorted by node address, so lower
- * (M7) can binary search by node. `type` is a closed snapshot: bound
+ * can binary search by node. `type` is a closed snapshot: bound
  * inference variables are substituted away; a remaining EK_T_IVAR is
  * one the ruling above leaves undetermined. `reading` is the selected
  * station of Clause 7.4.3 for member links, EK_RD_NONE otherwise.
@@ -53,10 +53,10 @@
  * their rows carry derived bits all the same, and no bit diagnostic
  * fires inside them.
  *
- * OPACITY RULING for the placeholder-std bridge (temporary until lib/
- * lands, revise then): Clause 7.9.2 fixes a call's bit only through
- * known arrows ("through `->` it is pure; through `!->` it is
- * world-touching"); it does not cover a callee of unknown signature.
+ * OPACITY RULING for the placeholder-std bridge: Clause 7.9.2 fixes a
+ * call's bit only through known arrows ("through `->` it is pure;
+ * through `!->` it is world-touching"); it does not cover a callee of
+ * unknown signature.
  * The ruling here: a call through an unknown callee contributes
  * world-touching when its receiver has a capability type (Clause
  * 7.9.1) other than `Conc`, which sets no bit, and the member is not

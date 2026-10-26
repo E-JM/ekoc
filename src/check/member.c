@@ -89,6 +89,109 @@ static const ek_symbol *module_fn(ck_ctx *c, const char *name,
     return NULL;
 }
 
+/* The field of a record type, NULL when the name is absent. */
+static const ek_type *field_of(const ek_type *r, const char *name)
+{
+    size_t i;
+
+    for (i = 0; i < r->u.record.count; i++) {
+        if (strcmp(r->u.record.fields[i].name, name) == 0) {
+            return r->u.record.fields[i].type;
+        }
+    }
+    return NULL;
+}
+
+/* The two-receiver arrow of a derived service. */
+static const ek_type *derived_fn(ck_ctx *c, const ek_type *r,
+                                 const ek_type *bool_t)
+{
+    const ek_type **ps = ek_arena_alloc(c->arena, 2 * sizeof *ps);
+
+    if (ps) {
+        ps[0] = r;
+        ps[1] = r;
+        return ck_fn(c, ps, 2, bool_t, EK_ARROW_PURE);
+    }
+    c->oom = 1;
+    return ck_ivar(c);
+}
+
+/* The derived eq member: E-no-eq where the derivation halts, the
+   service where it does not (Clause 9.8.4). NULL falls through. */
+static const ek_type *derive_eq(ck_ctx *c, const ek_node *at,
+                                const ek_type *r, const char *name,
+                                const ck_decl *d, ek_reading *rd,
+                                const ek_type *bool_t)
+{
+    if (!d || strcmp(name, "eq") != 0) {
+        return NULL;
+    }
+    if (ck_no_eq(c, r)) {
+        /* The derivation halts here (Clause 9.8.4): equality over the
+           type is E-no-eq and the member is absent. */
+        ck_no_eq_error(c, at, r);
+        return NULL;
+    }
+    *rd = EK_RD_DERIVED;
+    return derived_fn(c, r, bool_t);
+}
+
+/* The derived order member over a declared ADT (Clause 9.8.5). NULL
+   falls through. */
+static const ek_type *derive_lt(ck_ctx *c, const ek_type *r,
+                                const char *name, const ck_decl *d,
+                                ek_reading *rd, const ek_type *bool_t)
+{
+    if (!d || d->rhs != EK_TYPE_RHS_VARIANTS || strcmp(name, "lt") != 0) {
+        return NULL;
+    }
+    *rd = EK_RD_DERIVED;
+    return derived_fn(c, r, bool_t);
+}
+
+/* The stations over a declared receiver: its representation's fields,
+   its namespace, the derived services, and the extending module
+   function (Clause 7.4.3). */
+static const ek_type *nominal_link(ck_ctx *c, const ek_node *at,
+                                   const ek_type *r, const char *name,
+                                   ek_reading *rd, const ek_type *bool_t)
+{
+    const ek_type *repr = ck_decl_repr(c, r);
+    const ek_type *t;
+    const ek_symbol *m;
+
+    if (repr && repr->kind == EK_T_RECORD) {
+        t = field_of(repr, name);
+        if (t) {
+            *rd = EK_RD_FIELD;
+            return t;
+        }
+    }
+    /* Station 2: the type's namespace (declared members first). */
+    m = ns_member(c, r->u.nominal.sym, name);
+    if (m) {
+        *rd = EK_RD_NAMESPACE;
+        return ck_type_of(c, m);
+    }
+    t = derive_eq(c, at, r, name, ck_decl_of(c, r->u.nominal.sym), rd,
+                  bool_t);
+    if (t) {
+        return t;
+    }
+    t = derive_lt(c, r, name, ck_decl_of(c, r->u.nominal.sym), rd, bool_t);
+    if (t) {
+        return t;
+    }
+    /* Station 3: the current module extends the foreign type. */
+    m = module_fn(c, name, r);
+    if (m) {
+        *rd = EK_RD_MODULE_FN;
+        return ck_type_of(c, m);
+    }
+    return ck_ivar(c);
+}
+
 /* The reading of one member link at its receiver's type (Clause
    7.4.3). Derived services of Clause 9.8.7: eq on every internal type
    whose derivation does not halt (9.8.4), lt on declared ADTs
@@ -104,76 +207,15 @@ static const ek_type *link_type(ck_ctx *c, const ek_node *at,
     /* Station 1: a record field, on anonymous and record-shaped
        nominal receivers alike (Clause 7.4.3). */
     if (r && r->kind == EK_T_RECORD) {
-        size_t i;
+        const ek_type *t = field_of(r, name);
 
-        for (i = 0; i < r->u.record.count; i++) {
-            if (strcmp(r->u.record.fields[i].name, name) == 0) {
-                *rd = EK_RD_FIELD;
-                return r->u.record.fields[i].type;
-            }
+        if (t) {
+            *rd = EK_RD_FIELD;
+            return t;
         }
     }
     if (r && r->kind == EK_T_NOMINAL && r->u.nominal.sym) {
-        const ek_type *repr = ck_decl_repr(c, r);
-        const ek_symbol *m;
-        const ck_decl *d;
-
-        if (repr && repr->kind == EK_T_RECORD) {
-            size_t i;
-
-            for (i = 0; i < repr->u.record.count; i++) {
-                if (strcmp(repr->u.record.fields[i].name, name) == 0) {
-                    *rd = EK_RD_FIELD;
-                    return repr->u.record.fields[i].type;
-                }
-            }
-        }
-        /* Station 2: the type's namespace (declared members first). */
-        m = ns_member(c, r->u.nominal.sym, name);
-        if (m) {
-            *rd = EK_RD_NAMESPACE;
-            return ck_type_of(c, m);
-        }
-        d = ck_decl_of(c, r->u.nominal.sym);
-        if (d && strcmp(name, "eq") == 0) {
-            if (ck_no_eq(c, r)) {
-                /* The derivation halts here (Clause 9.8.4): equality
-                   over the type is E-no-eq and the member is absent. */
-                ck_no_eq_error(c, at, r);
-            } else {
-                const ek_type **ps = ek_arena_alloc(c->arena,
-                                                    2 * sizeof *ps);
-                const ek_type *a = r, *b = r;
-
-                if (ps) {
-                    ps[0] = a;
-                    ps[1] = b;
-                    *rd = EK_RD_DERIVED;
-                    return ck_fn(c, ps, 2, bool_t, EK_ARROW_PURE);
-                }
-                c->oom = 1;
-                return ck_ivar(c);
-            }
-        }
-        if (d && d->rhs == EK_TYPE_RHS_VARIANTS && strcmp(name, "lt") == 0) {
-            const ek_type **ps = ek_arena_alloc(c->arena, 2 * sizeof *ps);
-            const ek_type *a = r, *b = r;
-
-            if (ps) {
-                ps[0] = a;
-                ps[1] = b;
-                *rd = EK_RD_DERIVED;
-                return ck_fn(c, ps, 2, bool_t, EK_ARROW_PURE);
-            }
-            c->oom = 1;
-            return ck_ivar(c);
-        }
-        /* Station 3: the current module extends the foreign type. */
-        m = module_fn(c, name, r);
-        if (m) {
-            *rd = EK_RD_MODULE_FN;
-            return ck_type_of(c, m);
-        }
+        return nominal_link(c, at, r, name, rd, bool_t);
     }
     if (!r || r->kind == EK_T_IVAR || r->kind == EK_T_TVAR) {
         *rd = EK_RD_UNKNOWN;

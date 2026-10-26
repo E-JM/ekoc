@@ -29,7 +29,7 @@ typedef struct {
     ek_parse_result ast;
     ek_resolve_result res;
     ek_check_result chk;
-    const ek_diagnostic *ds; /* resolve drain */
+    ek_diagnostic *ds; /* malloc'd snapshot of the resolve drain */
     size_t dn;
     const ek_diagnostic *cds; /* check drain */
     size_t cdn;
@@ -68,6 +68,9 @@ static inline char *cfx_read_file(const char *path)
 static inline void cfx_run(cfx *f, const char *src, const char *const *path,
                            size_t npath, const char *name)
 {
+    const ek_diagnostic *drain;
+    size_t n;
+
     memset(f, 0, sizeof *f);
     f->arena = ek_arena_create();
     f->diag = ek_diag_create();
@@ -75,7 +78,16 @@ static inline void cfx_run(cfx *f, const char *src, const char *const *path,
     f->lay = ek_layout(f->lex.tokens, f->lex.count, name, f->arena, f->diag);
     f->ast = ek_parse(f->lay.tokens, f->lay.count, name, f->arena, f->diag);
     f->res = ek_resolve(f->ast.module, name, path, npath, f->arena, f->diag);
-    f->ds = ek_diag_drain(f->diag, &f->dn);
+    /* The drain hands out the live buffer; check drains the same one,
+       so the resolve slice is snapshotted first. */
+    drain = ek_diag_drain(f->diag, &n);
+    if (n) {
+        f->ds = malloc(n * sizeof *f->ds);
+        if (f->ds) {
+            memcpy(f->ds, drain, n * sizeof *f->ds);
+            f->dn = n;
+        }
+    }
     f->chk = ek_check(f->res, f->arena, f->diag);
     f->cds = ek_diag_drain(f->diag, &f->cdn);
 }
@@ -87,6 +99,7 @@ static inline void cfx_begin(cfx *f, const char *src)
 
 static inline void cfx_end(cfx *f)
 {
+    free(f->ds);
     ek_diag_destroy(f->diag);
     ek_arena_destroy(f->arena);
 }

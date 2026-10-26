@@ -35,6 +35,54 @@ static const char *item_field(const ek_node *item)
     return NULL;
 }
 
+/* A field named twice in one literal is E-field-duplicate. */
+static void dup_field(ck_ctx *c, const ek_node *e, const ek_node *item,
+                      size_t i, const char *field)
+{
+    size_t k;
+
+    for (k = 0; k < i; k++) {
+        const ek_node *prev = e->u.kids.data[k];
+
+        if (prev->kind == EK_N_COMPOSITE_ITEM) {
+            const char *pf = item_field(prev);
+
+            if (pf && strcmp(pf, field) == 0) {
+                ck_error(c, item, "E-field-duplicate",
+                         "the field `%s` is named twice in the literal "
+                         "(Clause 7.5.3)", field);
+            }
+        }
+    }
+}
+
+/* A literal outside `with` must name every field (Clauses 7.5.3,
+   9.8.6). */
+static void check_complete(ck_ctx *c, const ek_node *e, const ek_type *rec)
+{
+    size_t found = 0, k, i;
+
+    for (k = 0; k < rec->u.record.count; k++) {
+        for (i = 0; i < e->u.kids.count; i++) {
+            const ek_node *item = e->u.kids.data[i];
+            const char *field = item->kind == EK_N_COMPOSITE_ITEM
+                                    ? item_field(item) : NULL;
+
+            if (field
+                && strcmp(rec->u.record.fields[k].name, field) == 0) {
+                found++;
+                break;
+            }
+        }
+    }
+    if (found < rec->u.record.count) {
+        ck_error(c, e, "E-partial-record",
+                 "the record literal names %zu of %zu fields; a partial "
+                 "literal is legal only under `with` (Clauses 7.5.3, "
+                 "9.8.6)", found, rec->u.record.count);
+    }
+}
+
 /* One item value at its expected type, conformed back: a placement
    alone cannot catch a String where an Int was expected. */
 static void item_value(ck_ctx *c, const ek_node *val, const ek_type *expected)
@@ -81,117 +129,117 @@ static const ek_type *record_lit(ck_ctx *c, const ek_node *e,
             ck_expr(c, item->u.pair.b, NULL);
             continue;
         }
-        (void)0;
-        for (k = 0; k < i; k++) {
-            const ek_node *prev = e->u.kids.data[k];
-
-            if (prev->kind == EK_N_COMPOSITE_ITEM) {
-                const char *pf = item_field(prev);
-
-                if (pf && strcmp(pf, field) == 0) {
-                    ck_error(c, item, "E-field-duplicate",
-                             "the field `%s` is named twice in the literal "
-                             "(Clause 7.5.3)", field);
-                }
-            }
-        }
+        dup_field(c, e, item, i, field);
         item_value(c, item->u.pair.b, ft);
     }
     if (!allow_partial && rec->u.record.count) {
-        size_t found = 0;
-
-        for (k = 0; k < rec->u.record.count; k++) {
-            for (i = 0; i < e->u.kids.count; i++) {
-                const ek_node *item = e->u.kids.data[i];
-                const char *field = item->kind == EK_N_COMPOSITE_ITEM
-                                        ? item_field(item) : NULL;
-
-                if (field && strcmp(rec->u.record.fields[k].name, field) == 0) {
-                    found++;
-                    break;
-                }
-            }
-        }
-        if (found < rec->u.record.count) {
-            ck_error(c, e, "E-partial-record",
-                     "the record literal names %zu of %zu fields; a partial "
-                     "literal is legal only under `with` (Clauses 7.5.3, "
-                     "9.8.6)", found, rec->u.record.count);
-        }
+        check_complete(c, e, rec);
     }
     return rec;
 }
 
-const ek_type *ck_composite(ck_ctx *c, const ek_node *e,
-                            const ek_type *expected, int allow_partial)
+/* The opaque placements: no expected type, or one the bridge ruling
+   leaves undetermined. Values are still checked; a bare name key
+   stays unread (record field or dictionary key is not decidable under
+   opacity, and resolve resolved no such key). */
+static const ek_type *composite_opaque(ck_ctx *c, const ek_node *e,
+                                       const ek_type *exp)
 {
-    const ek_type *exp = ck_prune(expected);
-    int colons = has_colons(e);
     size_t i;
 
-    if (c->oom) {
-        return NULL;
+    for (i = 0; i < e->u.kids.count; i++) {
+        const ek_node *item = e->u.kids.data[i];
+
+        if (item->kind == EK_N_COMPOSITE_ITEM) {
+            if (item->u.pair.a && item->u.pair.a->kind != EK_N_NAME) {
+                ck_expr(c, item->u.pair.a, ck_ivar(c));
+            }
+            ck_expr(c, item->u.pair.b, ck_ivar(c));
+        }
     }
-    /* The opaque placements: no expected type, or one the bridge
-       ruling leaves undetermined. Values are still checked; a bare
-       name key stays unread (record field or dictionary key is not
-       decidable under opacity, and resolve resolved no such key). */
-    if (!exp || exp->kind == EK_T_IVAR || exp->kind == EK_T_TVAR
-        || (exp->kind == EK_T_NOMINAL && !exp->u.nominal.sym)) {
+    if (!exp) {
+        ck_error(c, e, "E-literal-expected",
+                 "a composite literal never stands alone; it requires "
+                 "an expected type or an annotation (Clause 7.5.3)");
+        return ck_ivar(c);
+    }
+    return exp;
+}
+
+/* The colon family: a record (plain or shaped), or a dictionary. */
+static const ek_type *composite_colons(ck_ctx *c, const ek_node *e,
+                                       const ek_type *exp, int allow_partial)
+{
+    const ek_type *repr;
+    size_t i;
+
+    if (exp->kind == EK_T_RECORD) {
+        return record_lit(c, e, exp, allow_partial);
+    }
+    if (exp->kind == EK_T_NOMINAL) {
+        repr = ck_decl_repr(c, exp);
+
+        if (repr && repr->kind == EK_T_RECORD) {
+            record_lit(c, e, repr, allow_partial);
+            return exp; /* the literal lands at the nominal type */
+        }
+    }
+    if (exp->kind == EK_T_DICT) {
         for (i = 0; i < e->u.kids.count; i++) {
             const ek_node *item = e->u.kids.data[i];
 
             if (item->kind == EK_N_COMPOSITE_ITEM) {
-                if (item->u.pair.a && item->u.pair.a->kind != EK_N_NAME) {
-                    ck_expr(c, item->u.pair.a, ck_ivar(c));
-                }
-                ck_expr(c, item->u.pair.b, ck_ivar(c));
-            }
-        }
-        if (!exp) {
-            ck_error(c, e, "E-literal-expected",
-                     "a composite literal never stands alone; it requires "
-                     "an expected type or an annotation (Clause 7.5.3)");
-            return ck_ivar(c);
-        }
-        return exp;
-    }
-    if (colons) {
-        if (exp->kind == EK_T_RECORD) {
-            return record_lit(c, e, exp, allow_partial);
-        }
-        if (exp->kind == EK_T_NOMINAL) {
-            const ek_type *repr = ck_decl_repr(c, exp);
-
-            if (repr && repr->kind == EK_T_RECORD) {
-                record_lit(c, e, repr, allow_partial);
-                return exp; /* the literal lands at the nominal type */
-            }
-        }
-        if (exp->kind == EK_T_DICT) {
-            for (i = 0; i < e->u.kids.count; i++) {
-                const ek_node *item = e->u.kids.data[i];
-
-                if (item->kind != EK_N_COMPOSITE_ITEM) {
-                    continue;
-                }
                 item_value(c, item->u.pair.a, exp->u.dict.key);
                 item_value(c, item->u.pair.b, exp->u.dict.val);
             }
-            return exp;
-        }
-        ck_error(c, e, "E-type-mismatch",
-                 "a colon literal expects a record or a dictionary, not "
-                 "%s (Clause 7.5.3)", ck_type_name(c, exp));
-        for (i = 0; i < e->u.kids.count; i++) {
-            const ek_node *item = e->u.kids.data[i];
-
-            if (item->kind == EK_N_COMPOSITE_ITEM) {
-                ck_expr(c, item->u.pair.b, NULL);
-            }
         }
         return exp;
     }
+    ck_error(c, e, "E-type-mismatch",
+             "a colon literal expects a record or a dictionary, not "
+             "%s (Clause 7.5.3)", ck_type_name(c, exp));
+    for (i = 0; i < e->u.kids.count; i++) {
+        const ek_node *item = e->u.kids.data[i];
+
+        if (item->kind == EK_N_COMPOSITE_ITEM) {
+            ck_expr(c, item->u.pair.b, NULL);
+        }
+    }
+    return exp;
+}
+
+/* A tuple literal against its expected arity (Clause 7.5.3). */
+static const ek_type *comma_tuple(ck_ctx *c, const ek_node *e,
+                                  const ek_type *exp)
+{
+    size_t n = 0, i;
+
+    for (i = 0; i < e->u.kids.count; i++) {
+        if (e->u.kids.data[i]->kind == EK_N_COMPOSITE_ITEM) {
+            n++;
+        }
+    }
+    if (n != exp->u.tuple.count) {
+        ck_error(c, e, "E-type-mismatch",
+                 "the tuple literal has %zu components, the expected "
+                 "type has %zu (Clause 7.5.3)", n, exp->u.tuple.count);
+    }
+    for (i = 0; i < e->u.kids.count && i < exp->u.tuple.count; i++) {
+        const ek_node *item = e->u.kids.data[i];
+
+        if (item->kind == EK_N_COMPOSITE_ITEM) {
+            item_value(c, item->u.pair.b, exp->u.tuple.items[i]);
+        }
+    }
+    return exp;
+}
+
+/* The comma family: a list, a tuple, or a tuple-shaped instantiation. */
+static const ek_type *composite_comma(ck_ctx *c, const ek_node *e,
+                                      const ek_type *exp)
+{
+    size_t i;
+
     switch (exp->kind) {
     case EK_T_LIST:
         for (i = 0; i < e->u.kids.count; i++) {
@@ -202,28 +250,8 @@ const ek_type *ck_composite(ck_ctx *c, const ek_node *e,
             }
         }
         return exp;
-    case EK_T_TUPLE: {
-        size_t n = 0;
-
-        for (i = 0; i < e->u.kids.count; i++) {
-            if (e->u.kids.data[i]->kind == EK_N_COMPOSITE_ITEM) {
-                n++;
-            }
-        }
-        if (n != exp->u.tuple.count) {
-            ck_error(c, e, "E-type-mismatch",
-                     "the tuple literal has %zu components, the expected "
-                     "type has %zu (Clause 7.5.3)", n, exp->u.tuple.count);
-        }
-        for (i = 0; i < e->u.kids.count && i < exp->u.tuple.count; i++) {
-            const ek_node *item = e->u.kids.data[i];
-
-            if (item->kind == EK_N_COMPOSITE_ITEM) {
-                item_value(c, item->u.pair.b, exp->u.tuple.items[i]);
-            }
-        }
-        return exp;
-    }
+    case EK_T_TUPLE:
+        return comma_tuple(c, e, exp);
     case EK_T_NOMINAL: {
         /* A tuple shape extends to a generic instantiation by the
            shape of its right-hand side (Clause 7.5.5). */
@@ -252,4 +280,23 @@ const ek_type *ck_composite(ck_ctx *c, const ek_node *e,
         }
     }
     return exp;
+}
+
+const ek_type *ck_composite(ck_ctx *c, const ek_node *e,
+                            const ek_type *expected, int allow_partial)
+{
+    const ek_type *exp = ck_prune(expected);
+    int colons = has_colons(e);
+
+    if (c->oom) {
+        return NULL;
+    }
+    if (!exp || exp->kind == EK_T_IVAR || exp->kind == EK_T_TVAR
+        || (exp->kind == EK_T_NOMINAL && !exp->u.nominal.sym)) {
+        return composite_opaque(c, e, exp);
+    }
+    if (colons) {
+        return composite_colons(c, e, exp, allow_partial);
+    }
+    return composite_comma(c, e, exp);
 }

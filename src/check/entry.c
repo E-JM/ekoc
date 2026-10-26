@@ -41,10 +41,33 @@ static int is_capability(const ek_type *t)
     return 0;
 }
 
+/* Notes one capability name of `main`; a repeat is a name conflict
+   (Clauses 7.1.3, 7.4.6). */
+static void note_capability(ck_ctx *c, const ek_symbol *sym,
+                            const char **seen, size_t *nseen,
+                            const char *cn)
+{
+    size_t q;
+    int dup = 0;
+
+    for (q = 0; q < *nseen; q++) {
+        if (strcmp(seen[q], cn) == 0) {
+            dup = 1;
+        }
+    }
+    if (dup) {
+        ck_error(c, sym->decl, "E-name-conflict",
+                 "a capability type occurs twice in `main` "
+                 "(Clauses 7.1.3, 7.4.6)");
+    } else if (*nseen < 9) {
+        seen[(*nseen)++] = cn;
+    }
+}
+
 /* The type-level rules for a `main` of the root module. */
 static void check_main(ck_ctx *c, const ek_symbol *sym)
 {
-    static const char *seen[16];
+    const char *seen[9];
     ck_tvars tv;
     const ek_type *t;
     size_t j, nseen = 0;
@@ -66,8 +89,6 @@ static void check_main(ck_ctx *c, const ek_symbol *sym)
     }
     for (j = 0; j < t->u.fn.count; j++) {
         const ek_type *p = t->u.fn.params[j];
-        size_t q;
-        int dup;
 
         if (!is_capability(p)) {
             ck_error(c, sym->decl, "E-entry-point",
@@ -75,23 +96,8 @@ static void check_main(ck_ctx *c, const ek_symbol *sym)
                      "(Clause 7.1.3)");
             continue;
         }
-        {
-            const char *cn = ck_prune(p)->u.nominal.sym->name;
-
-            dup = 0;
-            for (q = 0; q < nseen; q++) {
-                if (strcmp(seen[q], cn) == 0) {
-                    dup = 1;
-                }
-            }
-            if (dup) {
-                ck_error(c, sym->decl, "E-name-conflict",
-                         "a capability type occurs twice in `main` "
-                         "(Clauses 7.1.3, 7.4.6)");
-            } else if (nseen < 16) {
-                seen[nseen++] = cn;
-            }
-        }
+        note_capability(c, sym, seen, &nseen,
+                        ck_prune(p)->u.nominal.sym->name);
     }
 }
 

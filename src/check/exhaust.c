@@ -31,9 +31,9 @@ static int pat_catchall(const ek_node *p)
     case EK_N_P_FIELD:
         return pat_catchall(p->u.p_field.pattern);
     case EK_N_P_CONS:
-        /* A constructor pattern matches only its constructor, even
-           with no payload. */
-        return p->u.cons.payload ? pat_catchall(p->u.cons.payload) : 0;
+        /* A constructor pattern matches only its constructor, payload
+           included or not (Clause 7.7.2). */
+        return 0;
     default:
         return 0;
     }

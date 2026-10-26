@@ -8,8 +8,6 @@
    instantiated payload (Clause 7.6.4). Or-patterns and the value
    binding shapes live in patbind.c. */
 
-const ek_type *ck_pattern(ck_ctx *c, const ek_node *p, const ek_type *scrut);
-
 /* A literal pattern is placed at the scrutinee type (Clause 5.7.4);
    against an internally known composite it is a type error. */
 static const ek_type *lit_pattern(ck_ctx *c, const ek_node *p,
@@ -37,6 +35,52 @@ static const ek_type *lit_pattern(ck_ctx *c, const ek_node *p,
     return scrut;
 }
 
+/* The payload walk of a constructor pattern that matched its ADT: the
+   instantiation slots are the fresh variables the scrutinee conformed
+   to, and the payload pattern is checked at the instantiated payload
+   (Clause 7.6.4). */
+static void cons_payload(ck_ctx *c, const ek_node *p, ek_type **slots,
+                         const ck_ctor *ct, const ck_decl *d, size_t n)
+{
+    const ek_type **repl = NULL;
+    const ek_type *pt;
+
+    if (n) {
+        size_t i;
+
+        repl = ek_arena_alloc(c->arena, n * sizeof *repl);
+        if (!repl) {
+            c->oom = 1;
+            return;
+        }
+        for (i = 0; i < n; i++) {
+            repl[i] = ck_prune(slots[i]);
+        }
+    }
+    pt = ck_apply_binders(c, ct->payload, d->binders, repl, n);
+    ck_pattern(c, p->u.cons.payload, pt);
+}
+
+/* One fresh instantiation slot per binder: the variables the
+   scrutinee conforms to (Clause 7.7.1). */
+static int cons_slots(ck_ctx *c, size_t n, ek_type ***slots,
+                      const ek_type ***args)
+{
+    size_t i;
+
+    *slots = ek_arena_alloc(c->arena, n * sizeof **slots);
+    *args = ek_arena_alloc(c->arena, n * sizeof **args);
+    if (!*slots || !*args) {
+        c->oom = 1;
+        return 0;
+    }
+    for (i = 0; i < n; i++) {
+        (*slots)[i] = (ek_type *)ck_ivar(c);
+        (*args)[i] = (*slots)[i];
+    }
+    return 1;
+}
+
 /* A constructor pattern's constructor MUST belong to the scrutinee's
    nominal ADT (Clause 7.7.1); a std constructor is opaque. */
 static const ek_type *cons_pattern(ck_ctx *c, const ek_node *p,
@@ -50,23 +94,14 @@ static const ek_type *cons_pattern(ck_ctx *c, const ek_node *p,
     }
     if (ct && ct->owner) {
         const ck_decl *d = ck_decl_of(c, ct->owner);
-        const ek_type **args = NULL;
         ek_type **slots = NULL;
+        const ek_type **args = NULL;
         const ek_type *nom;
-        size_t i, n = d ? d->nbinders : 0;
+        size_t n = d ? d->nbinders : 0;
         ck_conform k;
 
-        if (n) {
-            slots = ek_arena_alloc(c->arena, n * sizeof *slots);
-            args = ek_arena_alloc(c->arena, n * sizeof *args);
-            if (!slots || !args) {
-                c->oom = 1;
-                return scrut;
-            }
-            for (i = 0; i < n; i++) {
-                slots[i] = (ek_type *)ck_ivar(c);
-                args[i] = slots[i];
-            }
+        if (n && !cons_slots(c, n, &slots, &args)) {
+            return scrut;
         }
         nom = ck_nominal(c, ct->owner, args, n);
         k = ck_conforms(c, scrut, nom, 0);
@@ -78,21 +113,7 @@ static const ek_type *cons_pattern(ck_ctx *c, const ek_node *p,
             return scrut;
         }
         if (ct->payload && d) {
-            const ek_type **repl = NULL;
-            const ek_type *pt;
-
-            if (n) {
-                repl = ek_arena_alloc(c->arena, n * sizeof *repl);
-                if (!repl) {
-                    c->oom = 1;
-                    return scrut;
-                }
-                for (i = 0; i < n; i++) {
-                    repl[i] = ck_prune(slots[i]);
-                }
-            }
-            pt = ck_apply_binders(c, ct->payload, d->binders, repl, n);
-            ck_pattern(c, p->u.cons.payload, pt);
+            cons_payload(c, p, slots, ct, d, n);
         }
         return scrut;
     }

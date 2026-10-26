@@ -96,54 +96,36 @@ static int is_bottom(const ek_type *t)
                      && strcmp(t->u.nominal.sym->name, "Never") == 0));
 }
 
-static ck_conform conform(ck_ctx *c, const ek_type *a, const ek_type *e,
-                          int allow_shape, int never_ok)
+/* Function conformance: one-step arrow-bit adaptation, same arity,
+   invariant parameters and result (Clause 7.9.5). */
+static ck_conform conform_fn(ck_ctx *c, const ek_type *a, const ek_type *e)
 {
     size_t i;
 
-    a = ck_prune(a);
-    e = ck_prune(e);
-    if (!a || !e || a == e) {
-        return CK_OK;
+    if (a->u.fn.arrow != e->u.fn.arrow
+        && !(a->u.fn.arrow == EK_ARROW_PURE && e->u.fn.arrow != EK_ARROW_PURE)) {
+        return CK_MISMATCH; /* bit adaptation is one step (7.9.5) */
     }
-    if (a->kind == EK_T_IVAR) {
-        return ck_bind(c, a, e) ? CK_OK : CK_MISMATCH;
-    }
-    if (e->kind == EK_T_IVAR) {
-        return ck_bind(c, e, a) ? CK_OK : CK_MISMATCH;
-    }
-    if (is_bottom(a) && e->kind != EK_T_FN && never_ok) {
-        return CK_OK; /* bottom adapts at value positions (7.5.4) */
-    }
-    if (a->kind == EK_T_TVAR || e->kind == EK_T_TVAR) {
-        return a == e ? CK_OK : CK_MISMATCH; /* rigid (7.6.3) */
-    }
-    if (a->kind == EK_T_NOMINAL && e->kind == EK_T_NOMINAL) {
-        if (a->u.nominal.sym != e->u.nominal.sym
-            || a->u.nominal.argc != e->u.nominal.argc) {
-            return CK_NOMINAL;
-        }
-        for (i = 0; i < a->u.nominal.argc; i++) {
-            if (component(c, a->u.nominal.args[i], e->u.nominal.args[i], 0)
-                != CK_OK) {
-                return CK_MISMATCH;
-            }
-        }
-        return CK_OK;
-    }
-    if (a->kind == EK_T_NOMINAL && allow_shape) {
-        /* Nominal to anonymous, one direction, exact shape (7.5.5). */
-        const ek_type *repr = ck_decl_repr(c, a);
-
-        if (repr && conform(c, repr, e, 1, 0) == CK_OK) {
-            return CK_OK;
-        }
-        return e->kind == EK_T_RECORD || e->kind == EK_T_TUPLE ? CK_SHAPE
-                                                               : CK_MISMATCH;
-    }
-    if (a->kind != e->kind) {
+    if (a->u.fn.count != e->u.fn.count) {
         return CK_MISMATCH;
     }
+    for (i = 0; i < a->u.fn.count; i++) {
+        if (component(c, a->u.fn.params[i], e->u.fn.params[i], 0)
+            != CK_OK) {
+            return CK_MISMATCH;
+        }
+    }
+    return component(c, a->u.fn.result, e->u.fn.result, 0);
+}
+
+/* Conformance of the composite kinds, reached with equal kinds: same
+   shape, invariant components, and one-step arrow-bit adaptation
+   (Clause 7.5.7, 7.9.5). */
+static ck_conform conform_composite(ck_ctx *c, const ek_type *a,
+                                    const ek_type *e)
+{
+    size_t i;
+
     switch (a->kind) {
     case EK_T_LIST:
         return component(c, a->u.list.elem, e->u.list.elem, 1);
@@ -177,24 +159,75 @@ static ck_conform conform(ck_ctx *c, const ek_type *a, const ek_type *e,
         }
         return CK_OK;
     case EK_T_FN:
-        if (a->u.fn.arrow != e->u.fn.arrow
-            && !(a->u.fn.arrow == EK_ARROW_PURE
-                 && e->u.fn.arrow != EK_ARROW_PURE)) {
-            return CK_MISMATCH; /* bit adaptation is one step (7.9.5) */
-        }
-        if (a->u.fn.count != e->u.fn.count) {
-            return CK_MISMATCH;
-        }
-        for (i = 0; i < a->u.fn.count; i++) {
-            if (component(c, a->u.fn.params[i], e->u.fn.params[i], 0)
-                != CK_OK) {
-                return CK_MISMATCH;
-            }
-        }
-        return component(c, a->u.fn.result, e->u.fn.result, 0);
+        return conform_fn(c, a, e);
     default:
         return CK_OK;
     }
+}
+
+/* The nominal-to-nominal judgment: same declaration, conforming
+   arguments (Clause 7.5.2). */
+static ck_conform conform_nominal(ck_ctx *c, const ek_type *a,
+                                  const ek_type *e)
+{
+    size_t i;
+
+    if (a->u.nominal.sym != e->u.nominal.sym
+        || a->u.nominal.argc != e->u.nominal.argc) {
+        return CK_NOMINAL;
+    }
+    for (i = 0; i < a->u.nominal.argc; i++) {
+        if (component(c, a->u.nominal.args[i], e->u.nominal.args[i], 0)
+            != CK_OK) {
+            return CK_MISMATCH;
+        }
+    }
+    return CK_OK;
+}
+
+/* Nominal to anonymous, one direction, exact shape (7.5.5). */
+static ck_conform conform_shape(ck_ctx *c, const ek_type *a,
+                                const ek_type *e)
+{
+    const ek_type *repr = ck_decl_repr(c, a);
+
+    if (repr && conform(c, repr, e, 1, 0) == CK_OK) {
+        return CK_OK;
+    }
+    return e->kind == EK_T_RECORD || e->kind == EK_T_TUPLE ? CK_SHAPE
+                                                           : CK_MISMATCH;
+}
+
+static ck_conform conform(ck_ctx *c, const ek_type *a, const ek_type *e,
+                          int allow_shape, int never_ok)
+{
+    a = ck_prune(a);
+    e = ck_prune(e);
+    if (!a || !e || a == e) {
+        return CK_OK;
+    }
+    if (a->kind == EK_T_IVAR) {
+        return ck_bind(c, a, e) ? CK_OK : CK_MISMATCH;
+    }
+    if (e->kind == EK_T_IVAR) {
+        return ck_bind(c, e, a) ? CK_OK : CK_MISMATCH;
+    }
+    if (is_bottom(a) && e->kind != EK_T_FN && never_ok) {
+        return CK_OK; /* bottom adapts at value positions (7.5.4) */
+    }
+    if (a->kind == EK_T_TVAR || e->kind == EK_T_TVAR) {
+        return a == e ? CK_OK : CK_MISMATCH; /* rigid (7.6.3) */
+    }
+    if (a->kind == EK_T_NOMINAL && e->kind == EK_T_NOMINAL) {
+        return conform_nominal(c, a, e);
+    }
+    if (a->kind == EK_T_NOMINAL && allow_shape) {
+        return conform_shape(c, a, e);
+    }
+    if (a->kind != e->kind) {
+        return CK_MISMATCH;
+    }
+    return conform_composite(c, a, e);
 }
 
 const char *ck_conform_code(ck_conform k)

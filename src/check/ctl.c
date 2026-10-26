@@ -51,6 +51,64 @@ const ek_type *ck_if(ck_ctx *c, const ek_node *e, const ek_type *expected)
     }
 }
 
+/* One arm: its patterns bind against the anchored scrutinee columns,
+   its guard is `Bool`, and its body is checked (Clauses 7.7.1,
+   7.7.3). */
+static const ek_type *case_arm(ck_ctx *c, const ek_node *arm,
+                               const ek_type **scrut, size_t nsc,
+                               const ek_type *expected)
+{
+    const ek_type *atype;
+    size_t k;
+
+    ck_scope_push(c);
+    for (k = 0; k < arm->u.arm.patterns.count; k++) {
+        size_t col = k < nsc ? k : (nsc ? nsc - 1 : 0);
+
+        ck_pattern(c, arm->u.arm.patterns.data[k], scrut[col]);
+    }
+    if (arm->u.arm.guard) {
+        const ek_type *g = ck_expr(c, arm->u.arm.guard,
+                                   ck_std_type(c, "Bool"));
+        const ek_type *gt = ck_prune(g);
+
+        if (!gt || (gt->kind != EK_T_IVAR && !ck_is_std(gt, "Bool"))) {
+            ck_error(c, arm->u.arm.guard, "E-type-mismatch",
+                     "a guard is `Bool`, not %s (Clause 7.7.3)",
+                     ck_type_name(c, g));
+        }
+    }
+    atype = ck_expr(c, arm->u.arm.body, expected);
+    ck_scope_pop(c);
+    return atype;
+}
+
+/* Every arm has the same type; a `Never` arm adapts (7.7.4). */
+static const ek_type *case_result(ck_ctx *c, const ek_node *e,
+                                  const ek_type *const *atypes, size_t na,
+                                  const ek_type *expected)
+{
+    const ek_type *seen = NULL;
+    size_t i;
+
+    for (i = 0; i < na; i++) {
+        const ek_type *t = atypes[i];
+
+        if (ck_prune(t) && ck_prune(t)->kind == EK_T_NEVER) {
+            continue;
+        }
+        if (!seen) {
+            seen = t;
+        } else if (!ck_unify(c, seen, t, 1)) {
+            ck_error(c, e, "E-type-mismatch",
+                     "the arms of the case are %s and %s (Clause "
+                     "7.7.4)", ck_type_name(c, seen),
+                     ck_type_name(c, t));
+        }
+    }
+    return expected ? expected : (seen ? seen : ck_never(c));
+}
+
 const ek_type *ck_case(ck_ctx *c, const ek_node *e, const ek_type *expected)
 {
     const ek_type **scrut;
@@ -59,7 +117,7 @@ const ek_type *ck_case(ck_ctx *c, const ek_node *e, const ek_type *expected)
     const ek_type **atypes;
     size_t i, nsc = e->u.caseexpr.scrutinees.count;
     size_t na = e->u.caseexpr.arms.count;
-    const ek_type *result = expected;
+    const ek_type *result;
 
     scrut = ek_arena_alloc(c->arena, (nsc ? nsc : 1) * sizeof *scrut);
     arms = ek_arena_alloc(c->arena, (na ? na : 1) * sizeof *arms);
@@ -77,55 +135,14 @@ const ek_type *ck_case(ck_ctx *c, const ek_node *e, const ek_type *expected)
     }
     for (i = 0; i < na; i++) {
         const ek_node *arm = e->u.caseexpr.arms.data[i];
-        size_t k;
 
         arms[i] = arm;
-        ck_scope_push(c);
-        for (k = 0; k < arm->u.arm.patterns.count; k++) {
-            size_t col = k < nsc ? k : (nsc ? nsc - 1 : 0);
-
-            ck_pattern(c, arm->u.arm.patterns.data[k], scrut[col]);
-        }
-        if (arm->u.arm.guard) {
-            const ek_type *g = ck_expr(c, arm->u.arm.guard,
-                                       ck_std_type(c, "Bool"));
-            const ek_type *gt = ck_prune(g);
-
-            if (!gt || (gt->kind != EK_T_IVAR && !ck_is_std(gt, "Bool"))) {
-                ck_error(c, arm->u.arm.guard, "E-type-mismatch",
-                         "a guard is `Bool`, not %s (Clause 7.7.3)",
-                         ck_type_name(c, g));
-            }
-        }
-        atypes[i] = ck_expr(c, arm->u.arm.body, expected);
-        ck_scope_pop(c);
+        atypes[i] = case_arm(c, arm, scrut, nsc, expected);
         contrib[i] = ck_prune(atypes[i])
                 && ck_prune(atypes[i])->kind != EK_T_NEVER;
     }
     ck_exhaust(c, e, scrut, nsc, arms, contrib, na);
-    /* Every arm has the same type; a `Never` arm adapts (7.7.4). */
-    {
-        const ek_type *seen = NULL;
-
-        for (i = 0; i < na; i++) {
-            const ek_type *t = atypes[i];
-
-            if (ck_prune(t) && ck_prune(t)->kind == EK_T_NEVER) {
-                continue;
-            }
-            if (!seen) {
-                seen = t;
-            } else if (!ck_unify(c, seen, t, 1)) {
-                ck_error(c, e, "E-type-mismatch",
-                         "the arms of the case are %s and %s (Clause "
-                         "7.7.4)", ck_type_name(c, seen),
-                         ck_type_name(c, t));
-            }
-        }
-        if (!result) {
-            result = seen ? seen : ck_never(c);
-        }
-    }
+    result = case_result(c, e, atypes, na, expected);
     ck_row(c, e, result, EK_RD_NONE);
     return result;
 }

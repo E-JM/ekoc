@@ -7,6 +7,56 @@
    shell registered first so a recursive right-hand side sees its own
    shape. The phantom-binder check runs here. */
 
+/* The binder scope of a declared type: the binders themselves, so
+   representations and phantom checks elaborate against the nodes
+   substitution replaces (Clause 7.6.4). */
+void ck_binder_scope(ck_ctx *c, const ck_decl *d, ck_tvars *tv)
+{
+    const ek_node *dn = d->decl;
+    size_t k;
+
+    memset(tv, 0, sizeof *tv);
+    if (!dn || dn->kind != EK_N_TYPE_DECL) {
+        return;
+    }
+    for (k = 0; k < d->nbinders && k < dn->u.type_decl.params.count; k++) {
+        ck_tv_add(c, tv, dn->u.type_decl.params.data[k], d->binders[k], dn);
+    }
+}
+
+void ck_tv_add(ck_ctx *c, ck_tvars *tv, const char *name, const ek_type *t,
+               const ek_node *first)
+{
+    if (c->oom || !tv) {
+        return;
+    }
+    if (tv->count == tv->cap) {
+        size_t ncap = tv->cap ? tv->cap * 2 : 8;
+        const char **nn = ek_arena_alloc(c->arena, ncap * sizeof *nn);
+        const ek_type **nt = ek_arena_alloc(c->arena, ncap * sizeof *nt);
+        const ek_node **nf = ek_arena_alloc(c->arena, ncap * sizeof *nf);
+
+        if (!nn || !nt || !nf) {
+            c->oom = 1;
+            return;
+        }
+        if (tv->count) {
+            memcpy(nn, tv->names, tv->count * sizeof *nn);
+            memcpy(nt, tv->tvs, tv->count * sizeof *nt);
+            memcpy(nf, tv->firsts, tv->count * sizeof *nf);
+        }
+        tv->names = nn;
+        tv->tvs = nt;
+        tv->firsts = nf;
+        tv->cap = ncap;
+    }
+    tv->names[tv->count] = name;
+    tv->tvs[tv->count] = t;
+    tv->firsts[tv->count] = first;
+    tv->count++;
+    ck_map_put(c, &c->firsts, t, first);
+}
+
 /* The constructor symbol of one variant of a declared type. */
 static const ek_symbol *ctor_sym(ck_ctx *c, const ek_symbol *owner,
                                  const ek_node *dn, size_t k)
@@ -71,19 +121,15 @@ static const ck_ctor *build_ctor(ck_ctx *c, const ek_symbol *sym,
    right-hand side. */
 static void check_phantom_binders(ck_ctx *c, const ck_decl *info)
 {
-    const ek_type **all = ek_arena_alloc(c->arena, 64 * sizeof *all);
+    const ek_type **all = NULL;
     const ek_node *dn = info->decl;
-    size_t nall = 0, k, j;
+    size_t nall = 0, cap = 0, k, j;
 
-    if (!all) {
-        c->oom = 1;
-        return;
-    }
     for (k = 0; k < info->nctors; k++) {
         const ck_ctor *ct = info->ctors[k];
 
         if (ct && ct->payload) {
-            ck_tvars_collect(ct->payload, &all, &nall);
+            ck_tvars_collect(c, ct->payload, &all, &nall, &cap);
         }
     }
     if (info->rec) {
@@ -94,9 +140,12 @@ static void check_phantom_binders(ck_ctx *c, const ck_decl *info)
             const ek_type *rt = ck_elaborate(c, info->rec, &tv);
 
             if (rt) {
-                ck_tvars_collect(rt, &all, &nall);
+                ck_tvars_collect(c, rt, &all, &nall, &cap);
             }
         }
+    }
+    if (c->oom) {
+        return;
     }
     for (k = 0; k < info->nbinders; k++) {
         int occurs = 0;
@@ -113,6 +162,46 @@ static void check_phantom_binders(ck_ctx *c, const ck_decl *info)
                      dn->u.type_decl.params.data[k]);
         }
     }
+}
+
+/* The rigid binder nodes of one declaration, in order. */
+static int decl_binders(ck_ctx *c, ck_decl *info, const ek_node *dn,
+                        ck_tvars *tv)
+{
+    size_t k;
+
+    info->nbinders = dn->u.type_decl.params.count;
+    if (!info->nbinders) {
+        return 1;
+    }
+    info->binders = ek_arena_alloc(c->arena,
+                                   info->nbinders * sizeof *info->binders);
+    if (!info->binders) {
+        c->oom = 1;
+        return 0;
+    }
+    for (k = 0; k < info->nbinders; k++) {
+        ek_type *fresh = ck_fresh(c, EK_T_TVAR);
+
+        if (!fresh) {
+            c->oom = 1;
+            return 0;
+        }
+        fresh->u.tvar.name = dn->u.type_decl.params.data[k];
+        info->binders[k] = fresh;
+        ck_tv_add(c, tv, dn->u.type_decl.params.data[k], fresh, dn);
+    }
+    return 1;
+}
+
+/* The constructor row of one variant, registered under its symbol. */
+static const ck_ctor *decl_ctor(ck_ctx *c, const ck_decl *info,
+                                const ek_node *dn, size_t k, ck_tvars *tv)
+{
+    const ek_symbol *csym = ctor_sym(c, info->sym, dn, k);
+
+    return build_ctor(c, csym, info->sym, dn->u.type_decl.variants.data[k],
+                      tv);
 }
 
 /* The declared type behind a surface symbol. */
@@ -137,44 +226,21 @@ static const ck_decl *build_decl(ck_ctx *c, const ek_symbol *sym)
     if (dn->kind == EK_N_TYPE_DECL) {
         info->rhs = dn->u.type_decl.rhs;
         info->rec = dn->u.type_decl.type;
-        info->nbinders = dn->u.type_decl.params.count;
         memset(&tv, 0, sizeof tv);
-        if (info->nbinders) {
-            const ek_type **bs = ek_arena_alloc(c->arena,
-                                                info->nbinders * sizeof *bs);
-
-            if (!bs) {
-                c->oom = 1;
-                return info;
-            }
-            info->binders = bs;
-            for (k = 0; k < info->nbinders; k++) {
-                ek_type *fresh = ck_fresh(c, EK_T_TVAR);
-
-                if (!fresh) {
-                    c->oom = 1;
-                    return info;
-                }
-                fresh->u.tvar.name = dn->u.type_decl.params.data[k];
-                bs[k] = fresh;
-                ck_tv_add(c, &tv, dn->u.type_decl.params.data[k], fresh, dn);
-            }
+        if (!decl_binders(c, info, dn, &tv)) {
+            return info;
         }
         info->nctors = dn->u.type_decl.variants.count;
         if (info->nctors) {
-            const ck_ctor **cs = ek_arena_alloc(c->arena,
-                                                info->nctors * sizeof *cs);
+            info->ctors = ek_arena_alloc(c->arena,
+                                         info->nctors * sizeof *info->ctors);
 
-            if (!cs) {
+            if (!info->ctors) {
                 c->oom = 1;
                 return info;
             }
-            info->ctors = cs;
             for (k = 0; k < info->nctors; k++) {
-                const ek_symbol *csym = ctor_sym(c, sym, dn, k);
-
-                cs[k] = build_ctor(c, csym, sym,
-                                   dn->u.type_decl.variants.data[k], &tv);
+                info->ctors[k] = decl_ctor(c, info, dn, k, &tv);
             }
         }
         check_phantom_binders(c, info);

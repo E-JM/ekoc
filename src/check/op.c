@@ -100,80 +100,84 @@ const ek_type *ck_unary(ck_ctx *c, const ek_node *e, const ek_type *expected)
     return t;
 }
 
-const ek_type *ck_binary(ck_ctx *c, const ek_node *e, const ek_type *expected)
+/* The range operators: the endpoints unify and the result is a Range
+   of the endpoint type (Clauses 6.5.6, 7.8.3). */
+static const ek_type *binary_range(ck_ctx *c, const ek_node *e,
+                                   const ek_type *expected)
 {
+    const ek_type *re = ck_prune(expected);
+    const ek_type *end = NULL;
+    const ek_type *elem;
+    const ek_type *arg1;
+    const ek_symbol *rsym;
     ek_binop op = e->u.binary.op;
-    const ek_node *a = e->u.binary.lhs;
-    const ek_node *b = e->u.binary.rhs;
     const ek_type *lt, *rt, *same;
 
-    if (op == EK_BIN_AND || op == EK_BIN_OR) {
-        lt = ck_expr(c, a, ck_std_type(c, "Bool"));
-        rt = ck_expr(c, b, ck_std_type(c, "Bool"));
-        if (!open_type(lt) && !ck_is_std(ck_prune(lt), "Bool")) {
-            ck_error(c, e, "E-type-mismatch",
-                     "`%s` takes `Bool` operands, not %s (Clause 7.8.5)",
-                     op_spelling(op), ck_type_name(c, lt));
-        }
-        return ck_std_type(c, "Bool");
+    if (re && re->kind == EK_T_NOMINAL && ck_is_std(re, "Range")
+        && re->u.nominal.argc == 1) {
+        end = re->u.nominal.args[0];
     }
-    if (is_range(op)) {
-        const ek_type *re = ck_prune(expected);
-        const ek_type *end = NULL;
-        const ek_type *elem;
-        const ek_type *arg1;
-        const ek_symbol *rsym;
-
-        if (re && re->kind == EK_T_NOMINAL && ck_is_std(re, "Range")
-            && re->u.nominal.argc == 1) {
-            end = re->u.nominal.args[0];
-        }
-        lt = ck_expr(c, a, end);
-        rt = ck_expr(c, b, lt ? lt : end);
-        same = ck_unify(c, lt, rt, 1);
-        if (!same && lt && rt) {
-            ck_error(c, e, "E-type-mismatch",
-                     "the range endpoints are %s and %s (Clause 6.5.6)",
-                     ck_type_name(c, lt), ck_type_name(c, rt));
-        }
-        elem = same ? same : ck_prune(lt);
-        if (!open_type(elem) && !ck_is_std(elem, "Int")
-            && !ck_is_std(elem, "UInt") && !ck_is_std(elem, "Char")) {
-            ck_error(c, e, "E-no-operator",
-                     "`%s` takes `Int`, `UInt`, or `Char` endpoints, not "
-                     "%s (Clauses 6.5.6, 7.8.3)", op_spelling(op),
-                     ck_type_name(c, elem));
-        }
-        rsym = ck_std_symbol(c, "Range");
-        arg1 = elem;
-        return rsym ? ck_nominal(c, rsym, &arg1, 1) : NULL;
-    }
-    if (is_arith(op) || op == EK_BIN_CONCAT) {
-        lt = ck_expr(c, a, operand_expected(expected));
-        rt = ck_expr(c, b, lt);
-        same = ck_unify(c, lt, rt, 1);
-        if (!same) {
-            same = ck_prune(lt); /* judge the domain on the left type */
-        }
-        if (same && !open_type(same)) {
-            if (is_arith(op) && !ck_is_numeric(same)) {
-                ck_error(c, e, "E-no-operator",
-                         "`%s` is defined on the numeric types with no "
-                         "implicit conversion (Clause 7.8.4)",
-                         op_spelling(op));
-            } else if (op == EK_BIN_CONCAT && !concat_domain(same)) {
-                ck_error(c, e, "E-no-operator",
-                         "`++` is defined on lists, dictionaries, `String`, "
-                         "and `Bytes`, not %s (Clause 7.8.6)",
-                         ck_type_name(c, same));
-            }
-        }
-        return same ? same : ck_prune(lt);
-    }
-    /* Equality and ordering. */
-    lt = ck_expr(c, a, NULL);
-    rt = ck_expr(c, b, lt);
+    lt = ck_expr(c, e->u.binary.lhs, end);
+    rt = ck_expr(c, e->u.binary.rhs, lt ? lt : end);
     same = ck_unify(c, lt, rt, 1);
+    if (!same && lt && rt) {
+        ck_error(c, e, "E-type-mismatch",
+                 "the range endpoints are %s and %s (Clause 6.5.6)",
+                 ck_type_name(c, lt), ck_type_name(c, rt));
+    }
+    elem = same ? same : ck_prune(lt);
+    if (!open_type(elem) && !ck_is_std(elem, "Int")
+        && !ck_is_std(elem, "UInt") && !ck_is_std(elem, "Char")) {
+        ck_error(c, e, "E-no-operator",
+                 "`%s` takes `Int`, `UInt`, or `Char` endpoints, not "
+                 "%s (Clauses 6.5.6, 7.8.3)", op_spelling(op),
+                 ck_type_name(c, elem));
+    }
+    rsym = ck_std_symbol(c, "Range");
+    arg1 = elem;
+    return rsym ? ck_nominal(c, rsym, &arg1, 1) : NULL;
+}
+
+/* Arithmetic and concatenation: the left operand fixes the type and
+   the right must adapt; the domain is judged on the left type
+   (Clauses 7.8.4, 7.8.6). */
+static const ek_type *binary_arith(ck_ctx *c, const ek_node *e,
+                                   const ek_type *expected)
+{
+    ek_binop op = e->u.binary.op;
+    const ek_type *lt = ck_expr(c, e->u.binary.lhs,
+                                operand_expected(expected));
+    const ek_type *rt = ck_expr(c, e->u.binary.rhs, lt);
+    const ek_type *same = ck_unify(c, lt, rt, 1);
+
+    if (!same) {
+        same = ck_prune(lt); /* judge the domain on the left type */
+    }
+    if (same && !open_type(same)) {
+        if (is_arith(op) && !ck_is_numeric(same)) {
+            ck_error(c, e, "E-no-operator",
+                     "`%s` is defined on the numeric types with no "
+                     "implicit conversion (Clause 7.8.4)",
+                     op_spelling(op));
+        } else if (op == EK_BIN_CONCAT && !concat_domain(same)) {
+            ck_error(c, e, "E-no-operator",
+                     "`++` is defined on lists, dictionaries, `String`, "
+                     "and `Bytes`, not %s (Clause 7.8.6)",
+                     ck_type_name(c, same));
+        }
+    }
+    return same ? same : ck_prune(lt);
+}
+
+/* Equality and ordering: both operands must have the same type, and
+   the domain rules of Clause 7.8.3 hold. */
+static const ek_type *binary_cmp(ck_ctx *c, const ek_node *e)
+{
+    ek_binop op = e->u.binary.op;
+    const ek_type *lt = ck_expr(c, e->u.binary.lhs, NULL);
+    const ek_type *rt = ck_expr(c, e->u.binary.rhs, lt);
+    const ek_type *same = ck_unify(c, lt, rt, 1);
+
     if (!same) {
         same = ck_prune(lt); /* judge the domain on the left type */
     }
@@ -199,4 +203,29 @@ const ek_type *ck_binary(ck_ctx *c, const ek_node *e, const ek_type *expected)
         }
     }
     return ck_std_type(c, "Bool");
+}
+
+const ek_type *ck_binary(ck_ctx *c, const ek_node *e, const ek_type *expected)
+{
+    ek_binop op = e->u.binary.op;
+
+    if (op == EK_BIN_AND || op == EK_BIN_OR) {
+        const ek_type *lt = ck_expr(c, e->u.binary.lhs,
+                                    ck_std_type(c, "Bool"));
+
+        (void)ck_expr(c, e->u.binary.rhs, ck_std_type(c, "Bool"));
+        if (!open_type(lt) && !ck_is_std(ck_prune(lt), "Bool")) {
+            ck_error(c, e, "E-type-mismatch",
+                     "`%s` takes `Bool` operands, not %s (Clause 7.8.5)",
+                     op_spelling(op), ck_type_name(c, lt));
+        }
+        return ck_std_type(c, "Bool");
+    }
+    if (is_range(op)) {
+        return binary_range(c, e, expected);
+    }
+    if (is_arith(op) || op == EK_BIN_CONCAT) {
+        return binary_arith(c, e, expected);
+    }
+    return binary_cmp(c, e);
 }

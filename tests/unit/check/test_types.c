@@ -180,6 +180,31 @@ static void never_adaptation(void)
     cfx_end(&f);
 }
 
+/* A declared type whose width passes any fixed buffer: every binder
+   occurs in the right-hand side, so the phantom check of Clause 7.6.2
+   must stay silent at any arity. */
+static void wide_decls(void)
+{
+    char buf[8192];
+    size_t o = 0;
+    int i;
+    cfx f;
+
+    o += (size_t)snprintf(buf + o, sizeof buf - o, "V: type ");
+    for (i = 1; i <= 65; i++) {
+        o += (size_t)snprintf(buf + o, sizeof buf - o, "t%d%s", i,
+                              i == 65 ? " = C [" : " ");
+    }
+    for (i = 1; i <= 65; i++) {
+        o += (size_t)snprintf(buf + o, sizeof buf - o, "%st%d",
+                              i == 1 ? "" : ", ", i);
+    }
+    snprintf(buf + o, sizeof buf - o, "]\n");
+    cfx_begin(&f, buf);
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+}
+
 int main(void)
 {
     nominal_vs_structural();
@@ -187,5 +212,6 @@ int main(void)
     record_literals();
     literal_placement();
     never_adaptation();
+    wide_decls();
     return ek_test_report("check/types");
 }

@@ -136,6 +136,31 @@ const ek_type *ck_type_of(ck_ctx *c, const ek_symbol *sym)
     return ck_instantiate(c, s);
 }
 
+/* A constructor in value position: self-anchoring at zero binders,
+   anchored by the expected type, or undetermined (Clause 7.6.4). */
+static const ek_type *ctor_type(ck_ctx *c, const ek_node *n,
+                                const ek_ref *ref, const ek_type *expected)
+{
+    const ck_ctor *ct = ref->symbol ? ck_ctor_of(c, ref->symbol) : NULL;
+    const ck_decl *d = ct && ct->owner ? ck_decl_of(c, ct->owner) : NULL;
+    const ek_type *exp = ck_prune(expected);
+
+    if (ct && ct->owner && (!d || d->nbinders == 0)) {
+        return ck_nominal(c, ct->owner, NULL, 0);
+    }
+    if (exp && exp->kind == EK_T_NOMINAL && ct
+        && exp->u.nominal.sym == ct->owner) {
+        return exp; /* the expected type anchors it (7.6.4) */
+    }
+    if (ct && ct->owner) {
+        ck_error(c, n, "E-undetermined",
+                 "the constructor `%s` has no unique "
+                 "instantiation; an expected type determines it "
+                 "(Clause 7.6.4)", ref->symbol->name);
+    }
+    return ck_ivar(c);
+}
+
 /* A name in value position: its kind comes from the resolver, its
    type from the checked environment. */
 static const ek_type *name_type(ck_ctx *c, const ek_node *n,
@@ -171,28 +196,8 @@ static const ek_type *name_type(ck_ctx *c, const ek_node *n,
                 return ck_nominal(c, ref->symbol, NULL, 0);
             }
             return ck_ivar(c);
-        case EK_SYM_CONSTRUCTOR: {
-            const ck_ctor *ct = ref->symbol ? ck_ctor_of(c, ref->symbol)
-                                            : NULL;
-            const ck_decl *d = ct && ct->owner ? ck_decl_of(c, ct->owner)
-                                               : NULL;
-            const ek_type *exp = ck_prune(expected);
-
-            if (ct && ct->owner && (!d || d->nbinders == 0)) {
-                return ck_nominal(c, ct->owner, NULL, 0);
-            }
-            if (exp && exp->kind == EK_T_NOMINAL && ct
-                && exp->u.nominal.sym == ct->owner) {
-                return exp; /* the expected type anchors it (7.6.4) */
-            }
-            if (ct && ct->owner) {
-                ck_error(c, n, "E-undetermined",
-                         "the constructor `%s` has no unique "
-                         "instantiation; an expected type determines it "
-                         "(Clause 7.6.4)", ref->symbol->name);
-            }
-            return ck_ivar(c);
-        }
+        case EK_SYM_CONSTRUCTOR:
+            return ctor_type(c, n, ref, expected);
         default:
             return ck_ivar(c); /* modules, externals, members: opacity */
         }
@@ -229,6 +234,29 @@ const ek_type *ck_block(ck_ctx *c, const ek_node *b, const ek_type *expected)
     return t ? t : ck_unit(c);
 }
 
+/* The literal cases: placed at the expected type, an interpolated
+   string's segments are expressions (Clause 5.7.4). */
+static const ek_type *literal_expr(ck_ctx *c, const ek_node *e,
+                                   const ek_type *expected)
+{
+    switch (e->kind) {
+    case EK_N_INT_LIT:
+    case EK_N_FLOAT_LIT:
+    case EK_N_CHAR_LIT:
+        return ck_place(c, e, expected, 0);
+    case EK_N_STRING_LIT: {
+        size_t i;
+
+        for (i = 0; i < e->u.str.count; i++) {
+            ck_expr(c, e->u.str.segs[i].expr, NULL);
+        }
+        return ck_std_type(c, "String");
+    }
+    default:
+        return NULL; /* not a literal */
+    }
+}
+
 const ek_type *ck_expr(ck_ctx *c, const ek_node *e, const ek_type *expected)
 {
     const ek_type *t;
@@ -240,17 +268,9 @@ const ek_type *ck_expr(ck_ctx *c, const ek_node *e, const ek_type *expected)
     case EK_N_INT_LIT:
     case EK_N_FLOAT_LIT:
     case EK_N_CHAR_LIT:
-        t = ck_place(c, e, expected, 0);
+    case EK_N_STRING_LIT:
+        t = literal_expr(c, e, expected);
         break;
-    case EK_N_STRING_LIT: {
-        size_t i;
-
-        for (i = 0; i < e->u.str.count; i++) {
-            ck_expr(c, e->u.str.segs[i].expr, NULL);
-        }
-        t = ck_std_type(c, "String");
-        break;
-    }
     case EK_N_NAME:
         t = name_type(c, e, expected);
         break;

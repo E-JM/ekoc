@@ -8,7 +8,10 @@
 /* State shared by the files of this directory. One ek_check call
    checks one compilation root; everything grows in the arena. */
 
-/* Pointer-keyed map (symbol -> scheme, node -> type, type -> type). */
+/* Pointer-keyed map (symbol -> scheme, node -> type, type -> type).
+   FNV-1a over the pointer bytes; the map layer and the intern table
+   share it. */
+size_t ck_ptr_hash(const void *p);
 typedef struct {
     const void **keys;
     const void **vals;
@@ -88,7 +91,10 @@ typedef struct ck_tvars {
     size_t count, cap;
 } ck_tvars;
 
-/* store.c: arena growth, maps, interning, snapshots, names. */
+/* check.c: the entry point, the shared growable buffers and pointer
+   maps, and the row table with its diagnostics. store.c: interning
+   and the type constructors. subst.c: the closed snapshot, the binder
+   substitution, and printable names. */
 void *ck_grow(ck_ctx *c, void *old, size_t n, size_t *cap, size_t elem);
 void ck_map_put(ck_ctx *c, ck_map *m, const void *key, const void *val);
 const void *ck_map_get(const ck_map *m, const void *key);
@@ -107,14 +113,18 @@ const ek_type *ck_fn(ck_ctx *c, const ek_type **params, size_t n,
                      const ek_type *result, ek_arrow arrow);
 const ek_type *ck_prune(const ek_type *t);
 const ek_type *ck_subst(ck_ctx *c, const ek_type *t);
+/* Replaces each vars[i] with repls[i] through a type (Clause 7.6.4). */
+const ek_type *ck_apply_binders(ck_ctx *c, const ek_type *t,
+                                const ek_type **vars, const ek_type **repls,
+                                size_t n);
 const char *ck_type_name(ck_ctx *c, const ek_type *t); /* arena text */
 void ck_row(ck_ctx *c, const ek_node *n, const ek_type *t, ek_reading r);
 void ck_error(ck_ctx *c, const ek_node *n, const char *code, const char *fmt,
               ...);
 const char *ck_file(const ck_ctx *c); /* the root module's file */
 
-/* unify.c: occurs check, conformance, instantiation (Clauses 7.5.7,
-   7.6.4). */
+/* unify.c: occurs check, conformance (Clauses 7.5.7, 7.6.3).
+   scheme.c: generalization and instantiation (Clause 7.6). */
 typedef enum {
     CK_OK = 0,      /* types conform */
     CK_NOMINAL,     /* nominal into a different nominal type */
@@ -130,15 +140,14 @@ const ek_type *ck_unify(ck_ctx *c, const ek_type *a, const ek_type *b,
                         int allow_shape);
 ck_scheme ck_generalize(ck_ctx *c, const ek_type *t); /* collects tvars */
 const ek_type *ck_instantiate(ck_ctx *c, const ck_scheme *s);
-void ck_tvars_collect(const ek_type *t, const ek_type ***out, size_t *n);
-const ek_type *ck_apply_binders(ck_ctx *c, const ek_type *t,
-                                const ek_type **vars, const ek_type **repls,
-                                size_t n);
+void ck_tvars_collect(ck_ctx *c, const ek_type *t, const ek_type ***out,
+                      size_t *n, size_t *cap);
+void ck_check_phantom(ck_ctx *c, const ek_node *ann, const ek_type *t);
 
 /* elab.c: annotations and representations (Clauses 7.5.5, 7.6.1,
-   7.6.2). decl.c: declared types (Clauses 7.5.2, 7.5.6). entry.c:
-   entry rules (Clause 7.1.3). bind.c: binding forms (Clauses 7.6.3,
-   7.6.5, 7.7.1, 7.8.1). */
+   7.6.2). decl.c: declared types, their binder scope, and the phantom
+   rule (Clauses 7.5.2, 7.5.6, 7.6.2). entry.c: entry rules (Clause
+   7.1.3). */
 const ek_type *ck_elaborate(ck_ctx *c, const ek_node *t, ck_tvars *tv);
 void ck_tv_add(ck_ctx *c, ck_tvars *tv, const char *name, const ek_type *t,
                const ek_node *first);
@@ -209,6 +218,9 @@ void ck_reconcile(ck_ctx *c, const ek_node *at, const ek_type *bound,
 
 /* pattern.c: pattern typing (Clause 7.7.1). patbind.c: or-patterns
    and the binding-shape judgments (Clauses 6.8.3, 7.7.1). */
+int ck_invert_pattern(const ek_node *pat);
+const ek_type *ck_callback_param(ck_ctx *c, const ek_node *m,
+                                 const ek_type *call);
 const ek_type *ck_pattern(ck_ctx *c, const ek_node *p, const ek_type *scrut);
 const ek_type *ck_or_pattern(ck_ctx *c, const ek_node *p, const ek_type *scrut);
 int ck_irrefutable(const ek_node *p); /* 0 = refutable in a value binding */

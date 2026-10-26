@@ -238,6 +238,83 @@ static void bindings(void)
     cfx_end(&f);
 }
 
+/* One wide multi-scrutinee case over a two-constructor ADT: mode 0 is
+   the catch-all arm, mode 1 names the first constructor everywhere, and
+   mode 2 spans both constructors with an or-pattern. */
+static void wide_case(char *buf, size_t cap, int cols, int mode)
+{
+    size_t o = 0;
+    int i;
+
+    o += (size_t)snprintf(buf + o, cap - o, "B: type = L | R\nf: (");
+    for (i = 0; i < cols; i++) {
+        o += (size_t)snprintf(buf + o, cap - o, "x%d: B%s", i,
+                              i == cols - 1 ? ") -> _ = " : ", ");
+    }
+    o += (size_t)snprintf(buf + o, cap - o, "\n    case ");
+    for (i = 0; i < cols; i++) {
+        o += (size_t)snprintf(buf + o, cap - o, "%sx%d", i ? ", " : "", i);
+    }
+    o += (size_t)snprintf(buf + o, cap - o, ":\n        ");
+    for (i = 0; i < cols; i++) {
+        const char *pat = mode == 1 ? "L" : mode == 2 ? "L | R" : "_";
+
+        o += (size_t)snprintf(buf + o, cap - o, "%s%s", i ? ", " : "", pat);
+    }
+    snprintf(buf + o, cap - o, " -> _\n");
+}
+
+/* Constructor coverage at the top level and the wide product: a
+   constructor pattern never acts as a catch-all, and the product
+   judgment terminates over many small scrutinees (Clause 7.7.2). */
+static void constructor_and_product_coverage(void)
+{
+    cfx f;
+    char buf[8192];
+
+    cfx_begin(&f,
+              "P: type = Mk Int | End\n"
+              "g: (p: P) -> Int =\n"
+              "    case p:\n"
+              "        Mk x -> x\n");
+    EK_CHECK(cfx_code_at_line(&f, "E-exhaust", 3));
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "P: type = Mk Int | End\n"
+              "g: (p: P) -> Int =\n"
+              "    case p:\n"
+              "        Mk _ -> 1\n");
+    EK_CHECK(cfx_code_at_line(&f, "E-exhaust", 3));
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "P: type = Mk Int | End\n"
+              "g: (p: P) -> Int =\n"
+              "    case p:\n"
+              "        Mk x -> x\n"
+              "        End -> 0\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+
+    wide_case(buf, sizeof buf, 28, 0);
+    cfx_begin(&f, buf);
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    EK_CHECK(cfx_rows_sorted(&f));
+    EK_CHECK(cfx_bits_filled(&f));
+    cfx_end(&f);
+
+    wide_case(buf, sizeof buf, 28, 1);
+    cfx_begin(&f, buf);
+    EK_CHECK(cfx_has_code(&f, "E-exhaust"));
+    cfx_end(&f);
+
+    wide_case(buf, sizeof buf, 28, 2);
+    cfx_begin(&f, buf);
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+}
+
 int main(void)
 {
     variants();
@@ -245,5 +322,6 @@ int main(void)
     lists();
     guards_and_scrutinees();
     bindings();
+    constructor_and_product_coverage();
     return ek_test_report("check/patterns");
 }

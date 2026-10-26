@@ -106,12 +106,15 @@ static void n11_decl(void)
 static void n11_use(void)
 {
     static const char *mpath[1] = {CONF_DIR};
+    char *geo;
     cfx f;
 
-    if (!cfx_read_file(CONF_DIR "/geolib.eko")) {
+    geo = cfx_read_file(CONF_DIR "/geolib.eko");
+    if (!geo) {
         EK_CHECK(0);
         return;
     }
+    free(geo);
     cfx_run(&f,
             "import geolib\n"
             "\n"

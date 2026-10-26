@@ -6,9 +6,8 @@
 
    PASS CONDITION: no error diagnostics from any stage. resolve.h
    documents the placeholder std surface; by the bridge ruling external
-   opacity cannot force a diagnostic, so an internal fact rejecting a
-   conformance module is a finding to report, never an assertion to
-   weaken. */
+   opacity cannot force a diagnostic, so a rejected conformance module
+   is an internal defect. */
 
 #define CONF_DIR "docs/tests/conformance"
 

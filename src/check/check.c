@@ -1,3 +1,5 @@
+#include <stdarg.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -6,7 +8,111 @@
 /* The entry point. One ek_check call checks the compilation root of
    the resolve result against the closure's interfaces; the rows come
    back sorted by node address with inference variables substituted
-   away (check.h). */
+   away (check.h). The growable buffers and pointer maps of the shared
+   context live here too. */
+
+/* FNV-1a over the pointer bytes; the map layer here and the intern
+   table in store.c share it. */
+size_t ck_ptr_hash(const void *p)
+{
+    const unsigned char *b = (const unsigned char *)&p;
+    size_t h = 2166136261u, i;
+
+    for (i = 0; i < sizeof p; i++) {
+        h = (h ^ b[i]) * 16777619u;
+    }
+    return h;
+}
+
+void *ck_grow(ck_ctx *c, void *old, size_t n, size_t *cap, size_t elem)
+{
+    size_t ncap = *cap ? *cap * 2 : 8;
+    void *grown;
+
+    if (n < *cap) {
+        return old;
+    }
+    while (ncap < n) {
+        ncap *= 2;
+    }
+    grown = ek_arena_alloc(c->arena, ncap * elem);
+    if (!grown) {
+        c->oom = 1;
+        return old;
+    }
+    if (old) {
+        /* The old capacity, not the request: a caller may ask for one
+           past the filled length. */
+        memcpy(grown, old, *cap * elem);
+    }
+    *cap = ncap;
+    return grown;
+}
+
+void ck_map_put(ck_ctx *c, ck_map *m, const void *key, const void *val)
+{
+    size_t i;
+
+    if (c->oom || !key) {
+        return;
+    }
+    if (m->count * 2 >= m->cap) {
+        size_t ncap = m->cap ? m->cap * 2 : 32;
+        const void **nk = ek_arena_alloc(c->arena, ncap * sizeof *nk);
+        const void **nv = ek_arena_alloc(c->arena, ncap * sizeof *nv);
+
+        if (!nk || !nv) {
+            c->oom = 1;
+            return;
+        }
+        memset(nk, 0, ncap * sizeof *nk);
+        for (i = 0; i < m->cap; i++) {
+            if (m->keys && m->keys[i]) {
+                size_t j = ck_ptr_hash(m->keys[i]) & (ncap - 1);
+
+                while (nk[j]) {
+                    j = (j + 1) & (ncap - 1);
+                }
+                nk[j] = m->keys[i];
+                nv[j] = m->vals[i];
+            }
+        }
+        m->keys = nk;
+        m->vals = nv;
+        m->cap = ncap;
+    }
+    {
+        size_t j = ck_ptr_hash(key) & (m->cap - 1);
+
+        while (m->keys[j]) {
+            if (m->keys[j] == key) {
+                m->vals[j] = val;
+                return;
+            }
+            j = (j + 1) & (m->cap - 1);
+        }
+        m->keys[j] = key;
+        m->vals[j] = val;
+        m->count++;
+    }
+}
+
+const void *ck_map_get(const ck_map *m, const void *key)
+{
+    size_t j;
+
+    if (!m->cap || !key) {
+        return NULL;
+    }
+    j = ck_ptr_hash(key) & (m->cap - 1);
+    while (m->keys[j]) {
+        if (m->keys[j] == key) {
+            return m->vals[j];
+        }
+        j = (j + 1) & (m->cap - 1);
+    }
+    return NULL;
+}
 
 static int row_cmp(const void *a, const void *b)
 {
@@ -18,13 +124,43 @@ static int row_cmp(const void *a, const void *b)
     return x->node == y->node ? 0 : 1;
 }
 
+/* The root module's body: binding forms through ck_stmt, everything
+   else as an expression; type declarations and imports were built by
+   ck_decls. */
+static void check_root(ck_ctx *c, const ek_node *mod)
+{
+    size_t i, n = mod->u.kids.count;
+
+    for (i = 0; i < n && !c->oom; i++) {
+        const ek_node *d = mod->u.kids.data[i];
+
+        switch (d->kind) {
+        case EK_N_LET:
+        case EK_N_REBIND:
+        case EK_N_INVERT:
+        case EK_N_NAMESPACE:
+        case EK_N_TEST_DECL:
+        case EK_N_EXTERN_DECL:
+            ck_stmt(c, d, 1);
+            break;
+        case EK_N_TYPE_DECL:
+        case EK_N_CTYPE_DECL:
+        case EK_N_IMPORT:
+            break; /* built by ck_decls; imports carry no body */
+        default:
+            ck_expr(c, d, NULL);
+            break;
+        }
+    }
+}
+
 ek_check_result ek_check(ek_resolve_result in, ek_arena *arena,
                          ek_diag *diag)
 {
     ck_ctx c;
     ek_check_result r;
     const ek_node *mod;
-    size_t i, n;
+    size_t i;
 
     memset(&c, 0, sizeof c);
     memset(&r, 0, sizeof r);
@@ -41,28 +177,7 @@ ek_check_result ek_check(ek_resolve_result in, ek_arena *arena,
     }
     ck_prebind(&c);
     ck_decls(&c);
-    n = mod->u.kids.count;
-    for (i = 0; i < n && !c.oom; i++) {
-        const ek_node *d = mod->u.kids.data[i];
-
-        switch (d->kind) {
-        case EK_N_LET:
-        case EK_N_REBIND:
-        case EK_N_INVERT:
-        case EK_N_NAMESPACE:
-        case EK_N_TEST_DECL:
-        case EK_N_EXTERN_DECL:
-            ck_stmt(&c, d, 1);
-            break;
-        case EK_N_TYPE_DECL:
-        case EK_N_CTYPE_DECL:
-        case EK_N_IMPORT:
-            break; /* built by ck_decls; imports carry no body */
-        default:
-            ck_expr(&c, d, NULL);
-            break;
-        }
-    }
+    check_root(&c, mod);
     ck_externs(&c);
     if (c.nrows) {
         qsort(c.rows, c.nrows, sizeof *c.rows, row_cmp);
@@ -75,3 +190,53 @@ ek_check_result ek_check(ek_resolve_result in, ek_arena *arena,
     r.count = c.nrows;
     return r;
 }
+
+void ck_row(ck_ctx *c, const ek_node *n, const ek_type *t, ek_reading r)
+{
+    if (c->oom || !n) {
+        return;
+    }
+    if (c->nrows == c->crows) {
+        c->rows = ck_grow(c, c->rows, c->nrows, &c->crows, sizeof *c->rows);
+        if (c->oom) {
+            return;
+        }
+    }
+    c->rows[c->nrows].node = n;
+    c->rows[c->nrows].type = t;
+    c->rows[c->nrows].reading = r;
+    c->rows[c->nrows].bit = EK_BIT_UNSET;
+    c->nrows++;
+}
+
+static void row_error(ck_ctx *c, const ek_node *n, const char *code,
+                      const char *fmt, va_list ap)
+{
+    char msg[400];
+
+    vsnprintf(msg, sizeof msg, fmt, ap);
+    ek_diag_emit(c->diag, EK_SEV_ERROR, code, ck_file(c),
+                 n ? n->line : 1, n ? n->col : 1, "%s", msg);
+}
+
+void ck_error(ck_ctx *c, const ek_node *n, const char *code, const char *fmt,
+              ...)
+{
+    va_list ap;
+
+    if (c->oom) {
+        return;
+    }
+    va_start(ap, fmt);
+    row_error(c, n, code, fmt, ap);
+    va_end(ap);
+}
+
+const char *ck_file(const ck_ctx *c)
+{
+    return c->in->module_count ? c->root->file : "test.eko";
+}
+
+/* Replaces each vars[i] with repls[i] through a type: the payload
+   of a constructor applied to the scrutinee's instantiation (Clause
+   7.6.4). */
