@@ -37,9 +37,16 @@ typedef struct {
     const ek_token *eof; /* input EOF token, for end-of-file positions */
     /* main indentation stack; bottom entry 0 is never popped */
     int *cols;
+    int *hdr; /* header column of each open block; -1 when unknown */
     size_t col_count;
     size_t col_cap;
-    int expect_block; /* previous depth-zero line ended in ':' or '=' */
+    int expect_block; /* depth-zero line ended in a block terminator */
+    int header_col;    /* column of the line that set expect_block */
+    int last_if_col;   /* column of the last if line; -1 when none */
+    int case_pending;  /* a case scrutinee is still open */
+    int seen;          /* a significant line was processed */
+    int stray_base;    /* block column below an ignored indent; -1 when none */
+    const line_run *prev; /* previous significant line */
     int chain_col;    /* column of the chain's first '.'; -1 when none */
     int depth;        /* open ( [ { at the current point */
     cb_block *cb;
@@ -52,7 +59,7 @@ typedef struct {
 void lo_oom(layout_ctx *c);
 void lo_emit(layout_ctx *c, ek_layout_kind kind, int line, int col);
 void lo_emit_source(layout_ctx *c, const ek_token *t);
-void lo_push_col(layout_ctx *c, int col);
+void lo_push_col(layout_ctx *c, int col, int hdr);
 void lo_push_cb(layout_ctx *c, int header_col, int header_depth);
 
 /* process.c: the layout state machine over the line table. */

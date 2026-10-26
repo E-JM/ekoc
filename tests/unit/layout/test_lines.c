@@ -86,18 +86,96 @@ static void test_chain_continuation_misaligned(void)
     fx_end(&f);
 }
 
-/* A deeper line with no block expected splices without a NEWLINE: the
-   layout layer emits no token, and a rogue line surfaces as a parse
-   error in the joined stream. */
-static void test_unlicensed_deeper_line_splices(void)
+/* A deeper line after a complete member with no continuation license
+   is diagnosed once and drains as a member of the current block; its
+   extra indentation is ignored. */
+static void test_unlicensed_deeper_line_diagnosed(void)
 {
     layout_fixture f;
     char *got;
 
     fx_begin(&f, "a: Int = 1\n   b: Int = 2\n");
+    EK_CHECK_U64(fx_errors(&f), 1);
+    EK_CHECK_U64(fx_count_code(&f, "E-syntax"), 1);
+    got = fx_skeleton(&f);
+    EK_CHECK_STR(got, "S S S S S N S S S S S N E");
+    free(got);
+    fx_end(&f);
+}
+
+/* A deeper line after a literal in a block is unlicensed: the missing
+   continuation is named at the deeper line, and the member after it
+   still drains without a second diagnostic. */
+static void test_unlicensed_indent_in_block(void)
+{
+    layout_fixture f;
+    char *got;
+
+    fx_begin(&f, "f: () -> Int =\n    1\n        2\n");
+    EK_CHECK_U64(fx_errors(&f), 1);
+    EK_CHECK_U64(fx_count_code(&f, "E-syntax"), 1);
+    got = fx_skeleton(&f);
+    EK_CHECK_STR(got, "S S S S S S S N I S N S N D E");
+    free(got);
+    fx_end(&f);
+}
+
+/* One diagnostic covers a run of lines at the ignored column. */
+static void test_unlicensed_run_diagnosed_once(void)
+{
+    layout_fixture f;
+    char *got;
+
+    fx_begin(&f, "a: Int = 1\n       b: Int = 2\n       c: Int = 3\n");
+    EK_CHECK_U64(fx_errors(&f), 1);
+    got = fx_skeleton(&f);
+    EK_CHECK_STR(got, "S S S S S N S S S S S N S S S S S N E");
+    free(got);
+    fx_end(&f);
+}
+
+/* A header inside an ignored-indent run measures its step from its own
+   line, so the run still costs one diagnostic. */
+static void test_unlicensed_run_with_header(void)
+{
+    layout_fixture f;
+    char *got;
+
+    fx_begin(&f, "a: Int = 1\n       g: Int =\n           c\n");
+    EK_CHECK_U64(fx_errors(&f), 1);
+    got = fx_skeleton(&f);
+    EK_CHECK_STR(got, "S S S S S N S S S S N I S N D E");
+    free(got);
+    fx_end(&f);
+}
+
+/* '->' ends an arm header, so the arm body may begin on the next line:
+   that deeper line is a licensed continuation. */
+static void test_arrow_licenses_arm_body(void)
+{
+    layout_fixture f;
+    char *got;
+
+    fx_begin(&f, "case x:\n    0 ->\n        if a: 1\n    _ -> 2\n");
     EK_CHECK_U64(fx_errors(&f), 0);
     got = fx_skeleton(&f);
-    EK_CHECK_STR(got, "S S S S S S S S S S N E");
+    EK_CHECK_STR(got, "S S S N I S S S S S S N S S S N D E");
+    free(got);
+    fx_end(&f);
+}
+
+/* A multi-line ':=' right-hand side splices through every deeper step,
+   including one after an operator. */
+static void test_coloneq_continuation_splices(void)
+{
+    layout_fixture f;
+    char *got;
+
+    fx_begin(&f, "count :=\n    a +\n        b\n");
+    EK_CHECK_U64(fx_errors(&f), 0);
+    EK_CHECK_U64(fx_count_kind(&f, EK_LTOK_INDENT), 0);
+    got = fx_skeleton(&f);
+    EK_CHECK_STR(got, "S S S S S N E");
     free(got);
     fx_end(&f);
 }
@@ -153,7 +231,12 @@ int main(void)
     test_semicolons();
     test_chain_continuation_aligned();
     test_chain_continuation_misaligned();
-    test_unlicensed_deeper_line_splices();
+    test_unlicensed_deeper_line_diagnosed();
+    test_unlicensed_indent_in_block();
+    test_unlicensed_run_diagnosed_once();
+    test_unlicensed_run_with_header();
+    test_arrow_licenses_arm_body();
+    test_coloneq_continuation_splices();
     test_continued_scrutinee();
     test_else_block_form();
     test_else_inline_form();

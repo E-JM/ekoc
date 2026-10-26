@@ -3,11 +3,12 @@
 #include "layout/internal.h"
 
 /* Layout error codes: relative indentation that is not a multiple of
-   four, a line at a column its position forbids, and a dedent
-   matching no open block. */
+   four, a line at a column its position forbids, a dedent matching no
+   open block, and an indent no continuation licenses. */
 #define CODE_STEP "E-indent-step"
 #define CODE_COLUMN "E-indent-column"
 #define CODE_DEDENT "E-indent-dedent"
+#define CODE_CONTINUATION "E-syntax"
 
 /* The stack is empty only while an allocation failure drains the run;
    the bottom column 0 is the safe answer then. */
@@ -39,6 +40,87 @@ static int first_dot_col(const line_run *l)
     return -1;
 }
 
+/* Whether a line ending in this token leaves the expression open, so a
+   deeper line continues it.  A lone `!` or `?` ends a member. */
+static int continues_member(ek_token_kind kind)
+{
+    switch (kind) {
+    case EK_TOK_PLUS:
+    case EK_TOK_MINUS:
+    case EK_TOK_STAR:
+    case EK_TOK_SLASH:
+    case EK_TOK_PERCENT:
+    case EK_TOK_PLUSPLUS:
+    case EK_TOK_EQEQ:
+    case EK_TOK_BANGEQ:
+    case EK_TOK_LT:
+    case EK_TOK_LTEQ:
+    case EK_TOK_GT:
+    case EK_TOK_GTEQ:
+    case EK_TOK_ANDAND:
+    case EK_TOK_OROR:
+    case EK_TOK_ARROW:
+    case EK_TOK_LARROW:
+    case EK_TOK_DOTDOT:
+    case EK_TOK_DOTDOTEQ:
+    case EK_TOK_COMMA:
+    case EK_TOK_COLONEQ:
+    case EK_TOK_DOT:
+    case EK_TOK_PIPE:
+        return 1;
+    default:
+        return 0;
+    }
+}
+
+/* Whether the line holds a ':' outside brackets, which ends a case
+   header. */
+static int has_top_colon(const line_run *l)
+{
+    int depth = 0;
+    size_t i;
+
+    for (i = 0; i < l->count; i++) {
+        switch (l->tok[i].kind) {
+        case EK_TOK_LPAREN:
+        case EK_TOK_LBRACKET:
+        case EK_TOK_LBRACE:
+            depth++;
+            break;
+        case EK_TOK_RPAREN:
+        case EK_TOK_RBRACKET:
+        case EK_TOK_RBRACE:
+            if (depth > 0) {
+                depth--;
+            }
+            break;
+        case EK_TOK_COLON:
+            if (depth == 0) {
+                return 1;
+            }
+            break;
+        default:
+            break;
+        }
+    }
+    return 0;
+}
+
+/* Whether a deeper line after prev holds a continuation license: a
+   chain link, a continued case scrutinee, or an expression the
+   previous line left open. */
+static int deeper_licensed(const layout_ctx *c, const line_run *prev,
+                           const line_run *cur)
+{
+    if (cur->tok[0].kind == EK_TOK_DOT) {
+        return 1;
+    }
+    if (c->case_pending) {
+        return 1;
+    }
+    return continues_member(prev->tok[prev->count - 1].kind);
+}
+
 /* Pops the indentation stack to col on a dedent, one DEDENT per pop; a
    col matching no stack entry is an error and recovers as if it
    matched. */
@@ -52,9 +134,38 @@ static void dedent_to(layout_ctx *c, int col, const line_run *l)
     }
     if (top_col(c) != col) {
         err_at(c, CODE_DEDENT, l,
-               "dedent to column %d matches no open block", col);
-        lo_push_col(c, col);
+               "dedent to column %d matches no open block", col + 1);
+        lo_push_col(c, col, -1);
     }
+}
+
+/* An else line continues the if whose header begins in its column.  The
+   if's branch block is the level the dedent closes, so a match on that
+   level's header column ends the dedent even when the if's line was a
+   continuation that never pushed its own level.  An if with an inline
+   suite opened no level at all; its else is still a continuation. */
+static void else_dedent(layout_ctx *c, int col, const line_run *l)
+{
+    int line = l->tok[0].line, at = l->tok[0].col;
+
+    while (c->col_count > 1 && top_col(c) > col) {
+        int header = c->hdr[c->col_count - 1];
+
+        c->col_count--;
+        lo_emit(c, EK_LTOK_DEDENT, line, at);
+        if (header == col) {
+            return;
+        }
+    }
+    if (top_col(c) == col) {
+        return;
+    }
+    if (col > top_col(c) && c->last_if_col == col) {
+        return;
+    }
+    err_at(c, CODE_DEDENT, l,
+           "dedent to column %d matches no open block", col + 1);
+    lo_push_col(c, col, -1);
 }
 
 /* At a line start, closes every callback block whose header sits at
@@ -109,7 +220,8 @@ static void bracket_start(layout_ctx *c, const line_run *l, int col)
         lo_emit(c, EK_LTOK_NEWLINE, line, at);
     } else if (col < cb->member_col) {
         err_at(c, CODE_COLUMN, l, "callback body line begins at column %d; "
-               "its members begin in column %d", col, cb->member_col);
+               "its members begin in column %d", col + 1,
+               cb->member_col + 1);
         lo_emit(c, EK_LTOK_NEWLINE, line, at);
     }
 }
@@ -119,25 +231,38 @@ static void bracket_start(layout_ctx *c, const line_run *l, int col)
 static void top_start(layout_ctx *c, const line_run *l, int col)
 {
     if (l->tok[0].kind == EK_TOK_KW_ELSE) {
-        dedent_to(c, col, l);
+        else_dedent(c, col, l);
         return;
     }
-    if (col == top_col(c)) {
+    if (top_col(c) == col) {
         return;
     }
     if (col > top_col(c)) {
         if (c->expect_block) {
-            if ((col - top_col(c)) % 4 != 0) {
+            int base = c->stray_base >= 0 ? c->header_col : top_col(c);
+
+            if ((col - base) % 4 != 0) {
                 err_at(c, CODE_STEP, l, "indentation step of %d is not a "
-                       "multiple of four", col - top_col(c));
+                       "multiple of four", col - base);
             }
-            lo_push_col(c, col);
+            lo_push_col(c, col, c->header_col);
             lo_emit(c, EK_LTOK_INDENT, l->tok[0].line, l->tok[0].col);
-        } else if (l->tok[0].kind == EK_TOK_DOT && c->chain_col >= 0
-                   && c->chain_col != l->tok[0].col) {
-            err_at(c, CODE_COLUMN, l, "chain line begins at column %d; "
-                   "the chain's first dot is at column %d",
-                   l->tok[0].col, c->chain_col);
+        } else if (c->stray_base >= 0) {
+            return;
+        } else if (!c->seen) {
+            return;
+        } else if (deeper_licensed(c, c->prev, l)) {
+            if (l->tok[0].kind == EK_TOK_DOT && c->chain_col >= 0
+                && c->chain_col != l->tok[0].col) {
+                err_at(c, CODE_COLUMN, l, "chain line begins at column %d; "
+                       "the chain's first dot is at column %d",
+                       l->tok[0].col, c->chain_col);
+            }
+        } else {
+            err_at(c, CODE_CONTINUATION, l, "indentation to column %d "
+                   "follows a complete member with no continuation "
+                   "license", col + 1);
+            c->stray_base = top_col(c);
         }
         return;
     }
@@ -148,11 +273,16 @@ static void line_start(layout_ctx *c, const line_run *l)
 {
     int col = l->tok[0].col - 1;
 
+    if (c->stray_base >= 0 && col <= c->stray_base) {
+        c->stray_base = -1;
+    }
     if (c->depth > 0) {
         bracket_start(c, l, col);
     } else {
         top_start(c, l, col);
     }
+    c->seen = 1;
+    c->prev = l;
 }
 
 /* Emits the line's tokens; closers first close the callback blocks
@@ -196,6 +326,18 @@ static void line_state(layout_ctx *c, const line_run *l)
         return;
     }
     c->expect_block = last->kind == EK_TOK_COLON || last->kind == EK_TOK_EQ;
+    if (c->expect_block) {
+        c->header_col = l->tok[0].col - 1;
+    }
+    if (l->tok[0].kind == EK_TOK_KW_IF) {
+        c->last_if_col = l->tok[0].col - 1;
+    }
+    if (l->tok[0].kind == EK_TOK_KW_CASE) {
+        c->case_pending = 1;
+    }
+    if (c->case_pending && has_top_colon(l)) {
+        c->case_pending = 0;
+    }
     c->chain_col = first_dot_col(l);
 }
 
@@ -220,7 +362,13 @@ static int next_is_splice(const layout_ctx *c, const line_run *lines,
     if (j == count) {
         return 0;
     }
-    return lines[j].tok[0].col - 1 > top_col(c) && !c->expect_block;
+    if (lines[j].tok[0].col - 1 <= top_col(c) || c->expect_block) {
+        return 0;
+    }
+    if (c->stray_base >= 0) {
+        return 0;
+    }
+    return deeper_licensed(c, &lines[idx], &lines[j]);
 }
 
 /* A member line at depth zero ends with NEWLINE unless its break is
