@@ -204,11 +204,49 @@ static void wide_decls(void)
     cfx_end(&f);
 }
 
+
+/* An empty brace literal takes its family from the expected type:
+   the empty dictionary and the empty list are values, an empty record
+   still names no field of a nonempty record, and an opaque expected
+   type leaves the literal opaque. */
+static void empty_literals(void)
+{
+    cfx f;
+
+    cfx_begin(&f,
+              "d: [String]Int = {}\n"
+              "xs: []Int = {}\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+
+    /* Nested empty dictionaries take their field's type. */
+    cfx_begin(&f,
+              "S: type = [d: [String]Int]\n"
+              "s: S = {d: {}}\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+
+    /* A nonempty record literal must name every field; `{}` names
+       none. */
+    cfx_begin(&f,
+              "R: type = [x: Int]\n"
+              "r: R = {}\n");
+    EK_CHECK(cfx_code_at_line(&f, "E-partial-record", 2));
+    cfx_end(&f);
+
+    /* A tuple has at least two components. */
+    cfx_begin(&f,
+              "p: [Int, Int] = {}\n");
+    EK_CHECK(cfx_code_at_line(&f, "E-type-mismatch", 1));
+    cfx_end(&f);
+}
+
 int main(void)
 {
     nominal_vs_structural();
     shape_adaptation();
     record_literals();
+    empty_literals();
     literal_placement();
     never_adaptation();
     wide_decls();

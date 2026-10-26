@@ -174,6 +174,62 @@ static const ek_type *composite_opaque(ck_ctx *c, const ek_node *e,
     return exp;
 }
 
+static const ek_type *comma_tuple(ck_ctx *c, const ek_node *e,
+                                  const ek_type *exp);
+
+/* A declared nominal with no representation to read: a placeholder
+   type, or a declaration whose right-hand side is empty. Its literals
+   and patterns stay opaque. */
+static int opaque_nominal(ck_ctx *c, const ek_type *t)
+{
+    const ck_decl *d;
+
+    if (t->kind != EK_T_NOMINAL) {
+        return 0;
+    }
+    if (!t->u.nominal.sym || !t->u.nominal.sym->decl) {
+        return 1;
+    }
+    d = ck_decl_of(c, t->u.nominal.sym);
+    return d && d->rhs == EK_TYPE_RHS_EMPTY;
+}
+
+/* The empty brace literal: its family comes from the expected type.
+   A record still has to name every field, a tuple its components. */
+static const ek_type *empty_literal(ck_ctx *c, const ek_node *e,
+                                    const ek_type *exp, int allow_partial)
+{
+    if (exp->kind == EK_T_LIST || exp->kind == EK_T_DICT) {
+        return exp;
+    }
+    if (exp->kind == EK_T_RECORD) {
+        record_lit(c, e, exp, allow_partial);
+        return exp;
+    }
+    if (exp->kind == EK_T_TUPLE) {
+        return comma_tuple(c, e, exp);
+    }
+    if (exp->kind == EK_T_NOMINAL) {
+        const ek_type *repr = ck_decl_repr(c, exp);
+
+        if (repr && repr->kind == EK_T_RECORD) {
+            record_lit(c, e, repr, allow_partial);
+            return exp;
+        }
+        if (repr && repr->kind == EK_T_TUPLE) {
+            ck_composite(c, e, repr, 0);
+            return exp;
+        }
+        if (opaque_nominal(c, exp)) {
+            return exp;
+        }
+    }
+    ck_error(c, e, "E-type-mismatch",
+             "a comma literal expects a list or a tuple, not %s "
+             "(Clause 7.5.3)", ck_type_name(c, exp));
+    return exp;
+}
+
 /* The colon family: a record (plain or shaped), or a dictionary. */
 static const ek_type *composite_colons(ck_ctx *c, const ek_node *e,
                                        const ek_type *exp, int allow_partial)
@@ -303,6 +359,9 @@ const ek_type *ck_composite(ck_ctx *c, const ek_node *e,
     if (!exp || exp->kind == EK_T_IVAR || exp->kind == EK_T_TVAR
         || (exp->kind == EK_T_NOMINAL && !exp->u.nominal.sym)) {
         return composite_opaque(c, e, exp);
+    }
+    if (e->u.kids.count == 0) {
+        return empty_literal(c, e, exp, partial);
     }
     if (colons) {
         return composite_colons(c, e, exp, partial);
