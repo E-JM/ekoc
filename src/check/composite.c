@@ -241,6 +241,9 @@ static const ek_type *composite_colons(ck_ctx *c, const ek_node *e,
         return record_lit(c, e, exp, allow_partial);
     }
     if (exp->kind == EK_T_NOMINAL) {
+        if (opaque_nominal(c, exp)) {
+            return composite_opaque(c, e, exp);
+        }
         repr = ck_decl_repr(c, exp);
 
         if (repr && repr->kind == EK_T_RECORD) {
@@ -319,8 +322,12 @@ static const ek_type *composite_comma(ck_ctx *c, const ek_node *e,
     case EK_T_NOMINAL: {
         /* A tuple shape extends to a generic instantiation by the
            shape of its right-hand side. */
-        const ek_type *repr = ck_decl_repr(c, exp);
+        const ek_type *repr;
 
+        if (opaque_nominal(c, exp)) {
+            return composite_opaque(c, e, exp);
+        }
+        repr = ck_decl_repr(c, exp);
         if (repr && repr->kind == EK_T_TUPLE) {
             ck_composite(c, e, repr, 0);
             return exp; /* the literal lands at the instantiation */

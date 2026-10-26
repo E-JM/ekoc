@@ -288,6 +288,31 @@ static void n29(void)
     cfx_end(&f);
 }
 
+
+/* A malformed type declaration is one parse diagnostic. The alias has
+   no representation, so dependent check claims about its literals are
+   not emitted; the legal shapes around it stay clean. */
+static void alias_cascade(void)
+{
+    cfx f;
+
+    cfx_begin(&f,
+              "Scope: type = [vars: [String]Int]\n"
+              "Env: type = []Scope\n"
+              "f: (s: Scope) -> Env = (s): {s}\n");
+    EK_CHECK(resolve_code_at(&f, "E-type-decl-form", 2));
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "Scope: type = [vars: [String]Int]\n"
+              "Env: type = [items: []Scope]\n"
+              "s: Scope = {vars: {\"a\": 1}}\n"
+              "e: Env = {items: {s}}\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+}
+
 int main(void)
 {
     n01();
@@ -305,5 +330,6 @@ int main(void)
     n27();
     n28();
     n29();
+    alias_cascade();
     return ek_test_report("check/negative");
 }
