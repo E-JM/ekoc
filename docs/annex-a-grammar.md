@@ -287,6 +287,10 @@ followed by a juxtaposed postfix expression is a constructor application
 (Clause 6.5.2). An item of a composite literal with a `:` is a keyed entry;
 without one it is an element (Clause 6.6.1).
 
+A keyed composite in the argument of the derived `with` is a partial
+record literal; the grammar does not distinguish it, the position does
+(Clause 6.6.3).
+
 A call in prefix form is a `QualifiedName` with arguments (Clause 6.5.2); a
 call in receiver form is a `PostfixExpression` whose postfix ends in a call.
 `CallExpression` covers both.

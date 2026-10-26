@@ -530,13 +530,17 @@ member and is called explicitly.
 
 ### 9.8.6 with
 
-`with` constructs a record from an existing record and a partial field literal. The partial field
-literal is legal only in the argument position of `with` (Clause 6.6.3). It is checked layer by layer
-against the field types; a misspelling is an error.
+`with` is record construction from a base: `r.with({...})` constructs a new record of the receiver's
+type. The literal supplies the named fields; every field it does not name takes the receiver's value —
+the counterpart of a struct literal with base completion, worn in member-call form. It is a
+construction primitive of the language, not a function; the underlying construction is beneath the
+surface. The original value is unchanged; there is no mutation. The partial field literal is legal
+only in its argument position (Clause 6.6.3), is checked layer by layer against the field types, and
+its permission follows the record field chain only (Clause 6.6.3); a misspelling is an error.
 
 The second parameter type of `T.with`, `(t, partial fields) -> t`, is not expressible in the type
-syntax. `with` is a compiler-generated service whose type is a localized exception.
-The original value is unchanged. `with` is the record update vocabulary; `insert` and `remove` belong to
+syntax; the typing of the form is a localized exception. `with` is the record update vocabulary;
+`insert` and `remove` belong to
 dictionaries, and `append` and `merge` belong to the body of `++`.
 
 ### 9.8.7 Dispatch

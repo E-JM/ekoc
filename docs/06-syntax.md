@@ -721,6 +721,12 @@ p3 := p.with({address: {city: "cd"}})
 A partial record literal anywhere else is an error. A field name that is not
 a field of the record is an error.
 
+Construction descends through record field values: a field whose type is
+a record admits a partial literal for that record, completed from the
+receiver's field, as `address` above. It does not descend into a list,
+dictionary, or tuple element — an element literal there is a complete
+value, and a partial literal in that position is an error.
+
 ## 6.7 case and if
 
 ### 6.7.1 case
