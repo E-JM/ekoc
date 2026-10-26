@@ -10,6 +10,8 @@ static const char *const modules[] = {
     "tests/conformance/access_drilling.eko",
     "tests/conformance/bindings.eko",
     "tests/conformance/case_patterns.eko",
+    "tests/conformance/ctor_anchor.eko",
+    "tests/conformance/ctor_anchor_std.eko",
     "tests/conformance/data_services.eko",
     "tests/conformance/derived_services.eko",
     "tests/conformance/generics.eko",

@@ -1,6 +1,6 @@
 #include "common.h"
 
-/* Conformance smoke test through check: all 11 positive modules run
+/* Conformance smoke test through check: all 13 positive modules run
    the full pipeline (lex, layout, parse, resolve, check) as
    compilation roots.
 
@@ -12,9 +12,10 @@
 #define CONF_DIR "tests/conformance"
 
 static const char *modules[] = {
-    "access_drilling", "bindings", "case_patterns", "data_services",
-    "derived_services", "generics", "geolib", "geolib_use",
-    "lambdas_capture", "result_chains", "types_composites"
+    "access_drilling", "bindings", "case_patterns", "ctor_anchor",
+    "ctor_anchor_std", "data_services", "derived_services", "generics",
+    "geolib", "geolib_use", "lambdas_capture", "result_chains",
+    "types_composites"
 };
 
 static int check_module(const char *stem)

@@ -1,14 +1,15 @@
 #include "common.h"
 
-/* Conformance smoke test: all 11 positive modules resolve as
+/* Conformance smoke test: all 13 positive modules resolve as
    compilation roots with zero error diagnostics. */
 
 #define CONF_DIR "tests/conformance"
 
 static const char *modules[] = {
-    "access_drilling", "bindings", "case_patterns", "data_services",
-    "derived_services", "generics", "geolib", "geolib_use",
-    "lambdas_capture", "result_chains", "types_composites"
+    "access_drilling", "bindings", "case_patterns", "ctor_anchor",
+    "ctor_anchor_std", "data_services", "derived_services", "generics",
+    "geolib", "geolib_use", "lambdas_capture", "result_chains",
+    "types_composites"
 };
 
 static int resolve_module(const char *stem)

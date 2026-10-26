@@ -1,0 +1,31 @@
+// Anchored constructors: same-named constructors of different types
+// coexist, and the expected type selects one (Clauses 7.4.6, 7.5.2).
+
+MyResult: type = Ok String | Retry Int
+MyBool: type = True | False
+
+once: MyResult = Ok "once"
+retry: MyResult = Retry 3
+count: Result Int _ = Ok 3
+
+yes: Bool = True
+mine: MyBool = True
+
+_yes_no: (b: Bool) -> String =
+    case b:
+        True -> "yes"
+        False -> "no"
+
+_mine_or_not: (b: MyBool) -> String =
+    case b:
+        True -> "mine"
+        False -> "not mine"
+
+anchors: test =
+    want: MyResult = Ok "once"
+    want_count: Result Int _ = Ok 3
+    assert_eq(once, want)
+    assert_eq(retry, Retry 3)
+    assert_eq(count, want_count)
+    assert_eq(_yes_no(yes), "yes")
+    assert_eq(_mine_or_not(mine), "mine")

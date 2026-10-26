@@ -203,6 +203,23 @@ static void n26(void)
     cfx_end(&f);
 }
 
+/* N27 — two visible constructors and no anchor. The same program's
+   annotated uses stay legal. */
+static void n27(void)
+{
+    cfx f;
+
+    cfx_begin(&f,
+              "MyBool: type = True | False\n"
+              "\n"
+              "x: Bool = True\n"
+              "y: MyBool = True\n"
+              "z = True\n");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-undetermined", 5));
+    cfx_end(&f);
+}
+
 int main(void)
 {
     n01();
@@ -217,5 +234,6 @@ int main(void)
     n19();
     n25();
     n26();
+    n27();
     return ek_test_report("check/negative");
 }

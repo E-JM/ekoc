@@ -2,10 +2,10 @@
 
 #include <sys/stat.h>
 
-/* A binding spelled like a std open name shadows the implicit import:
-   unqualified uses bind locally with no diagnostic, while a same-name
-   pair among the file's own and opened names still conflicts at the
-   use site. */
+/* A type binding spelled like a std open type shadows the implicit
+   import's fallback layer, while constructors of the same spelling
+   coexist: every visible candidate reaches the reference and check
+   anchors it later. */
 
 #define CONF_DIR "build/tmp-resolve/shadow"
 
@@ -24,9 +24,9 @@ static void run_in(rfx *f, const char *src, const char *name)
     rfx_run(f, src, path, 1, name);
 }
 
-/* Local constructor bindings shadow the std surface in value and
-   pattern position; the refs point at the local symbols. */
-static void local_ctors_shadow_std(void)
+/* A local constructor of a std constructor's name is an additional
+   candidate; the first recorded symbol is the local one. */
+static void local_ctors_coexist_with_std(void)
 {
     rfx f;
     const ek_ref *r;
@@ -96,9 +96,9 @@ static void local_type_shadows_std(void)
     rfx_end(&f);
 }
 
-/* Without a shadowing binding, a std open name resolves to the
-   placeholder exactly as before. */
-static void unshadowed_std_still_placeholder(void)
+/* Without a local constructor of the name, the std placeholder is the
+   only candidate, so the bridge reading stays. */
+static void std_candidate_without_a_local_one(void)
 {
     rfx f;
     const ek_ref *r;
@@ -162,9 +162,9 @@ static void cross_module_shadow(void)
 int main(void)
 {
     put_fixtures();
-    local_ctors_shadow_std();
+    local_ctors_coexist_with_std();
     local_type_shadows_std();
-    unshadowed_std_still_placeholder();
+    std_candidate_without_a_local_one();
     duplicate_local_ctors_coexist();
     cross_module_shadow();
     return ek_test_report("resolve/shadow");

@@ -1,0 +1,8 @@
+// Self-anchoring with one visible constructor: this module declares no
+// constructor named True, so std's is the only one and the reference
+// needs no annotation (Clauses 7.4.6, 7.6).
+
+t = True
+
+self_anchor: test =
+    assert(True)

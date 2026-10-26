@@ -32,6 +32,7 @@ otherwise it names the rejection and the normative clause.
 | N24 | type variable in an extern signature | `E-extern-type` |
 | N25 | one name bound by two patterns of one case arm | `E-name-conflict` |
 | N26 | floating literal that overflows the finite range | `E-literal-overflow` |
+| N27 | two visible constructors and no anchor | `E-undetermined` |
 
 ## N01 — nominal mismatch
 
@@ -311,3 +312,24 @@ Expected: `E-literal-overflow`. The literal's value is not finite after
 conversion — a naive conversion delivers infinity (`Clause 5.7.2`). A
 literal that stays finite, including one that underflows to a subnormal or
 zero, is not affected.
+
+## N27 — two visible constructors without an anchor
+
+`MyBool.True` and std's `Bool` constructor `True` are both visible, and
+nothing in an unannotated binding says which one `True` denotes.
+
+```eko
+MyBool: type = True | False
+
+x: Bool = True
+y: MyBool = True
+z = True
+```
+
+Expected: `E-undetermined`. Constructors never conflict by visibility:
+same-named constructors of different types coexist, and an expected type
+anchors a reference (`Clause 7.4.6`). An unanchored reference is legal
+only when exactly one constructor of that name is visible and it is
+non-generic (`Clause 7.6`); here two are visible, so `x: Bool` and
+`y: MyBool` are legal and `z` is not. Writing `z: Bool = True` or
+`z: MyBool = True` anchors it.
