@@ -104,7 +104,8 @@ void p_error(p_ctx *c, const char *code, int line, int col,
 {
     va_list ap;
 
-    if (c->oom || (line == c->err_line && col == c->err_col)) {
+    if (c->oom || c->fatal
+        || (line == c->err_line && col == c->err_col)) {
         return;
     }
     c->err_line = line;
@@ -119,7 +120,8 @@ void p_error_tok(p_ctx *c, const char *code, const ek_layout_token *t,
 {
     va_list ap;
 
-    if (c->oom || (t->line == c->err_line && t->col == c->err_col)) {
+    if (c->oom || c->fatal
+        || (t->line == c->err_line && t->col == c->err_col)) {
         return;
     }
     c->err_line = t->line;
@@ -136,6 +138,12 @@ void p_error_tok(p_ctx *c, const char *code, const ek_layout_token *t,
    parsers to consume. */
 void p_sync(p_ctx *c)
 {
+    if (c->fatal) {
+        while (!p_at_layout(c, EK_LTOK_EOF)) {
+            p_take(c);
+        }
+        return;
+    }
     for (;;) {
         const ek_layout_token *t = p_peek(c);
 
@@ -157,21 +165,32 @@ void p_sync(p_ctx *c)
     }
 }
 
-/* One recursion level of the expression, type, or pattern parsers.
-   Past the ceiling the diagnostic fires once per parse -- the deeper
-   levels all sit above the limit, and a per-level diagnostic would
-   bury the cause -- and the caller gives the level back as NULL. */
+/* The ceiling was exceeded: diagnose once per parse and make recovery
+   quiet for the rest of the stream. The deeper parse levels all sit
+   above the limit, and a per-level diagnostic would bury the cause. */
+void p_depth_limit(p_ctx *c)
+{
+    if (!c->depth_hit) {
+        const ek_layout_token *t = p_peek(c);
+
+        c->depth_hit = 1;
+        c->err_line = t->line;
+        c->err_col = t->col;
+        ek_diag_emit(c->diag, EK_SEV_ERROR, "E-nesting-depth", c->file,
+                     t->line, t->col,
+                     "nesting exceeds %d levels; bind intermediate values "
+                     "or split the construct", EK_PARSE_MAX_DEPTH);
+    }
+    c->fatal = 1;
+}
+
 int p_depth_enter(p_ctx *c)
 {
+    if (c->fatal) {
+        return 0;
+    }
     if (c->depth >= EK_PARSE_MAX_DEPTH) {
-        if (!c->depth_hit) {
-            const ek_layout_token *t = p_peek(c);
-
-            c->depth_hit = 1;
-            p_error(c, "E-nesting-depth", t->line, t->col,
-                    "nesting exceeds %d levels; bind intermediate values "
-                    "or split the construct", EK_PARSE_MAX_DEPTH);
-        }
+        p_depth_limit(c);
         return 0;
     }
     c->depth++;

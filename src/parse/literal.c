@@ -103,12 +103,17 @@ ek_node *p_slot_expr(p_ctx *c, const ek_token *toks, size_t n)
     sub.pos = 0;
     sub.oom = c->oom;
     e = p_expr(&sub);
-    if (!sub.oom && e && p_peek(&sub)->kind == EK_LTOK_SOURCE) {
+    if (!sub.oom && !sub.fatal && e
+        && p_peek(&sub)->kind == EK_LTOK_SOURCE) {
         p_error(c, "E-slot-expr", p_peek(&sub)->line, p_peek(&sub)->col,
                 "an interpolation slot holds one expression (Clause 5.9.3)");
     }
     if (sub.oom) {
         c->oom = 1;
+    }
+    if (sub.fatal) {
+        c->fatal = 1;
+        c->depth_hit |= sub.depth_hit;
     }
     return e;
 }

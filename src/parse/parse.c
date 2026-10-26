@@ -62,6 +62,9 @@ ek_node *p_module(p_ctx *c)
             item = p_member(c, 1);
             seen_item = item != NULL;
         }
+        if (c->fatal) {
+            break;
+        }
         p_list_add(c, &mod->u.kids, item);
         if (c->pos == before) {
             p_error_tok(c, "E-syntax", p_peek(c),

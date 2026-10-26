@@ -130,13 +130,11 @@ static void run(parse_fixture *f, char *src, int under)
     if (under) {
         EK_CHECK_U64(pfx_errors(f), 0);
     } else {
-        /* The ceiling is diagnosed once; the rejected member's leftover
-           brackets recover per position, so the run's total stays
-           linear in the stream, never per-level at the guard. */
-        EK_CHECK(pfx_errors(f) > 0);
+        /* The ceiling is fatal to this parse: one diagnostic, then
+           recovery drains the rest of the stream in silence. */
+        EK_CHECK_U64(pfx_errors(f), 1);
         pfx_collect(f);
         EK_CHECK(pfx_has_code(f, "E-nesting-depth"));
-        EK_CHECK(f->dn <= f->lay.count + 8);
     }
     pfx_end(f);
     free(src);
@@ -148,6 +146,7 @@ static void parens(void)
 
     run(&f, paren_source(500), 1);
     run(&f, paren_source(2000), 0);
+    run(&f, paren_source(50000), 0);
 }
 
 static void list_types(void)
@@ -182,36 +181,32 @@ static void lambda_groups(void)
     run(&f, lambda_source(2000), 0);
 }
 
-/* The recovery leaves a usable stream: after the diagnostic the
-   parser resyncs, so the member after the rejected one is present. */
-static void recovery_keeps_members(void)
+/* A fatal depth error quiets recovery: the member before it survives,
+   the rejected member and everything after it are drained silently. */
+static void fatal_depth_quiets(void)
 {
     parse_fixture f;
     char *deep = paren_source(2000);
     char *s;
-    const ek_node *last;
 
     if (!deep) {
         EK_CHECK(0);
         return;
     }
-    s = malloc(strlen(deep) + 32);
+    s = malloc(strlen(deep) + 64);
     if (!s) {
         free(deep);
         EK_CHECK(0);
         return;
     }
-    sprintf(s, "%sv2: Int = 2\n", deep);
+    sprintf(s, "v1: Int = 1\n%sv2: Int = 2\n", deep);
     pfx_begin(&f, s);
-    EK_CHECK(pfx_errors(&f) > 0);
+    EK_CHECK_U64(pfx_errors(&f), 1);
     pfx_collect(&f);
     EK_CHECK(pfx_has_code(&f, "E-nesting-depth"));
     EK_CHECK(f.ast.module != NULL);
-    EK_CHECK(f.ast.module->u.kids.count >= 1);
-    last = f.ast.module->u.kids.data[f.ast.module->u.kids.count - 1];
-    EK_CHECK_U64(last->kind, EK_N_LET);
-    EK_CHECK_U64(last->u.bind.pattern->kind, EK_N_P_VAR);
-    EK_CHECK_STR(last->u.bind.pattern->u.path.data[0], "v2");
+    EK_CHECK_U64(f.ast.module->u.kids.count, 1);
+    EK_CHECK_U64(f.ast.module->u.kids.data[0]->kind, EK_N_LET);
     pfx_end(&f);
     free(deep);
     free(s);
@@ -224,6 +219,6 @@ int main(void)
     brace_patterns();
     applies();
     lambda_groups();
-    recovery_keeps_members();
+    fatal_depth_quiets();
     return ek_test_report("parse/depth");
 }

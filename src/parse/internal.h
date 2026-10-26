@@ -20,6 +20,7 @@ typedef struct {
     int depth; /* live recursion levels of the expression, type, and
                   pattern parsers; bounded by EK_PARSE_MAX_DEPTH */
     int depth_hit; /* the ceiling was diagnosed once on this parse */
+    int fatal;     /* the ceiling was reached: recovery drains to EOF */
 } p_ctx;
 
 /* The recursion ceiling of the expression, type, and pattern parsers.
@@ -55,6 +56,7 @@ void p_sync(p_ctx *c);
    patterns, and nested lambda parameter groups. */
 int p_depth_enter(p_ctx *c);
 void p_depth_leave(p_ctx *c);
+void p_depth_limit(p_ctx *c);
 
 const ek_layout_token *p_peek(p_ctx *c);
 const ek_layout_token *p_peek_at(p_ctx *c, size_t off);
