@@ -62,8 +62,7 @@ static void qualified(r_ctx *c, r_file *f, const ek_node *t)
     }
     m = r_module_find(c, mod->name);
     if (!m || !m->surf) {
-        /* The std placeholder surface: the real interface is pending
-           the lib milestone (resolve.h). */
+        /* The std placeholder surface (resolve.h): nothing to walk. */
         r_add_ref(c, t, EK_SYM_EXTERNAL, EK_ST_TYPE, NULL);
         return;
     }
@@ -147,6 +146,13 @@ void r_type(r_ctx *c, r_file *f, const ek_node *t)
             }
         } else if (t->u.path.count == 2) {
             qualified(c, f, t);
+        } else {
+            r_error(c, f->mod->file, t->line, t->col, "E-unbound-name",
+                    "`%s.%s` is not a type position form; a qualified "
+                    "type has one module segment (Clause 7.4.4)",
+                    t->u.path.data[0],
+                    t->u.path.data[t->u.path.count - 1]);
+            r_add_ref(c, t, EK_SYM_EXTERNAL, EK_ST_TYPE, NULL);
         }
         return;
     }

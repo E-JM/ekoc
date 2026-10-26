@@ -68,7 +68,7 @@ void r_body(r_ctx *c, r_file *f, const ek_node *body, scope *parent)
     f->locals = old;
 }
 
-void r_params(r_ctx *c, r_file *f, const ek_node *params, scope *into)
+static void r_params(r_ctx *c, r_file *f, const ek_node *params, scope *into)
 {
     size_t i;
 
@@ -172,7 +172,8 @@ static void bind_annotation_params(r_ctx *c, r_file *f, const ek_node *ann,
 /* One annotated binding: the annotation's parameters scope over the
    right-hand side; the pattern binds in the enclosing scope
    (Clauses 7.4.2, 8.2.1). At the top level the surface holds the
-   binding and there is no lexical scope to enter. */
+   binding and there is no lexical scope to enter, but the pattern's
+   constructor references are still recorded (Clause 7.4.2 row 3). */
 static void r_let(r_ctx *c, r_file *f, const ek_node *m)
 {
     scope *old = f->locals;
@@ -184,11 +185,11 @@ static void r_let(r_ctx *c, r_file *f, const ek_node *m)
     r_type(c, f, m->u.bind.type);
     r_expr(c, f, m->u.bind.value);
     f->locals = old;
+    r_pattern_refs(c, f, m->u.bind.pattern);
+    r_pattern_dup(c, f, m->u.bind.pattern);
     if (!old) {
         return;
     }
-    r_pattern_refs(c, f, m->u.bind.pattern);
-    r_pattern_dup(c, f, m->u.bind.pattern);
     r_pattern_binds(c, f, m->u.bind.pattern);
 }
 

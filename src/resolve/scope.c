@@ -89,14 +89,17 @@ void r_scope_add(r_ctx *c, scope *s, const char *name, const ek_symbol *sym)
     s->count++;
 }
 
+/* Inner scopes win over outer ones; within one scope the newest
+   binding wins, so a rebinding shadows the binding it rebinds
+   (Clause 8.2.2). */
 const ek_symbol *r_scope_get(const scope *s, const char *name)
 {
     size_t i;
 
     for (; s; s = s->parent) {
-        for (i = 0; i < s->count; i++) {
-            if (strcmp(s->vars[i].name, name) == 0) {
-                return s->vars[i].sym;
+        for (i = s->count; i > 0; i--) {
+            if (strcmp(s->vars[i - 1].name, name) == 0) {
+                return s->vars[i - 1].sym;
             }
         }
     }

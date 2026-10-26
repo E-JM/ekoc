@@ -44,6 +44,31 @@ static void block_nesting(void)
     rfx_end(&f);
 }
 
+/* A rebinding shadows the binding it rebinds: a use after the `:=`
+   denotes the new binding, the rebind's own right-hand side the old
+   one (Clause 8.2.2). */
+static void rebinding_denotation(void)
+{
+    rfx f;
+    const ek_ref *r;
+
+    rfx_begin(&f,
+        "f: Int =\n"
+        "    x: Int = 1\n"
+        "    x := x + 1\n"
+        "    x\n");
+    EK_CHECK_U64(rfx_errors(&f), 0);
+    r = rfx_ref_named(&f, 3, "x");
+    EK_CHECK(r != NULL);
+    EK_CHECK(r->symbol != NULL);
+    EK_CHECK_U64((unsigned long long)(r->symbol ? r->symbol->line : 0), 2);
+    r = rfx_ref_named(&f, 4, "x");
+    EK_CHECK(r != NULL);
+    EK_CHECK(r->symbol != NULL);
+    EK_CHECK_U64((unsigned long long)(r->symbol ? r->symbol->line : 0), 3);
+    rfx_end(&f);
+}
+
 static void top_level_visibility(void)
 {
     rfx f;
@@ -181,5 +206,6 @@ int main(void)
     tuple_split_and_discard();
     lambdas();
     rest_binding();
+    rebinding_denotation();
     return ek_test_report("resolve/scope");
 }

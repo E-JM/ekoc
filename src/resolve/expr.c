@@ -179,7 +179,7 @@ static void r_apply(r_ctx *c, r_file *f, const ek_node *e)
     } else {
         memset(&h, 0, sizeof h);
         h.kind = EK_SYM_EXTERNAL;
-        return;
+        h.st = EK_ST_EXTERNAL;
     }
     r_add_ref(c, e, h.kind, h.st, h.sym);
 }

@@ -5,11 +5,11 @@
 /* Name conflicts of Clause 7.4.6. File-backed cases use one fixture
    directory under build/ created at test runtime. */
 
-#define CONF_DIR "build/tmp-resolve-m5/conf"
+#define CONF_DIR "build/tmp-resolve/conf"
 
 static void put_fixtures(void)
 {
-    mkdir("build/tmp-resolve-m5", 0755);
+    mkdir("build/tmp-resolve", 0755);
     mkdir(CONF_DIR, 0755);
     EK_CHECK(rfx_put(CONF_DIR, "geolib.eko",
         "Shape: type = Circle Float\n"
@@ -61,6 +61,36 @@ static void duplicates(void)
     EK_CHECK_U64(rfx_errors(&f), 1);
     EK_CHECK(rfx_code_at_line(&f, "E-name-conflict", 1));
     rfx_end(&f);
+
+    /* The implicit import is an import: a top-level `std` collides
+       with it (Clauses 7.2.5, 7.4.6). */
+    rfx_begin(&f,
+        "std: Int = 1\n");
+    EK_CHECK_U64(rfx_errors(&f), 1);
+    EK_CHECK(rfx_code_at_line(&f, "E-name-conflict", 1));
+    rfx_end(&f);
+}
+
+/* A qualified form carries one module segment; a longer dotted name
+   denotes nothing (Clause 7.4.4). */
+static void over_qualified_names(void)
+{
+    rfx f;
+
+    rfx_begin(&f,
+        "f: (x: a.b.C) -> Int = 0\n");
+    EK_CHECK_U64(rfx_errors(&f), 1);
+    EK_CHECK(rfx_code_at_line(&f, "E-unbound-name", 1));
+    rfx_end(&f);
+
+    rfx_begin(&f,
+        "f: (n: Int) -> Int =\n"
+        "    case n:\n"
+        "        x.y.Z -> 1\n"
+        "        _ -> 0\n");
+    EK_CHECK_U64(rfx_errors(&f), 1);
+    EK_CHECK(rfx_code_at_line(&f, "E-unbound-name", 3));
+    rfx_end(&f);
 }
 
 static void namespace_heads(void)
@@ -107,6 +137,17 @@ static void pattern_repeats(void)
         "        {a} | {.., a} -> a\n"
         "        _ -> 0\n");
     EK_CHECK_U64(rfx_errors(&f), 0);
+    rfx_end(&f);
+
+    /* A rest name is a binding name like any other (Clauses 7.4.6,
+       7.7.1). */
+    rfx_begin(&f,
+        "f: (xs: []Int) -> Int =\n"
+        "    case xs:\n"
+        "        {x, ..x} -> x\n"
+        "        _ -> 0\n");
+    EK_CHECK_U64(rfx_errors(&f), 1);
+    EK_CHECK(rfx_code_at_line(&f, "E-name-conflict", 3));
     rfx_end(&f);
 }
 
@@ -182,6 +223,20 @@ static void name_case(void)
         "Bad: Int = 1\n");
     EK_CHECK_U64(rfx_errors(&f), 1);
     EK_CHECK(rfx_code_at_line(&f, "E-name-case", 1));
+    /* The rejected spelling still records its constructor reading at
+       the pattern position (Clause 7.4.2 row 3). */
+    {
+        size_t i;
+        int seen = 0;
+
+        for (i = 0; i < f.res.ref_count; i++) {
+            if (f.res.refs[i].node->line == 1
+                && f.res.refs[i].kind == EK_SYM_EXTERNAL) {
+                seen = 1;
+            }
+        }
+        EK_CHECK(seen);
+    }
     rfx_end(&f);
 }
 
@@ -190,6 +245,7 @@ int main(void)
     put_fixtures();
     n12();
     duplicates();
+    over_qualified_names();
     namespace_heads();
     pattern_repeats();
     tvar_vs_module();

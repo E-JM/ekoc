@@ -25,6 +25,48 @@ static void bind_var(r_ctx *c, r_file *f, const char *name, int line,
     }
 }
 
+/* A module-qualified pattern constructor head: `Mod.Ctor` names the
+   constructor even when a type shares the spelling (Clauses 7.4.1,
+   7.4.4). */
+static void cons_ref_qualified(r_ctx *c, r_file *f, const ek_node *pat,
+                               const char *mname, const char *cname)
+{
+    const ek_symbol *mod = r_lookup_mod(f, mname);
+    const ek_symbol *cs;
+    r_mod *target;
+
+    if (!mod) {
+        r_error(c, f->mod->file, pat->line, pat->col, "E-unbound-name",
+                "`%s` is not a module in scope (Clause 7.4.4)", mname);
+        r_add_ref(c, pat, EK_SYM_EXTERNAL, EK_ST_CONS, NULL);
+        return;
+    }
+    target = r_module_find(c, mod->name);
+    cs = r_module_ctor(target, cname);
+    if (!cs && strcmp(mod->name, "std") == 0) {
+        /* The std placeholder bridge: the companion's surface is
+           pending lib/ (resolve.h). */
+        cs = r_std_ctor(c, cname);
+        if (cs) {
+            r_add_ref(c, pat, EK_SYM_EXTERNAL, EK_ST_EXTERNAL, cs);
+            return;
+        }
+    }
+    if (!cs) {
+        r_error(c, f->mod->file, pat->line, pat->col, "E-unbound-member",
+                "module `%s` declares no constructor `%s` "
+                "(Clause 7.4.4)", mname, cname);
+        r_add_ref(c, pat, EK_SYM_EXTERNAL, EK_ST_CONS, NULL);
+        return;
+    }
+    if (!cs->public) {
+        r_error(c, f->mod->file, pat->line, pat->col, "E-private-name",
+                "constructor `%s` is private in `%s` (Clause 7.3.1)",
+                cname, mname);
+    }
+    r_add_ref(c, pat, EK_SYM_CONSTRUCTOR, EK_ST_QUALIFIED, cs);
+}
+
 /* A pattern constructor head is a constructor reference, unqualified
    or module-qualified (Clauses 7.4.2 row 3, 7.4.4). */
 static void cons_ref(r_ctx *c, r_file *f, const ek_node *pat)
@@ -33,33 +75,17 @@ static void cons_ref(r_ctx *c, r_file *f, const ek_node *pat)
     const ek_symbol *first = NULL;
     size_t k;
 
+    if (path->count > 2) {
+        r_error(c, f->mod->file, pat->line, pat->col, "E-unbound-name",
+                "`%s.%s` is not a constructor position form; a "
+                "qualified constructor has one module segment "
+                "(Clause 7.4.4)", path->data[0],
+                path->data[path->count - 1]);
+        r_add_ref(c, pat, EK_SYM_EXTERNAL, EK_ST_CONS, NULL);
+        return;
+    }
     if (path->count == 2) {
-        const char *mname = path->data[0];
-        const char *cname = path->data[1];
-        const ek_symbol *mod = r_lookup_mod(f, mname);
-        const ek_symbol *cs;
-
-        if (!mod) {
-            r_error(c, f->mod->file, pat->line, pat->col, "E-unbound-name",
-                    "`%s` is not a module in scope (Clause 7.4.4)", mname);
-            r_add_ref(c, pat, EK_SYM_EXTERNAL, EK_ST_CONS, NULL);
-            return;
-        }
-        cs = r_module_member(r_module_find(c, mod->name), cname);
-        if (!cs || cs->kind != EK_SYM_CONSTRUCTOR) {
-            r_error(c, f->mod->file, pat->line, pat->col,
-                    "E-unbound-member",
-                    "module `%s` declares no constructor `%s` "
-                    "(Clause 7.4.4)", mname, cname);
-            r_add_ref(c, pat, EK_SYM_EXTERNAL, EK_ST_CONS, NULL);
-            return;
-        }
-        if (!cs->public) {
-            r_error(c, f->mod->file, pat->line, pat->col, "E-private-name",
-                    "constructor `%s` is private in `%s` (Clause 7.3.1)",
-                    cname, mname);
-        }
-        r_add_ref(c, pat, EK_SYM_CONSTRUCTOR, EK_ST_QUALIFIED, cs);
+        cons_ref_qualified(c, f, pat, path->data[0], path->data[1]);
         return;
     }
     k = r_lookup_ctor(f, path->count == 1 ? path->data[0] : "", &first);
@@ -144,6 +170,26 @@ void r_pattern_binds(r_ctx *c, r_file *f, const ek_node *pat)
     }
 }
 
+/* One binding occurrence within one alternative: the second of the
+   same name is the conflict (Clauses 7.4.6, 7.7.1). */
+static void mark_seen(r_ctx *c, const r_file *f, const char *name,
+                      int line, int col, const char **seen, size_t *n)
+{
+    size_t i;
+
+    for (i = 0; i < *n; i++) {
+        if (strcmp(seen[i], name) == 0) {
+            r_error(c, f->mod->file, line, col, "E-name-conflict",
+                    "`%s` is bound twice in one pattern (Clauses "
+                    "7.4.6, 7.7.1)", name);
+            return;
+        }
+    }
+    if (*n < R_PAT_MAX) {
+        seen[(*n)++] = name;
+    }
+}
+
 /* Duplicates within one alternative of one pattern (Clauses 7.4.6,
    7.7.1), diagnosed at the second occurrence. */
 static void dup_walk(r_ctx *c, const r_file *f, const ek_node *pat,
@@ -159,25 +205,15 @@ static void dup_walk(r_ctx *c, const r_file *f, const ek_node *pat,
         if (strcmp(pat->u.path.data[0], "_") == 0) {
             return;
         }
-        for (i = 0; i < *n; i++) {
-            if (strcmp(seen[i], pat->u.path.data[0]) == 0) {
-                r_error(c, f->mod->file, pat->line, pat->col,
-                        "E-name-conflict",
-                        "`%s` is bound twice in one pattern (Clauses "
-                        "7.4.6, 7.7.1)", pat->u.path.data[0]);
-                return;
-            }
-        }
-        if (*n < R_PAT_MAX) {
-            seen[(*n)++] = pat->u.path.data[0];
-        }
+        mark_seen(c, f, pat->u.path.data[0], pat->line, pat->col, seen, n);
         return;
     case EK_N_P_BRACE:
         for (i = 0; i < pat->u.p_brace.items.count; i++) {
             dup_walk(c, f, pat->u.p_brace.items.data[i], seen, n);
         }
-        if (pat->u.p_brace.rest_name && *n < R_PAT_MAX) {
-            seen[(*n)++] = pat->u.p_brace.rest_name;
+        if (pat->u.p_brace.rest_name) {
+            mark_seen(c, f, pat->u.p_brace.rest_name, pat->line,
+                      pat->col, seen, n);
         }
         return;
     case EK_N_P_FIELD:

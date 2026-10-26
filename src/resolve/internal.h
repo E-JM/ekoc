@@ -138,5 +138,6 @@ void r_cons_head(r_ctx *c, r_file *f, const ek_node *n, r_head *out);
 void r_chain(r_ctx *c, r_file *f, const ek_node *node, int is_call,
              r_head *out);
 const ek_symbol *r_module_member(const r_mod *m, const char *name);
+const ek_symbol *r_module_ctor(const r_mod *m, const char *name);
 
 #endif

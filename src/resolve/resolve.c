@@ -113,6 +113,10 @@ static void file_setup(r_ctx *c, r_file *f, r_mod *m)
         if (!target) {
             continue; /* a failed import is already diagnosed */
         }
+        if (r_lookup_mod(f, stem)) {
+            continue; /* one open per stem: a repeated import line
+                         opens nothing further (Clause 7.2.3) */
+        }
         add_module_name(c, f, stem);
         if (!target->external) {
             open_import(c, f, target);
@@ -122,19 +126,19 @@ static void file_setup(r_ctx *c, r_file *f, r_mod *m)
 
 /* Clause 7.2.1: the stem is a snake_case identifier; Clause 7.2.2: a
    user module is never named std. */
-static void check_root_name(r_ctx *c, const char *stem)
+static void check_root_name(r_ctx *c, const char *file, const char *stem)
 {
     if (!r_is_snake(stem)) {
-        r_error(c, 0, 1, 1, "E-name-case",
+        r_error(c, file, 1, 1, "E-name-case",
                 "module name `%s` is not snake_case (Clauses 5.5.2, "
                 "7.2.1)", stem);
     }
     if (stem[0] == '_') {
-        r_error(c, 0, 1, 1, "E-module-name",
+        r_error(c, file, 1, 1, "E-module-name",
                 "module file `%s` begins with `_` (Clause 7.2.1)", stem);
     }
     if (strcmp(stem, "std") == 0) {
-        r_error(c, 0, 1, 1, "E-module-name",
+        r_error(c, file, 1, 1, "E-module-name",
                 "a user module MUST NOT be named `std` (Clauses 7.2.2, "
                 "9.1.2)");
     }
@@ -223,7 +227,7 @@ ek_resolve_result ek_resolve(const ek_node *module, const char *file,
     if (!stem) {
         return r;
     }
-    check_root_name(&ctx, stem);
+    check_root_name(&ctx, file, stem);
     if (!register_root(&ctx, module, file, stem)) {
         return r;
     }

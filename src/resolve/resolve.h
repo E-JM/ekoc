@@ -20,9 +20,9 @@
  *
  * The output is dumb data: every resolved reference site carries the
  * symbol it denotes and the resolution station used (Clauses 7.4.2,
- * 7.4.3). refs are sorted by node address, so check (M6) can binary
- * search the table by AST node. All storage lives in the arena and is
- * valid until it is destroyed.
+ * 7.4.3). refs are sorted by node address, so check can binary search
+ * the table by AST node. All storage lives in the arena and is valid
+ * until it is destroyed.
  *
  * Receiver-form links whose reading needs the static type of the
  * receiver (stations 1-3 of Clause 7.4.3) come back as EK_SYM_MEMBER:
@@ -31,13 +31,13 @@
  * exist and are public); check selects the field, namespace, or
  * current-module reading from the receiver's type.
  *
- * PLACEHOLDER STD SURFACE, temporary until the lib milestone derives
- * the real interface from lib/std.eko. resolve answers the implicit
- * `import std` (Clause 7.2.5) from a built-in surface holding the free
- * names and type names the clause opens. A name the placeholder does
- * not know resolves to EK_SYM_EXTERNAL with no diagnostic; this is the
- * bridge ruling for M5 and must be revisited when lib/ lands. Explicit
- * imports of user modules resolve for real and are diagnosed.
+ * PLACEHOLDER STD SURFACE, standing in until the real interface is
+ * derived from lib/std.eko. resolve answers the implicit `import std`
+ * (Clause 7.2.5) from a built-in surface holding the free names and
+ * type names the clause opens. A name the placeholder does not know
+ * resolves to EK_SYM_EXTERNAL with no diagnostic; this is the bridge
+ * ruling and must be revisited when lib/ lands. Explicit imports of
+ * user modules resolve for real and are diagnosed.
  */
 
 /* What a resolved name denotes. kinds beyond the clause's six are for

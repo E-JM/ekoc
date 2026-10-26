@@ -53,7 +53,11 @@ static char *read_file(r_ctx *c, const char *path)
         fclose(fp);
         return NULL;
     }
-    if (fread(data, 1, (size_t)size, fp) != (size_t)size) {
+    /* One byte over the claimed size: a real file comes back whole, a
+       directory read errors (EISDIR), and a genuine empty file is
+       neither (ferror stays clear at EOF). */
+    if (fread(data, 1, (size_t)size + 1, fp) != (size_t)size
+        || ferror(fp) != 0) {
         fclose(fp);
         return NULL;
     }
@@ -104,18 +108,32 @@ static r_mod *register_mod(r_ctx *c, const char *stem, const char *file,
 }
 
 /* Two imported modules with the same stem collide over the closure
-   (Clauses 7.2.1, 7.4.6). */
+   (Clauses 7.2.1, 7.4.6). file may be NULL when the collision surfaces
+   before the second file resolves; the diagnostic still carries the
+   registered module. */
 static void stem_claimed(r_ctx *c, const char *from, const ek_node *imp,
                          const char *stem, const char *file)
 {
     r_mod *other = r_module_find(c, stem);
 
-    if (other && strcmp(other->file, file) != 0) {
+    if (other && (!file || strcmp(other->file, file) != 0)) {
         r_error(c, from, imp ? imp->line : 0, imp ? imp->col : 0,
                 "E-name-conflict",
                 "module stem `%s` is already imported from `%s` "
                 "(Clauses 7.2.1, 7.4.6)", stem, other->file);
     }
+}
+
+/* One diagnostic when a stage of the chain hands back no stream or no
+   AST. The stage contracts (lex.h, layout.h, parse.h) make that an
+   arena failure, so the walk recovers with the import failed
+   (ARCHITECTURE rule 4). */
+static void stage_dropped(r_ctx *c, const char *path, const char *stage)
+{
+    ek_diag_emit(c->diag, EK_SEV_ERROR, NULL, path, 0, 0,
+                 "the %s stage produced no output for this module; the "
+                 "import fails", stage);
+    c->oom = 1;
 }
 
 /* Lex, layout, and parse one module file (stages before this one). */
@@ -124,13 +142,26 @@ static ek_node *parse_file(r_ctx *c, const char *path)
     char *src = read_file(c, path);
     ek_lex_result lex;
     ek_layout_result lay;
+    ek_node *mod;
 
     if (!src) {
         return NULL;
     }
     lex = ek_lex(src, strlen(src), path, c->arena, c->diag);
+    if (!lex.tokens || lex.count == 0) {
+        stage_dropped(c, path, "lex");
+        return NULL;
+    }
     lay = ek_layout(lex.tokens, lex.count, path, c->arena, c->diag);
-    return ek_parse(lay.tokens, lay.count, path, c->arena, c->diag).module;
+    if (!lay.tokens || lay.count == 0) {
+        stage_dropped(c, path, "layout");
+        return NULL;
+    }
+    mod = ek_parse(lay.tokens, lay.count, path, c->arena, c->diag).module;
+    if (!mod) {
+        stage_dropped(c, path, "parse");
+    }
+    return mod;
 }
 
 /* Resolves an import path to a file on the module path (7.2.2). */
@@ -155,7 +186,9 @@ static char *find_file(r_ctx *c, const ek_node *imp)
             ek_buf_destroy(&b);
             return NULL;
         }
-        memcpy(path, b.data, b.len + 1);
+        /* Appends are best effort (buf.h): a failed first append
+           leaves the buffer empty with data NULL. */
+        memcpy(path, b.data ? b.data : "", b.len + 1);
         ek_buf_destroy(&b);
         if (read_file(c, path)) {
             return path;
@@ -164,8 +197,9 @@ static char *find_file(r_ctx *c, const ek_node *imp)
     return NULL;
 }
 
-/* A module stem is snake_case and never begins with `_`
-   (Clauses 5.5.2, 7.2.1); std paths were handled earlier. */
+/* A stem is snake_case, never begins with `_`, and is never `std`
+   (Clauses 5.5.2, 7.2.1, 7.2.2); the reserved std/ paths return
+   before this call. */
 static int stem_legal(r_ctx *c, const char *file, const ek_node *imp,
                       const char *stem)
 {
@@ -180,11 +214,20 @@ static int stem_legal(r_ctx *c, const char *file, const ek_node *imp,
                 "module file `%s` begins with `_` (Clause 7.2.1)", stem);
         return 0;
     }
+    if (strcmp(stem, "std") == 0) {
+        r_error(c, file, imp->line, imp->col, "E-module-name",
+                "a user module MUST NOT be named `std` (Clauses 7.2.2, "
+                "9.1.2)");
+        return 0;
+    }
     return 1;
 }
 
-/* A stem already registered: a diamond share, or a collision of two
-   distinct modules with one stem (Clauses 7.2.1, 7.4.6). */
+/* A stem already registered: a diamond share, a back edge of the walk
+   (Clause 7.2.4), or a collision of two distinct modules with one stem
+   (Clauses 7.2.1, 7.4.6). Two non-root files share a stem legally only
+   when find_file resolves both to one file; the root's file is spelled
+   by the host, so its back edge is judged by stem alone. */
 static void already_loaded(r_ctx *c, r_mod *m, const char *from,
                            const ek_node *imp, const char *stem)
 {
@@ -196,10 +239,25 @@ static void already_loaded(r_ctx *c, r_mod *m, const char *from,
         stem_claimed(c, from, imp, stem, "(user)");
         return;
     }
-    path = find_file(c, imp);
-    if (!path || strcmp(path, m->file) != 0) {
-        stem_claimed(c, from, imp, stem, path);
+    if (m == c->mods) {
+        r_error(c, from, imp->line, imp->col, "E-cycle-import",
+                "the import of `%s` closes a dependency cycle "
+                "(Clause 7.2.4)", stem);
+        return;
     }
+    path = find_file(c, imp);
+    if (!path) {
+        return; /* the file no longer resolves; the walk recovers */
+    }
+    if (strcmp(path, m->file) == 0) {
+        if (m->state == 1) {
+            r_error(c, from, imp->line, imp->col, "E-cycle-import",
+                    "the import of `%s` closes a dependency cycle "
+                    "(Clause 7.2.4)", stem);
+        }
+        return;
+    }
+    stem_claimed(c, from, imp, stem, path);
 }
 
 static void load_import(r_ctx *c, r_mod *from, const ek_node *imp)
@@ -214,13 +272,22 @@ static void load_import(r_ctx *c, r_mod *from, const ek_node *imp)
     }
     stem = imp->u.path.data[imp->u.path.count - 1];
     if (strcmp(imp->u.path.data[0], "std") == 0) {
+        r_mod *held = r_module_find(c, stem);
+
         if (imp->u.path.count == 1) {
             ek_diag_emit(c->diag, EK_SEV_WARNING, "W-redundant-import",
                          file, imp->line, imp->col,
                          "explicit `import std`; every file already "
                          "imports it (Clause 7.2.5)");
         }
-        if (!r_module_find(c, stem)) {
+        if (held && !held->external) {
+            /* The std/ path is reserved; a user module already holding
+               the companion's stem collides over the closure (Clauses
+               7.2.2, 7.4.6), whichever import came first. */
+            r_error(c, file, imp->line, imp->col, "E-name-conflict",
+                    "module stem `%s` is already imported from `%s` "
+                    "(Clauses 7.2.2, 7.4.6)", stem, held->file);
+        } else if (!held) {
             register_mod(c, stem, "(std)", NULL, 1);
         }
         return;
@@ -261,18 +328,8 @@ void r_closure_walk(r_ctx *c, r_mod *m)
     mod = m->ast;
     for (i = 0; i < mod->u.kids.count; i++) {
         const ek_node *imp = mod->u.kids.data[i];
-        const char *stem;
-        r_mod *target;
 
         if (imp->kind != EK_N_IMPORT || imp->u.path.count == 0) {
-            continue;
-        }
-        stem = imp->u.path.data[imp->u.path.count - 1];
-        target = r_module_find(c, stem);
-        if (target && target->state == 1) {
-            r_error(c, m->file, imp->line, imp->col, "E-cycle-import",
-                    "the import of `%s` closes a dependency cycle "
-                    "(Clause 7.2.4)", stem);
             continue;
         }
         load_import(c, m, imp);

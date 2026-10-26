@@ -294,29 +294,36 @@ static void collect_member(r_surf *s, const ek_node *item)
     emit(s, sym);
 }
 
-/* N12: an import and a file top-level binding share a name
-   (Clause 7.4.6). */
+/* N12 (Annex D): an import and a file top-level binding share a name;
+   the implicit std import counts as the import (Clauses 7.2.5,
+   7.4.6). */
+static void binding_vs_import(r_surf *s, const char *stem)
+{
+    size_t k;
+
+    for (k = 0; k < s->nl; k++) {
+        if (strcmp(s->lkeys[k].key, stem) == 0) {
+            r_error(s->c, s->m->file, s->lkeys[k].line, s->lkeys[k].col,
+                    "E-name-conflict",
+                    "top-level binding `%s` collides with the import of "
+                    "module `%s` (Clause 7.4.6)", stem, stem);
+        }
+    }
+}
+
 static void import_conflicts(r_surf *s)
 {
     const ek_node *mod = s->m->ast;
-    size_t i, k;
+    size_t i;
 
+    binding_vs_import(s, "std");
     for (i = 0; i < mod->u.kids.count; i++) {
         const ek_node *imp = mod->u.kids.data[i];
-        const char *stem;
 
         if (imp->kind != EK_N_IMPORT || imp->u.path.count == 0) {
             continue;
         }
-        stem = imp->u.path.data[imp->u.path.count - 1];
-        for (k = 0; k < s->nl; k++) {
-            if (strcmp(s->lkeys[k].key, stem) == 0) {
-                r_error(s->c, s->m->file, s->lkeys[k].line, s->lkeys[k].col,
-                        "E-name-conflict",
-                        "top-level binding `%s` collides with the import of "
-                        "module `%s` (Clause 7.4.6)", stem, stem);
-            }
-        }
+        binding_vs_import(s, imp->u.path.data[imp->u.path.count - 1]);
     }
 }
 

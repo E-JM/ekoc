@@ -3,7 +3,7 @@
 /* The placeholder std surface of Clause 7.2.5: the free names and the
    opened types resolve without diagnostics; everything else a file
    uses from the implicit import is the unresolved-external bridge
-   (resolve.h; temporary until the lib milestone). */
+   (resolve.h; the placeholder stands in for lib/std.eko). */
 
 static void free_names(void)
 {
@@ -95,6 +95,49 @@ static void qualified_std(void)
     rfx_end(&f);
 }
 
+/* The qualified spelling is legal at every name position, including
+   the pattern constructor position of the bridge (Clauses 7.2.5,
+   7.4.4). */
+static void qualified_std_constructors(void)
+{
+    rfx f;
+    const ek_ref *r;
+
+    rfx_begin(&f,
+        "f: (b: Bool) -> Int =\n"
+        "    case b:\n"
+        "        std.True -> 1\n"
+        "        std.False -> 0\n");
+    EK_CHECK_U64(rfx_errors(&f), 0);
+    r = rfx_ref_named(&f, 3, "True");
+    EK_CHECK(r != NULL);
+    EK_CHECK(r->kind == EK_SYM_EXTERNAL);
+    EK_CHECK(r->station == EK_ST_EXTERNAL);
+    EK_CHECK_STR(r->symbol ? r->symbol->module : NULL, "std");
+    rfx_end(&f);
+}
+
+/* Local shadowing of an opened free name is legal; only a top-level
+   binding collides with the layer it occupies (Clause 7.2.5,
+   7.4.6). */
+static void local_shadow_free_name(void)
+{
+    rfx f;
+    const ek_ref *r;
+
+    rfx_begin(&f,
+        "f: () -> _ =\n"
+        "    show: Int = 1\n"
+        "    show\n"
+        "    _\n");
+    EK_CHECK_U64(rfx_errors(&f), 0);
+    r = rfx_ref_named(&f, 3, "show");
+    EK_CHECK(r != NULL);
+    EK_CHECK(r->kind == EK_SYM_LOCAL);
+    EK_CHECK(r->station == EK_ST_HEAD_LOCAL);
+    rfx_end(&f);
+}
+
 int main(void)
 {
     free_names();
@@ -102,5 +145,7 @@ int main(void)
     std_constructors();
     unknown_names();
     qualified_std();
+    qualified_std_constructors();
+    local_shadow_free_name();
     return ek_test_report("resolve/std");
 }

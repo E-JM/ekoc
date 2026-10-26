@@ -11,7 +11,7 @@
      non-module link, is a receiver-form member of stations 1-3: the
      receiver position never consults lexical bindings, and the field,
      namespace, or current-module reading needs the receiver's static
-     type, so check (M6) selects it (EK_SYM_MEMBER);
+     type, so check selects it (EK_SYM_MEMBER);
    - a snake head carrying a module continues as a qualified access
      `Mod.f` (7.4.4);
    - a Pascal head is the type namespace of Clause 7.4.1; its members
@@ -63,6 +63,26 @@ const ek_symbol *r_module_member(const r_mod *m, const char *name)
            (Clauses 7.3.2, 7.4.4) */
         if (s->kind != EK_SYM_TEST && s->kind != EK_SYM_NAMESPACE
             && strcmp(s->name, name) == 0) {
+            return s;
+        }
+    }
+    return NULL;
+}
+
+/* A module's constructor of one spelling; a type MAY share the
+   spelling, so the kind is decided here, not by surface order
+   (Clause 7.4.1). */
+const ek_symbol *r_module_ctor(const r_mod *m, const char *name)
+{
+    size_t i;
+
+    if (!m || !m->surf) {
+        return NULL;
+    }
+    for (i = 0; i < m->surf->count; i++) {
+        const ek_symbol *s = &m->surf->syms[i];
+
+        if (s->kind == EK_SYM_CONSTRUCTOR && strcmp(s->name, name) == 0) {
             return s;
         }
     }
@@ -162,6 +182,16 @@ static int module_walk(r_ctx *c, r_file *f, r_head *cur, const ek_node *link,
                 "member `%s` is private in module `%s` (Clause 7.3.1)",
                 name, (*walk_mod)->stem);
     }
+    if (last && m->kind == EK_SYM_TYPE) {
+        /* A qualified spelling at a value position denotes the
+           constructor when one shares the type's spelling
+           (Clause 7.4.1). */
+        const ek_symbol *cs = r_module_ctor(*walk_mod, name);
+
+        if (cs) {
+            m = cs;
+        }
+    }
     cur->sym = m;
     cur->kind = m->kind;
     cur->st = from_receiver ? EK_ST_MODULE_PATH : EK_ST_QUALIFIED;
@@ -192,12 +222,12 @@ static int namespace_walk(r_ctx *c, r_file *f, r_head *cur,
         cur->sym = nm;
         cur->kind = EK_SYM_NAMESPACE;
         cur->st = EK_ST_QUALIFIED;
+        r_add_ref(c, link, cur->kind, cur->st, cur->sym);
     } else {
         /* Derived services attach as defaults (Clause 9.8.7); check
-           owns them. */
+           owns them. external_link records the reference itself. */
         external_link(c, cur, link);
     }
-    r_add_ref(c, link, cur->kind, cur->st, cur->sym);
     *state = 0;
     return 1;
 }
