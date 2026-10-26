@@ -264,6 +264,48 @@ static void derived_with(void)
     cfx_end(&f);
 }
 
+
+/* A call whose head is a type namespace takes no receiver: the
+   explicit arguments are the whole argument list. A module-qualified
+   head keeps its own reading. */
+static void type_qualified_calls(void)
+{
+    cfx f;
+
+    cfx_begin(&f,
+              "T: type = [n: Int]\n"
+              "v: T = {n: 1}\n"
+              "b: Bool = T.eq(v, v)\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    EK_CHECK(cfx_reading_at(&f, 3, EK_RD_DERIVED));
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "Sex: type = Man | Woman\n"
+              "a: Sex = Man\n"
+              "b: Sex = Woman\n"
+              "v: Bool = Sex.lt(a, b)\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    EK_CHECK(cfx_reading_at(&f, 4, EK_RD_DERIVED));
+    cfx_end(&f);
+
+    /* A declared namespace member called through its type. */
+    cfx_begin(&f,
+              "Money: type = [cents: Int, cur: String]\n"
+              "Money.show: (m: Money) -> String = m.cur\n"
+              "s: String = Money.show({cents: 1, cur: \"USD\"})\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    EK_CHECK(cfx_reading_at(&f, 3, EK_RD_NAMESPACE));
+    cfx_end(&f);
+
+    /* The std placeholder stays opaque through a type head. */
+    cfx_begin(&f,
+              "x: String = \"a\"\n"
+              "s: String = String.show(x)\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+}
+
 int main(void)
 {
     station_field();
@@ -273,5 +315,6 @@ int main(void)
     derived_with();
     opaque_members();
     qualified_calls();
+    type_qualified_calls();
     return ek_test_report("check/member");
 }

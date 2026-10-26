@@ -1,8 +1,8 @@
 #include <stdarg.h>
-#include <stdio.h>
 #include <string.h>
 
 #include "check/internal.h"
+#include "support/buf.h"
 
 /* Result plumbing: the closed snapshot of a type, the binder
    substitution, and printable names. */
@@ -146,52 +146,153 @@ const ek_type *ck_subst(ck_ctx *c, const ek_type *t)
     }
 }
 
-/* A short printable name for diagnostics; never recurses into args. */
-const char *ck_type_name(ck_ctx *c, const ek_type *t)
+/* Types that need parentheses as a nominal application argument. */
+static int grouped_arg(const ek_type *t)
 {
-    char buf[64];
-    char *out;
-    size_t n;
+    t = ck_prune(t);
+    return t && (t->kind == EK_T_LIST || t->kind == EK_T_DICT
+                 || t->kind == EK_T_TUPLE || t->kind == EK_T_RECORD
+                 || t->kind == EK_T_FN);
+}
 
+static int name_append(ck_ctx *c, ek_buf *b, const ek_type *t, int depth);
+
+/* One nominal application argument: a composite or arrow type takes
+   the parentheses the type syntax requires there. */
+static int arg_append(ck_ctx *c, ek_buf *b, const ek_type *t, int depth)
+{
+    int ok;
+
+    if (!grouped_arg(t)) {
+        return name_append(c, b, t, depth);
+    }
+    ok = ek_buf_append_char(b, '(');
+    ok = ok && name_append(c, b, t, depth);
+    return ok && ek_buf_append_char(b, ')');
+}
+
+/* The argument list of a function type or the components of a tuple. */
+static int list_append(ck_ctx *c, ek_buf *b, const ek_type *const *items,
+                       size_t n, int depth)
+{
+    size_t i;
+    int ok = 1;
+
+    for (i = 0; ok && i < n; i++) {
+        if (i) {
+            ok = ek_buf_append_str(b, ", ");
+        }
+        if (ok) {
+            ok = name_append(c, b, items[i], depth);
+        }
+    }
+    return ok;
+}
+
+/* The fields of a record, in their canonical order. */
+static int fields_append(ck_ctx *c, ek_buf *b, const ek_tfield *fs, size_t n,
+                         int depth)
+{
+    size_t i;
+    int ok = 1;
+
+    for (i = 0; ok && i < n; i++) {
+        if (i) {
+            ok = ek_buf_append_str(b, ", ");
+        }
+        ok = ok && ek_buf_append_str(b, fs[i].name)
+            && ek_buf_append_str(b, ": ")
+            && name_append(c, b, fs[i].type, depth);
+    }
+    return ok;
+}
+
+static const char *arrow_text(ek_arrow a)
+{
+    if (a == EK_ARROW_WORLD) {
+        return "!->";
+    }
+    return a == EK_ARROW_OPEN ? "?->" : "->";
+}
+
+static int name_append(ck_ctx *c, ek_buf *b, const ek_type *t, int depth)
+{
+    size_t i;
+    int ok;
+
+    if (!t || depth <= 0) {
+        return 1;
+    }
     t = ck_prune(t);
     if (!t) {
-        return "?";
+        return 1;
     }
     switch (t->kind) {
     case EK_T_UNIT:
-        return "_";
+        return ek_buf_append_str(b, "_");
     case EK_T_NEVER:
-        return "Never";
+        return ek_buf_append_str(b, "Never");
     case EK_T_NOMINAL:
-        return t->u.nominal.sym ? t->u.nominal.sym->name : "?";
+        ok = ek_buf_append_str(b, t->u.nominal.sym
+                                      ? t->u.nominal.sym->name : "?");
+        for (i = 0; ok && i < t->u.nominal.argc; i++) {
+            ok = ek_buf_append_char(b, ' ')
+                && arg_append(c, b, t->u.nominal.args[i], depth - 1);
+        }
+        return ok;
     case EK_T_LIST:
-        return "[]list";
+        return ek_buf_append_str(b, "[]")
+            && name_append(c, b, t->u.list.elem, depth - 1);
     case EK_T_DICT:
-        return "[k]v";
+        return ek_buf_append_char(b, '[')
+            && name_append(c, b, t->u.dict.key, depth - 1)
+            && ek_buf_append_char(b, ']')
+            && name_append(c, b, t->u.dict.val, depth - 1);
     case EK_T_TUPLE:
-        n = (size_t)snprintf(buf, sizeof buf, "[%zu-tuple]",
-                             t->u.tuple.count);
-        break;
+        return ek_buf_append_char(b, '[')
+            && list_append(c, b, t->u.tuple.items, t->u.tuple.count,
+                           depth - 1)
+            && ek_buf_append_char(b, ']');
     case EK_T_RECORD:
-        n = (size_t)snprintf(buf, sizeof buf, "[%zu-field record]",
-                             t->u.record.count);
-        break;
+        return ek_buf_append_char(b, '[')
+            && fields_append(c, b, t->u.record.fields, t->u.record.count,
+                             depth - 1)
+            && ek_buf_append_char(b, ']');
     case EK_T_FN:
-        return "function";
+        ok = ek_buf_append_char(b, '(')
+            && list_append(c, b, t->u.fn.params, t->u.fn.count, depth - 1)
+            && ek_buf_append_char(b, ')')
+            && ek_buf_append_char(b, ' ')
+            && ek_buf_append_str(b, arrow_text(t->u.fn.arrow))
+            && ek_buf_append_char(b, ' ')
+            && name_append(c, b, t->u.fn.result, depth - 1);
+        return ok;
     case EK_T_TVAR:
-        return t->u.tvar.name ? t->u.tvar.name : "t";
+        return ek_buf_append_str(b, t->u.tvar.name ? t->u.tvar.name : "t");
     default:
+        return ek_buf_append_char(b, '?');
+    }
+}
+
+/* A printable name for diagnostics in the language's type syntax. */
+const char *ck_type_name(ck_ctx *c, const ek_type *t)
+{
+    ek_buf b;
+    char *out;
+
+    ek_buf_init(&b);
+    if (!name_append(c, &b, t, 64) || !b.data) {
+        ek_buf_destroy(&b);
         return "?";
     }
-    if (!n || n >= sizeof buf) {
-        return "?";
-    }
-    out = ek_arena_alloc(c->arena, n + 1);
+    out = ek_arena_alloc(c->arena, b.len + 1);
     if (!out) {
+        ek_buf_destroy(&b);
         c->oom = 1;
         return "?";
     }
-    memcpy(out, buf, n + 1);
+    memcpy(out, b.data, b.len + 1);
+    ek_buf_destroy(&b);
     return out;
 }
 

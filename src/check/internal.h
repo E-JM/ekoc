@@ -77,6 +77,9 @@ typedef struct {
     int open_scope;  /* inside the body of a declaration whose signature
                         contains the open bit: calls through `?` arrows
                         carry that bit */
+    int invert_call; /* the next call carries an implicit callback */
+    const ek_type *invert_fn; /* that call's callee type, NULL when opaque */
+    const ek_type *invert_cb; /* its callback parameter type */
     int partial_ok;  /* inside a `with` argument: the partial-literal
                         permission extends layer by layer through the
                         record field values it contains */
@@ -163,6 +166,8 @@ void ck_decls(ck_ctx *c);   /* root type decls, entry rules */
 /* expr.c: expression typing. ctl.c: the control forms. */
 const ek_type *ck_expr(ck_ctx *c, const ek_node *e, const ek_type *expected);
 const ek_type *ck_block(ck_ctx *c, const ek_node *b, const ek_type *expected);
+const ek_type *ck_members(ck_ctx *c, const ek_node *b, size_t start,
+                          const ek_type *expected);
 const ek_type *ck_if(ck_ctx *c, const ek_node *e, const ek_type *expected);
 const ek_type *ck_case(ck_ctx *c, const ek_node *e, const ek_type *expected);
 void ck_scope_push(ck_ctx *c);
@@ -232,8 +237,8 @@ void ck_reconcile(ck_ctx *c, const ek_node *at, const ek_type *bound,
 /* pattern.c: pattern typing. patbind.c: or-patterns and the
    binding-shape judgments. */
 int ck_invert_pattern(const ek_node *pat);
-const ek_type *ck_callback_param(ck_ctx *c, const ek_node *m,
-                                 const ek_type *call);
+const ek_type *ck_invert_block(ck_ctx *c, const ek_node *m,
+                               const ek_node *block, size_t start);
 const ek_type *ck_pattern(ck_ctx *c, const ek_node *p, const ek_type *scrut);
 const ek_type *ck_or_pattern(ck_ctx *c, const ek_node *p, const ek_type *scrut);
 void ck_arm_binds_together(ck_ctx *c, const ek_node *arm); /* a name two

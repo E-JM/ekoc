@@ -310,31 +310,3 @@ int ck_invert_pattern(const ek_node *pat)
         return 0;
     }
 }
-
-/* The callback parameter an inverted binding takes: the last
-   parameter of the call's function type. */
-const ek_type *ck_callback_param(ck_ctx *c, const ek_node *m,
-                                 const ek_type *call)
-{
-    const ek_type *f = ck_prune(call);
-
-    if (!f) {
-        return ck_ivar(c);
-    }
-    if (f->kind != EK_T_FN) {
-        if (f->kind != EK_T_IVAR) {
-            ck_error(c, m->u.bind.value, "E-type-mismatch",
-                     "the right-hand side of `<-` is not a call with a "
-                     "callback parameter (Clause 7.8.1)");
-        }
-        return ck_ivar(c);
-    }
-    if (f->u.fn.count == 0) {
-        ck_error(c, m->u.bind.value, "E-type-mismatch",
-                 "the call has no callback parameter for `<-` "
-                 "(Clause 7.8.1)");
-        return ck_ivar(c);
-    }
-    return f->u.fn.params[f->u.fn.count - 1];
-}
-

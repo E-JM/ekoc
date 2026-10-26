@@ -204,13 +204,117 @@ static void wide_decls(void)
     cfx_end(&f);
 }
 
+
+/* An empty brace literal takes its family from the expected type:
+   the empty dictionary and the empty list are values, an empty record
+   still names no field of a nonempty record, and an opaque expected
+   type leaves the literal opaque. */
+static void empty_literals(void)
+{
+    cfx f;
+
+    cfx_begin(&f,
+              "d: [String]Int = {}\n"
+              "xs: []Int = {}\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+
+    /* Nested empty dictionaries take their field's type. */
+    cfx_begin(&f,
+              "S: type = [d: [String]Int]\n"
+              "s: S = {d: {}}\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+
+    /* A nonempty record literal must name every field; `{}` names
+       none. */
+    cfx_begin(&f,
+              "R: type = [x: Int]\n"
+              "r: R = {}\n");
+    EK_CHECK(cfx_code_at_line(&f, "E-partial-record", 2));
+    cfx_end(&f);
+
+    /* A tuple has at least two components. */
+    cfx_begin(&f,
+              "p: [Int, Int] = {}\n");
+    EK_CHECK(cfx_code_at_line(&f, "E-type-mismatch", 1));
+    cfx_end(&f);
+
+    /* A std type name has no composite literal shape. */
+    cfx_begin(&f, "s: String = {}\n");
+    EK_CHECK(cfx_code_at_line(&f, "E-type-mismatch", 1));
+    cfx_end(&f);
+}
+
+
+/* A diagnostic at one line contains the needle. */
+static int diag_has(const cfx *f, int line, const char *needle)
+{
+    size_t i;
+
+    for (i = 0; i < f->cdn; i++) {
+        if (f->cds[i].line == line && f->cds[i].message
+            && strstr(f->cds[i].message, needle)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* Diagnostics spell types the way the language writes them: list and
+   dictionary brackets, nominal arguments, and function arrows. */
+static void type_names(void)
+{
+    cfx f;
+
+    cfx_begin(&f, "f: (xs: []Int) -> []String = xs\n");
+    EK_CHECK(cfx_has_code(&f, "E-type-mismatch"));
+    EK_CHECK(diag_has(&f, 1, "body is []Int"));
+    EK_CHECK(diag_has(&f, 1, "result type is []String"));
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "Box: type t = [v: t]\n"
+              "mk_i: (n: Int) -> Box Int = (n): {v: n}\n"
+              "mk_s: (s: String) -> Box String = (s): {v: s}\n"
+              "g: (b: Bool) -> Box Int =\n"
+              "    case b:\n"
+              "        True -> mk_i(1)\n"
+              "        False -> mk_s(\"s\")\n");
+    EK_CHECK(cfx_has_code(&f, "E-type-mismatch"));
+    EK_CHECK(diag_has(&f, 5, "Box Int and Box String"));
+    cfx_end(&f);
+
+    cfx_begin(&f, "d: (m: [String]Int) -> Int = m\n");
+    EK_CHECK(diag_has(&f, 1, "body is [String]Int"));
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "twice: (f: (Int) -> Int) -> Int = f(1)\n"
+              "id: (s: String) -> String = s\n"
+              "x: Int = twice(id)\n");
+    EK_CHECK(diag_has(&f, 3, "argument is (String) -> String"));
+    EK_CHECK(diag_has(&f, 3, "parameter is (Int) -> Int"));
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "run: () !-> Int = (): Out.println(\"x\"); 1\n"
+              "use: (f: () -> Int) -> Int = f()\n"
+              "x: Int = use(run)\n");
+    EK_CHECK(diag_has(&f, 3, "argument is () !-> Int"));
+    EK_CHECK(diag_has(&f, 3, "parameter is () -> Int"));
+    cfx_end(&f);
+}
+
 int main(void)
 {
     nominal_vs_structural();
     shape_adaptation();
     record_literals();
+    empty_literals();
     literal_placement();
     never_adaptation();
     wide_decls();
+    type_names();
     return ek_test_report("check/types");
 }
