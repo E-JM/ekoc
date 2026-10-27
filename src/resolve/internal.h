@@ -13,6 +13,14 @@ typedef struct {
     const ek_symbol *sym;
 } r_var;
 
+/* One local binding site, with the pattern that introduced it. The
+   alternatives of one or-pattern share a group: they are one binding
+   and a use of any alternative's symbol uses it. */
+typedef struct {
+    const ek_symbol *sym;
+    const ek_node *group;
+} r_local;
+
 typedef struct scope scope;
 struct scope {
     scope *parent;
@@ -71,6 +79,9 @@ typedef struct {
     size_t nrefs, crefs;
     ek_surface *std; /* the parsed std surface and its
                         placeholder rows */
+    r_local *locals; /* local binding sites, in declaration order */
+    size_t nlocals, clocals;
+    const ek_node *pat_group; /* the pattern whose binds are running */
     int oom;
 } r_ctx;
 
@@ -92,6 +103,10 @@ void r_add_ctor_ref(r_ctx *c, const ek_node *n, ek_sym_kind kind,
 void r_error(r_ctx *c, const char *file, int line, int col,
              const char *code, const char *fmt, ...);
 void r_refs_sort(ek_ref *refs, size_t count);
+
+/* warn.c: the unused-binding and unused-import warnings over the
+   finished closure. */
+void r_warn_unused(r_ctx *c);
 
 /* std.c: the parsed std module, its placeholder rows, and the implicit
    import. r_std_boot parses the embedded source into the closure and

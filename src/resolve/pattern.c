@@ -8,6 +8,24 @@
 
 #define R_PAT_MAX 64
 
+/* Records one local binding site for the unused-binding warning. */
+static void note_local(r_ctx *c, const ek_symbol *sym)
+{
+    if (c->oom) {
+        return;
+    }
+    if (c->nlocals == c->clocals) {
+        c->locals = r_grow(c, c->locals, c->nlocals, &c->clocals,
+                           sizeof *c->locals);
+        if (c->oom) {
+            return;
+        }
+    }
+    c->locals[c->nlocals].sym = sym;
+    c->locals[c->nlocals].group = c->pat_group;
+    c->nlocals++;
+}
+
 /* A binding name binds a local symbol; `_` binds nothing. */
 static void bind_var(r_ctx *c, r_file *f, const char *name, int line,
                      int col)
@@ -20,6 +38,7 @@ static void bind_var(r_ctx *c, r_file *f, const char *name, int line,
     sym = r_sym(c, name, EK_SYM_LOCAL, f->mod->stem, line, col);
     if (sym) {
         r_scope_add(c, f->locals, name, sym);
+        note_local(c, sym);
     }
 }
 
@@ -126,7 +145,7 @@ void r_pattern_refs(r_ctx *c, r_file *f, const ek_node *pat)
     }
 }
 
-void r_pattern_binds(r_ctx *c, r_file *f, const ek_node *pat)
+static void binds_walk(r_ctx *c, r_file *f, const ek_node *pat)
 {
     size_t i;
 
@@ -140,24 +159,38 @@ void r_pattern_binds(r_ctx *c, r_file *f, const ek_node *pat)
     case EK_N_P_PAREN:
     case EK_N_P_OR:
         for (i = 0; i < pat->u.kids.count; i++) {
-            r_pattern_binds(c, f, pat->u.kids.data[i]);
+            binds_walk(c, f, pat->u.kids.data[i]);
         }
         return;
     case EK_N_P_BRACE:
         for (i = 0; i < pat->u.p_brace.items.count; i++) {
-            r_pattern_binds(c, f, pat->u.p_brace.items.data[i]);
+            binds_walk(c, f, pat->u.p_brace.items.data[i]);
         }
         bind_var(c, f, pat->u.p_brace.rest_name, pat->line, pat->col);
         return;
     case EK_N_P_FIELD:
-        r_pattern_binds(c, f, pat->u.p_field.pattern);
+        binds_walk(c, f, pat->u.p_field.pattern);
         return;
     case EK_N_P_CONS:
-        r_pattern_binds(c, f, pat->u.cons.payload);
+        binds_walk(c, f, pat->u.cons.payload);
         return;
     default:
         return;
     }
+}
+
+/* The public entry marks the whole pattern as one binding group, so the
+   alternatives of an or-pattern share it. */
+void r_pattern_binds(r_ctx *c, r_file *f, const ek_node *pat)
+{
+    const ek_node *saved = c->pat_group;
+
+    if (c->oom || !pat) {
+        return;
+    }
+    c->pat_group = pat;
+    binds_walk(c, f, pat);
+    c->pat_group = saved;
 }
 
 /* One binding occurrence within one alternative: the second of the
