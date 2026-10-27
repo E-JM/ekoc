@@ -150,16 +150,40 @@ static void test_unlicensed_run_with_header(void)
 }
 
 /* '->' ends an arm header, so the arm body may begin on the next line:
-   that deeper line is a licensed continuation. */
-static void test_arrow_licenses_arm_body(void)
+   that deeper line opens the body block, one level under the arm. */
+static void test_arrow_opens_arm_body(void)
 {
     layout_fixture f;
     char *got;
 
     fx_begin(&f, "case x:\n    0 ->\n        if a: 1\n    _ -> 2\n");
     EK_CHECK_U64(fx_errors(&f), 0);
+    EK_CHECK_U64(fx_count_kind(&f, EK_LTOK_INDENT), 2);
+    EK_CHECK_U64(fx_count_kind(&f, EK_LTOK_DEDENT), 2);
     got = fx_skeleton(&f);
-    EK_CHECK_STR(got, "S S S N I S S S S S S N S S S N D E");
+    EK_CHECK_STR(got, "S S S N I S S N I S S S S N D S S S N D E");
+    free(got);
+    fx_end(&f);
+}
+
+/* An arm body inline on the arm line is complete: a deeper line after
+   it has no continuation license and is diagnosed once. */
+static void test_inline_arm_then_deeper_diagnosed(void)
+{
+    layout_fixture f;
+    char *got;
+
+    fx_begin(&f,
+        "f: (s: String) -> Int =\n"
+        "    case s:\n"
+        "        \"a\" -> 1\n"
+        "            2\n"
+        "        _ -> 3\n");
+    EK_CHECK_U64(fx_errors(&f), 1);
+    EK_CHECK_U64(fx_count_code(&f, "E-syntax"), 1);
+    got = fx_skeleton(&f);
+    EK_CHECK_STR(got,
+        "S S S S S S S S S S N I S S S N I S S S N S N S S S N D D E");
     free(got);
     fx_end(&f);
 }
@@ -235,7 +259,8 @@ int main(void)
     test_unlicensed_indent_in_block();
     test_unlicensed_run_diagnosed_once();
     test_unlicensed_run_with_header();
-    test_arrow_licenses_arm_body();
+    test_arrow_opens_arm_body();
+    test_inline_arm_then_deeper_diagnosed();
     test_coloneq_continuation_splices();
     test_continued_scrutinee();
     test_else_block_form();
