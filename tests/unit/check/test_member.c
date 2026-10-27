@@ -115,6 +115,67 @@ static void opaque_members(void)
     cfx_end(&f);
 }
 
+/* A declared module's namespace is complete: a name the type does not
+   carry is reported, in a call and in a bare field read alike. The std
+   and container namespaces keep the bridge, because their members are
+   supplied by the compiler. */
+static void declared_namespace_is_complete(void)
+{
+    cfx f;
+
+    cfx_begin(&f,
+              "A: type = Man\n"
+              "a: A = Man\n"
+              "v: Int = a.bogus()\n");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-unbound-member", 3));
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "M: type = [n: Int]\n"
+              "m: M = {n: 1}\n"
+              "v: Int = m.nope\n");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-unbound-member", 3));
+    cfx_end(&f);
+
+    /* A tuple has no namespace, and a record has no order. */
+    cfx_begin(&f,
+              "t: [Int, Bool] = {1, True}\n"
+              "v: Int = t.bogus()\n");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-unbound-member", 2));
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "R: type = [n: Int]\n"
+              "r: R = {n: 1}\n"
+              "b: Bool = r.lt(r)\n");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-unbound-member", 3));
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "a: Bool = True\n"
+              "b: Bool = False\n"
+              "c: Bool = a.lt(b)\n");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-unbound-member", 3));
+    cfx_end(&f);
+
+    /* The std namespaces still bridge their members. */
+    cfx_begin(&f,
+              "j: Json = Json.parse(\"{}\").unwrap()\n"
+              "d: Duration = Time.sub(Time 5, Time 2)\n"
+              "i: Int = Int.add(1, 2)\n"
+              "xs: []Int = {1}\n"
+              "ys: []Int = xs.map((n): n + 1)\n"
+              "ds: [String]Int = {\"a\": 1}\n"
+              "got: Option Int = ds.get(\"a\")\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+}
+
 /* A member link on a known function-typed receiver is rejected: a
    function type has no fields and no namespace. */
 static void function_receiver(void)
@@ -343,6 +404,7 @@ int main(void)
     derived_services();
     derived_with();
     opaque_members();
+    declared_namespace_is_complete();
     function_receiver();
     qualified_calls();
     type_qualified_calls();

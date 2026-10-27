@@ -24,8 +24,10 @@
  * reference gets a fresh inference variable at its use site (fresh per
  * reference, so occurrence-wise monomorphic); unification binds these
  * variables freely, and no diagnostic ever arises from their opacity.
- * A member link whose reading fails on a known receiver type (the
- * unknown std namespace members) takes the same opaque reading.
+ * A member link whose reading fails takes the same opaque reading only
+ * when the receiver's namespace is one the compiler still supplies:
+ * the std surface and the two container namespaces. A name absent from
+ * a declared module's own namespace is E-unbound-member.
  *
  * Output: one row per typed AST node, sorted by node address, so lower
  * can binary search by node. `type` is a closed snapshot: bound

@@ -9,9 +9,10 @@
    equality pair over every type whose derivation does not halt, the
    ordering family over the value layer and declared ADTs, with over
    records, show and inspect over determined receivers, and the JSON
-   pair over every type with a default form. Everything the
-   placeholder bridge leaves unknown takes the opaque reading. Calls
-   are typed in call.c. */
+   pair over every type with a default form. A name no station answers
+   is reported, except in a namespace the compiler still supplies
+   members for, which keeps the opaque reading. Calls are typed in
+   call.c. */
 
 /* The first reference of a node, optionally of one kind. */
 int ck_ref_at(const ck_ctx *c, const ek_node *n, ek_sym_kind kind,
@@ -135,6 +136,34 @@ static const ek_type *service_fn(ck_ctx *c, const ek_type *param,
     return ck_ivar(c);
 }
 
+/* The services the checker types by derivation. A name in this set is
+   never the opaque bridge: it derives, or the link reports why it
+   cannot. */
+static int derived_name(const char *name)
+{
+    static const char *names[] = {"eq",      "ne",   "lt",     "le",
+                                  "gt",      "ge",   "show",   "inspect",
+                                  "with",    "to_json",       "from_json"};
+    size_t i;
+
+    for (i = 0; i < sizeof names / sizeof *names; i++) {
+        if (strcmp(names[i], name) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* A member the receiver does not carry, in a namespace where absence is
+   final: reported regardless of who else could have supplied it. */
+static void absent(ck_ctx *c, const ek_node *at, const ek_type *r,
+                   const char *name)
+{
+    ck_error(c, at, "E-unbound-member",
+             "the receiver type %s has no member `%s` (Clause 7.4.3)",
+             ck_type_name(c, r), name);
+}
+
 /* The derived equality pair: E-no-eq where the derivation halts, the
    service where it does not. NULL falls through. */
 static const ek_type *derive_eq(ck_ctx *c, const ek_node *at,
@@ -187,8 +216,9 @@ static void no_order_error(ck_ctx *c, const ek_node *at, const ek_type *r)
 }
 
 /* The derived ordering family: the value layer, and declared ADTs
-   other than Bool by declaration order. A placeholder type's order is
-   unknown, so it stays opaque. NULL falls through. */
+   other than Bool by declaration order. A receiver with no order at
+   all is reported rather than bridged, because the family is closed.
+   NULL falls through. */
 static const ek_type *derive_lt(ck_ctx *c, const ek_node *at,
                                 const ek_type *r, const char *name,
                                 ek_reading *rd, const ek_type *bool_t)
@@ -206,10 +236,12 @@ static const ek_type *derive_lt(ck_ctx *c, const ek_node *at,
     if (!value_layer(r)) {
         if (r->kind != EK_T_NOMINAL || !r->u.nominal.sym
             || !r->u.nominal.sym->decl) {
+            absent(c, at, r, name);
             return NULL;
         }
         d = ck_decl_of(c, r->u.nominal.sym);
         if (!d || d->rhs != EK_TYPE_RHS_VARIANTS || ck_is_std(r, "Bool")) {
+            absent(c, at, r, name);
             return NULL;
         }
         if (ck_no_eq(c, r)) {
@@ -239,25 +271,6 @@ static int display_receiver(const ek_type *r)
     default:
         return 0;
     }
-}
-
-/* The services the checker types by derivation. A name in this set is
-   never the opaque bridge: it derives, or the link reports why it
-   cannot. */
-static int derived_name(const char *name)
-{
-    static const char *names[] = {"eq",       "ne",     "lt",
-                                  "le",       "gt",     "ge",
-                                  "show",     "inspect", "with",
-                                  "to_json",  "from_json"};
-    size_t i;
-
-    for (i = 0; i < sizeof names / sizeof *names; i++) {
-        if (strcmp(names[i], name) == 0) {
-            return 1;
-        }
-    }
-    return 0;
 }
 
 /* The derived display services over a determined receiver: show and
@@ -402,6 +415,38 @@ static const ek_type *derive_with(ck_ctx *c, const ek_node *at,
     return with_fn(c, r);
 }
 
+/* True when the receiver's namespace is one the compiler still supplies
+   members for: the std surface and the two container namespaces. A
+   declared module's own namespace is complete and never bridged. */
+static int std_namespace(const ek_type *r)
+{
+    switch (r->kind) {
+    case EK_T_LIST:
+    case EK_T_DICT:
+        return 1;
+    case EK_T_NOMINAL:
+        return r->u.nominal.sym && r->u.nominal.sym->module
+            && strcmp(r->u.nominal.sym->module, "std") == 0;
+    default:
+        return 0;
+    }
+}
+
+/* A name no station answered. A derived service is reported by its own
+   derivation; any other name is reported too, unless the namespace is
+   one the compiler still supplies, where the opaque bridge stands. */
+static const ek_type *no_member(ck_ctx *c, const ek_node *at,
+                                const ek_type *r, const char *name)
+{
+    if (derived_name(name)) {
+        return ck_ivar(c);
+    }
+    if (!std_namespace(r)) {
+        absent(c, at, r, name);
+    }
+    return ck_ivar(c);
+}
+
 /* The readings over a declared receiver: its representation's fields,
    its namespace, the derived services, and the extending module
    function. */
@@ -456,7 +501,7 @@ static const ek_type *nominal_link(ck_ctx *c, const ek_node *at,
         *rd = EK_RD_MODULE_FN;
         return ck_type_of(c, m);
     }
-    return ck_ivar(c);
+    return no_member(c, at, r, name);
 }
 
 /* The reading of one member link at its receiver's type. Derived
@@ -489,6 +534,10 @@ static const ek_type *link_type(ck_ctx *c, const ek_node *at,
         if (t) {
             return t;
         }
+        t = derive_lt(c, at, r, name, rd, bool_t);
+        if (t) {
+            return t;
+        }
         t = derive_with(c, at, r, name, rd);
         if (t) {
             return t;
@@ -501,6 +550,7 @@ static const ek_type *link_type(ck_ctx *c, const ek_node *at,
         if (t) {
             return t;
         }
+        return no_member(c, at, r, name);
     }
     if (r && r->kind == EK_T_NOMINAL && r->u.nominal.sym) {
         return nominal_link(c, at, r, name, rd, bool_t);
@@ -529,12 +579,7 @@ static const ek_type *link_type(ck_ctx *c, const ek_node *at,
         if (t) {
             return t;
         }
-        if (!derived_name(name)) {
-            ck_error(c, at, "E-unbound-member",
-                     "the receiver type %s has no member `%s` "
-                     "(Clause 7.4.3)", ck_type_name(c, r), name);
-        }
-        return ck_ivar(c);
+        return no_member(c, at, r, name);
     }
     if (!r || r->kind == EK_T_IVAR || r->kind == EK_T_TVAR) {
         *rd = EK_RD_UNKNOWN;
