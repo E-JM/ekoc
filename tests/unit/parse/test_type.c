@@ -240,6 +240,15 @@ static void generic_application(void)
     EK_CHECK(pfx_has_code(&f, "E-apply-head"));
     pfx_end(&f);
 
+    /* A qualified head names the type in its last segment. */
+    t = ann_of(&f, "geolib.Value Int");
+    EK_CHECK_U64(pfx_errors(&f), 0);
+    EK_CHECK_U64(t->kind, EK_N_T_APPLY);
+    EK_CHECK_STR(t->u.t_apply.head->u.path.data[0], "geolib");
+    EK_CHECK_STR(t->u.t_apply.head->u.path.data[1], "Value");
+    EK_CHECK_U64(t->u.t_apply.args.count, 1);
+    pfx_end(&f);
+
     /* A composite argument without parentheses is rejected. */
     t = ann_of(&f, "Option [Value Int Float]");
     EK_CHECK(pfx_errors(&f) > 0);

@@ -134,15 +134,11 @@ static ek_node *applied_type(p_ctx *c)
         return head;
     }
     if (head->kind == EK_N_T_NAME) {
-        size_t i;
-        int named = head->u.path.count > 0;
+        const char *name = head->u.path.count
+                               ? head->u.path.data[head->u.path.count - 1]
+                               : "";
 
-        for (i = 0; i < head->u.path.count; i++) {
-            if (!p_is_pascal(head->u.path.data[i])) {
-                named = 0;
-            }
-        }
-        if (!named) {
+        if (!p_is_pascal(name)) {
             p_error(c, "E-apply-head", head->line, head->col,
                     "a type variable must not head a generic application "
                     "(Clause 6.9.4)");

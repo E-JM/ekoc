@@ -314,11 +314,11 @@ static void qualified_application(void)
     cfx_end(&f);
 
     /* A generic constructor takes its instantiation from the anchor;
-       the import opens the bare type spelling. */
+       the qualified type spelling names the imported type. */
     cfx_run(&f,
             "import qwrap\n"
-            "a: Wrap String = qwrap.Wrap(\"s\")\n"
-            "b: Wrap String = qwrap.Wrap(3)\n",
+            "a: qwrap.Wrap String = qwrap.Wrap(\"s\")\n"
+            "b: qwrap.Wrap String = qwrap.Wrap(3)\n",
             mpath, 2, "qapp5.eko");
     EK_CHECK_U64(cfx_stage_errors(f.ds, f.dn), 0);
     EK_CHECK_U64(cfx_errors(&f), 1);
