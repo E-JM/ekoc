@@ -59,9 +59,12 @@
  * Clock.frozen, Rand.with_seed, Task.join/cancel), or when an argument
  * is a lambda whose body is world-touching (the open-bit
  * instantiation applied at opaque dispatchers); it contributes pure
- * otherwise. No diagnostic ever arises from the opacity itself: an
- * unknown callee is never rejected, it only feeds the OR that an
- * annotated binding reconciles against.
+ * otherwise. The derived services (the equality pair, the ordering
+ * family, show, inspect, with, and the JSON pair) are pure, so a call
+ * naming one contributes no bit whether or not the receiver carries
+ * it. No diagnostic ever arises from the opacity itself: an unknown
+ * callee is never rejected, it only feeds the OR that an annotated
+ * binding reconciles against.
  */
 
 typedef enum {

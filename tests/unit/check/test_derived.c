@@ -125,8 +125,9 @@ static void display_on_composites(void)
     cfx_end(&f);
 }
 
-/* A placeholder std type stays the opaque bridge: its display member is
-   not derived while the type is still a placeholder row. */
+/* The display services derive over every determined receiver, the
+   scalar and capability placeholders included: the arrow is real and
+   pure even though the type's shape is still opaque. */
 static void display_placeholder_opacity(void)
 {
     cfx f;
@@ -138,9 +139,9 @@ static void display_placeholder_opacity(void)
               "b: String = v.inspect()\n"
               "c: String = show(n)\n");
     EK_CHECK_U64(cfx_errors(&f), 0);
-    EK_CHECK(cfx_reading_at(&f, 3, EK_RD_EXTERNAL));
-    EK_CHECK(cfx_reading_at(&f, 4, EK_RD_EXTERNAL));
-    EK_CHECK(cfx_reading_at(&f, 5, EK_RD_EXTERNAL));
+    EK_CHECK(cfx_reading_at(&f, 3, EK_RD_DERIVED));
+    EK_CHECK(cfx_reading_at(&f, 4, EK_RD_DERIVED));
+    EK_CHECK(cfx_reading_at(&f, 5, EK_RD_DERIVED));
     cfx_end(&f);
 }
 
@@ -261,10 +262,10 @@ static void json_halts(void)
 {
     cfx f;
 
-    /* A capability receiver is world-touching to call, so the
-       declared bit admits it; the JSON form halts regardless. */
+    /* A capability receiver carries no JSON form; the form halts, and
+       the call itself is pure. */
     cfx_begin(&f,
-              "f: (cb: Out) !-> Json = cb.to_json()\n");
+              "f: (cb: Out) -> Json = cb.to_json()\n");
     EK_CHECK_U64(cfx_errors(&f), 1);
     EK_CHECK(cfx_code_at_line(&f, "E-json-shape", 1));
     cfx_end(&f);
@@ -307,6 +308,65 @@ static void json_halts(void)
     cfx_end(&f);
 }
 
+/* The equality pair and the ordering family derive over the value layer
+   and declared ADTs; capabilities and functions carry neither. */
+static void equality_and_order_families(void)
+{
+    cfx f;
+
+    cfx_begin(&f,
+              "a: Int = 1\n"
+              "b: Int = 2\n"
+              "n: Bool = a.ne(b)\n"
+              "l: Bool = a.le(b)\n"
+              "g: Bool = a.gt(b)\n"
+              "e: Bool = a.ge(b)\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    EK_CHECK(cfx_reading_at(&f, 3, EK_RD_DERIVED));
+    EK_CHECK(cfx_reading_at(&f, 6, EK_RD_DERIVED));
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "Sex: type = Man | Woman\n"
+              "x: Sex = Man\n"
+              "y: Sex = Woman\n"
+              "a: Bool = x.ne(y)\n"
+              "b: Bool = x.le(y)\n"
+              "c: Bool = x.gt(y)\n"
+              "d: Bool = x.ge(y)\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    EK_CHECK(cfx_reading_at(&f, 4, EK_RD_DERIVED));
+    cfx_end(&f);
+
+    /* A capability has no equality and no ordering. */
+    cfx_begin(&f, "f: (a: Out, b: Out) -> Bool = a.ne(b)\n");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-no-eq", 1));
+    cfx_end(&f);
+
+    cfx_begin(&f, "f: (a: Out, b: Out) -> Bool = a.lt(b)\n");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-no-eq", 1));
+    cfx_end(&f);
+
+    /* A function has none either, whichever member names it. */
+    cfx_begin(&f,
+              "g: (n: Int) -> Int = n\n"
+              "h: (n: Int) -> Int = n\n"
+              "b: Bool = h.ne(g)\n");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-no-eq", 3));
+    cfx_end(&f);
+
+    /* Display over a capability is pure, so a pure arrow admits it. */
+    cfx_begin(&f,
+              "s: (cap: Out) -> String = show(cap)\n"
+              "t: (cap: Out) -> String = cap.inspect()\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    EK_CHECK(cfx_reading_at(&f, 1, EK_RD_DERIVED));
+    cfx_end(&f);
+}
+
 int main(void)
 {
     display_on_declared();
@@ -318,5 +378,6 @@ int main(void)
     json_derived();
     json_core_and_composites();
     json_halts();
+    equality_and_order_families();
     return ek_test_report("check/derived");
 }
