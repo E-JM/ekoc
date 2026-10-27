@@ -790,7 +790,7 @@ unguarded arm closes the match. Exhaustiveness is specified in Clause 7.7.2.
 
 ```ebnf
 CaseExpr := 'case' Expression (',' Expression)+ ':' CaseBlock
-Arm      := Pattern (',' Pattern)+ ['if' Expression] '->' Expression
+Arm      := Pattern (',' Pattern)+ ['if' Expression] '->' ArmBody
 ```
 
 Each scrutinee is evaluated once, left to right. An arm supplies one pattern

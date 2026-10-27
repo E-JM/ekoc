@@ -218,8 +218,12 @@ ArmBody         := InlineSuite
                  | NEWLINE INDENT { Member } DEDENT
 
 InlineCase      := ':' InlineArm { ';' InlineArm }
-InlineArm       := Pattern [ 'if' Expression ] '->' InlineSuite
+InlineArm       := Pattern [ 'if' Expression ] '->' Expression
 ```
+
+An arm body is an inline suite or an indented block (Clause 6.2.2); the
+block's last member is the arm's value. An inline arm's body is one
+expression: the `;` of an inline case separates arms (Clause 6.7.5).
 
 The layout algorithm of Annex A.4 supplies `NEWLINE`, `INDENT`, and `DEDENT`.
 
