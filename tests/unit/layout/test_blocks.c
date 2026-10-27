@@ -290,6 +290,46 @@ static void test_arm_body_rebind(void)
     fx_end(&f);
 }
 
+/* An else at the if's column reattaches across a whole case nested in
+   the then-branch: the arm and case blocks close, the branch block
+   closes, and the else's own block opens. */
+static void test_else_past_arm_block(void)
+{
+    layout_fixture f;
+    char *got;
+
+    fx_begin(&f,
+        "f: (a: Bool, n: Int) -> Int =\n"
+        "    if a:\n"
+        "        case n:\n"
+        "            0 ->\n"
+        "                if n < 0:\n"
+        "                    1\n"
+        "                else:\n"
+        "                    2\n"
+        "            _ -> 3\n"
+        "    else:\n"
+        "        4\n");
+    EK_CHECK_U64(fx_errors(&f), 0);
+    EK_CHECK_U64(fx_count_kind(&f, EK_LTOK_INDENT), 7);
+    EK_CHECK_U64(fx_count_kind(&f, EK_LTOK_DEDENT), 7);
+    got = fx_skeleton(&f);
+    EK_CHECK_STR(got,
+        "S S S S S S S S S S S S S S N I "
+        "S S S N I "
+        "S S S N I "
+        "S S N I "
+        "S S S S S N I "
+        "S N D "
+        "S S N I "
+        "S N D D "
+        "S S S N D D "
+        "S S N I "
+        "S N D D E");
+    free(got);
+    fx_end(&f);
+}
+
 /* End of file terminates the last line and closes every open block. */
 static void test_eof_closes_all_blocks(void)
 {
@@ -312,6 +352,7 @@ int main(void)
     test_arm_body_guard();
     test_arm_body_multi_scrutinee();
     test_arm_body_rebind();
+    test_else_past_arm_block();
     test_eof_closes_all_blocks();
     return ek_test_report("layout/blocks");
 }
