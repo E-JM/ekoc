@@ -569,11 +569,17 @@ admits derivation: `Out`, `In`, `Fs`, `Env`, `Args`, `Clock`, and `Rand`.
 
 The capability module declares no extern declaration; its only native contact
 is the injected pair, and operating-system code lives in the host-constructed
-bundles. `Proc.exit` and the four concurrency members — `Conc.scope`,
-`Scope.spawn`, `Task.join`, `Task.cancel` — are compiler-provided
-declarations rather than capability-module source: an open-bit dispatcher over
-a runtime scheduler and the observation of runtime task values are not
-source-expressible (Clauses 7.9.6, 8.9).
+bundles. The compiler-provided declarations of the capability namespaces are
+sixteen. `Proc.exit` and the four concurrency members — `Conc.scope`,
+`Scope.spawn`, `Task.join`, `Task.cancel` — are not source-expressible: an
+open-bit dispatcher over a runtime scheduler and the observation of runtime
+task values have no source form (Clauses 7.9.6, 8.9). The nine `File` members
+reach the runtime's handle table directly; a handle admits no bundle pair,
+so no source form carries them. `In.from_lines` and `Rand.with_seed` are
+derivations whose sequences advance across calls; the language has no
+stateless closure expression of an advancing sequence. Each of the sixteen
+carries the signature and the bit of its Annex C.9 row, its body is an extern
+symbol the compiler injects, and no declaration form names it.
 
 ## 10.9 Exclusions
 

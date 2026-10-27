@@ -965,7 +965,9 @@ on a binding line or in a `case` pattern (Clause 6.8).
 
 Code under test consumes capabilities; a test supplies derived capabilities. Mocking is performed by
 capability derivation; no separate framework exists. The derivation combinators of this subsection are
-members of the capability namespaces and are declared by the capability module (Clause 9.1.1).
+members of the capability namespaces and are declared by the capability module (Clause 9.1.1), except
+`In.from_lines` and `Rand.with_seed`: their sequences advance across calls, which has no stateless
+expression, so both are compiler-provided declarations over injected extern symbols (Clause 10.8).
 
 | Derivation | Behavior |
 |---|---|
