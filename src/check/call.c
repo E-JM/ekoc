@@ -492,6 +492,20 @@ const ek_type *ck_lambda(ck_ctx *c, const ek_node *e, const ek_type *expected)
     }
     ret = ck_expr(c, body, pe ? pe->u.fn.result : NULL);
     ck_scope_pop(c);
+    if (pe && ret) {
+        /* The body flows into the result at a value position: it
+           conforms, so an unbound result slot of the expectation
+           binds from the body and a mismatched body is reported at
+           the lambda, not far away at the use. */
+        ck_conform k = ck_conforms(c, ret, pe->u.fn.result, 1);
+
+        if (k != CK_OK) {
+            ck_error(c, body, ck_conform_code(k),
+                     "the lambda body is %s, the result is %s "
+                     "(Clause 7.8.1)", ck_type_name(c, ret),
+                     ck_type_name(c, pe->u.fn.result));
+        }
+    }
     pe = lambda_arrow(c, e, expected, pe, ps, n, ret, ck_body_bit(c, body));
     ck_row(c, e, pe, EK_RD_NONE);
     return pe;

@@ -166,11 +166,38 @@ static void wide_generics(void)
     cfx_end(&f);
 }
 
+/* A lambda body conforms to the expected result at the lambda: an
+   Int body under a String result is reported there, not carried as
+   the expectation itself. */
+static void lambda_result_conform(void)
+{
+    cfx f;
+
+    cfx_begin(&f,
+              "g: (i: Int) -> String = (x): x * 2\n");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-nominal-mismatch", 1));
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "g: (i: Int) -> String = (x): \"s\"\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+
+    /* A diverging body adapts at the same position. */
+    cfx_begin(&f,
+              "die: (m: String) -> Never = panic(m)\n"
+              "g: (i: Int) -> String = (x): die(\"x\")\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+}
+
 int main(void)
 {
     implicit_tvars();
     lambdas();
     generic_decls();
     wide_generics();
+    lambda_result_conform();
     return ek_test_report("check/inference");
 }
