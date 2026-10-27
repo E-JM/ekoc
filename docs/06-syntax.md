@@ -117,10 +117,14 @@ A header introduces a block and ends in one of two ways:
 | lambda, `if`, `else`, callback | `:` | the body block |
 | `type` declaration with vertical variants | `=` | the variant block |
 | `case` expression | `:` | the arm block |
+| `case` arm | `->` | the arm body block |
 
 A header with `=` MAY be followed by its body on the same line when the body
 is a single expression. A header with `:` MAY be followed by its body on the
-same line when the body is a single expression.
+same line when the body is a single expression. A `case` arm's `->` likewise
+MAY be followed by its body on the same line when the body is a single
+expression; a deeper following line opens the arm body block, and the block's
+last member is the arm's value.
 
 ```eko
 double: (n: Int) -> Int = n * 2
@@ -738,7 +742,8 @@ A `case` expression has a scrutinee and one or more arms:
 ```ebnf
 CaseExpr := 'case' Expression ':' CaseBlock
 CaseBlock := NEWLINE INDENT Arm {Arm} DEDENT
-Arm      := Pattern ['if' Expression] '->' Expression
+Arm      := Pattern ['if' Expression] '->' ArmBody
+ArmBody  := InlineSuite | IndentedBlock
 ```
 
 ```eko

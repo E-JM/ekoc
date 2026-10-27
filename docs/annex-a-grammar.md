@@ -213,10 +213,12 @@ A `case` block and a `case` arm block use `Arm` rather than `Statement`:
 
 ```ebnf
 CaseBlock       := ':' NEWLINE INDENT Arm { Arm } DEDENT
-Arm             := Pattern [ 'if' Expression ] '->' Expression NEWLINE
+Arm             := Pattern [ 'if' Expression ] '->' ArmBody
+ArmBody         := InlineSuite
+                 | NEWLINE INDENT { Member } DEDENT
 
 InlineCase      := ':' InlineArm { ';' InlineArm }
-InlineArm       := Pattern [ 'if' Expression ] '->' Expression
+InlineArm       := Pattern [ 'if' Expression ] '->' InlineSuite
 ```
 
 The layout algorithm of Annex A.4 supplies `NEWLINE`, `INDENT`, and `DEDENT`.
@@ -431,11 +433,13 @@ break ends a member.
    stack remains `[0]`, the line's indentation is ignored, and a line the
    grammar rejects there is diagnosed at parse. An indented `else` as the
    first significant line is an error (rule 8).
-6. **Headers and continuation.** A line at depth zero that ends in `:` or `=`
-   opens a block (Clause 6.2.3); a deeper following line is the block's
-   first member and is processed by rule 5. The block-opening tokens are
-   `:` and `=`; a line that ends in `:=` opens no block, and a multi-line
-   rebinding right-hand side is a continued expression under Clause 6.2.4. A deeper line after a line that
+6. **Headers and continuation.** A line at depth zero that ends in `:`, `=`,
+   or `->` opens a block (Clause 6.2.3); a deeper following line is the
+   block's first member and is processed by rule 5. The block-opening tokens
+   are `:`, `=`, and `->`; a line that ends in `:=` opens no block, and a
+   multi-line rebinding right-hand side is a continued expression under
+   Clause 6.2.4. The `->` opener is the `case` arm header: the block it
+   opens is the arm body, whose last member is the arm's value. A deeper line after a line that
    opens no block is a continuation: it emits no token, and its indentation
    is ignored. Continuation is licensed by Clause 6.2.4; a deeper line in
    any other position is diagnosed at parse, not by this algorithm.
