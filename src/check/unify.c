@@ -12,6 +12,9 @@ int ck_occurs(const ek_type *v, const ek_type *t)
     size_t i;
 
     t = ck_prune(t);
+    if (!t) {
+        return 0; /* an abandoned slot under a failed allocation */
+    }
     if (t == v) {
         return 1;
     }
