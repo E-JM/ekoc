@@ -136,6 +136,17 @@ void r_cons_head(r_ctx *c, r_file *f, const ek_node *n, r_head *out)
     size_t k = r_lookup_ctor(c, f, name, &cands);
 
     memset(out, 0, sizeof *out);
+    if (strcmp(name, "Never") == 0) {
+        /* The language's bottom type names no value and has no
+           constructor; the miss is not the bridge. */
+        r_error(c, f->mod->file, n->line, n->col, "E-unbound-name",
+                "`Never` is a type of the language; it names no value "
+                "(Clause 7.5.4)");
+        out->kind = EK_SYM_EXTERNAL;
+        out->st = EK_ST_EXTERNAL;
+        r_add_ref(c, n, out->kind, out->st, NULL);
+        return;
+    }
     if (k == 0) {
         /* Unknown to the file and to std: the unresolved-external
            bridge (resolve.h). */

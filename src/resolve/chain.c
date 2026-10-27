@@ -130,7 +130,20 @@ static void type_head(r_ctx *c, r_file *f, const ek_node *head, r_head *cur,
 {
     const char *name = head->u.path.data[0];
     const ek_symbol *first = NULL;
-    size_t k = r_lookup_type(f, name, &first);
+    size_t k;
+
+    if (strcmp(name, "Never") == 0) {
+        /* The language's bottom type names no namespace and no
+           value. */
+        r_error(c, f->mod->file, head->line, head->col, "E-unbound-member",
+                "`Never` is a type of the language; it names no namespace "
+                "(Clause 7.5.4)");
+        cur->kind = EK_SYM_EXTERNAL;
+        cur->st = EK_ST_EXTERNAL;
+        r_add_ref(c, head, cur->kind, cur->st, NULL);
+        return;
+    }
+    k = r_lookup_type(f, name, &first);
 
     if (k > 1) {
         r_error(c, f->mod->file, head->line, head->col, "E-name-conflict",

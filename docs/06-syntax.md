@@ -350,14 +350,11 @@ TypeRhs  := VariantList
           | NEWLINE INDENT VariantLine { VariantLine } DEDENT
           | RecordType
           | TupleType
-          | ε
 
 VariantList  := Variant ('|' Variant)*
               | '|' Variant ('|' Variant)*
 VariantLine  := '|' Variant NEWLINE
 ```
-
-An empty right-hand side denotes a zero-variant type.
 
 A variant is a PascalCase constructor, optionally followed by one payload
 type:
@@ -373,7 +370,6 @@ Sex:    type = Man | Woman
 Person: type = [name: String, age: UInt, sex: Sex, address: String]
 Result: type t e = Ok t | Err e
 Tree:   type t = Leaf t | Node [Tree t, Tree t, t]
-Never:  type =
 ```
 
 A type declaration is top-level. A declaration introduces a new nominal type;
@@ -1032,10 +1028,11 @@ A type expression is a type atom or a composite type. Type atoms are:
 
 | Atom | Example | Meaning |
 |---|---|---|
-| named type | `Person`, `Int`, `Never` | a declared type |
+| named type | `Person`, `Int` | a declared type |
 | type variable | `t`, `elem` | a generic variable |
 | module-qualified type | `person.Person` | a type in an imported module |
 | unit type | `_` | the unit type |
+| bottom type | `Never` | the bottom type |
 | parenthesized type | `([]Int)` | grouping |
 
 A bare lowercase name in type position is a type variable. A bare PascalCase
@@ -1043,7 +1040,9 @@ name is a declared type; a leading privacy prefix does not change the class
 (Clause 5.5.2). A dotted name is a module path. Classification is by spelling
 alone (Clause 7.4.1).
 
-`_` in type position always means the unit type; it never means "infer".
+`_` in type position always means the unit type; it never means "infer". `Never`
+in type position always means the bottom type; it is vocabulary of the language,
+not a declared name, and no module declares it (Clause 7.5.4).
 
 ### 6.9.2 Composite Types
 

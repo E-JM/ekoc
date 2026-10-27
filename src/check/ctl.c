@@ -4,7 +4,8 @@
 
 /* The control forms: `if` and `case`. Arm typing unifies the arm
    bodies, a `Never` arm adapts, and exhaustiveness runs on the
-   unguarded arms whose bodies are not `Never`. */
+   arms' patterns — a diverging body neither adds nor removes
+   coverage. */
 
 const ek_type *ck_if(ck_ctx *c, const ek_node *e, const ek_type *expected)
 {
@@ -137,8 +138,9 @@ const ek_type *ck_case(ck_ctx *c, const ek_node *e, const ek_type *expected)
 
         arms[i] = arm;
         atypes[i] = case_arm(c, arm, scrut, nsc, expected);
-        contrib[i] = ck_prune(atypes[i])
-                && ck_prune(atypes[i])->kind != EK_T_NEVER;
+        /* Coverage belongs to the pattern: a diverging body neither
+           adds nor removes it. */
+        contrib[i] = ck_prune(atypes[i]) != NULL;
     }
     ck_exhaust(c, e, scrut, nsc, arms, contrib, na);
     result = case_result(c, e, atypes, na, expected);

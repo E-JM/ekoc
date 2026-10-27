@@ -4,9 +4,10 @@
 
 /* Calls, lambdas, and constructor application. A call needs a
    function type with exactly n parameters; the receiver of a member
-   call is the first argument. An unknown callee unifies with the
-   function type of its synthesized arguments. Every call records its
-   world bit and a row. */
+   call is the first argument. A bottom callee never evaluates, so
+   its call types as `Never` without a not-callable diagnostic. An
+   unknown callee unifies with the function type of its synthesized
+   arguments. Every call records its world bit and a row. */
 
 /* An unknown callee: the arguments synthesize and the callee unifies
    with their function type (opacity). */
@@ -20,7 +21,9 @@ static const ek_type *call_opaque(ck_ctx *c, const ek_node *e,
                                   size_t off, int synthesize, int implicit)
 {
     const ek_type **ps = NULL;
-    const ek_type *ret = ck_ivar(c);
+    /* A bottom callee does not return: the call is `Never`; anything
+       else synthesizes opaquely. */
+    const ek_type *ret = ck_is_bottom(f) ? ck_never(c) : ck_ivar(c);
     const ek_type *built;
     size_t i;
 
@@ -51,7 +54,7 @@ static const ek_type *call_opaque(ck_ctx *c, const ek_node *e,
     built = ck_fn(c, ps, nargs, ret, EK_ARROW_PURE);
     if (f && f->kind == EK_T_IVAR) {
         ck_conforms(c, built, f, 0);
-    } else if (f && !synthesize) {
+    } else if (f && !synthesize && !ck_is_bottom(f)) {
         ck_error(c, e, "E-not-callable",
                  "a value of type %s is not called (Clause 7.8.1)",
                  ck_type_name(c, f));

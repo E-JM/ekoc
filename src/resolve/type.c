@@ -86,7 +86,13 @@ static void qualified(r_ctx *c, r_file *f, const ek_node *t)
     }
     if (m->surf == c->std) {
         /* A std type the file does not declare yet keeps the external
-           bridge (resolve.h). */
+           bridge (resolve.h) — except `Never`, a type of the language
+           that no module declares. */
+        if (strcmp(tname, "Never") == 0) {
+            r_error(c, file, t->line, t->col, "E-unbound-member",
+                    "module `%s` declares no type `%s`; `Never` is a type "
+                    "of the language (Clause 7.5.4)", mname, tname);
+        }
         r_add_ref(c, t, EK_SYM_EXTERNAL, EK_ST_TYPE, NULL);
         return;
     }
@@ -146,6 +152,11 @@ void r_type(r_ctx *c, r_file *f, const ek_node *t)
     }
     if (t->kind == EK_N_T_NAME) {
         if (t->u.path.count == 1) {
+            if (strcmp(t->u.path.data[0], "Never") == 0) {
+                /* `Never` at type position is the bottom type of the
+                   language, never a lookup; check owns it. */
+                return;
+            }
             if (r_is_snake(t->u.path.data[0])) {
                 tvar(c, f, t, t->u.path.data[0]);
             } else {

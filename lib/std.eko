@@ -14,9 +14,6 @@ Option: type t = Some t | None
 // A recoverable failure: an `Ok` payload, or the reason it failed.
 Result: type t e = Ok t | Err e
 
-// The zero-variant type: no constructors, no values, the bottom type.
-Never: type =
-
 // A closed failure reason for the parse family: a missing value, a
 // malformed one, or one outside the target's limits.
 ParseError: type = Empty | Invalid String | OutOfRange

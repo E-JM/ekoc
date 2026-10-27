@@ -188,8 +188,7 @@ ExternDecl      := snake_case Identifier ':' FunctionType '='
                    'extern' StringLiteral [ 'Pure' ]
 ```
 
-A `type` declaration with an empty right-hand side denotes a zero-variant
-type. A `ctype` right-hand side MUST be a record type whose field types are
+A `ctype` right-hand side MUST be a record type whose field types are
 machine words or other `ctype` records (Clause 10.3.3).
 
 ### A.3.3 Blocks and Members

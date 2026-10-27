@@ -124,14 +124,18 @@ static void variant_list(p_ctx *c, ek_node *n)
 }
 
 /* A type right-hand side: a variant list, a block of variant lines, a
-   record, a tuple, or nothing. A bracket form that is neither a record
+   record, or a tuple. A bracket form that is neither a record
    nor a tuple is an alias, which does not exist. */
 static void type_rhs(p_ctx *c, ek_node *n)
 {
     if (p_at_layout(c, EK_LTOK_NEWLINE)) {
         p_take(c);
         if (!p_got_layout(c, EK_LTOK_INDENT)) {
-            n->u.type_decl.rhs = EK_TYPE_RHS_EMPTY; /* zero-variant */
+            p_error(c, "E-type-decl-form", n->line, n->col,
+                    "the right-hand side of `type` is missing: a variant "
+                    "list, a record, or a tuple (Clause 6.3.5)");
+            n->u.type_decl.rhs = EK_TYPE_RHS_VARIANTS;
+            p_list_init(&n->u.type_decl.variants);
             return;
         }
         n->u.type_decl.rhs = EK_TYPE_RHS_VARIANTS;
@@ -145,7 +149,7 @@ static void type_rhs(p_ctx *c, ek_node *n)
         p_list_init(&n->u.type_decl.variants);
         if (!t) {
             p_sync(c);
-            n->u.type_decl.rhs = EK_TYPE_RHS_EMPTY;
+            n->u.type_decl.rhs = EK_TYPE_RHS_VARIANTS;
             return;
         }
         if (t->kind == EK_N_T_RECORD) {
@@ -161,7 +165,7 @@ static void type_rhs(p_ctx *c, ek_node *n)
         p_error(c, "E-type-decl-form", t->line, t->col,
                 "the right-hand side of `type` is a declaration form, not a "
                 "type expression (Clause 6.9.5)");
-        n->u.type_decl.rhs = EK_TYPE_RHS_EMPTY;
+        n->u.type_decl.rhs = EK_TYPE_RHS_VARIANTS;
         return;
     }
     n->u.type_decl.rhs = EK_TYPE_RHS_VARIANTS;
@@ -194,7 +198,8 @@ ek_node *p_type_decl(p_ctx *c, const char *name, const ek_layout_token *head)
         p_error_tok(c, "E-syntax", p_peek(c),
                     "expected `=` before the type right-hand side");
         p_sync(c);
-        n->u.type_decl.rhs = EK_TYPE_RHS_EMPTY;
+        n->u.type_decl.rhs = EK_TYPE_RHS_VARIANTS;
+        p_list_init(&n->u.type_decl.variants);
         return n;
     }
     type_rhs(c, n);

@@ -79,8 +79,8 @@ the namespace member below, by operand type (Clause 7.8.3).
 | `FileInfo` | record | Clause 9.12.7 |
 | `Time`, `Mono`, `Duration` | nominal single-variant types | Clause 9.7.1 |
 | `Json` | ADT with seven variants | Clause 9.9.1 |
-| `Never` | zero-variant ADT | Clause 7.5.4 |
-| `_` | unit type | Clause 7.5.4 |
+| `Never` | the bottom type, a type of the language | Clause 7.5.4 |
+| `_` | the unit type, a type of the language | Clause 7.5.4 |
 | `Scope`, `Task t` | concurrency scope and task handle | Clause 8.9.1 |
 | `Out`, `In`, `Fs`, `Env`, `Args`, `Clock`, `Rand`, `Proc`, `Conc` | capabilities | Clause 7.9.1 |
 | `C.Ptr.Void`, `C.Size`, `C.In T` | native vocabulary | Clause 10.3.2, Clause 10.3.4 |
@@ -98,7 +98,6 @@ FileInfo:   type = [size: UInt, mtime: Time, is_dir: Bool]
 Time:       type = Time Int
 Mono:       type = Mono Int
 Duration:   type = Duration Int
-Never:      type =
 Json:       type = Null | Bool Bool | Int Int | Float Float | Str String | Arr []Json | Obj ([String]Json)
 ```
 

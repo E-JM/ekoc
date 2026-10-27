@@ -100,8 +100,7 @@ typedef enum {
 
 /* Right-hand side shape of a type declaration. */
 typedef enum {
-    EK_TYPE_RHS_VARIANTS, EK_TYPE_RHS_RECORD, EK_TYPE_RHS_TUPLE,
-    EK_TYPE_RHS_EMPTY
+    EK_TYPE_RHS_VARIANTS, EK_TYPE_RHS_RECORD, EK_TYPE_RHS_TUPLE
 } ek_type_rhs;
 
 typedef struct ek_node ek_node;

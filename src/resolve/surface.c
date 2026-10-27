@@ -107,6 +107,13 @@ static void collect_type(r_surf *s, const ek_node *d)
     if (!sym) {
         return;
     }
+    if (strcmp(name, "Never") == 0) {
+        /* The spelling belongs to the language's bottom type; no
+           module declares it. */
+        r_error(s->c, s->m->file, d->line, d->col, "E-name-conflict",
+                "`Never` is a type of the language and cannot be declared "
+                "(Clause 7.5.4)");
+    }
     sym->decl = d;
     sym->public = name[0] != '_';
     seen = key_seen(s->tkeys, s->nt, name);

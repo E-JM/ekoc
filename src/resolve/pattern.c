@@ -107,6 +107,16 @@ static void cons_ref(r_ctx *c, r_file *f, const ek_node *pat)
     k = r_lookup_ctor(c, f, path->count == 1 ? path->data[0] : "",
                       &cands);
     if (k == 0) {
+        if (path->count == 1 && strcmp(path->data[0], "Never") == 0) {
+            /* The language's bottom type has no constructor; the
+               pattern miss is not the bridge. */
+            r_error(c, f->mod->file, pat->line, pat->col,
+                    "E-unbound-name",
+                    "`Never` is a type of the language; it names no "
+                    "constructor (Clause 7.5.4)");
+            r_add_ref(c, pat, EK_SYM_EXTERNAL, EK_ST_EXTERNAL, NULL);
+            return;
+        }
         /* Unknown to the file and to std: the bridge records the
            miss. */
         r_add_ref(c, pat, EK_SYM_EXTERNAL, EK_ST_EXTERNAL, NULL);

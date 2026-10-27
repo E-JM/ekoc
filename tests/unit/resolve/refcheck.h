@@ -32,6 +32,13 @@ static inline const char *rfk_name(int k)
     }
 }
 
+/* The type-position names the language owns: they carry no reference
+   (Clause 7.5.4). */
+static inline int owned_tname(const char *n0)
+{
+    return strcmp(n0, "_") == 0 || strcmp(n0, "Never") == 0;
+}
+
 /* Whether n is a reference site, and its kind when it is. */
 static inline int rfk_of(const ek_node *n, int *out)
 {
@@ -50,8 +57,7 @@ static inline int rfk_of(const ek_node *n, int *out)
         return 1;
     case EK_N_T_NAME:
         *out = RFK_TNAME;
-        return n->u.path.count == 1
-                   ? strcmp(n->u.path.data[0], "_") != 0 : 1;
+        return n->u.path.count == 1 ? !owned_tname(n->u.path.data[0]) : 1;
     case EK_N_P_CONS:
         *out = RFK_PCONS;
         return 1;

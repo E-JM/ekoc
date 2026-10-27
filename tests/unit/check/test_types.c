@@ -191,12 +191,41 @@ static void never_adaptation(void)
     EK_CHECK(cfx_code_at_line(&f, "E-type-mismatch", 4));
     cfx_end(&f);
 
-    /* A zero-variant type derives its ordering vacuously, like any
-       other ADT. */
+    /* A member of a bottom receiver never evaluates: the access
+       types as `Never`, which adapts to the declared result. */
     cfx_begin(&f,
               "lt: (a: Never, b: Never) -> Bool = a.lt(b)\n");
     EK_CHECK_U64(cfx_errors(&f), 0);
-    EK_CHECK(cfx_reading_at(&f, 1, EK_RD_DERIVED));
+    EK_CHECK(cfx_reading_at(&f, 1, EK_RD_NONE));
+    cfx_end(&f);
+
+    /* A call of a bottom callee does not return: it types as
+       `Never` without a not-callable diagnostic, and adapts. */
+    cfx_begin(&f,
+              "die: (m: String) -> Never = panic(m)\n"
+              "v: Int = die(\"x\")(1)\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+
+    /* Coverage belongs to patterns: a diverging arm's pattern still
+       covers its constructor. */
+    cfx_begin(&f,
+              "die: (m: String) -> Never = panic(m)\n"
+              "f: (r: Result Int String) -> Int =\n"
+              "    case r:\n"
+              "        Ok n -> n\n"
+              "        Err e -> die(\"no\")\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+
+    /* Every arm diverging is still exhaustive; the case is `Never`. */
+    cfx_begin(&f,
+              "die: (m: String) -> Never = panic(m)\n"
+              "f: (b: Bool) -> Never =\n"
+              "    case b:\n"
+              "        True -> die(\"a\")\n"
+              "        False -> die(\"b\")\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
     cfx_end(&f);
 }
 

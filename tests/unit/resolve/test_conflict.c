@@ -268,6 +268,47 @@ static void name_case(void)
     rfx_end(&f);
 }
 
+static void never_owned_by_language(void)
+{
+    rfx f;
+
+    /* The spelling belongs to the bottom type of the language; no
+       module declares it. */
+    rfx_begin(&f, "Never: type = True | False\n");
+    EK_CHECK_U64(rfx_errors(&f), 1);
+    EK_CHECK(rfx_code_at_line(&f, "E-name-conflict", 1));
+    rfx_end(&f);
+
+    /* `std` no longer carries the name either; the qualified spelling
+       is a member miss, not the bridge. */
+    rfx_begin(&f, "f: (a: std.Never) -> Int = 0\n");
+    EK_CHECK_U64(rfx_errors(&f), 1);
+    EK_CHECK(rfx_code_at_line(&f, "E-unbound-member", 1));
+    rfx_end(&f);
+
+    /* As a chain head, `Never` names no namespace and no value. */
+    rfx_begin(&f, "f: Int = Never.bogus()\n");
+    EK_CHECK_U64(rfx_errors(&f), 1);
+    EK_CHECK(rfx_code_at_line(&f, "E-unbound-member", 1));
+    rfx_end(&f);
+
+    /* At value position, `Never` is not a value: no constructor of
+       the spelling exists either. */
+    rfx_begin(&f, "x: Int = Never\n");
+    EK_CHECK_U64(rfx_errors(&f), 1);
+    EK_CHECK(rfx_code_at_line(&f, "E-unbound-name", 1));
+    rfx_end(&f);
+
+    /* Nor is it a constructor pattern. */
+    rfx_begin(&f,
+        "f: (b: Bool) -> Int =\n"
+        "    case b:\n"
+        "        Never -> 1\n");
+    EK_CHECK_U64(rfx_errors(&f), 1);
+    EK_CHECK(rfx_code_at_line(&f, "E-unbound-name", 3));
+    rfx_end(&f);
+}
+
 int main(void)
 {
     put_fixtures();
@@ -281,6 +322,7 @@ int main(void)
     duplicate_variants();
     same_named_types();
     namespace_owner();
+    never_owned_by_language();
     name_case();
     return ek_test_report("resolve/conflict");
 }

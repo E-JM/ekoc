@@ -163,10 +163,12 @@ static void type_decls(void)
     EK_CHECK_U64(pfx_item(&f, 0)->u.type_decl.rhs, EK_TYPE_RHS_TUPLE);
     pfx_end(&f);
 
-    /* The empty right-hand side is the zero-variant type. */
+    /* An empty right-hand side is not a declaration form; the
+       zero-variant type does not exist. */
     pfx_begin(&f, "Never: type =\n");
-    EK_CHECK_U64(pfx_errors(&f), 0);
-    EK_CHECK_U64(pfx_item(&f, 0)->u.type_decl.rhs, EK_TYPE_RHS_EMPTY);
+    EK_CHECK(pfx_errors(&f) > 0);
+    pfx_collect(&f);
+    EK_CHECK(pfx_has_code(&f, "E-type-decl-form"));
     pfx_end(&f);
 
     /* A composite expression is not a declaration form. */

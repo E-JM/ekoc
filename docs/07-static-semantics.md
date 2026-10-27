@@ -96,7 +96,8 @@ The standard library is the module `std`, delivered as source and versioned with
 `import std` is redundant and reports W-redundant-import (Annex B).
 
 The implicit import opens the public types of `std` into unqualified scope: `Bool`, `Char`, `String`, `Bytes`, the numeric
-types, `Option`, `Result`, `Range`, `Never`, the error types, and the time types. The names of the capability module — the capability types,
+types, `Option`, `Result`, `Range`, the error types, and the time types. `Never` resolves in every file too, but as vocabulary of the
+language rather than an opened name: it is never imported, opened, or declared (Clause 7.5.4). The names of the capability module — the capability types,
 `File`, `OpenMode`, `FileInfo`, `IoError`, `Scope`, and `Task t` — resolve in every file without import (Clause 9.1.2). Opened type
 names — std's and the capability module's — occupy a fallback layer: an explicit import is chosen and may conflict (Clause 7.4.6), but this
 import is unconditional with no opt-out, so it reserves no name; any type declaration of the same spelling shadows one, and the qualified
@@ -338,7 +339,8 @@ Every `type` declaration introduces a new nominal type. The right-hand side MUST
 tuple type (Clause 6.9.5). A composite type expression such as `[]Int` is not a declaration form, and there are no type aliases.
 
 A variant list declares an algebraic data type. A variant name is a PascalCase constructor; a payload follows by juxtaposition, and a
-multi-component payload is a tuple type. A zero-variant list is legal. A constructor applied by juxtaposition is check-only: it requires an
+multi-component payload is a tuple type. A variant list has at least one variant: a type with no values is not a declaration form, and the
+bottom type is vocabulary of the language (Clause 7.5.4). A constructor applied by juxtaposition is check-only: it requires an
 expected type; its instantiation is taken from that type (Clause 7.6.4). A constructor is never written with parentheses (Clause 6.3.5).
 Its visibility follows the type (Clause 7.3.3), and its name MAY equal the type name.
 
@@ -350,9 +352,6 @@ reachable by pattern matching.
 
 Two nominal types with the same shape are mutually incompatible. Conversion is explicit: a literal or a field-by-field rebuild. A nominal value
 MAY flow into a same-shape anonymous type by shape adaptation (Clause 7.5.5); the reverse flow does not exist.
-
-A user-declared zero-variant type has no values and the same derived-service behavior as `Never`, but bottom adaptation remains a property of
-`Never` alone (Clause 7.5.4).
 
 A `ctype` declaration introduces a nominal record type whose layout is pinned to C. Its field predicate is checked at the declaration line
 (Clause 10.3.3).
@@ -393,11 +392,14 @@ literal (Clause 9.10.3).
 `()` at type position is the zero-parameter function type and abbreviates `() -> _`. A unit result is written `-> _`; `-> ()` is not a unit
 result. The elided arrow `(a)` abbreviates `(a) -> _` (Clause 6.9.3).
 
-`Never` is a standard-library zero-variant ADT: no constructors and no values. It is distinct from the unit type.
+`Never` is a type of the language, the dual of `_`: as `_` is the unit type with exactly one value, `Never` is the bottom type with no values.
+It is vocabulary rather than a library type — no module declares it, `std` does not carry it, and a declaration of the spelling is rejected with
+E-name-conflict — and it is distinct from the unit type.
 
 `Never` is the bottom type. A `Never` expression adapts to any value type at the following positions: an argument, an operand, an expected type,
 a collection element, a `case` arm, and a declared return position. The adaptation applies at value positions only. It does not apply inside a
 function type: `(a) -> Never` does not adapt to `(a) -> Int`; a lambda wrapper is the explicit form. A `[]Never` value has only the empty list.
+`Never` has no members and no services: the receiver of an access never evaluates, so a member of a `Never` expression types as `Never`.
 
 A function MAY declare any arrow with result `Never`. `panic` is pure and has type `(String) -> Never`; `Proc.exit` is world-touching and has
 type `(Proc, Int) !-> Never` (Clause 9.2.3). A declared result type `t` does not promise termination, and divergence neither sets nor clears the
@@ -681,8 +683,8 @@ last-element pattern covers the element type. The empty list and the non-empty l
 For every other scrutinee type, the `case` MUST end with a `_` arm; a literal pattern alone does not cover the type.
 
 An or-pattern covers what its alternatives cover; each alternative is considered. Exhaustiveness is checked against the instantiated union:
-`Result t Never` still requires an `Err` arm; inhabitance is not analyzed. A diverging arm does not discharge exhaustiveness (Clause
-7.7.4).
+`Result t Never` still requires an `Err` arm; inhabitance is not analyzed. Coverage belongs to patterns alone: a diverging body neither adds
+nor removes what an arm's pattern covers (Clause 7.7.4).
 
 Tuple, record, and list scrutinees are judged by shape; every other non-ADT scrutinee requires a final `_` arm. This is the rule that the
 pattern forms of Clause 6.8 and the conformance suite exercise.
@@ -700,8 +702,8 @@ A guard occurs only at arm level (Clause 6.7.3). Its world bit is ORed into the 
 Every arm of a `case` MUST have the same type. A `Never` arm adapts to the type of the other arms (Clause 7.5.4); if every arm is `Never`, the
 `case` is `Never`. The scrutinee and all guards contribute their bits to the enclosing context; `case` has no separate bit rule (Clause 7.9.4).
 
-An arm is always a pattern followed by `->` and an expression. A bare diverging expression is not an arm (Clause 6.7.1); it is a syntax error. A
-`Never` arm does not discharge exhaustiveness: its pattern MUST still cover its constructor, or the case MUST end with `_` (Clause 7.7.2).
+An arm is always a pattern followed by `->` and an expression. A bare diverging expression is not an arm (Clause 6.7.1); it is a syntax error.
+A `Never` arm's pattern covers like any other arm's — exhaustiveness belongs to patterns, never to divergence (Clause 7.7.2).
 
 The `if` expression requires a `Bool` condition. Its two branches MUST have the same type. An omitted `else` is `else: _`, so a then-branch
 without an `else` MUST have type `_` or `Never` (Clause 6.7.4). `if` is sugar for a `case` over `Bool`; its condition and both branches

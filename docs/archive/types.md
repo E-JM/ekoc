@@ -140,3 +140,43 @@ self-anchoring equality: `Leaf 1 == Leaf 2` is an error (no unique union to
 anchor the instantiation); if one side is a variable the instance is
 determined and the equality is legal — cross-seeding. Constructors of
 single-variant unions self-anchor, so `Red == Green` stays legal.
+
+## 8. `Never`: vocabulary, not a declaration
+
+The bottom type needs two properties no declaration can express: it
+adapts to every value type, and it marks a call that does not return.
+An empty variant list can state *uninhabitedness*, but bottomness is a
+fact of the type lattice and of evaluation, not of a constructor
+enumeration. `std` carrying a `Never: type =` row therefore made the
+library definition decorative — the checker recognized the type by its
+`std` + `Never` name pair, the one declaration whose meaning lived in
+its spelling.
+
+**Ruling.** `Never` is a type of the language, the dual of `_`: as `_`
+is the unit type with exactly one value, `Never` is the bottom type
+with none. It resolves in every file as vocabulary, cannot be declared
+by any module, has no namespace, and a member access on a `Never`
+expression types as `Never` — the receiver never evaluates. The empty
+right-hand side is removed from the grammar: a type declaration always
+carries a variant list, a record, or a tuple.
+
+**Rejected: the Swift model** (keep the std row, grant bottomness by
+name). This was the standing design. It needs name magic in the
+checker, an import-layer anomaly (an opened name that is not a name),
+and an empty-RHS grammar production with exactly one legal customer.
+
+**Rejected: the Lean model** (every zero-variant declaration is
+bottom). Explosion from uninhabitedness is derivable and sound, but it
+buys a family of mutually incompatible bottoms (`[]Void` vs `[]Never`,
+`() -> Void` vs `() -> Never`) with no customer in an industrial
+language — the `Result t Never` idiom needs one bottom, not many.
+Rust `!`, Kotlin and Scala `Nothing`, and TypeScript `never` agree.
+
+Two load-bearing consequences. First, exhaustiveness belongs to
+patterns, never to divergence (record `control.md` §5): a `Never`
+arm's pattern covers like any other arm's, and a case whose arms all
+diverge is exhaustive with type `Never` — `Clause 7.7.4` says exactly
+this. Second, the vacuous derived ordering over the zero-variant
+declaration is gone with the declaration: `Never` has no services at
+all, because every operation on a never-returning expression returns
+`Never`.

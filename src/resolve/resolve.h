@@ -40,7 +40,7 @@
  * compiler-embedded lib/std.eko: the source is parsed and its surface
  * built like any other module's, then extended with the placeholder
  * rows the file does not own yet. The file declares the core types
- * (Bool, Option, Result, Never) with their constructors and the three
+ * (Bool, Option, Result) with their constructors and the three
  * opened free functions; the placeholders that remain are the scalar,
  * container, capability, and time type names (Char, String, Bytes, Int,
  * UInt, Float, Range, Json, Time, Duration, the capability types,

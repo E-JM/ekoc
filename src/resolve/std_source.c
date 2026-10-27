@@ -18,9 +18,6 @@ const char ek_std_source[] =
     "// A recoverable failure: an `Ok` payload, or the reason it failed.\n"
     "Result: type t e = Ok t | Err e\n"
     "\n"
-    "// The zero-variant type: no constructors, no values, the bottom type.\n"
-    "Never: type =\n"
-    "\n"
     "// A closed failure reason for the parse family: a missing value, a\n"
     "// malformed one, or one outside the target's limits.\n"
     "ParseError: type = Empty | Invalid String | OutOfRange\n"
@@ -62,4 +59,4 @@ const char ek_std_source[] =
     "        True -> panic(\"assert_ne failed: {inspect(a)} == {inspect(b)}\")\n"
     "        False -> _\n";
 
-const size_t ek_std_source_len = 1927;
+const size_t ek_std_source_len = 1841;

@@ -177,9 +177,9 @@ static const ek_type *composite_opaque(ck_ctx *c, const ek_node *e,
 static const ek_type *comma_tuple(ck_ctx *c, const ek_node *e,
                                   const ek_type *exp);
 
-/* A declared nominal with no representation to read: a placeholder
-   type, or a declaration whose right-hand side is empty. Its literals
-   and patterns stay opaque. */
+/* A nominal with no representation to read: a bridged name that
+   carries no symbol, or a declaration error recovery left without
+   variants. Its literals and patterns stay opaque. */
 static int opaque_nominal(ck_ctx *c, const ek_type *t)
 {
     const ck_decl *d;
@@ -194,7 +194,7 @@ static int opaque_nominal(ck_ctx *c, const ek_type *t)
         return 0; /* a std placeholder still has a known type name */
     }
     d = ck_decl_of(c, t->u.nominal.sym);
-    return d && d->rhs == EK_TYPE_RHS_EMPTY;
+    return d && d->rhs == EK_TYPE_RHS_VARIANTS && d->nctors == 0;
 }
 
 /* The empty brace literal: its family comes from the expected type.

@@ -95,6 +95,8 @@ static const ek_type *elab_name(ck_ctx *c, const ek_node *t, ck_tvars *tv)
 
     if (t->u.path.count == 1 && strcmp(n0, "_") == 0) {
         out = ck_unit(c); /* `_` is the unit type */
+    } else if (t->u.path.count == 1 && strcmp(n0, "Never") == 0) {
+        out = ck_never(c); /* `Never` is the bottom type */
     } else if (t->u.path.count == 1) {
         if (n0[0] >= 'a' && n0[0] <= 'z') {
             out = tvar_name(c, t, n0, tv);

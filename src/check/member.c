@@ -240,9 +240,7 @@ static const ek_type *derive_lt(ck_ctx *c, const ek_node *at,
             return NULL;
         }
         d = ck_decl_of(c, r->u.nominal.sym);
-        if (!d || (d->rhs != EK_TYPE_RHS_VARIANTS
-                   && d->rhs != EK_TYPE_RHS_EMPTY)
-            || ck_is_std(r, "Bool")) {
+        if (!d || d->rhs != EK_TYPE_RHS_VARIANTS || ck_is_std(r, "Bool")) {
             absent(c, at, r, name);
             return NULL;
         }
@@ -519,6 +517,12 @@ static const ek_type *link_type(ck_ctx *c, const ek_node *at,
     const ek_type *bool_t = ck_std_type(c, "Bool");
 
     *rd = EK_RD_EXTERNAL;
+    /* A bottom receiver never evaluates, so the access does not
+       return: every member of `Never` is `Never`. */
+    if (r && r->kind == EK_T_NEVER) {
+        *rd = EK_RD_NONE;
+        return ck_never(c);
+    }
     /* A record field, on anonymous and record-shaped nominal receivers
        alike; the structural composites take the equality, display, and
        JSON derivations. */

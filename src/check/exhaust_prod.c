@@ -225,9 +225,8 @@ void ck_exhaust(ck_ctx *c, const ek_node *cs, const ek_type **scrut,
         return;
     }
     if (nlive == 0) {
-        ck_error(c, cs, "E-exhaust",
-                 "every arm diverges; none discharges exhaustiveness "
-                 "(Clauses 7.7.2, 7.7.4)");
+        /* Unreachable beyond allocation failure: every arm carries a
+           pattern, so the arms answer below. */
         return;
     }
     if (nscrut == 1) {
