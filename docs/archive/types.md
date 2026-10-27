@@ -141,6 +141,19 @@ anchor the instantiation); if one side is a variable the instance is
 determined and the equality is legal — cross-seeding. Constructors of
 single-variant unions self-anchor, so `Red == Green` stays legal.
 
+**Ruling.** An unanchored generic constructor does not instantiate
+bottom-up from its payload: `x := Some 1` stays `E-undetermined` and
+wants an annotation. Instantiation has exactly one source, the expected
+type — written as an annotation, supplied by an anchored position, or
+determined by unification — and the payload is never a second one
+(`Clause 7.6.4`). One source keeps the annotation discipline the generics
+rest on; the undetermined-expectation path already reaches every real
+inference context, composite elements and lambda results among them.
+**Rejected: Rust-style payload-driven inference.** It is a second,
+competing source of instantiation truth, and a `None`-style nullary
+constructor could never instantiate bottom-up anyway — the accommodation
+would cover half the constructors and split the rule.
+
 ## 8. `Never`: vocabulary, not a declaration
 
 The bottom type needs two properties no declaration can express: it
@@ -180,3 +193,45 @@ this. Second, the vacuous derived ordering over the zero-variant
 declaration is gone with the declaration: `Never` has no services at
 all, because every operation on a never-returning expression returns
 `Never`.
+
+## 9. Range: one private constructor
+
+`Range t` is a std ADT whose declaration is a row in the standard
+library file, not a compiler intrinsic. The row is
+`Range: type t = _Range [start: t, end: t, closed: Bool]` (Annex C.2).
+The `..` and `..=` operators are its only public construction
+(`Clause 6.5.6`). The constructor spelling carries the privacy prefix,
+and `Clause 7.3.3` carries the one split in variant visibility:
+visibility follows the type; the one exception is a `_`-prefixed
+constructor spelling, which is private to the declaring module.
+`Range Int` is spellable everywhere; the one constructor spelling that
+would build a range directly is not.
+
+The endpoint domain — `Int`, `UInt`, or `Char`, both endpoints one type —
+is the operators' compile-time contract (`Clause 6.5.6`). The private
+constructor closes direct construction so the domain stays the operators'
+alone: `Range Bool` is writable as a type and has no writable value.
+Inside, `Range` is a real ADT, so `eq`, ordering, and `show` come free
+over it. `inspect` is compiler-owned as `0..9` and `0..=9`, the writable
+operator spellings, on the precedent of `NaN` and `Bytes.from_hex("4142")`
+(`Clause 9.8.3`). What is shown is what can be written back, and the
+private constructor leaves the operator as that form.
+
+**Rejected alternatives:**
+
+- **Placeholder opacity** — the `File` and machine-word route. It would
+  give `Range` an opaque representation and hand-write every service as
+  a compiler row. `Range` is a plain value type whose `eq`, ordering, and
+  `show` come free over a real ADT; opacity would trade inspectable
+  declaration data for a table the checker must special-case.
+- **A public constructor** — Rust's `Range` struct precedent. The
+  endpoint domain is a written contract of the type row in the inventory
+  (Annex C.2), not only of the operator; a public constructor would make
+  `Range Bool` a spelled, legal value and demote the operators from
+  gateway to convenience.
+- **Two variants, `Until` and `Through`.** The exclusive/inclusive flag
+  would leak into the surface as representation — two constructor names
+  for one boolean, a wider constructor set for one value — and buy
+  nothing. Rust and Swift split the type instead (`RangeInclusive`,
+  `ClosedRange`); the split is the same leak with a compiler-blessed
+  spelling.

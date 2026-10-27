@@ -51,6 +51,41 @@ always present as the fallback.
   exception is explicit, localized, and the reason no second one
   (`Option.get` payload dispatch) was allowed (`Clause 6.10`).
 
+**Ruling.** The dispatch set is eleven names: `show`, `inspect`, `eq`,
+`ne`, `lt`, `le`, `gt`, `ge`, `with`, `to_json`, and `from_json`
+(`Clause 9.8.7`). A declared namespace member wins over the derived
+default, so the declaration is where the discipline is enforced, not the
+call site that reads it.
+
+Four names are fixed and admit no declaration at all. `inspect` is
+structural truth with zero exceptions (`Clause 9.8.1`). `to_json` and
+`from_json` are the derived pair whose involution is the contract; a
+representation choice is a named codec pair in the protocol's module,
+never a declaration (`Clause 9.9.5`). `with` is a construction primitive
+whose second parameter type is inexpressible, so no correct declaration
+could be written (`Clause 9.8.6`). A declaration of one of the four is
+rejected at the name layer with `E-service-fixed` (Annex B).
+
+The remaining seven carry fixed signatures, pure arrows only: `show` is
+`(t) -> String`, and the equality and ordering family — `eq`, `ne`, `lt`,
+`le`, `gt`, `ge` — is `(t, t) -> Bool`. A wrong signature is rejected at
+the declaration with `E-service-signature` (Annex B), because dispatch
+reads the member as the service: a wrong arrow would detonate far from
+its cause, at an interpolation, an `==`, or an ordering call.
+
+- **Rejected: a declaration for a fixed service.** Each of the four has
+  one truth no type owner can restate — `inspect`'s structural truth, the
+  JSON involution, `with`'s inexpressible signature — and a second truth
+  is exactly what a fixed service is fixed against. `E-service-fixed` is
+  the name-layer verdict, not a later check of the body.
+- **Rejected: a call-site signature check.** Reporting the wrong arrow
+  where it is used would report one declaration defect many times, at
+  positions that do not own it — an interpolation, an `==`, an ordering
+  call — and would leave a generic body unchecked until instantiation.
+  The declaration is where every call shares its type.
+
+Declared-over-derived precedence is unchanged.
+
 ## 4. JSON: external tagging and round-trip fidelity
 
 - **External tagging** (serde-isomorphic): zero-payload variants map to
