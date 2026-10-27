@@ -32,10 +32,11 @@
  *   interpolation slot (expr set, text NULL). A slot's token run is
  *   parsed by the same expression grammar, so a slot is a full
  *   expression node and slots nest through EK_N_STRING_LIT.
- * - EK_N_BLOCK holds the members of an indented block body and of a
- *   `;`-separated single-line suite; the two are the same node. A body
- *   of one expression is stored bare, so `if c: a else: b` has
- *   expressions, not blocks, as its branches.
+ * - EK_N_BLOCK holds the members of an indented block body, of a
+ *   `;`-separated single-line suite, and of a case arm body; the three
+ *   are the same node. A body of one expression is stored bare, so
+ *   `if c: a else: b` has expressions, not blocks, as its branches, and
+ *   an arm whose body sits on the arm's line does too.
  * - EK_N_P_BRACE covers the brace patterns that share one syntax
  *   (tuple, record, list). The expected type decides the family, so
  *   the node records items as written: a bare-identifier item is

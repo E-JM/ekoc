@@ -183,6 +183,168 @@ static void case_as_value(void)
     pfx_end(&f);
 }
 
+/* The shape that motivates arm body blocks: a binding and the value
+   share the arm body, both one level under the arm line. */
+static void case_arm_body_block(void)
+{
+    parse_fixture f;
+    const ek_node *ce;
+    const ek_node *body;
+
+    pfx_begin(&f,
+        "route: (store: Store, cmd: String) -> Result Outcome String =\n"
+        "    case cmd:\n"
+        "        \"list\" ->\n"
+        "            lines: []String = list_lines(store)\n"
+        "            Ok {store: None, lines: lines}\n"
+        "        _ -> Err \"unknown\"\n");
+    EK_CHECK_U64(pfx_errors(&f), 0);
+    ce = pfx_find(f.ast.module, EK_N_CASE);
+    EK_CHECK(ce != NULL);
+    EK_CHECK_U64(ce->u.caseexpr.arms.count, 2);
+    body = ce->u.caseexpr.arms.data[0]->u.arm.body;
+    EK_CHECK_U64(body->kind, EK_N_BLOCK);
+    EK_CHECK_U64(body->u.kids.count, 2);
+    EK_CHECK_U64(body->u.kids.data[0]->kind, EK_N_LET);
+    EK_CHECK_U64(body->u.kids.data[0]->u.bind.type->kind, EK_N_T_LIST);
+    EK_CHECK_U64(body->u.kids.data[1]->kind, EK_N_APPLY);
+    /* The arm with an inline body keeps a bare expression. */
+    EK_CHECK_U64(ce->u.caseexpr.arms.data[1]->u.arm.body->kind, EK_N_APPLY);
+    pfx_end(&f);
+}
+
+/* An arm body block holds ordinary members, a rebinding included. */
+static void case_arm_body_members(void)
+{
+    parse_fixture f;
+    const ek_node *ce;
+    const ek_node *body;
+
+    pfx_begin(&f,
+        "f: (s: String) -> Int =\n"
+        "    case s:\n"
+        "        \"a\" ->\n"
+        "            n := 0\n"
+        "            n\n"
+        "        _ -> 1\n");
+    EK_CHECK_U64(pfx_errors(&f), 0);
+    ce = pfx_find(f.ast.module, EK_N_CASE);
+    EK_CHECK(ce != NULL);
+    body = ce->u.caseexpr.arms.data[0]->u.arm.body;
+    EK_CHECK_U64(body->kind, EK_N_BLOCK);
+    EK_CHECK_U64(body->u.kids.count, 2);
+    EK_CHECK_U64(body->u.kids.data[0]->kind, EK_N_REBIND);
+    EK_CHECK_U64(body->u.kids.data[1]->kind, EK_N_NAME);
+    pfx_end(&f);
+}
+
+/* A case nested in an arm body block: the inner arms open their own
+   body blocks, and the outer arm stays one block with one member. */
+static void case_arm_body_nested_case(void)
+{
+    parse_fixture f;
+    const ek_node *outer;
+    const ek_node *inner;
+    const ek_node *body;
+
+    pfx_begin(&f,
+        "f: (a: String, b: String) -> Int =\n"
+        "    case a:\n"
+        "        \"x\" ->\n"
+        "            case b:\n"
+        "                \"y\" ->\n"
+        "                    1\n"
+        "                _ -> 2\n"
+        "        _ -> 3\n");
+    EK_CHECK_U64(pfx_errors(&f), 0);
+    EK_CHECK_U64(pfx_count_kind(f.ast.module, EK_N_CASE), 2);
+    outer = pfx_find(f.ast.module, EK_N_CASE);
+    EK_CHECK(outer != NULL);
+    EK_CHECK_U64(outer->u.caseexpr.arms.count, 2);
+    body = outer->u.caseexpr.arms.data[0]->u.arm.body;
+    EK_CHECK_U64(body->kind, EK_N_BLOCK);
+    EK_CHECK_U64(body->u.kids.count, 1);
+    inner = body->u.kids.data[0];
+    EK_CHECK_U64(inner->kind, EK_N_CASE);
+    EK_CHECK_U64(inner->u.caseexpr.arms.count, 2);
+    EK_CHECK_U64(inner->u.caseexpr.arms.data[0]->u.arm.body->kind,
+                 EK_N_BLOCK);
+    EK_CHECK_U64(inner->u.caseexpr.arms.data[1]->u.arm.body->kind,
+                 EK_N_INT_LIT);
+    pfx_end(&f);
+}
+
+/* An if as the first member of an arm body block: its branches are
+   blocks of their own and the else reattaches inside the arm block. */
+static void case_arm_body_if_else(void)
+{
+    parse_fixture f;
+    const ek_node *ce;
+    const ek_node *body;
+    const ek_node *ie;
+
+    pfx_begin(&f,
+        "f: (n: Int) -> Int =\n"
+        "    case n:\n"
+        "        0 ->\n"
+        "            if n < 0:\n"
+        "                1\n"
+        "            else:\n"
+        "                2\n"
+        "        _ -> 3\n");
+    EK_CHECK_U64(pfx_errors(&f), 0);
+    ce = pfx_find(f.ast.module, EK_N_CASE);
+    EK_CHECK(ce != NULL);
+    EK_CHECK_U64(ce->u.caseexpr.arms.count, 2);
+    body = ce->u.caseexpr.arms.data[0]->u.arm.body;
+    EK_CHECK_U64(body->kind, EK_N_BLOCK);
+    EK_CHECK_U64(body->u.kids.count, 1);
+    ie = body->u.kids.data[0];
+    EK_CHECK_U64(ie->kind, EK_N_IF);
+    EK_CHECK_U64(ie->u.ifexpr.then->kind, EK_N_BLOCK);
+    EK_CHECK_U64(ie->u.ifexpr.els->kind, EK_N_BLOCK);
+    EK_CHECK_U64(ce->u.caseexpr.arms.data[1]->u.arm.body->kind,
+                 EK_N_INT_LIT);
+    pfx_end(&f);
+}
+
+/* Guards, or-patterns, and several scrutinees keep their shape when
+   the arm body is a block. */
+static void case_arm_body_guarded(void)
+{
+    parse_fixture f;
+    const ek_node *ce;
+
+    pfx_begin(&f,
+        "f: (k: Key, c: Bool) -> Int =\n"
+        "    case k:\n"
+        "        Up | Down if c ->\n"
+        "            1\n"
+        "        _ -> 2\n");
+    EK_CHECK_U64(pfx_errors(&f), 0);
+    ce = pfx_find(f.ast.module, EK_N_CASE);
+    EK_CHECK(ce != NULL);
+    EK_CHECK_U64(ce->u.caseexpr.arms.data[0]->u.arm.patterns.data[0]->kind,
+                 EK_N_P_OR);
+    EK_CHECK(ce->u.caseexpr.arms.data[0]->u.arm.guard != NULL);
+    EK_CHECK_U64(ce->u.caseexpr.arms.data[0]->u.arm.body->kind, EK_N_BLOCK);
+    pfx_end(&f);
+
+    pfx_begin(&f,
+        "f: (a: Bool, b: Bool) -> Int =\n"
+        "    case a, b:\n"
+        "        True, True ->\n"
+        "            1\n"
+        "        _, _ -> 2\n");
+    EK_CHECK_U64(pfx_errors(&f), 0);
+    ce = pfx_find(f.ast.module, EK_N_CASE);
+    EK_CHECK(ce != NULL);
+    EK_CHECK_U64(ce->u.caseexpr.scrutinees.count, 2);
+    EK_CHECK_U64(ce->u.caseexpr.arms.data[0]->u.arm.patterns.count, 2);
+    EK_CHECK_U64(ce->u.caseexpr.arms.data[0]->u.arm.body->kind, EK_N_BLOCK);
+    pfx_end(&f);
+}
+
 static void arm_corners(void)
 {
     parse_fixture f;
@@ -257,6 +419,11 @@ int main(void)
     if_forms();
     else_reattachment();
     case_as_value();
+    case_arm_body_block();
+    case_arm_body_members();
+    case_arm_body_nested_case();
+    case_arm_body_if_else();
+    case_arm_body_guarded();
     arm_corners();
     else_chains();
     return ek_test_report("parse/ctl");

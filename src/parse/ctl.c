@@ -1,8 +1,8 @@
 #include "parse/internal.h"
 
-/* case and if. An arm is always `pattern -> expression`; a bare
-   expression is not an arm and has a dedicated error. The single-line
-   form separates arms with `;`. */
+/* case and if. An arm is always `pattern -> body`; a bare expression
+   is not an arm and has a dedicated error. The single-line form
+   separates arms with `;`. */
 
 static ek_node *arm(p_ctx *c);
 static void arm_lines(p_ctx *c, ek_node *n);
@@ -95,7 +95,9 @@ static void arm_inline(p_ctx *c, ek_node *n)
 }
 
 /* One arm: one or more patterns (several for a multi-scrutinee arm),
-   an optional `if` guard, '->', and the body expression. */
+   an optional `if` guard, '->', and the body. A body on the arm's own
+   line is an expression; a body on the following lines is the indented
+   member block. */
 static ek_node *arm(p_ctx *c)
 {
     const ek_layout_token *first = p_peek(c);
@@ -137,7 +139,11 @@ static ek_node *arm(p_ctx *c)
         return n;
     }
     p_take(c);
-    n->u.arm.body = p_adopt(c, n, p_expr(c));
+    if (p_at_layout(c, EK_LTOK_NEWLINE)) {
+        n->u.arm.body = p_adopt(c, n, p_block_suite(c));
+    } else {
+        n->u.arm.body = p_adopt(c, n, p_expr(c));
+    }
     return n;
 }
 
