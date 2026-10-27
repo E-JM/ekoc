@@ -65,6 +65,43 @@ Json: type =
     | Arr []Json
     | Obj ([String]Json)
 
+// The minimal text form: no whitespace, keys in insertion order, and
+// only the mandatory escapes (Clause 9.9.2).
+Json.show: (j: Json) -> String =
+    case j:
+        Null -> "null"
+        Bool b -> if b: "true" else: "false"
+        Int i -> "{i}"
+        Float f -> "{f}"
+        Str s -> "\"" ++ _json_escape(s) ++ "\""
+        Arr xs -> "[" ++ xs.join(",") ++ "]"
+        Obj o -> "\{" ++ o.fold("", (acc, k, v): _json_entry(acc, k, v)) ++ "}"
+
+// One object entry: the escaped key, the value's own show, and the
+// separator the fold's accumulator carries.
+_json_entry: (acc: String, k: String, v: Json) -> String =
+    entry := "\"" ++ _json_escape(k) ++ "\":" ++ v.show()
+    if acc == "": entry else: acc ++ "," ++ entry
+
+// The escaped text of one string, one scalar at a time.
+_json_escape: (s: String) -> String = _json_chars(s.chars())
+
+_json_chars: (cs: []Char) -> String =
+    case cs:
+        {} -> ""
+        {c, ..rest} -> _json_char(c) ++ _json_chars(rest)
+
+// The two mandatory escapes and the control characters as four
+// lowercase hex digits; every other scalar stands as itself.
+_json_char: (c: Char) -> String =
+    case c:
+        '"' -> "\\\""
+        '\\' -> "\\\\"
+        _ ->
+            n := c.to_code()
+            if n < 32: "\\u" ++ n.to_hex().pad_left(4, '0')
+            else: String.from_char(c)
+
 // Panics when `c` is False. Pure and always enabled.
 assert: (c: Bool) -> _ =
     case c:

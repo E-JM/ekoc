@@ -140,7 +140,13 @@ void r_std_boot(r_ctx *c)
            already rejected, and the closure keeps one module per stem. */
         return;
     }
-    ast = r_parse_source(c, ek_std_source, ek_std_source_len, STD_FILE);
+    char *source = ek_std_source_join(c->arena);
+
+    if (!source) {
+        c->oom = 1;
+        return;
+    }
+    ast = r_parse_source(c, source, ek_std_source_len, STD_FILE);
     if (!ast) {
         return;
     }

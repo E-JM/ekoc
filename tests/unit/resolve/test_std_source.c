@@ -8,14 +8,20 @@
 
 static void embedded_matches_file(void)
 {
+    ek_arena *arena = ek_arena_create();
     char *src = rfx_read_file("lib/std.eko");
+    char *joined;
 
     EK_CHECK(src != NULL);
-    if (!src) {
+    EK_CHECK(arena != NULL);
+    if (!src || !arena) {
         return;
     }
+    joined = ek_std_source_join(arena);
+    EK_CHECK(joined != NULL);
     EK_CHECK_U64(ek_std_source_len, strlen(src));
-    EK_CHECK(memcmp(ek_std_source, src, ek_std_source_len) == 0);
+    EK_CHECK(memcmp(joined, src, ek_std_source_len) == 0);
+    ek_arena_destroy(arena);
     free(src);
 }
 
@@ -23,10 +29,18 @@ static void embedded_matches_file(void)
    module and not a fragment of it. */
 static void embedded_is_the_module(void)
 {
-    const char *needle = "assert_ne: (a: t, b: t) -> _ =";
+    ek_arena *arena = ek_arena_create();
+    char *joined;
 
-    EK_CHECK(strstr(ek_std_source, needle) != NULL);
-    EK_CHECK(ek_std_source[ek_std_source_len] == '\0');
+    EK_CHECK(arena != NULL);
+    if (!arena) {
+        return;
+    }
+    joined = ek_std_source_join(arena);
+    EK_CHECK(joined != NULL);
+    EK_CHECK(strstr(joined, "assert_ne: (a: t, b: t) -> _ =") != NULL);
+    EK_CHECK(joined[ek_std_source_len] == '\0');
+    ek_arena_destroy(arena);
 }
 
 int main(void)
