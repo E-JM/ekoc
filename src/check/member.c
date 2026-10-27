@@ -139,11 +139,11 @@ static const ek_type *service_fn(ck_ctx *c, const ek_type *param,
 /* The services the checker types by derivation. A name in this set is
    never the opaque bridge: it derives, or the link reports why it
    cannot. */
-static int derived_name(const char *name)
+int ck_service_name(const char *name)
 {
-    static const char *names[] = {"eq",      "ne",   "lt",     "le",
-                                  "gt",      "ge",   "show",   "inspect",
-                                  "with",    "to_json",       "from_json"};
+    static const char *names[] = {"eq",   "ne",   "lt",   "le",
+                                  "gt",   "ge",   "show", "inspect",
+                                  "with", "to_json", "from_json"};
     size_t i;
 
     for (i = 0; i < sizeof names / sizeof *names; i++) {
@@ -438,7 +438,7 @@ static int std_namespace(const ek_type *r)
 static const ek_type *no_member(ck_ctx *c, const ek_node *at,
                                 const ek_type *r, const char *name)
 {
-    if (derived_name(name)) {
+    if (ck_service_name(name)) {
         return ck_ivar(c);
     }
     if (!std_namespace(r)) {

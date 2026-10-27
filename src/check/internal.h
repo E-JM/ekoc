@@ -134,6 +134,11 @@ const char *ck_type_name(ck_ctx *c, const ek_type *t); /* arena text */
 /* True when more than one module of the closure declares a type of
    this name: a printable name then carries the declaring module. */
 int ck_shared_name(ck_ctx *c, const char *name);
+
+/* True for a member name the checker types by derivation rather than by
+   a declaration: the equality pair, the ordering family, the display
+   pair, with, and the JSON pair. */
+int ck_service_name(const char *name);
 void ck_row(ck_ctx *c, const ek_node *n, const ek_type *t, ek_reading r);
 void ck_error(ck_ctx *c, const ek_node *n, const char *code, const char *fmt,
               ...);

@@ -268,24 +268,6 @@ static int is_combinator(const char *member)
     return 0;
 }
 
-/* The derived services are pure wherever they resolve. A service a
-   receiver does not carry is reported at the link; the call still
-   contributes no bit. */
-static int is_service(const char *member)
-{
-    static const char *names[] = {"eq",  "ne",   "lt",       "le",
-                                  "gt",  "ge",   "show",     "inspect",
-                                  "with", "to_json", "from_json"};
-    size_t i;
-
-    for (i = 0; i < sizeof names / sizeof *names; i++) {
-        if (strcmp(names[i], member) == 0) {
-            return 1;
-        }
-    }
-    return 0;
-}
-
 /* The bit of a call the bridge leaves opaque (check.h): world-touching
    when a capability receiver's member is none of the pure combinators
    -- `Conc` sets no bit -- or when an argument carries a world bit;
@@ -297,7 +279,7 @@ static ek_bit opaque_call_bit(ck_ctx *c, const ek_type *recv,
     const ek_type *r = ck_prune(recv);
     size_t i;
 
-    if (member && is_service(member)) {
+    if (member && ck_service_name(member)) {
         return EK_BIT_PURE;
     }
     if (r && member && ck_is_capability(r)

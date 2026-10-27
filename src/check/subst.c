@@ -317,7 +317,7 @@ static int name_append(ck_ctx *c, ek_buf *b, const ek_type *t, int depth)
     case EK_T_NOMINAL: {
         const ek_symbol *sym = t->u.nominal.sym;
 
-        if (sym && ck_shared_name(c, sym->name)) {
+        if (sym && sym->module && ck_shared_name(c, sym->name)) {
             ok = ek_buf_append_str(b, sym->module)
                 && ek_buf_append_char(b, '.')
                 && ek_buf_append_str(b, sym->name);
