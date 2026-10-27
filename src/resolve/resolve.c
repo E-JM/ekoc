@@ -168,20 +168,23 @@ static r_mod *register_root(r_ctx *c, const ek_node *module, const char *file,
     return root;
 }
 
-/* Every module in the closure resolves its bodies, root first. */
+/* Every module in the closure resolves its bodies, root first. The
+   refs of one module form a contiguous slice of the table. */
 static void resolve_bodies(r_ctx *c)
 {
     r_file f;
     size_t i, n;
 
-    file_setup(c, &f, c->mods);
-    r_tops(c, &f, c->mods->ast);
-    for (i = 1, n = c->nmods; i < n; i++) {
-        if (c->mods[i].external || !c->mods[i].ast) {
+    for (i = 0, n = c->nmods; i < n; i++) {
+        r_mod *m = &c->mods[i];
+
+        if (m->external || !m->ast) {
             continue;
         }
-        file_setup(c, &f, &c->mods[i]);
-        r_tops(c, &f, c->mods[i].ast);
+        file_setup(c, &f, m);
+        m->ref_begin = c->nrefs;
+        r_tops(c, &f, m->ast);
+        m->ref_end = c->nrefs;
     }
 }
 

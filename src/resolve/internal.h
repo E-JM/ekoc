@@ -34,6 +34,7 @@ typedef struct {
     const char *file;
     const ek_node *ast; /* EK_N_MODULE */
     ek_surface *surf;
+    size_t ref_begin, ref_end; /* this module's slice of the ref table */
     int state;
     int external; /* reserved std companion: a stem with no file */
 } r_mod;

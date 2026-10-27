@@ -2,11 +2,13 @@
 
 #include "resolve/internal.h"
 
-/* The unused-binding warning over the finished closure. The refs are
-   the evidence: a symbol is used when a reference denotes it anywhere
-   in the closure, except a reference sitting on its own declaration.
-   Tests are roots, so their references count; parameters and names
-   beginning with `_` do not participate. */
+/* The unused-binding and unused-import warnings over the finished
+   closure. The refs are the evidence: a symbol is used when a reference
+   denotes it anywhere in the closure, except a reference sitting on its
+   own declaration. Tests are roots, so their references count;
+   parameters and names beginning with `_` do not participate. An
+   import is used when the importing file's references denote a symbol
+   the target module declares. */
 
 typedef struct {
     const ek_symbol **slots;
@@ -187,6 +189,60 @@ static void warn_locals(r_ctx *c, const r_used *u)
     }
 }
 
+/* A reference through the imported module: a qualified member, an
+   opened name, a type or constructor the import opened, or the module
+   segment itself. The module's own internal references are outside
+   the importing file's slice and do not use its import. */
+static int import_used(const r_ctx *c, const r_mod *m, const char *stem)
+{
+    size_t i;
+
+    for (i = m->ref_begin; i < m->ref_end && i < c->nrefs; i++) {
+        const ek_symbol *sym = c->refs[i].symbol;
+
+        if (sym && sym->module && strcmp(sym->module, stem) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* A bare `import std` already reports W-redundant-import. A path whose
+   stem names no loaded module is a failed import with its own error. */
+static void warn_imports(r_ctx *c)
+{
+    size_t i, k;
+
+    for (i = 0; i < c->nmods; i++) {
+        const r_mod *m = &c->mods[i];
+        const ek_node *mod = m->ast;
+
+        if (!mod || m->surf == c->std) {
+            continue;
+        }
+        for (k = 0; k < mod->u.kids.count; k++) {
+            const ek_node *imp = mod->u.kids.data[k];
+            const char *stem;
+
+            if (imp->kind != EK_N_IMPORT
+                || imp->u.imports.path.count == 0) {
+                continue;
+            }
+            stem = imp->u.imports.path.data[imp->u.imports.path.count - 1];
+            if (imp->u.imports.path.count == 1
+                && strcmp(imp->u.imports.path.data[0], "std") == 0) {
+                continue;
+            }
+            if (!r_module_find(c, stem) || import_used(c, m, stem)) {
+                continue;
+            }
+            ek_diag_emit(c->diag, EK_SEV_WARNING, "W-unused", m->file,
+                         imp->line, imp->col,
+                         "the import of `%s` is never used", stem);
+        }
+    }
+}
+
 void r_warn_unused(r_ctx *c)
 {
     r_used u;
@@ -201,4 +257,5 @@ void r_warn_unused(r_ctx *c)
     mark_refs(c, &u);
     warn_top_bindings(c, &u);
     warn_locals(c, &u);
+    warn_imports(c);
 }

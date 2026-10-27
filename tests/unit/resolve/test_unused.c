@@ -1,7 +1,12 @@
 #include "common.h"
 
+#include <sys/stat.h>
+
 /* The unused warning: references anywhere in the closure are uses,
-   tests are roots, and parameters and `_` names do not participate. */
+   tests are roots, and parameters and `_` names do not participate.
+   An import is used by the importing file's references to its target. */
+
+#define MOD_DIR "build/tmp-resolve/unused"
 
 static size_t code_count(const rfx *f, const char *code)
 {
@@ -13,6 +18,30 @@ static size_t code_count(const rfx *f, const char *code)
         }
     }
     return n;
+}
+
+static void put_fixtures(void)
+{
+    mkdir("build/tmp-resolve", 0755);
+    mkdir(MOD_DIR, 0755);
+    EK_CHECK(rfx_put(MOD_DIR, "empty.eko", "_pub: Int = 1\n"));
+    EK_CHECK(rfx_put(MOD_DIR, "only.eko", "pub: Int = 1\n"));
+    EK_CHECK(rfx_put(MOD_DIR, "sel.eko",
+                     "pub: Int = 1\n"
+                     "t: test = pub\n"));
+    EK_CHECK(rfx_put(MOD_DIR, "inner.eko",
+                     "a: Int = 1\n"
+                     "_b: Int = a\n"));
+    EK_CHECK(rfx_put(MOD_DIR, "geo.eko",
+                     "Shape: type = Circle Float\n"
+                     "area: (s: Shape) -> Float = 1.0\n"));
+}
+
+static void run_in(rfx *f, const char *src)
+{
+    const char *path[1] = {MOD_DIR};
+
+    rfx_run(f, src, path, 1, "use.eko");
 }
 
 static void top_binding(void)
@@ -114,6 +143,103 @@ static void local_shadowing(void)
     rfx_end(&f);
 }
 
+static void unused_import(void)
+{
+    rfx f;
+
+    put_fixtures();
+    run_in(&f,
+           "import empty\n"
+           "_x: Int = 0\n");
+    EK_CHECK_U64(rfx_errors(&f), 0);
+    EK_CHECK_U64(code_count(&f, "W-unused"), 1);
+    EK_CHECK(rfx_code_at_line(&f, "W-unused", 1));
+    EK_CHECK(f.dn == 1 && f.ds[0].message != NULL
+             && strstr(f.ds[0].message, "`empty`") != NULL);
+    rfx_end(&f);
+}
+
+static void used_imports(void)
+{
+    rfx f;
+
+    put_fixtures();
+    /* A qualified member uses the import. */
+    run_in(&f,
+           "import only\n"
+           "_use: Int = only.pub\n");
+    EK_CHECK_U64(code_count(&f, "W-unused"), 0);
+    rfx_end(&f);
+
+    /* An opened selective name uses it. */
+    run_in(&f,
+           "import only.{pub}\n"
+           "_use: Int = pub\n");
+    EK_CHECK_U64(code_count(&f, "W-unused"), 0);
+    rfx_end(&f);
+
+    /* A receiver module segment uses it. */
+    run_in(&f,
+           "import geo\n"
+           "_use: Float =\n"
+           "    s: Shape = Circle 1.0\n"
+           "    s.geo.area()\n");
+    EK_CHECK_U64(code_count(&f, "W-unused"), 0);
+    rfx_end(&f);
+
+    /* A test root uses it. */
+    run_in(&f,
+           "import only\n"
+           "t: test = only.pub\n");
+    EK_CHECK_U64(code_count(&f, "W-unused"), 0);
+    rfx_end(&f);
+}
+
+static void unused_selective(void)
+{
+    rfx f;
+
+    /* The target's own test uses `pub`; the importing file does not. */
+    put_fixtures();
+    run_in(&f,
+           "import sel.{pub}\n"
+           "_x: Int = 0\n");
+    EK_CHECK_U64(rfx_errors(&f), 0);
+    EK_CHECK_U64(code_count(&f, "W-unused"), 1);
+    EK_CHECK(rfx_code_at_line(&f, "W-unused", 1));
+    rfx_end(&f);
+}
+
+static void target_internal_use(void)
+{
+    rfx f;
+
+    /* `a` is used inside `inner`, but that is not a use of this
+       file's import. */
+    put_fixtures();
+    run_in(&f,
+           "import inner\n"
+           "_x: Int = 0\n");
+    EK_CHECK_U64(rfx_errors(&f), 0);
+    EK_CHECK_U64(code_count(&f, "W-unused"), 1);
+    EK_CHECK(rfx_code_at_line(&f, "W-unused", 1));
+    rfx_end(&f);
+}
+
+static void explicit_std(void)
+{
+    rfx f;
+
+    /* The explicit line is W-redundant-import, never W-unused. */
+    put_fixtures();
+    run_in(&f,
+           "import std\n"
+           "_x: Int = 0\n");
+    EK_CHECK(rfx_has_code(&f, "W-redundant-import"));
+    EK_CHECK_U64(code_count(&f, "W-unused"), 0);
+    rfx_end(&f);
+}
+
 static void pattern_bindings(void)
 {
     rfx f;
@@ -147,6 +273,11 @@ int main(void)
     exemptions();
     local_bindings();
     local_shadowing();
+    unused_import();
+    used_imports();
+    unused_selective();
+    target_internal_use();
+    explicit_std();
     pattern_bindings();
     return ek_test_report("resolve/unused");
 }

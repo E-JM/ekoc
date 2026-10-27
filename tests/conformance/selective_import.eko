@@ -8,9 +8,9 @@ Money: type = [cents: Int, cur: String]
 
 Money.show: (m: Money) -> String = "{m.cur} {m.cents}"
 
-die: () -> Never = panic("boom")
+_die: () -> Never = panic("boom")
 
-die_member: () -> Never = "boom".panic()
+_die_member: () -> Never = "boom".panic()
 
 opened_area: test =
     r: Shape = Rect {2.0, 3.0}
