@@ -294,6 +294,18 @@ static const ek_type *derive_display(ck_ctx *c, const ek_type *r,
     return service_fn(c, r, string_t);
 }
 
+/* The panic intrinsic is a compiler-generated service of String's
+   namespace: the message receiver, the never result. */
+static const ek_type *derive_panic(ck_ctx *c, const ek_type *r,
+                                   const char *name, ek_reading *rd)
+{
+    if (strcmp(name, "panic") != 0 || !ck_is_std(r, "String")) {
+        return NULL;
+    }
+    *rd = EK_RD_DERIVED;
+    return service_fn(c, ck_std_type(c, "String"), ck_never(c));
+}
+
 /* The receiver a derived service is written at: an unapplied generic
    type head takes fresh variables, which the arguments and the
    expected type then determine. */
@@ -486,6 +498,10 @@ static const ek_type *nominal_link(ck_ctx *c, const ek_node *at,
             return t;
         }
         t = derive_display(c, srecv, name, rd);
+        if (t) {
+            return t;
+        }
+        t = derive_panic(c, r, name, rd);
         if (t) {
             return t;
         }
