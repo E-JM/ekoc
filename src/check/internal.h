@@ -112,6 +112,7 @@ const ek_type *ck_never(ck_ctx *c);
 int ck_is_bottom(const ek_type *t); /* the Never leaf or the std nominal */
 const ek_type *ck_nominal(ck_ctx *c, const ek_symbol *sym, const ek_type **args,
                           size_t argc);
+const ek_type *ck_nominal_fresh(ck_ctx *c, const ek_symbol *sym);
 const ek_type *ck_list(ck_ctx *c, const ek_type *elem);
 const ek_type *ck_dict(ck_ctx *c, const ek_type *key, const ek_type *val);
 const ek_type *ck_tuple(ck_ctx *c, const ek_type **items, size_t n);

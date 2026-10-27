@@ -18,8 +18,7 @@ static void implicit_tvars(void)
     cfx_end(&f);
 
     /* The instantiation binds exactly: `String` does not become
-       `Int`. (`True` is opaque under the placeholder surface, so a
-       typed value anchors the instance.) */
+       `Int`. */
     cfx_begin(&f,
               "id: (x: t) -> t = x\n"
               "n: Int = id(1)\n"
@@ -110,6 +109,16 @@ static void generic_decls(void)
     cfx_begin(&f,
               "Tree: type t = Leaf t | Node [Tree t, Tree t, t]\n"
               "x: Tree Int = Leaf 1\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+
+    /* An expectation that is still an undetermined variable is a type
+       the application unifies with: the sole candidate supplies a fresh
+       instance, which the later use of the result determines. */
+    cfx_begin(&f,
+              "Pair: type t = One t | Two [t, t]\n"
+              "first: (a: t, b: t) -> t = a\n"
+              "x: Pair Int = first(One 1, Two {2, 3})\n");
     EK_CHECK_U64(cfx_errors(&f), 0);
     cfx_end(&f);
 
