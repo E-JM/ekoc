@@ -476,7 +476,7 @@ concurrency members, the eight `File` members, and the two advancing derivations
 | `Rand` | `Rand.with_seed` | `(Int) -> Rand` | Clause 9.14.5 |
 | `Proc` | `Proc.exit` | `(Proc, Int) !-> Never` | Clause 8.4.3 |
 | `Conc` | `Conc.scope` | `(Conc, (Scope) ?-> a) ?-> a` | Clause 8.9.1 |
-| `Scope` | `Scope.spawn` | `(() ?-> b) ?-> Task b` | Clause 8.9.1 |
+| `Scope` | `Scope.spawn` | `(Scope, () ?-> b) ?-> Task b` | Clause 8.9.1 |
 | `Task` | `Task.join` | `(Task b) -> Option b` | Clause 8.9.2 |
 | `Task` | `Task.cancel` | `(Task b) -> _` | Clause 8.9.2 |
 

@@ -785,9 +785,61 @@ static const ns_row rows[] = {
     {"Path", "is_absolute", SIG_FN(EK_ARROW_PURE, SIG_STD("Bool"),
                                     SIG_STD("String"))},
 
-    /* The Out capability carries no compiler rows: its four members
-       are declared by the capability module's own source (Clause
-       10.8), and the namespace is complete (Clause 7.9.1). */
+    /* The capability surface the source does not declare (Clause 10.8):
+       the two advancing derivations, the process exit, the four
+       concurrency members, and the File family. `Never` is the bottom
+       type, and the open arrows are the dispatchers. The
+       capability-module source declares every other member (Clause
+       9.1.1), so the namespaces are complete (Clause 7.9.1). */
+    {"In", "from_lines", SIG_FN(EK_ARROW_PURE, SIG_CAP("In"),
+                                SIG_LIST(SIG_STD("String")))},
+    {"Rand", "with_seed", SIG_FN(EK_ARROW_PURE, SIG_CAP("Rand"),
+                                 SIG_STD("Int"))},
+    {"Proc", "exit", SIG_FN(EK_ARROW_WORLD, SIG_STD("Never"),
+                            SIG_STD("Proc"), SIG_STD("Int"))},
+    {"Conc", "scope", SIG_FN(EK_ARROW_OPEN, SIG_VAR(0), SIG_STD("Conc"),
+                             SIG_FN(EK_ARROW_OPEN, SIG_VAR(0),
+                                    SIG_CAP("Scope")))},
+    {"Scope", "spawn", SIG_FN(EK_ARROW_OPEN, SIG_CAP1("Task", SIG_VAR(0)),
+                              SIG_CAP("Scope"),
+                              SIG_FN0(EK_ARROW_OPEN, SIG_VAR(0)))},
+    {"Task", "join", SIG_FN(EK_ARROW_PURE, SIG_OPTION(SIG_VAR(0)),
+                            SIG_CAP1("Task", SIG_VAR(0)))},
+    {"Task", "cancel", SIG_FN(EK_ARROW_PURE, SIG_UNIT,
+                              SIG_CAP1("Task", SIG_VAR(0)))},
+    {"File", "read", SIG_FN(EK_ARROW_WORLD,
+                            SIG_APP2("Result", SIG_STD("String"),
+                                     SIG_CAP("IoError")),
+                            SIG_CAP("File"), SIG_STD("Int"))},
+    {"File", "read_bytes", SIG_FN(EK_ARROW_WORLD,
+                                  SIG_APP2("Result", SIG_STD("Bytes"),
+                                           SIG_CAP("IoError")),
+                                  SIG_CAP("File"), SIG_STD("Int"))},
+    {"File", "read_line", SIG_FN(EK_ARROW_WORLD,
+                                 SIG_APP2("Result",
+                                          SIG_OPTION(SIG_STD("String")),
+                                          SIG_CAP("IoError")),
+                                 SIG_CAP("File"))},
+    {"File", "seek", SIG_FN(EK_ARROW_WORLD,
+                            SIG_APP2("Result", SIG_UNIT,
+                                     SIG_CAP("IoError")),
+                            SIG_CAP("File"), SIG_STD("UInt"))},
+    {"File", "write", SIG_FN(EK_ARROW_WORLD,
+                             SIG_APP2("Result", SIG_UNIT,
+                                      SIG_CAP("IoError")),
+                             SIG_CAP("File"), SIG_STD("String"))},
+    {"File", "write_bytes", SIG_FN(EK_ARROW_WORLD,
+                                   SIG_APP2("Result", SIG_UNIT,
+                                            SIG_CAP("IoError")),
+                                   SIG_CAP("File"), SIG_STD("Bytes"))},
+    {"File", "flush", SIG_FN(EK_ARROW_WORLD,
+                             SIG_APP2("Result", SIG_UNIT,
+                                      SIG_CAP("IoError")),
+                             SIG_CAP("File"))},
+    {"File", "close", SIG_FN(EK_ARROW_WORLD,
+                             SIG_APP2("Result", SIG_UNIT,
+                                      SIG_CAP("IoError")),
+                             SIG_CAP("File"))},
 
     /* The unsigned scalar namespace: arithmetic without negation. */
     {"UInt", "add", SIG_FN(EK_ARROW_PURE, SIG_STD("UInt"),
@@ -906,18 +958,28 @@ static const ns_row rows[] = {
 
     /* A NULL name marks a namespace whose row set is complete: a
        name no station answers is absent. A partial namespace keeps
-       the bridge for the names its rows do not carry yet. */
+       the bridge for the names its rows do not carry yet. The
+       capability namespaces are complete: the source members and the
+       rows above carry every member of Annex C.9 (Clauses 7.9.1,
+       10.8). */
+    {"Args", NULL, NULL},
     {"Bytes", NULL, NULL},
     {"Char", NULL, NULL},
+    {"Clock", NULL, NULL},
+    {"Conc", NULL, NULL},
     {"Dict", NULL, NULL},
     {"Duration", NULL, NULL},
+    {"Env", NULL, NULL},
     {"F32", NULL, NULL},
     {"F64", NULL, NULL},
+    {"File", NULL, NULL},
     {"Float", NULL, NULL},
+    {"Fs", NULL, NULL},
     {"I16", NULL, NULL},
     {"I32", NULL, NULL},
     {"I64", NULL, NULL},
     {"I8", NULL, NULL},
+    {"In", NULL, NULL},
     {"Int", NULL, NULL},
     {"Json", NULL, NULL},
     {"List", NULL, NULL},
@@ -925,10 +987,14 @@ static const ns_row rows[] = {
     {"Option", NULL, NULL},
     {"Out", NULL, NULL},
     {"Path", NULL, NULL},
+    {"Proc", NULL, NULL},
+    {"Rand", NULL, NULL},
     {"Range", NULL, NULL},
     {"Result", NULL, NULL},
+    {"Scope", NULL, NULL},
     {"Set", NULL, NULL},
     {"String", NULL, NULL},
+    {"Task", NULL, NULL},
     {"Time", NULL, NULL},
     {"U16", NULL, NULL},
     {"U32", NULL, NULL},

@@ -107,13 +107,14 @@ static void opaque_members(void)
     EK_CHECK(cfx_reading_at(&f, 2, EK_RD_NAMESPACE));
     cfx_end(&f);
 
-    /* A capability namespace the rows do not own keeps the bridge:
-       the reading is opaque and nothing is diagnosed. */
+    /* A capability namespace is complete once its rows land: a name
+       no station answers is absent, like any other declared
+       namespace. */
     cfx_begin(&f,
               "c: Clock = Clock.frozen(Time 0)\n"
               "w := c.bogus()\n");
-    EK_CHECK_U64(cfx_errors(&f), 0);
-    EK_CHECK(cfx_reading_at(&f, 2, EK_RD_EXTERNAL));
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-unbound-member", 2));
     cfx_end(&f);
 
     /* A String receiver has a complete row set plus its derived

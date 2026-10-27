@@ -315,7 +315,8 @@ static void test_binding_no_reconcile(void)
 
 /* An inverted binding has no separate bit rule: the callback body's
    world calls surface in the enclosing body. The landed with_file row
-   admits the invert shape. */
+   admits the invert shape, and a world callback body keeps the call
+   world-touching. */
 static void invert_feeds_dispatcher(void)
 {
     cfx f;
@@ -323,6 +324,7 @@ static void invert_feeds_dispatcher(void)
     cfx_begin(&f,
               "run: (fs: Fs) !-> Result _ IoError =\n"
               "    h <- fs.with_file(\"f\", Read)\n"
+              "    h.write(\"x\")\n"
               "    _\n");
     EK_CHECK(cfx_errors(&f) == 0);
     EK_CHECK(cfx_bit_at(&f, 1, EK_BIT_WORLD));

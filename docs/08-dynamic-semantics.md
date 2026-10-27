@@ -763,7 +763,7 @@ The concurrency surface has the following signatures:
 
 ```text
 Conc.scope:  (Conc, (Scope) ?-> a) ?-> a
-Scope.spawn: (() ?-> b) ?-> Task b
+Scope.spawn: (Scope, () ?-> b) ?-> Task b
 Task.join:   (Task b) -> Option b
 Task.cancel: (Task b) -> _
 ```
@@ -771,7 +771,8 @@ Task.cancel: (Task b) -> _
 `Conc` is an opt-in capability (Clause 7.9.1). `Scope` and `Task b` are opaque
 types (Clause 8.5.3). The concurrency surface spans three namespaces:
 `Conc.scope` takes the capability; `Scope.spawn` is reached at a scope, and
-`Task.join` and `Task.cancel` at a task, in the manner of `File`. The four
+`Task.join` and `Task.cancel` at a task, in the manner of `File` -- every
+member takes its capability or handle first. The four
 members are compiler-provided declarations, not capability-module source
 (Clause 10.8). The world bit of a spawn or scope call is determined by its
 callback through the open bit, as specified in Clause 7.9.
