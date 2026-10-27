@@ -62,6 +62,23 @@ static const ek_type *call_opaque(ck_ctx *c, const ek_node *e,
     return ret;
 }
 
+/* Checks one argument against its parameter, reporting the standard
+   mismatch and keeping the observed type for the world-bit judgment. */
+static const ek_type *arg_conform(ck_ctx *c, const ek_node *arg,
+                                  const ek_type *ptype)
+{
+    const ek_type *at = ck_expr(c, arg, ptype);
+    ck_conform k = ck_conforms(c, at, ptype, 1);
+
+    if (k != CK_OK) {
+        ck_error(c, arg, ck_conform_code(k),
+                 "the argument is %s, the parameter is %s "
+                 "(Clause 7.8.1)", ck_type_name(c, at),
+                 ck_type_name(c, ptype));
+    }
+    return at;
+}
+
 /* Checks each argument against its parameter, recording the observed
    types for the world-bit judgment. */
 static void call_args(ck_ctx *c, const ek_type *f, const ek_nlist *args,
@@ -72,18 +89,9 @@ static void call_args(ck_ctx *c, const ek_type *f, const ek_nlist *args,
 
     for (i = 0; i < args->count && off + i < f->u.fn.count; i++) {
         const ek_node *arg = args->data[i];
-        const ek_type *at = ck_expr(c, arg, f->u.fn.params[off + i]);
-        ck_conform k;
 
         nodes[off + i] = arg;
-        types[off + i] = at;
-        k = ck_conforms(c, at, f->u.fn.params[off + i], 1);
-        if (k != CK_OK) {
-            ck_error(c, arg, ck_conform_code(k),
-                     "the argument is %s, the parameter is %s "
-                     "(Clause 7.8.1)", ck_type_name(c, at),
-                     ck_type_name(c, f->u.fn.params[off + i]));
-        }
+        types[off + i] = arg_conform(c, arg, f->u.fn.params[off + i]);
     }
 }
 
@@ -457,7 +465,7 @@ static const ek_type *apply_generic(ck_ctx *c, const ek_node *e,
     const ek_type *pt = ck_apply_binders(c, ct->payload, d->binders,
                                          exp->u.nominal.args, nb);
 
-    ck_expr(c, arg, pt);
+    arg_conform(c, arg, pt);
     ck_row(c, e, exp, EK_RD_NONE);
     return exp;
 }
@@ -498,7 +506,7 @@ static const ek_type *apply_known(ck_ctx *c, const ek_node *e,
         const ek_type *t = ck_nominal(c, ct->owner, NULL, 0);
 
         if (ct->payload) {
-            ck_expr(c, arg, ct->payload);
+            arg_conform(c, arg, ct->payload);
         }
         ck_row(c, e, t, EK_RD_NONE);
         return t;

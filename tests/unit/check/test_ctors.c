@@ -207,6 +207,35 @@ static void qualified_std_type(void)
     cfx_end(&f);
 }
 
+/* The payload of a constructor application is placed and conformed to
+   the instantiated payload type, like a call argument. */
+static void payload_conforms(void)
+{
+    cfx f;
+
+    cfx_begin(&f,
+              "T: type = Same Int\n"
+              "g: (s: String) -> T = Same s\n");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-nominal-mismatch", 2));
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "Wrap: type a = Wrap a\n"
+              "g: (n: Int) -> Wrap String = Wrap n\n");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-nominal-mismatch", 2));
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "T: type = Same Int\n"
+              "Wrap: type a = Wrap a\n"
+              "a: T = Same 1\n"
+              "b: Wrap String = Wrap \"s\"\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+}
+
 int main(void)
 {
     std_only();
@@ -218,5 +247,6 @@ int main(void)
     std_scrutinee();
     anchor_mismatch();
     qualified_std_type();
+    payload_conforms();
     return ek_test_report("check/ctors");
 }
