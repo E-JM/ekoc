@@ -127,6 +127,8 @@ const char *ck_type_name(ck_ctx *c, const ek_type *t); /* arena text */
 void ck_row(ck_ctx *c, const ek_node *n, const ek_type *t, ek_reading r);
 void ck_error(ck_ctx *c, const ek_node *n, const char *code, const char *fmt,
               ...);
+void ck_warn(ck_ctx *c, const ek_node *n, const char *code, const char *fmt,
+             ...);
 const char *ck_file(const ck_ctx *c); /* the root module's file */
 
 /* unify.c: occurs check and conformance.

@@ -2,7 +2,7 @@
 // constructor named True, so std's is the only one and the reference
 // needs no annotation (Clauses 7.4.6, 7.6).
 
-t = True
+_t = True
 
 self_anchor: test =
     assert(True)

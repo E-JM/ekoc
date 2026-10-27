@@ -197,7 +197,7 @@ static void duplicate_variants(void)
 
     rfx_begin(&f,
         "T: type = Dup Int | Dup String\n"
-        "x: T = Dup 1\n");
+        "_x: T = Dup 1\n");
     EK_CHECK_U64(rfx_errors(&f), 1);
     EK_CHECK(rfx_code_at_line(&f, "E-name-conflict", 1));
     EK_CHECK(f.dn == 1);
