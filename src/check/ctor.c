@@ -57,8 +57,8 @@ static const char *count_word(size_t n)
     }
 }
 
-/* The owners of the candidates, joined for a diagnostic. A placeholder
-   std candidate carries its module, so its spelling is distinguishable
+/* The owners of the candidates, joined for a diagnostic. A std
+   candidate carries its module, so its spelling is distinguishable
    from a user type of the same name. */
 static char *owners_text(ck_ctx *c, const ek_ref *ref)
 {
@@ -74,7 +74,7 @@ static char *owners_text(ck_ctx *c, const ek_ref *ref)
         if (i) {
             ok = ek_buf_append_str(&b, " or ");
         }
-        if (ok && cand->decl == NULL && cand->module
+        if (ok && cand->module
             && strcmp(cand->module, "std") == 0) {
             ok = ek_buf_append_str(&b, cand->module)
               && ek_buf_append_char(&b, '.');

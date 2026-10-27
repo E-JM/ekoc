@@ -228,6 +228,24 @@ const ek_type *ck_never(ck_ctx *c)
     return ck_leaf(c, EK_T_NEVER);
 }
 
+/* The bottom type: the kind-valued leaf, and the std `Never` nominal
+   the surface declares. */
+int ck_is_bottom(const ek_type *t)
+{
+    const ek_type *p = ck_prune(t);
+
+    if (!p) {
+        return 0;
+    }
+    if (p->kind == EK_T_NEVER) {
+        return 1;
+    }
+    return p->kind == EK_T_NOMINAL && p->u.nominal.sym
+        && p->u.nominal.sym->module
+        && strcmp(p->u.nominal.sym->module, "std") == 0
+        && strcmp(p->u.nominal.sym->name, "Never") == 0;
+}
+
 const ek_type *ck_nominal(ck_ctx *c, const ek_symbol *sym, const ek_type **args,
                           size_t argc)
 {

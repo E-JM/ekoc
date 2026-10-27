@@ -67,7 +67,7 @@ typedef struct {
     ck_map ctors;    /* CONSTRUCTOR symbol -> ck_ctor */
     ck_map pats;     /* constructor pattern node -> selected symbol */
     ck_map firsts;   /* tvar node -> first T_NAME node (E-phantom) */
-    ck_map stdsyms;  /* std type name -> canonical placeholder symbol */
+    ck_map stdsyms;  /* std type name -> the std surface symbol */
     ck_map subst;    /* final substitution memo */
     ck_map bits;     /* node -> own bit: a call's bit, a lambda's body
                         bit, a binding's declared bit (worlds.c) */
@@ -109,6 +109,7 @@ const ek_type *ck_intern(ck_ctx *c, const ek_type *t); /* canonical */
 const ek_type *ck_ivar(ck_ctx *c);
 const ek_type *ck_unit(ck_ctx *c);
 const ek_type *ck_never(ck_ctx *c);
+int ck_is_bottom(const ek_type *t); /* the Never leaf or the std nominal */
 const ek_type *ck_nominal(ck_ctx *c, const ek_symbol *sym, const ek_type **args,
                           size_t argc);
 const ek_type *ck_list(ck_ctx *c, const ek_type *elem);
@@ -240,7 +241,8 @@ void ck_reconcile(ck_ctx *c, const ek_node *at, const ek_type *bound,
    binding-shape judgments. */
 int ck_invert_pattern(const ek_node *pat);
 const ek_type *ck_invert_block(ck_ctx *c, const ek_node *m,
-                               const ek_node *block, size_t start);
+                               const ek_node *block, size_t start,
+                               const ek_type *expected);
 const ek_type *ck_pattern(ck_ctx *c, const ek_node *p, const ek_type *scrut);
 const ek_type *ck_or_pattern(ck_ctx *c, const ek_node *p, const ek_type *scrut);
 void ck_arm_binds_together(ck_ctx *c, const ek_node *arm); /* a name two

@@ -87,17 +87,6 @@ ck_conform ck_conforms(ck_ctx *c, const ek_type *a, const ek_type *e,
     return conform(c, a, e, allow_shape, 1);
 }
 
-/* `Never` is a std ADT, so bottom arrives as a nominal too. */
-static int is_bottom(const ek_type *t)
-{
-    return t && (t->kind == EK_T_NEVER
-                 || (t->kind == EK_T_NOMINAL && t->u.nominal.sym
-                     && t->u.nominal.sym->decl == NULL
-                     && t->u.nominal.sym->module
-                     && strcmp(t->u.nominal.sym->module, "std") == 0
-                     && strcmp(t->u.nominal.sym->name, "Never") == 0));
-}
-
 /* Function conformance: one-step arrow-bit adaptation, same arity,
    invariant parameters and result. */
 static ck_conform conform_fn(ck_ctx *c, const ek_type *a, const ek_type *e)
@@ -213,7 +202,7 @@ static ck_conform conform(ck_ctx *c, const ek_type *a, const ek_type *e,
     if (e->kind == EK_T_IVAR) {
         return ck_bind(c, e, a) ? CK_OK : CK_MISMATCH;
     }
-    if (is_bottom(a) && e->kind != EK_T_FN && never_ok) {
+    if (ck_is_bottom(a) && e->kind != EK_T_FN && never_ok) {
         return CK_OK; /* bottom adapts at value positions */
     }
     if (a->kind == EK_T_TVAR || e->kind == EK_T_TVAR) {
