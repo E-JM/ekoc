@@ -143,6 +143,9 @@ static const ek_type *name_type(ck_ctx *c, const ek_node *n,
     const ek_ref *ref = NULL;
     const char *name = n->u.path.count == 1 ? n->u.path.data[0] : NULL;
 
+    if (name && strcmp(name, "_") == 0) {
+        return ck_unit(c); /* the unit value, never a hole */
+    }
     if (ck_ref_at(c, n, 0, &ref)) {
         switch (ref->kind) {
         case EK_SYM_PARAM:

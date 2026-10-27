@@ -177,6 +177,19 @@ static void never_adaptation(void)
     EK_CHECK_U64(cfx_errors(&f), 1);
     EK_CHECK(cfx_code_at_line(&f, "E-type-mismatch", 2));
     cfx_end(&f);
+
+    /* The unit value is `_` itself: it is not a hole, and it adapts
+       to nothing but the unit type. */
+    cfx_begin(&f,
+              "a: _ = _\n"
+              "b: String = _\n"
+              "c: Never = _\n"
+              "d: []Int = {_}\n");
+    EK_CHECK_U64(cfx_errors(&f), 3);
+    EK_CHECK(cfx_code_at_line(&f, "E-type-mismatch", 2));
+    EK_CHECK(cfx_code_at_line(&f, "E-type-mismatch", 3));
+    EK_CHECK(cfx_code_at_line(&f, "E-type-mismatch", 4));
+    cfx_end(&f);
 }
 
 /* A declared type whose width passes any fixed buffer: every binder
