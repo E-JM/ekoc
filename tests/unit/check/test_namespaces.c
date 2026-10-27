@@ -1,9 +1,10 @@
 #include "common.h"
 
 /* The compiler-provided rows of the namespace table: the List
-   signatures over the structural list, the scalar arithmetic rows, and
-   the Out capability rows, both spellings, and the closed namespaces —
-   a name no row carries is absent, not bridged. */
+   signatures over the structural list, the scalar conversion,
+   formatting, and machine-word rows, and the Out capability rows, both
+   spellings, and the closed namespaces — a name no row carries is
+   absent, not bridged. */
 
 static void list_rows(void)
 {
@@ -133,11 +134,11 @@ static void ints_rows(void)
     EK_CHECK(cfx_code_at_line(&f, "E-nominal-mismatch", 1));
     cfx_end(&f);
 
-    /* The scalar row set is partial, so a name it does not carry
-       keeps the bridge until the set is complete. */
+    /* The scalar namespaces are complete, so a name no row carries is
+       absent. */
     cfx_begin(&f, "v: Int = Int.bogus(1)\n");
-    EK_CHECK_U64(cfx_errors(&f), 0);
-    EK_CHECK(cfx_reading_at(&f, 1, EK_RD_EXTERNAL));
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-unbound-member", 1));
     cfx_end(&f);
 
     /* A constant member is a value, not a function. */
@@ -146,10 +147,45 @@ static void ints_rows(void)
     EK_CHECK(cfx_code_at_line(&f, "E-not-callable", 1));
     cfx_end(&f);
 
-    /* Unsigned values have no negation; the miss reports when the
-       scalar set completes. */
+    /* Unsigned values have no negation and the namespace is closed. */
     cfx_begin(&f, "v: UInt = UInt.neg(1)\n");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-unbound-member", 1));
+    cfx_end(&f);
+}
+
+static void scalar_completion(void)
+{
+    cfx f;
+
+    /* The scalar namespaces carry their conversion, formatting, and
+       machine-word rows; each name resolves off its namespace. */
+    cfx_begin(&f,
+              "n: String = 255.to_hex()\n"
+              "m: Result Int ParseError = Int.parse(\"12\")\n"
+              "o: Option Int = 3.5.trunc().to_int()\n");
     EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+
+    cfx_begin(&f, "v: Bool = (0.0 / 0.0).is_nan()\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+
+    cfx_begin(&f, "w: Option U8 = 255.to_u8()\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+
+    /* Arity is the row's; the binding matches the row's result, so
+       the surplus argument is the only diagnostic. */
+    cfx_begin(&f, "v: String = 255.to_hex(1)\n");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-call-arity", 1));
+    cfx_end(&f);
+
+    /* The parse family takes a String; the binding matches the row's
+       result, so the integer argument is the only diagnostic. */
+    cfx_begin(&f, "v: Result Int ParseError = Int.parse(12)\n");
+    EK_CHECK_U64(cfx_errors(&f), 1);
     cfx_end(&f);
 }
 
@@ -210,6 +246,7 @@ int main(void)
     list_rows_types();
     list_namespace_closed();
     ints_rows();
+    scalar_completion();
     out_rows();
     return ek_test_report("check/namespaces");
 }
