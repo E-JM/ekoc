@@ -379,7 +379,10 @@ const ek_type *ck_call(ck_ctx *c, const ek_node *e, const ek_type *expected)
             return call_member(c, e, callee, implicit);
         }
     }
-    if (ck_ref_at(c, callee, EK_SYM_CONSTRUCTOR, &ref) && ref->symbol) {
+    /* A constructor head is qualified; a receiver-form module path
+       (`x.Mod.Ctor`) keeps its opaque reading. */
+    if (ck_ref_at(c, callee, EK_SYM_CONSTRUCTOR, &ref) && ref->symbol
+        && ref->station == EK_ST_QUALIFIED) {
         return call_ctor(c, e, callee, ref, expected, implicit);
     }
     if (ck_ref_at(c, callee, 0, &ref) && ref->symbol != NULL
