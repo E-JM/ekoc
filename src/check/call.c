@@ -502,7 +502,7 @@ static const ek_type *apply_opaque(ck_ctx *c, const ek_node *e,
 {
     const ek_type *iv = ck_ivar(c);
 
-    ck_expr(c, e->u.pair.b, iv);
+    ck_expr(c, e->u.pair.b, ck_ivar(c));
     if (expected) {
         ck_conforms(c, iv, expected, 1);
     }
@@ -527,6 +527,15 @@ static const ek_type *ctor_apply(ck_ctx *c, const ek_node *e,
     if (nb == 0) {
         out = ck_nominal(c, ct->owner, NULL, 0);
         payload = ct->payload;
+    } else if (exp && exp->kind == EK_T_IVAR) {
+        /* An undetermined expectation: the application supplies fresh
+           variables and the expectation takes the instance. */
+        out = ck_nominal_fresh(c, ct->owner);
+        payload = ct->payload
+                      ? ck_apply_binders(c, ct->payload, d->binders,
+                                         out->u.nominal.args, nb)
+                      : NULL;
+        ck_conforms(c, out, exp, 1);
     } else if (exp && exp->kind == EK_T_NOMINAL
                && exp->u.nominal.sym == ct->owner
                && exp->u.nominal.argc == nb) {

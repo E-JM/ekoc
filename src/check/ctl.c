@@ -25,8 +25,7 @@ const ek_type *ck_if(ck_ctx *c, const ek_node *e, const ek_type *expected)
            `Never`. */
         const ek_type *t = ck_prune(then);
 
-        if (t && t->kind != EK_T_IVAR && t->kind != EK_T_NEVER
-            && t != unit) {
+        if (t && t->kind != EK_T_IVAR && !ck_is_bottom(t) && t != unit) {
             ck_error(c, e, "E-type-mismatch",
                      "an `if` without `else` has type %s; the then-branch "
                      "is `_` or `Never` (Clause 6.7.4)",
@@ -94,7 +93,7 @@ static const ek_type *case_result(ck_ctx *c, const ek_node *e,
     for (i = 0; i < na; i++) {
         const ek_type *t = atypes[i];
 
-        if (ck_prune(t) && ck_prune(t)->kind == EK_T_NEVER) {
+        if (ck_is_bottom(t)) {
             continue;
         }
         if (!seen) {

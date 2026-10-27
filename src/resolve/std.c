@@ -4,11 +4,13 @@
 #include "resolve/std_source.h"
 
 /* The std module, parsed from the embedded lib/std.eko bytes. Its
-   surface holds the file's own declarations first, then the placeholder
-   rows for the names the compiler still supplies: the opened type names
-   and the zero-payload constructors of the std types. A real-file row
-   wins over a placeholder row of the same kind and name; a name no row
-   declares stays the external bridge (resolve.h). */
+   surface holds the file's own declarations first (the core types with
+   their constructors, and the opened assert family), then the
+   placeholder rows for the names the compiler still supplies: the
+   scalar, container, capability, and time type names, and the
+   constructor rows of the types this file does not declare yet. A
+   real-file row wins over a placeholder row of the same kind and name;
+   a name no row declares stays the external bridge (resolve.h). */
 
 #define STD_FILE "std.eko"
 
@@ -19,21 +21,20 @@ static const char *opened_names[] = {
 };
 
 static const char *type_names[] = {
-    "Bool", "Char", "String", "Bytes", "Int", "UInt", "Float",
-    "Option", "Result", "Range", "Never", "Json", "Time", "Duration",
+    "Char", "String", "Bytes", "Int", "UInt", "Float",
+    "Range", "Json", "Time", "Duration",
     "Out", "In", "Fs", "Env", "Args", "Clock", "Rand", "Proc", "Conc",
     "File", "OpenMode", "FileInfo", "IoError", "Scope", "Task", NULL
 };
 
-/* The placeholder constructors and the opened type that owns each:
-   the owner spelling is the anchor a reference is matched against. */
+/* The placeholder constructors and the type name that owns each: the
+   owner spelling is the anchor a reference is matched against. Only the
+   types the file does not declare are listed; the core types' own
+   variants come from the parsed declaration. */
 static const struct {
     const char *name;
     const char *owner;
 } ctor_names[] = {
-    {"True", "Bool"}, {"False", "Bool"},
-    {"Some", "Option"}, {"None", "Option"},
-    {"Ok", "Result"}, {"Err", "Result"},
     {"Time", "Time"}, {"Duration", "Duration"},
     {NULL, NULL}
 };
@@ -101,8 +102,9 @@ static void add_row(r_ctx *c, ek_surface *s, const char *name,
     s->syms[s->count++] = *sym;
 }
 
-/* The placeholder rows beneath the file surface: the opened type names
-   and the constructors of the placeholder types. */
+/* The placeholder rows beneath the file surface: the type names the
+   compiler still supplies, and the constructors of the placeholder
+   types. */
 static void extend(r_ctx *c, ek_surface *s)
 {
     ek_symbol *grown;

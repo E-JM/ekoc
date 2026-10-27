@@ -57,8 +57,8 @@ static const char *count_word(size_t n)
     }
 }
 
-/* The owners of the candidates, joined for a diagnostic. A placeholder
-   std candidate carries its module, so its spelling is distinguishable
+/* The owners of the candidates, joined for a diagnostic. A std
+   candidate carries its module, so its spelling is distinguishable
    from a user type of the same name. */
 static char *owners_text(ck_ctx *c, const ek_ref *ref)
 {
@@ -74,7 +74,7 @@ static char *owners_text(ck_ctx *c, const ek_ref *ref)
         if (i) {
             ok = ek_buf_append_str(&b, " or ");
         }
-        if (ok && cand->decl == NULL && cand->module
+        if (ok && cand->module
             && strcmp(cand->module, "std") == 0) {
             ok = ek_buf_append_str(&b, cand->module)
               && ek_buf_append_char(&b, '.');
@@ -142,6 +142,13 @@ ck_ctorsel ck_ctor_select(ck_ctx *c, const ek_node *n, const ek_ref *ref,
                  ck_type_name(c, exp));
         return out;
     }
+    if (ref->ncands == 1 && exp && exp->kind == EK_T_IVAR) {
+        /* The expectation is still undetermined: the sole candidate
+           stands, and unification with the expectation decides its
+           instantiation (a generic one takes fresh variables). */
+        out.sym = ref->cands[0];
+        return out;
+    }
     if (ref->ncands == 1 && !ck_ctor_generic(c, ref->cands[0])) {
         out.sym = ref->cands[0];
         return out;
@@ -206,6 +213,14 @@ const ek_type *ck_ctor_type(ck_ctx *c, const ek_node *n,
     ct = ck_ctor_of(c, sel.sym);
     if (!ct || !ct->owner) {
         return ck_ivar(c);
+    }
+    if (exp && exp->kind == EK_T_IVAR) {
+        /* An undetermined expectation: the reference supplies fresh
+           variables and the expectation takes the instance. */
+        const ek_type *out = ck_nominal_fresh(c, ct->owner);
+
+        ck_conforms(c, out, exp, 1);
+        return out;
     }
     return ck_nominal(c, ct->owner, NULL, 0);
 }

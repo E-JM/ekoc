@@ -39,13 +39,18 @@
  * STD SURFACE. resolve answers the implicit `import std` from the
  * compiler-embedded lib/std.eko: the source is parsed and its surface
  * built like any other module's, then extended with the placeholder
- * rows the file does not own yet -- the opened type names and the
- * zero-payload constructors of the std types. A real-file row wins
- * over a placeholder row of the same kind and name; the placeholder is
- * the fallback. A std name no row declares resolves to EK_SYM_EXTERNAL
- * with no diagnostic (the bridge), so a std name the file does not
- * declare yet keeps its bridged reading. Explicit imports of user
- * modules resolve for real and are diagnosed.
+ * rows the file does not own yet. The file declares the core types
+ * (Bool, Option, Result, Never) with their constructors and the three
+ * opened free functions; the placeholders that remain are the scalar,
+ * container, capability, and time type names (Char, String, Bytes, Int,
+ * UInt, Float, Range, Json, Time, Duration, the capability types,
+ * File, OpenMode, FileInfo, IoError, Scope, Task) and the Time and
+ * Duration constructors. A real-file row wins over a placeholder row of
+ * the same kind and name; the placeholder is the fallback. A std name
+ * no row declares resolves to EK_SYM_EXTERNAL with no diagnostic (the
+ * bridge), so a std name the file does not declare yet keeps its
+ * bridged reading. Explicit imports of user modules resolve for real
+ * and are diagnosed.
  */
 
 /* What a resolved name denotes; the trailing kinds carry data only

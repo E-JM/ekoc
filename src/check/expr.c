@@ -186,14 +186,6 @@ static const ek_type *name_type(ck_ctx *c, const ek_node *n,
     }
 }
 
-/* `Never` arrives as its own type or as the std nominal spelling. */
-static int is_never_type(const ek_type *t)
-{
-    const ek_type *p = ck_prune(t);
-
-    return p && (p->kind == EK_T_NEVER || ck_is_std(p, "Never"));
-}
-
 /* The members of a block from one index. An inverted binding consumes
    the remaining members as its callback body, so the loop ends there;
    the binding's call result is the block's type. A member after the
@@ -215,14 +207,14 @@ const ek_type *ck_members(ck_ctx *c, const ek_node *b, size_t start,
             t = ck_stmt(c, m, 0);
             break;
         case EK_N_INVERT:
-            t = ck_invert_block(c, m, b, i + 1);
+            t = ck_invert_block(c, m, b, i + 1, expected);
             i = n;
             break;
         default:
             t = ck_expr(c, m, i + 1 == n ? expected : NULL);
             break;
         }
-        if (!warned && i + 1 < n && is_never_type(t)) {
+        if (!warned && i + 1 < n && ck_is_bottom(t)) {
             ck_warn(c, b->u.kids.data[i + 1], "W-unreachable",
                     "this code follows an expression of type `Never`");
             warned = 1;

@@ -244,12 +244,9 @@ static int covers_ctor(ck_ctx *c, const ck_ctor *ct, const ek_type *scrut,
         }
     }
     pt = ck_apply_binders(c, ct->payload, d->binders, repl, nb);
-    for (i = 0; i < np; i++) {
-        if (!payloads[i] || ck_covers(c, pt, &payloads[i], 1)) {
-            return 1;
-        }
-    }
-    return 0;
+    /* The arms headed by the constructor cover its payload jointly:
+       one arm may cover part of a nested ADT and another the rest. */
+    return ck_covers(c, pt, payloads, np);
 }
 
 static int covers_adt(ck_ctx *c, const ck_decl *d, const ek_type *scrut,

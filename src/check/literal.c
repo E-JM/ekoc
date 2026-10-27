@@ -3,17 +3,17 @@
 
 #include "check/internal.h"
 
-/* Literal placement by expected type. The std placeholder surface
-   exports no symbols of its own, so the core type symbols are
-   canonicalized per run: the symbol any reference used, or a synthetic
-   stand-in when a module never names the type. */
+/* Literal placement by expected type. A std type's identity is the
+   surface symbol the std module declares, placeholder row or file row;
+   the symbol is canonicalized per run so every site reaches the same
+   one, with a synthetic stand-in only for a name no row carries. */
 
 static const ek_symbol *std_sym(ck_ctx *c, const char *name);
 
 static int is_std_named(const ek_type *t, const char *name)
 {
     return t && t->kind == EK_T_NOMINAL && t->u.nominal.sym
-        && t->u.nominal.sym->decl == NULL && t->u.nominal.sym->module
+        && t->u.nominal.sym->module
         && strcmp(t->u.nominal.sym->module, "std") == 0
         && strcmp(t->u.nominal.sym->name, name) == 0;
 }
@@ -42,14 +42,13 @@ int ck_is_numeric(const ek_type *t)
         || is_std_named(t, "Float");
 }
 
-/* Canonical std type symbol for name: memoized; found through the
-   reference table, or synthesized for names no reference carries. */
+/* Canonical std type symbol for name: memoized; the std module's
+   surface row, or synthesized for names no row declares. */
 static const ek_symbol *std_sym(ck_ctx *c, const char *name)
 {
     const ek_symbol *hit = ck_map_get(&c->stdsyms, name);
-    const ek_symbol *sym;
     ek_symbol *fresh;
-    size_t i;
+    size_t k, i;
 
     if (hit) {
         return hit;
@@ -57,13 +56,19 @@ static const ek_symbol *std_sym(ck_ctx *c, const char *name)
     if (c->oom) {
         return NULL;
     }
-    for (i = 0; i < c->in->ref_count; i++) {
-        sym = c->in->refs[i].symbol;
-        if (sym && sym->kind == EK_SYM_TYPE && sym->decl == NULL
-            && sym->module && strcmp(sym->module, "std") == 0
-            && strcmp(sym->name, name) == 0) {
-            ck_map_put(c, &c->stdsyms, name, sym);
-            return sym;
+    for (k = 0; k < c->in->module_count; k++) {
+        const ek_surface *s = &c->in->modules[k];
+
+        if (strcmp(s->module, "std") != 0) {
+            continue;
+        }
+        for (i = 0; i < s->count; i++) {
+            const ek_symbol *sym = &s->syms[i];
+
+            if (sym->kind == EK_SYM_TYPE && strcmp(sym->name, name) == 0) {
+                ck_map_put(c, &c->stdsyms, name, sym);
+                return sym;
+            }
         }
     }
     fresh = ek_arena_alloc(c->arena, sizeof *fresh);

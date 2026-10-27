@@ -96,8 +96,8 @@ static void local_type_shadows_std(void)
     rfx_end(&f);
 }
 
-/* Without a local constructor of the name, the std placeholder is the
-   only candidate, so the bridge reading stays. */
+/* A local type may reuse a core type's constructor names; a reference
+   to a name only std declares is std's own file constructor. */
 static void std_candidate_without_a_local_one(void)
 {
     rfx f;
@@ -109,9 +109,10 @@ static void std_candidate_without_a_local_one(void)
     EK_CHECK_U64(rfx_errors(&f), 0);
     r = rfx_ref_named(&f, 2, "Ok");
     EK_CHECK(r != NULL);
-    EK_CHECK(r->kind == EK_SYM_EXTERNAL);
-    EK_CHECK(r->station == EK_ST_EXTERNAL);
+    EK_CHECK(r->kind == EK_SYM_CONSTRUCTOR);
+    EK_CHECK(r->station == EK_ST_CONS);
     EK_CHECK_STR(r->symbol ? r->symbol->module : NULL, "std");
+    EK_CHECK(r->symbol != NULL && r->symbol->decl != NULL);
     rfx_end(&f);
 }
 

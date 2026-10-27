@@ -275,9 +275,12 @@ static const ek_type *invert_binding(ck_ctx *c, const ek_node *m,
 }
 
 /* The inverted form inside a block: the remaining members are the
-   callback body, checked at the callback's result type. */
+   callback body, checked at the callback's result type. When the
+   dispatcher is opaque the callback carries no result type and the
+   block's own expectation is the last member's expectation. */
 const ek_type *ck_invert_block(ck_ctx *c, const ek_node *m,
-                               const ek_node *block, size_t start)
+                               const ek_node *block, size_t start,
+                               const ek_type *expected)
 {
     const ek_node *pat = m->u.bind.pattern;
     const ek_node *call = m->u.bind.value;
@@ -301,7 +304,7 @@ const ek_type *ck_invert_block(ck_ctx *c, const ek_node *m,
     }
     if (has_body) {
         last = block->u.kids.data[n - 1];
-        body = ck_members(c, block, start, res);
+        body = ck_members(c, block, start, res ? res : expected);
         b = rest_bit(c, block, start);
         if (res) {
             ck_conform k = ck_conforms(c, body, res, 1);

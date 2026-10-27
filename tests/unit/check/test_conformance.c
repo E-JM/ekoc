@@ -5,9 +5,10 @@
    compilation roots.
 
    PASS CONDITION: no error diagnostics from any stage. resolve.h
-   documents the placeholder std surface; by the bridge, external
-   opacity cannot force a diagnostic, so a rejected conformance module
-   is an internal defect. */
+   documents the std surface: the core types are real source, and the
+   remaining placeholder rows keep external opacity for the services
+   the compiler does not type yet, so a rejected conformance module is
+   an internal defect. */
 
 #define CONF_DIR "tests/conformance"
 
