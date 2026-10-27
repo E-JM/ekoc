@@ -352,6 +352,38 @@ static void duplicate_variants(void)
     cfx_end(&f);
 }
 
+/* The message of the first check diagnostic at a line. */
+static const char *diag_message(const cfx *f, int line)
+{
+    size_t i;
+
+    for (i = 0; i < f->cdn; i++) {
+        if (f->cds[i].line == line) {
+            return f->cds[i].message;
+        }
+    }
+    return NULL;
+}
+
+/* A std candidate in the owner list carries its module, so a user type
+   of the same spelling stays distinguishable from it. */
+static void undetermined_owner_text(void)
+{
+    cfx f;
+
+    cfx_begin(&f,
+              "Bool: type = True | False\n"
+              "\n"
+              "z := True\n");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(f.cdn == 1);
+    EK_CHECK_STR(diag_message(&f, 3),
+                 "two constructors named `True` are visible and no "
+                 "expected type anchors the reference; write a `Bool or "
+                 "std.Bool` annotation (Clause 7.4.6)");
+    cfx_end(&f);
+}
+
 int main(void)
 {
     std_only();
@@ -366,5 +398,6 @@ int main(void)
     payload_conforms();
     qualified_application();
     duplicate_variants();
+    undetermined_owner_text();
     return ek_test_report("check/ctors");
 }
