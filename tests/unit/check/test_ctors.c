@@ -281,6 +281,7 @@ static void qualified_application(void)
             "b: ABool = qliba.True\n",
             mpath, 2, "qapp1.eko");
     EK_CHECK_U64(cfx_errors(&f), 0);
+    EK_CHECK_U64(cfx_stage_errors(f.ds, f.dn), 0);
     cfx_end(&f);
 
     cfx_run(&f,
@@ -298,6 +299,7 @@ static void qualified_application(void)
             "a: Shape = geolib.Circle(2.0)\n"
             "b: Shape = geolib.Circle(\"s\")\n",
             mpath, 2, "qapp3.eko");
+    EK_CHECK_U64(cfx_stage_errors(f.ds, f.dn), 0);
     EK_CHECK_U64(cfx_errors(&f), 1);
     EK_CHECK(cfx_code_at_line(&f, "E-nominal-mismatch", 3));
     cfx_end(&f);
@@ -306,16 +308,19 @@ static void qualified_application(void)
             "import geolib\n"
             "a: Shape = geolib.Circle(1.0, 2.0, 3.0)\n",
             mpath, 2, "qapp4.eko");
+    EK_CHECK_U64(cfx_stage_errors(f.ds, f.dn), 0);
     EK_CHECK_U64(cfx_errors(&f), 1);
     EK_CHECK(cfx_code_at_line(&f, "E-call-arity", 2));
     cfx_end(&f);
 
-    /* A generic constructor takes its instantiation from the anchor. */
+    /* A generic constructor takes its instantiation from the anchor;
+       the import opens the bare type spelling. */
     cfx_run(&f,
             "import qwrap\n"
-            "a: qwrap.Wrap String = qwrap.Wrap(\"s\")\n"
-            "b: qwrap.Wrap String = qwrap.Wrap(3)\n",
+            "a: Wrap String = qwrap.Wrap(\"s\")\n"
+            "b: Wrap String = qwrap.Wrap(3)\n",
             mpath, 2, "qapp5.eko");
+    EK_CHECK_U64(cfx_stage_errors(f.ds, f.dn), 0);
     EK_CHECK_U64(cfx_errors(&f), 1);
     EK_CHECK(cfx_code_at_line(&f, "E-nominal-mismatch", 3));
     cfx_end(&f);
@@ -324,6 +329,7 @@ static void qualified_application(void)
             "import qwrap\n"
             "v := qwrap.Wrap(3)\n",
             mpath, 2, "qapp6.eko");
+    EK_CHECK_U64(cfx_stage_errors(f.ds, f.dn), 0);
     EK_CHECK_U64(cfx_errors(&f), 1);
     EK_CHECK(cfx_code_at_line(&f, "E-undetermined", 2));
     cfx_end(&f);
@@ -331,6 +337,7 @@ static void qualified_application(void)
     /* A std placeholder constructor keeps the bridge opacity. */
     cfx_run(&f, "a: Option Int = std.Some(3)\n", mpath, 2,
             "qapp7.eko");
+    EK_CHECK_U64(cfx_stage_errors(f.ds, f.dn), 0);
     EK_CHECK_U64(cfx_errors(&f), 0);
     cfx_end(&f);
 }
