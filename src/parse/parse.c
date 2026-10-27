@@ -331,6 +331,9 @@ ek_node *p_path_pattern(p_ctx *c, const ek_slist *path,
         if (n) {
             p_path_init(&n->u.cons.name);
             p_path_add(c, &n->u.cons.name, path->data[0]);
+            if (n->u.cons.name.count == 0) {
+                return NULL;
+            }
         }
         return n;
     }
@@ -338,6 +341,9 @@ ek_node *p_path_pattern(p_ctx *c, const ek_slist *path,
     if (n) {
         p_path_init(&n->u.path);
         p_path_add(c, &n->u.path, path->data[0]);
+        if (n->u.path.count == 0) {
+            return NULL;
+        }
     }
     return n;
 }
