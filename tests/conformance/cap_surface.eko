@@ -1,0 +1,13 @@
+// The capability surface through its own module: the handle types
+// exist, the Out derivations construct, and the compiler-provided
+// declarations stay reachable (Clauses 9.1.1, 9.12, 9.14.5, 10.8).
+
+handles_exist: test =
+    m: OpenMode = Read
+    info: FileInfo = {size: 0, mtime: Time 0, is_dir: False}
+    e: IoError = NotFound
+    assert_eq(Out.null().show(), "<cap>")
+
+derivation_types: test =
+    o := Out.null()
+    o.println("hi")

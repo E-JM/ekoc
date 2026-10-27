@@ -28,8 +28,9 @@ int ck_is_capability(const ek_type *t)
 }
 
 /* The handle types: reached only through a capability member, opaque
-   under the bridge like the capabilities, and their equality and
-   ordering halt the same way. `Task t` carries its binder. */
+   handles whose equality and ordering halt the same way. `Task t`
+   carries its binder. They are declarations of the capability module
+   (Clause 9.1.1), so the module names them. */
 int ck_is_handle(const ek_type *t)
 {
     static const char *handles[] = {"File", "Scope", "Task"};
@@ -37,7 +38,8 @@ int ck_is_handle(const ek_type *t)
 
     t = ck_prune(t);
     if (!t || t->kind != EK_T_NOMINAL || !t->u.nominal.sym
-        || t->u.nominal.argc > 1 || t->u.nominal.sym->decl) {
+        || t->u.nominal.argc > 1 || !t->u.nominal.sym->module
+        || strcmp(t->u.nominal.sym->module, "cap") != 0) {
         return 0;
     }
     for (i = 0; i < sizeof handles / sizeof *handles; i++) {

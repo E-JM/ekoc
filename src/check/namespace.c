@@ -9,15 +9,15 @@
    default of a name no declaration owns. A namespace the table owns
    is complete: a name no station answers is absent, not bridged. */
 
-/* A row signature is a type tree: a fresh variable slot, a std
-   nominal, a list, an Option or Result application, a function, or
-   the unit type. Slots are per-consultation: every use of a row
-   instantiates its own variables. */
+/* A row signature is a type tree: a fresh variable slot, a std or
+   capability nominal, a list, an Option or Result application, a
+   function, or the unit type. Slots are per-consultation: every use of
+   a row instantiates its own variables. */
 typedef struct ns_sig ns_sig;
 
 struct ns_sig {
     int kind;
-    const char *std;       /* NS_STD: the type's name */
+    const char *std;       /* NS_STD, NS_CAP: the type's name */
     int slot;              /* NS_VAR: the variable's slot */
     const ns_sig **params; /* NS_FN */
     size_t nparams;
@@ -28,8 +28,8 @@ struct ns_sig {
     const ns_sig *arg2;    /* NS_APP2, NS_DICT: the second argument */
 };
 
-enum { NS_VAR, NS_STD, NS_FN, NS_UNIT, NS_LIST, NS_OPTION, NS_RESULT,
-       NS_APP1, NS_APP2, NS_DICT };
+enum { NS_VAR, NS_STD, NS_CAP, NS_FN, NS_UNIT, NS_LIST, NS_OPTION,
+       NS_RESULT, NS_APP1, NS_APP2, NS_DICT };
 
 typedef struct {
     const char *ns;
@@ -38,6 +38,7 @@ typedef struct {
 } ns_row;
 
 #define SIG_STD(n)  &(ns_sig){.kind = NS_STD, .std = (n)}
+#define SIG_CAP(n)  &(ns_sig){.kind = NS_CAP, .std = (n)}
 #define SIG_VAR(i)  &(ns_sig){.kind = NS_VAR, .slot = (i)}
 #define SIG_UNIT    &(ns_sig){.kind = NS_UNIT}
 #define SIG_LIST(a) &(ns_sig){.kind = NS_LIST, .arg = (a)}
@@ -70,6 +71,30 @@ typedef struct {
 static const ek_type *build(ck_ctx *c, const ns_sig *s, const ek_type **slots,
                             size_t nslots);
 
+/* The capability module's type symbol of one name, or NULL: the
+   private bundle type of the injected pair lives only there (Clause
+   10.8). */
+static const ek_symbol *cap_sym(ck_ctx *c, const char *name)
+{
+    size_t k, i;
+
+    for (k = 0; k < c->in->module_count; k++) {
+        const ek_surface *s = &c->in->modules[k];
+
+        if (strcmp(s->module, "cap") != 0) {
+            continue;
+        }
+        for (i = 0; i < s->count; i++) {
+            const ek_symbol *sym = &s->syms[i];
+
+            if (sym->kind == EK_SYM_TYPE && strcmp(sym->name, name) == 0) {
+                return sym;
+            }
+        }
+    }
+    return NULL;
+}
+
 static const ek_type *build_fn(ck_ctx *c, const ns_sig *s,
                                const ek_type **slots, size_t nslots)
 {
@@ -100,6 +125,9 @@ static const ek_type *build(ck_ctx *c, const ns_sig *s, const ek_type **slots,
                    : (slots[s->slot] = ck_ivar(c));
     case NS_STD:
         return ck_std_type(c, s->std);
+    case NS_CAP:
+        sym = cap_sym(c, s->std);
+        return sym ? ck_nominal(c, sym, NULL, 0) : ck_ivar(c);
     case NS_UNIT:
         return ck_unit(c);
     case NS_FN:
@@ -734,17 +762,9 @@ static const ns_row rows[] = {
     {"Path", "is_absolute", SIG_FN(EK_ARROW_PURE, SIG_STD("Bool"),
                                     SIG_STD("String"))},
 
-    /* The Out capability: printing touches the world; null is pure,
-       and tee is a pure derivation whose observer may touch the world. */
-    {"Out", "null", SIG_FN0(EK_ARROW_PURE, SIG_STD("Out"))},
-    {"Out", "print", SIG_FN(EK_ARROW_WORLD, SIG_UNIT,
-                            SIG_STD("Out"), SIG_STD("String"))},
-    {"Out", "println", SIG_FN(EK_ARROW_WORLD, SIG_UNIT,
-                              SIG_STD("Out"), SIG_STD("String"))},
-    {"Out", "tee", SIG_FN(EK_ARROW_PURE, SIG_STD("Out"),
-                          SIG_STD("Out"),
-                          SIG_FN(EK_ARROW_WORLD, SIG_UNIT,
-                                 SIG_STD("String")))},
+    /* The Out capability carries no compiler rows: its four members
+       are declared by the capability module's own source (Clause
+       10.8), and the namespace is complete (Clause 7.9.1). */
 
     /* The unsigned scalar namespace: arithmetic without negation. */
     {"UInt", "add", SIG_FN(EK_ARROW_PURE, SIG_STD("UInt"),
@@ -934,4 +954,50 @@ int ck_ns_owned(const ek_type *recv)
         }
     }
     return 0;
+}
+
+/* The injected pair of the Out capability (Clause 10.8): the compiler
+   rows behind the two `_`-prefixed names the cap source references
+   without declaring. Their rows carry no declaration node, so the
+   schemes hang here and the pair stays unnameable outside the
+   capability module. */
+static const struct {
+    const char *name;
+    const ns_sig *sig;
+} pair_rows[] = {
+    {"_out_unwrap", SIG_FN(EK_ARROW_PURE, SIG_CAP("_OutB"),
+                           SIG_STD("Out"))},
+    {"_out_wrap", SIG_FN(EK_ARROW_PURE, SIG_STD("Out"),
+                         SIG_CAP("_OutB"))},
+};
+
+/* The schemes of the injected pair, hung on the cap module's undeclared
+   function rows in the per-module phase: a body of the cap source
+   reaches them by name, and every other module reaches neither the
+   names nor the symbols. */
+void ck_cap_schemes(ck_ctx *c)
+{
+    size_t k, i, j;
+
+    for (k = 0; k < c->in->module_count && !c->oom; k++) {
+        const ek_surface *s = &c->in->modules[k];
+
+        if (strcmp(s->module, "cap") != 0) {
+            continue;
+        }
+        for (i = 0; i < s->count; i++) {
+            const ek_symbol *sym = &s->syms[i];
+
+            if (sym->kind != EK_SYM_FUNC || sym->decl || sym->type) {
+                continue;
+            }
+            for (j = 0; j < sizeof pair_rows / sizeof *pair_rows; j++) {
+                if (strcmp(sym->name, pair_rows[j].name) == 0) {
+                    ck_map_put(c, &c->schemes, sym,
+                               ck_mono(c, build(c, pair_rows[j].sig,
+                                                NULL, 0)));
+                }
+            }
+        }
+    }
 }

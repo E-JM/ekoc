@@ -41,6 +41,8 @@ PARSE_SRC := \
 
 RESOLVE_SRC := \
 	src/resolve/body.c \
+	src/resolve/cap.c \
+	src/resolve/cap_source.c \
 	src/resolve/chain.c \
 	src/resolve/expr.c \
 	src/resolve/module.c \

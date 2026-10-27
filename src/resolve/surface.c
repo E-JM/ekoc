@@ -189,15 +189,26 @@ static char *ns_key(r_surf *s, const ek_node *d)
 }
 
 /* A namespace member is legal only in the module that declares the
-   type; the qualified spelling does not bypass it. */
+   type; the qualified spelling does not bypass it. The nine capability
+   types are the exception: they stay std placeholder rows, and their
+   namespace members are the capability module's (Clause 7.9.1). */
 static int type_owned(r_surf *s, const char *type)
 {
+    static const char *caps[] = {"Out",   "In",   "Fs",    "Env",  "Args",
+                                 "Clock", "Rand", "Proc",  "Conc"};
     size_t i;
 
     for (i = 0; i < s->n; i++) {
         if (s->syms[i].kind == EK_SYM_TYPE
             && strcmp(s->syms[i].name, type) == 0) {
             return 1;
+        }
+    }
+    if (strcmp(s->m->stem, "cap") == 0) {
+        for (i = 0; i < sizeof caps / sizeof *caps; i++) {
+            if (strcmp(caps[i], type) == 0) {
+                return 1;
+            }
         }
     }
     return 0;

@@ -78,7 +78,7 @@ static void std_module_surface(void)
 
     rfx_begin(&f, "v: Int = 1\n");
     EK_CHECK_U64(rfx_errors(&f), 0);
-    EK_CHECK_U64(f.res.module_count, 2); /* the root and std */
+    EK_CHECK_U64(f.res.module_count, 3); /* the root, std, and cap */
     if (f.res.module_count < 2) {
         rfx_end(&f);
         return;
@@ -226,7 +226,7 @@ static void std_body_resolved(void)
 
     rfx_begin(&f, "v: Int = 1\n");
     EK_CHECK_U64(rfx_errors(&f), 0);
-    EK_CHECK_U64(f.res.module_count, 2);
+    EK_CHECK_U64(f.res.module_count, 3);
     if (f.res.module_count < 2) {
         rfx_end(&f);
         return;

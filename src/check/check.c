@@ -187,6 +187,12 @@ ek_check_result ek_check(ek_resolve_result in, ek_arena *arena,
         c.cur = &in.modules[i];
         ck_prebind(&c);
         ck_decls(&c);
+        if (strcmp(in.modules[i].module, "cap") == 0) {
+            /* The injected pair's symbols carry no declaration, so
+               their schemes hang before any body reads them (Clause
+               10.8). */
+            ck_cap_schemes(&c);
+        }
     }
     ck_entry_rules(&c);
     c.locals = NULL;

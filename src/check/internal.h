@@ -127,6 +127,7 @@ int ck_is_bottom(const ek_type *t); /* the `Never` leaf */
 const ek_type *ck_ns_row(ck_ctx *c, const ek_type *recv, const char *name,
                          int *owned); /* a compiler namespace row, or NULL */
 int ck_ns_owned(const ek_type *recv); /* the namespace has compiler rows */
+void ck_cap_schemes(ck_ctx *c); /* the injected pair's schemes */
 const ek_type *ck_nominal(ck_ctx *c, const ek_symbol *sym, const ek_type **args,
                           size_t argc);
 const ek_type *ck_nominal_fresh(ck_ctx *c, const ek_symbol *sym);

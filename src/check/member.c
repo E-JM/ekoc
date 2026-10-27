@@ -42,28 +42,41 @@ int ck_ref_at(const ck_ctx *c, const ek_node *n, ek_sym_kind kind,
 }
 
 /* The declared namespace member of the type's head, found in the
-   declaring module's surface. */
+   declaring module's surface. The nine capability types are std
+   placeholder rows, so their declared members live in the capability
+   module's surface instead (Clauses 7.9.1, 10.8): a miss in the
+   declaring module falls back to it. */
 static const ek_symbol *ns_member(ck_ctx *c, const ek_symbol *type,
                                   const char *name)
 {
-    size_t k, i;
+    size_t k, i, pass;
 
     if (!type || !type->module) {
         return NULL;
     }
-    for (k = 0; k < c->in->module_count; k++) {
-        const ek_surface *s = &c->in->modules[k];
+    for (pass = 0; pass < 2; pass++) {
+        const char *want = pass == 0 ? type->module : "cap";
 
-        if (strcmp(s->module, type->module) != 0) {
-            continue;
+        if (pass == 1 && (type->decl || strcmp(type->module, "std") != 0)) {
+            /* The fallback answers for the capability placeholders
+               alone; a declared type's namespace stays its own
+               module's. */
+            return NULL;
         }
-        for (i = 0; i < s->count; i++) {
-            const ek_symbol *m = &s->syms[i];
+        for (k = 0; k < c->in->module_count; k++) {
+            const ek_surface *s = &c->in->modules[k];
 
-            if (m->kind == EK_SYM_NAMESPACE && m->owner
-                && strcmp(m->owner, type->name) == 0
-                && strcmp(m->name, name) == 0) {
-                return m;
+            if (strcmp(s->module, want) != 0) {
+                continue;
+            }
+            for (i = 0; i < s->count; i++) {
+                const ek_symbol *m = &s->syms[i];
+
+                if (m->kind == EK_SYM_NAMESPACE && m->owner
+                    && strcmp(m->owner, type->name) == 0
+                    && strcmp(m->name, name) == 0) {
+                    return m;
+                }
             }
         }
     }

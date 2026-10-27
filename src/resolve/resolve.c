@@ -97,6 +97,7 @@ static void file_setup(r_ctx *c, r_file *f, r_mod *m)
     add_module_name(c, f, "std"); /* the implicit import */
     open_surface(c, f, m->surf);
     r_std_open(c, f);
+    r_cap_open(c, f);
     if (mod) {
         for (i = 0; i < mod->u.kids.count; i++) {
             const ek_node *imp = mod->u.kids.data[i];
@@ -127,7 +128,7 @@ static void file_setup(r_ctx *c, r_file *f, r_mod *m)
 }
 
 /* The stem is a snake_case identifier; a user module is never named
-   std. */
+   std, and no import path names the capability module. */
 static void check_root_name(r_ctx *c, const char *file, const char *stem)
 {
     if (!r_is_snake(stem)) {
@@ -143,6 +144,11 @@ static void check_root_name(r_ctx *c, const char *file, const char *stem)
         r_error(c, file, 1, 1, "E-module-name",
                 "a user module MUST NOT be named `std` (Clauses 7.2.2, "
                 "9.1.2)");
+    }
+    if (strcmp(stem, "cap") == 0) {
+        r_error(c, file, 1, 1, "E-module-name",
+                "no import path names the capability module (Clauses "
+                "9.1.1, 9.1.2)");
     }
 }
 
@@ -239,6 +245,7 @@ ek_resolve_result ek_resolve(const ek_node *module, const char *file,
         return r;
     }
     r_std_boot(&ctx);
+    r_cap_boot(&ctx);
     r_surface_build(&ctx, ctx.mods);
     r_closure(&ctx, ctx.mods);
     resolve_bodies(&ctx);

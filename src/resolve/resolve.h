@@ -45,12 +45,16 @@
  * container, capability, and time type names (Char, String, Bytes, Int,
  * UInt, Float, Set, List — the head of the []t namespace — Dict — the
  * head of the [k]v namespace — Path, Json, Time, Duration, the
- * capability types, File, OpenMode, FileInfo, IoError, Scope, Task)
- * and the Time and Duration constructors. A real-file row wins over a
- * placeholder row of the same kind and name; the placeholder is the
- * fallback. A std name no row declares resolves to EK_SYM_EXTERNAL
- * with no diagnostic (the bridge), so a std name the file does not
- * declare yet keeps its bridged reading. Explicit imports of user
+ * capability types) and the Time and Duration constructors. The
+ * capability module is embedded the same way from cap/cap.eko (Clause
+ * 9.1.1): its surface — the handle and data types File, OpenMode,
+ * FileInfo, IoError, Scope, and Task with their constructors, the Out
+ * members, and the injected pair — is the fallback beneath std, and
+ * no import path names it. A real-file row wins over a placeholder
+ * row of the same kind and name; the placeholders are the fallbacks.
+ * A std or cap name no row declares resolves to EK_SYM_EXTERNAL
+ * with no diagnostic (the bridge), so a name the embedded sources do
+ * not declare yet keeps its bridged reading. Explicit imports of user
  * modules resolve for real and are diagnosed.
  */
 

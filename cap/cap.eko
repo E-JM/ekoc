@@ -1,0 +1,49 @@
+// The capability module: the handles and data types of the capability
+// surfaces, and the members of the capability namespaces (Clause
+// 9.1.1). The channel to the operating system is the injected pair of
+// each capability (Clause 10.8); the sixteen compiler-provided
+// declarations arrive as compiler rows, not source.
+
+// The file-open modes (Clause 9.12.1).
+OpenMode: type = Read | Write | Append | New | Update
+
+// What `stat` reports (Clause 9.12.6).
+FileInfo: type = [size: UInt, mtime: Time, is_dir: Bool]
+
+// The closed failure reason of the file family (Clause 9.12.2).
+IoError: type =
+    | NotFound
+    | Permission
+    | Exists
+    | NotFile
+    | Closed
+    | InvalidData String
+    | Other String
+
+// An open file, as a runtime handle-table index; the constructor is
+// private, so no other form exists and the handle stays unforgeable
+// (Clauses 7.9.1, 9.12.2).
+File: type = _File [raw: UInt]
+
+// A concurrency scope, the same runtime handle (Clause 8.9.1).
+Scope: type = _Scope [raw: UInt]
+
+// A spawned task over its result type, the same runtime handle
+// (Clause 8.9.1). The private second field carries the binder, which
+// names no storage (Clause 7.6.2).
+Task: type t = _Task [raw: UInt, _as: t]
+
+// The session-write bundle the injected pair unwraps to (Clause 10.8).
+_OutB: type = [write: (String) !]
+
+// Printing writes through the bundle's own closure (Clause 10.8).
+Out.print: (o: Out, s: String) ! = _out_unwrap(o).write(s)
+Out.println: (o: Out, s: String) ! = _out_unwrap(o).write(s ++ "\n")
+
+// The observer rides along with every write (Clause 9.14.5).
+Out.tee: (o: Out, obs: (String) !-> _) -> Out =
+    b := _out_unwrap(o)
+    _out_wrap({write: (s): b.write(s); obs(s)})
+
+// The zero-grant derivation: every write lands nowhere (Clause 9.14.5).
+Out.null: () -> Out = _out_wrap({write: (s): _})

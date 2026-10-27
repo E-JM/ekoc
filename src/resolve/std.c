@@ -23,7 +23,7 @@ static const char *type_names[] = {
     "Char", "String", "Bytes", "Int", "UInt", "Float",
     "Set", "List", "Dict", "Path",
     "Out", "In", "Fs", "Env", "Args", "Clock", "Rand", "Proc", "Conc",
-    "File", "OpenMode", "FileInfo", "IoError", "Scope", "Task", NULL
+    NULL
 };
 
 #define TYPE_ROWS (sizeof type_names / sizeof *type_names - 1)
