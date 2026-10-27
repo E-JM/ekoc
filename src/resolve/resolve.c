@@ -194,6 +194,7 @@ static void finish(r_ctx *c, ek_resolve_result *r)
 {
     size_t i;
 
+    r_warn_deprecated(c);
     r_warn_unused(c);
     r->modules = ek_arena_alloc(c->arena, (c->nmods ? c->nmods : 1)
                                 * sizeof *r->modules);

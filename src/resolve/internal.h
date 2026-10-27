@@ -83,6 +83,7 @@ typedef struct {
     r_local *locals; /* local binding sites, in declaration order */
     size_t nlocals, clocals;
     const ek_node *pat_group; /* the pattern whose binds are running */
+    const ek_node *binding_node; /* the binding that owns the binds */
     int oom;
 } r_ctx;
 
@@ -105,9 +106,10 @@ void r_error(r_ctx *c, const char *file, int line, int col,
              const char *code, const char *fmt, ...);
 void r_refs_sort(ek_ref *refs, size_t count);
 
-/* warn.c: the unused-binding and unused-import warnings over the
-   finished closure. */
+/* warn.c: the unused-binding and unused-import warnings, and the
+   deprecation warnings at use sites, over the finished closure. */
 void r_warn_unused(r_ctx *c);
+void r_warn_deprecated(r_ctx *c);
 
 /* std.c: the parsed std module, its placeholder rows, and the implicit
    import. r_std_boot parses the embedded source into the closure and

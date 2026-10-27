@@ -10,6 +10,18 @@
 
 static void r_let(r_ctx *c, r_file *f, const ek_node *m);
 
+/* The names a binding pattern introduces inherit the binding node as
+   their declaration, so a use can see the document's deprecation
+   mark. */
+static void bind_pattern(r_ctx *c, r_file *f, const ek_node *m)
+{
+    const ek_node *old = c->binding_node;
+
+    c->binding_node = m;
+    r_pattern_binds(c, f, m->u.bind.pattern);
+    c->binding_node = old;
+}
+
 void r_block(r_ctx *c, r_file *f, const ek_node *block, scope *parent)
 {
     scope *s = r_scope_new(c, parent);
@@ -31,14 +43,14 @@ void r_block(r_ctx *c, r_file *f, const ek_node *block, scope *parent)
             r_expr(c, f, m->u.bind.value);
             r_pattern_refs(c, f, m->u.bind.pattern);
             r_pattern_dup(c, f, m->u.bind.pattern);
-            r_pattern_binds(c, f, m->u.bind.pattern);
+            bind_pattern(c, f, m);
             break;
         case EK_N_INVERT:
             r_expr(c, f, m->u.bind.value);
             if (m->u.bind.pattern) {
                 r_pattern_refs(c, f, m->u.bind.pattern);
                 r_pattern_dup(c, f, m->u.bind.pattern);
-                r_pattern_binds(c, f, m->u.bind.pattern);
+                bind_pattern(c, f, m);
             }
             break;
         default:
@@ -189,7 +201,7 @@ static void r_let(r_ctx *c, r_file *f, const ek_node *m)
     if (!old) {
         return;
     }
-    r_pattern_binds(c, f, m->u.bind.pattern);
+    bind_pattern(c, f, m);
 }
 
 /* The top-level bodies of one module: bindings are mutually visible

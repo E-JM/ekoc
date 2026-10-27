@@ -243,6 +243,45 @@ static void warn_imports(r_ctx *c)
     }
 }
 
+/* One use site per reference node. A call or application node carries a
+   second reference for the whole form; its callee or head already names
+   the symbol, so warning there would repeat the use. */
+static int direct_use(const ek_ref *r)
+{
+    return r->node && r->node->kind != EK_N_CALL
+        && r->node->kind != EK_N_APPLY;
+}
+
+/* Every module's references denote a use in that module's file. A
+   declaration node is not a use of itself. */
+void r_warn_deprecated(r_ctx *c)
+{
+    size_t i, k;
+
+    if (c->oom) {
+        return;
+    }
+    for (i = 0; i < c->nmods; i++) {
+        const r_mod *m = &c->mods[i];
+
+        if (m->external || !m->ast) {
+            continue;
+        }
+        for (k = m->ref_begin; k < m->ref_end && k < c->nrefs; k++) {
+            const ek_ref *r = &c->refs[k];
+            const ek_symbol *sym = r->symbol;
+
+            if (!sym || !sym->decl || !sym->decl->deprecated
+                || r->node == sym->decl || !direct_use(r)) {
+                continue;
+            }
+            ek_diag_emit(c->diag, EK_SEV_WARNING, "W-deprecated",
+                         m->file, r->node->line, r->node->col,
+                         "the binding `%s` is deprecated", sym->name);
+        }
+    }
+}
+
 void r_warn_unused(r_ctx *c)
 {
     r_used u;

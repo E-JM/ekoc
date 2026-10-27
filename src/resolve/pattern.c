@@ -37,6 +37,9 @@ static void bind_var(r_ctx *c, r_file *f, const char *name, int line,
     }
     sym = r_sym(c, name, EK_SYM_LOCAL, f->mod->stem, line, col);
     if (sym) {
+        if (c->binding_node && c->binding_node->deprecated) {
+            sym->decl = c->binding_node;
+        }
         r_scope_add(c, f->locals, name, sym);
         note_local(c, sym);
     }
