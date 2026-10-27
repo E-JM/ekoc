@@ -496,6 +496,46 @@ static void rejected_alternative(void)
     cfx_end(&f);
 }
 
+/* The arms headed by one constructor cover its payload jointly: a
+   nested ADT may be split across arms. */
+static void nested_payloads(void)
+{
+    cfx f;
+
+    cfx_begin(&f,
+              "A: type = X | Y\n"
+              "R: type = Wrap A | Nope Int\n"
+              "f: (r: R) -> Int =\n"
+              "    case r:\n"
+              "        Nope n -> n\n"
+              "        Wrap X -> 1\n"
+              "        Wrap Y -> 2\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "A: type = X | Y\n"
+              "R: type = Wrap A | Nope Int\n"
+              "f: (r: R) -> Int =\n"
+              "    case r:\n"
+              "        Nope n -> n\n"
+              "        Wrap X -> 1\n");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-exhaust", 4));
+    cfx_end(&f);
+
+    /* A wildcard payload covers the whole payload. */
+    cfx_begin(&f,
+              "A: type = X | Y\n"
+              "R: type = Wrap A | Nope Int\n"
+              "f: (r: R) -> Int =\n"
+              "    case r:\n"
+              "        Wrap _ -> 1\n"
+              "        Nope n -> n\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+}
+
 int main(void)
 {
     variants();
@@ -506,6 +546,7 @@ int main(void)
     cross_pattern();
     bindings();
     constructor_and_product_coverage();
+    nested_payloads();
     rejected_alternative();
     return ek_test_report("check/patterns");
 }
