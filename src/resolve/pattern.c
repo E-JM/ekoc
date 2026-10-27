@@ -107,6 +107,9 @@ static void cons_ref(r_ctx *c, r_file *f, const ek_node *pat)
     k = r_lookup_ctor(c, f, path->count == 1 ? path->data[0] : "",
                       &cands);
     if (k == 0) {
+        const ek_symbol *priv = r_std_find(f->std, EK_SYM_CONSTRUCTOR,
+                                           path->data[0]);
+
         if (path->count == 1 && strcmp(path->data[0], "Never") == 0) {
             /* The language's bottom type has no constructor; the
                pattern miss is not the bridge. */
@@ -116,6 +119,12 @@ static void cons_ref(r_ctx *c, r_file *f, const ek_node *pat)
                     "constructor (Clause 7.5.4)");
             r_add_ref(c, pat, EK_SYM_EXTERNAL, EK_ST_EXTERNAL, NULL);
             return;
+        }
+        if (priv && !priv->public) {
+            r_error(c, f->mod->file, pat->line, pat->col,
+                    "E-private-name",
+                    "the constructor `%s` is private in module `%s` "
+                    "(Clause 7.3.3)", path->data[0], priv->module);
         }
         /* Unknown to the file and to std: the bridge records the
            miss. */

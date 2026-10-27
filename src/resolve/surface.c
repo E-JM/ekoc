@@ -146,7 +146,10 @@ static void collect_type(r_surf *s, const ek_node *d)
         }
         cs->decl = d;
         cs->owner = d->u.type_decl.name;
-        cs->public = sym->public;
+        /* Visibility follows the type; a `_`-prefixed constructor
+           spelling is the one split, private to the declaring
+           module. */
+        cs->public = sym->public && v->u.variant.name[0] != '_';
         emit(s, cs);
     }
 }

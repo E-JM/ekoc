@@ -158,8 +158,9 @@ The field and payload types of a public `type` or `ctype` declaration are export
 to an importing module, so the name of every field and payload type MUST be spellable there; the rule is the same one that governs a public
 function signature.
 
-Variant visibility follows the type and MUST NOT be split. A public ADT has all its variants public, and a private ADT has all its variants
-private.
+Variant visibility follows the type. A public ADT has all its variants public, and a private ADT has all its variants private, with one split: a
+constructor spelling that carries the privacy prefix `_` is private to the declaring module. The standard library closes the construction of
+`Range` this way; the range operators are its only public form (Clause 6.5.6).
 ## 7.4 Names and Resolution
 Names are resolved statically. There is no dynamic name lookup and no runtime namespace.
 ### 7.4.1 Name Spaces

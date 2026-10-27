@@ -68,7 +68,7 @@ the namespace member below, by operand type (Clause 7.8.3).
 | `UInt` | unsigned 64-bit integer | Clause 9.6.1 |
 | `Float` | IEEE 754 binary64 | Clause 9.6.1 |
 | `I8`, `I16`, `I32`, `I64`, `U8`, `U16`, `U32`, `U64`, `F32`, `F64` | machine words | Clause 10.3.1 |
-| `Range t` | range with `Int`, `UInt`, or `Char` endpoints | Clause 6.5.6 |
+| `Range t` | range with `Int`, `UInt`, or `Char` endpoints; the operators are its only construction | Clause 6.5.6 |
 | `Option t` | built-in ADT; constructors `Some t` and `None` | Clause 9.2.2 |
 | `Result t e` | built-in ADT; constructors `Ok t` and `Err e` | Clause 9.2.1 |
 | `Set t` | nominal generic container | Clause 9.10.3 |
@@ -91,6 +91,7 @@ The declarations whose variants are fixed by this document are the following.
 Bool:       type = True | False
 Option:     type t = Some t | None
 Result:     type t e = Ok t | Err e
+Range:      type t = _Range [start: t, end: t, closed: Bool]
 ParseError: type = Empty | Invalid String | OutOfRange
 IoError:    type = NotFound | Permission | Exists | NotFile | Closed | InvalidData String | Other String
 OpenMode:   type = Read | Write | Append | New | Update

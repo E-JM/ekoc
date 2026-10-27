@@ -95,8 +95,13 @@ size_t r_lookup_ctor(r_ctx *c, const r_file *f, const char *name,
     int fallback;
     size_t i, n = 0;
 
+    (void)c;
     *cands = NULL;
-    fallback = std_ct && !ctor_listed(f->ctors, f->nctors, std_ct);
+    /* A private std constructor never reaches an unqualified
+       reference: visibility follows the type, and only the declaring
+           module sees it. */
+    fallback = std_ct && std_ct->public
+               && !ctor_listed(f->ctors, f->nctors, std_ct);
     for (i = 0; i < f->nctors; i++) {
         if (strcmp(f->ctors[i].name, name) == 0) {
             n++;
@@ -148,6 +153,14 @@ void r_cons_head(r_ctx *c, r_file *f, const ek_node *n, r_head *out)
         return;
     }
     if (k == 0) {
+        const ek_symbol *priv = r_std_find(f->std, EK_SYM_CONSTRUCTOR,
+                                           name);
+
+        if (priv && !priv->public) {
+            r_error(c, f->mod->file, n->line, n->col, "E-private-name",
+                    "the constructor `%s` is private in module `%s` "
+                    "(Clause 7.3.3)", name, priv->module);
+        }
         /* Unknown to the file and to std: the unresolved-external
            bridge (resolve.h). */
         out->kind = EK_SYM_EXTERNAL;

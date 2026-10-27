@@ -668,8 +668,8 @@ Two range forms exist:
 | `a..=b` | end-inclusive: `a` through `b` | `Range t` |
 
 Both endpoints MUST have the same type, which MUST be `Int`, `UInt`, or
-`Char`. `Range` is a standard-library type. A `Float` endpoint and an
-unbounded range do not exist.
+`Char`. `Range` is a standard-library type whose constructor is private to `std`: the range
+operators are its only construction. A `Float` endpoint and an unbounded range do not exist.
 
 Range operators are infix and bind less tightly than postfix. A chain over a
 range requires parentheses:

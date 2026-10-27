@@ -14,6 +14,11 @@ Option: type t = Some t | None
 // A recoverable failure: an `Ok` payload, or the reason it failed.
 Result: type t e = Ok t | Err e
 
+// A span between two endpoints of one ordered scalar. The `..` and
+// `..=` operators construct it; the constructor is private, so no
+// other form exists and the endpoint domain stays the operators'.
+Range: type t = _Range [start: t, end: t, closed: Bool]
+
 // A closed failure reason for the parse family: a missing value, a
 // malformed one, or one outside the target's limits.
 ParseError: type = Empty | Invalid String | OutOfRange

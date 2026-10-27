@@ -505,6 +505,7 @@ inspect(m)     // {cents: 12500, cur: "USD"}
 | `String`, `Bytes` | `"wd"`, `Bytes.from_hex("4142")` |
 | list, tuple, dictionary, record | `{1, 2, 3}`, `{"1": 1}`, `{name: "wd"}` |
 | ADT | constructor application: `Man`, `Some 3`, `Err "x"` |
+| `Range` | the operator forms: `0..9`, `0..=9` |
 | `_`, capability, function | `_`, `<cap>`, `<fn>` |
 
 Empty containers are `{}`. Record fields appear in declaration order. Dictionaries appear in insertion

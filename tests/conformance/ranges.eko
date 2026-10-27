@@ -1,0 +1,21 @@
+// Ranges: the two operator forms over each endpoint type, derived
+// services over the ADT, and the wildcard case (Clauses 6.5.6, 9.8).
+
+exclusive_and_inclusive: test =
+    evens: Range Int = 0..10
+    through: Range Int = 0..=10
+    chars: Range Char = 'a'..'z'
+    assert(evens.lt(through))
+    assert(evens.eq(0..10))
+    assert(chars.eq('a'..'z'))
+
+unsigned_endpoints: test =
+    bytes: Range UInt = 0..255
+    assert(bytes.eq(0..255))
+
+wildcard_case: test =
+    r: Range Int = 1..9
+    inside: Int =
+        case r:
+            _ -> 42
+    assert_eq(inside, 42)
