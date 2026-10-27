@@ -24,12 +24,12 @@ struct ns_sig {
     const ns_sig *result;
     int arrow;             /* NS_FN: the arrow form */
     const ns_sig *arg;     /* NS_LIST, NS_OPTION, NS_RESULT, NS_APP*,
-                              NS_DICT */
+                              NS_CAP1, NS_DICT */
     const ns_sig *arg2;    /* NS_APP2, NS_DICT: the second argument */
 };
 
-enum { NS_VAR, NS_STD, NS_CAP, NS_FN, NS_UNIT, NS_LIST, NS_OPTION,
-       NS_RESULT, NS_APP1, NS_APP2, NS_DICT };
+enum { NS_VAR, NS_STD, NS_CAP, NS_CAP1, NS_FN, NS_UNIT, NS_LIST,
+       NS_OPTION, NS_RESULT, NS_APP1, NS_APP2, NS_DICT };
 
 typedef struct {
     const char *ns;
@@ -55,6 +55,11 @@ typedef struct {
 /* The structural dictionary [k]v. */
 #define SIG_DICT(k, v)                                                \
     &(ns_sig){.kind = NS_DICT, .arg = (k), .arg2 = (v)}
+
+/* A capability nominal applied to one type argument: `Task b` of the
+   concurrency surface. */
+#define SIG_CAP1(n, a)                                                \
+    &(ns_sig){.kind = NS_CAP1, .std = (n), .arg = (a)}
 
 /* (params...) arrow result */
 #define SIG_FN(ar, res, ...)                                          \
@@ -124,10 +129,25 @@ static const ek_type *build(ck_ctx *c, const ns_sig *s, const ek_type **slots,
                    ? slots[s->slot]
                    : (slots[s->slot] = ck_ivar(c));
     case NS_STD:
+        if (strcmp(s->std, "Never") == 0) {
+            return ck_never(c); /* the bottom type is no lookup */
+        }
         return ck_std_type(c, s->std);
     case NS_CAP:
         sym = cap_sym(c, s->std);
         return sym ? ck_nominal(c, sym, NULL, 0) : ck_ivar(c);
+    case NS_CAP1:
+        sym = cap_sym(c, s->std);
+        {
+            const ek_type **args = ek_arena_alloc(c->arena, sizeof *args);
+
+            if (!args) {
+                c->oom = 1;
+                return ck_ivar(c);
+            }
+            args[0] = build(c, s->arg, slots, nslots);
+            return sym ? ck_nominal(c, sym, args, 1) : ck_ivar(c);
+        }
     case NS_UNIT:
         return ck_unit(c);
     case NS_FN:
@@ -195,7 +215,9 @@ static const ek_type *build(ck_ctx *c, const ns_sig *s, const ek_type **slots,
 }
 
 /* The namespace a receiver or head type carries: the structural list
-   is List; a nominal is named by its std symbol. NULL names a
+   is List; a nominal is named by its std or capability symbol -- the
+   capability placeholders stay std rows, and the handles are
+   declarations of the capability module (Clause 9.1.1). NULL names a
    namespace the table does not own. */
 static const char *namespace_of(const ek_type *t)
 {
@@ -207,7 +229,8 @@ static const char *namespace_of(const ek_type *t)
     }
     if (t->kind == EK_T_NOMINAL && t->u.nominal.sym
         && t->u.nominal.sym->module
-        && strcmp(t->u.nominal.sym->module, "std") == 0) {
+        && (strcmp(t->u.nominal.sym->module, "std") == 0
+            || strcmp(t->u.nominal.sym->module, "cap") == 0)) {
         return t->u.nominal.sym->name;
     }
     return NULL;
@@ -956,11 +979,14 @@ int ck_ns_owned(const ek_type *recv)
     return 0;
 }
 
-/* The injected pair of the Out capability (Clause 10.8): the compiler
-   rows behind the two `_`-prefixed names the cap source references
-   without declaring. Their rows carry no declaration node, so the
+/* The injected pairs of the capability module (Clause 10.8): the
+   compiler rows behind the `_`-prefixed names the cap source
+   references without declaring. Each pair is the unwrap and wrap of
+   one session bundle. Their rows carry no declaration node, so the
    schemes hang here and the pair stays unnameable outside the
-   capability module. */
+   capability module. The file bundle is generic over the callback
+   result of `with_file`; its variable generalizes, so every use
+   instantiates its own. */
 static const struct {
     const char *name;
     const ns_sig *sig;
@@ -969,12 +995,37 @@ static const struct {
                            SIG_STD("Out"))},
     {"_out_wrap", SIG_FN(EK_ARROW_PURE, SIG_STD("Out"),
                          SIG_CAP("_OutB"))},
+    {"_in_unwrap", SIG_FN(EK_ARROW_PURE, SIG_CAP("_InB"),
+                          SIG_STD("In"))},
+    {"_in_wrap", SIG_FN(EK_ARROW_PURE, SIG_STD("In"),
+                        SIG_CAP("_InB"))},
+    {"_fs_unwrap", SIG_FN(EK_ARROW_PURE, SIG_CAP1("_FsB", SIG_VAR(0)),
+                          SIG_STD("Fs"))},
+    {"_fs_wrap", SIG_FN(EK_ARROW_PURE, SIG_STD("Fs"),
+                        SIG_CAP1("_FsB", SIG_VAR(0)))},
+    {"_env_unwrap", SIG_FN(EK_ARROW_PURE, SIG_CAP("_EnvB"),
+                           SIG_STD("Env"))},
+    {"_env_wrap", SIG_FN(EK_ARROW_PURE, SIG_STD("Env"),
+                         SIG_CAP("_EnvB"))},
+    {"_args_unwrap", SIG_FN(EK_ARROW_PURE, SIG_CAP("_ArgsB"),
+                            SIG_STD("Args"))},
+    {"_args_wrap", SIG_FN(EK_ARROW_PURE, SIG_STD("Args"),
+                          SIG_CAP("_ArgsB"))},
+    {"_clock_unwrap", SIG_FN(EK_ARROW_PURE, SIG_CAP("_ClockB"),
+                             SIG_STD("Clock"))},
+    {"_clock_wrap", SIG_FN(EK_ARROW_PURE, SIG_STD("Clock"),
+                           SIG_CAP("_ClockB"))},
+    {"_rand_unwrap", SIG_FN(EK_ARROW_PURE, SIG_CAP("_RandB"),
+                            SIG_STD("Rand"))},
+    {"_rand_wrap", SIG_FN(EK_ARROW_PURE, SIG_STD("Rand"),
+                          SIG_CAP("_RandB"))},
 };
 
-/* The schemes of the injected pair, hung on the cap module's undeclared
-   function rows in the per-module phase: a body of the cap source
-   reaches them by name, and every other module reaches neither the
-   names nor the symbols. */
+/* The schemes of the injected pairs, hung on the cap module's
+   undeclared function rows in the per-module phase: a body of the cap
+   source reaches them by name, and every other module reaches neither
+   the names nor the symbols. The signature's variables generalize, so
+   a use instantiates them fresh. */
 void ck_cap_schemes(ck_ctx *c)
 {
     size_t k, i, j;
@@ -993,9 +1044,26 @@ void ck_cap_schemes(ck_ctx *c)
             }
             for (j = 0; j < sizeof pair_rows / sizeof *pair_rows; j++) {
                 if (strcmp(sym->name, pair_rows[j].name) == 0) {
-                    ck_map_put(c, &c->schemes, sym,
-                               ck_mono(c, build(c, pair_rows[j].sig,
-                                                NULL, 0)));
+                    const ek_type *slots[4] = {0, 0, 0, 0};
+                    const ek_type *t;
+                    ck_scheme *held;
+                    size_t v;
+
+                    for (v = 0; v < 4; v++) {
+                        ek_type *tv = ck_fresh(c, EK_T_TVAR);
+
+                        if (!tv) {
+                            return;
+                        }
+                        tv->u.tvar.name = pair_rows[j].name;
+                        slots[v] = tv;
+                    }
+                    t = build(c, pair_rows[j].sig, slots, 4);
+                    held = ck_mono(c, t);
+                    if (held) {
+                        *held = ck_generalize(c, t);
+                    }
+                    ck_map_put(c, &c->schemes, sym, held);
                 }
             }
         }

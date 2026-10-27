@@ -1,7 +1,7 @@
 // The capability module: the handles and data types of the capability
 // surfaces, and the members of the capability namespaces (Clause
 // 9.1.1). The channel to the operating system is the injected pair of
-// each capability (Clause 10.8); the sixteen compiler-provided
+// each capability (Clause 10.8); the fifteen compiler-provided
 // declarations arrive as compiler rows, not source.
 
 // The file-open modes (Clause 9.12.1).
@@ -47,3 +47,191 @@ Out.tee: (o: Out, obs: (String) !-> _) -> Out =
 
 // The zero-grant derivation: every write lands nowhere (Clause 9.14.5).
 Out.null: () -> Out = _out_wrap({write: (s): _})
+
+// The session-read bundle the injected pair unwraps to (Clause 10.8).
+_InB: type = [read_line: () !-> Result (Option String) IoError]
+
+// Reading one line forwards through the bundle's own closure (Clause
+// 10.8); end of input is Ok None, not an error (Clause 9.2.4).
+In.read_line: (i: In) !-> Result (Option String) IoError =
+    _in_unwrap(i).read_line()
+
+// The zero-grant derivation: every read is end of input (Clause 9.14.5).
+In.empty: () -> In = _in_wrap({read_line: (): Ok None})
+
+// The file-family bundle the injected pair unwraps to (Clause 10.8):
+// one closure per whole-path operation, the member signatures without
+// the `Fs` receiver (Clause 9.12). The bundle is generic over the
+// callback result of `with_file` alone.
+_FsB: type a = [
+    open: (String, OpenMode) !-> Result File IoError,
+    with_file: (String, OpenMode, (File) !-> a) !-> Result a IoError,
+    exists: (String) !-> Bool,
+    read: (String) !-> Result String IoError,
+    write: (String, String) !-> Result _ IoError,
+    append: (String, String) !-> Result _ IoError,
+    read_bytes: (String) !-> Result Bytes IoError,
+    append_bytes: (String, Bytes) !-> Result _ IoError,
+    list_dir: (String) !-> Result ([]String) IoError,
+    mkdir: (String) !-> Result _ IoError,
+    mkdir_all: (String) !-> Result _ IoError,
+    rm: (String) !-> Result _ IoError,
+    rm_dir: (String) !-> Result _ IoError,
+    rename: (String, String) !-> Result _ IoError,
+    stat: (String) !-> Result FileInfo IoError,
+    realpath: (String) !-> Result String IoError
+]
+
+// The whole-path operations forward through the bundle's own closures
+// (Clause 10.8).
+Fs.open: (fs: Fs, path: String, mode: OpenMode) !-> Result File IoError =
+    _fs_unwrap(fs).open(path, mode)
+
+// The callback runs at most once and the handle closes on both paths;
+// the host owns that order (Clauses 9.12.2, 9.12.4).
+Fs.with_file: (fs: Fs, path: String, mode: OpenMode, cb: (File) !-> a) !-> Result a IoError =
+    _fs_unwrap(fs).with_file(path, mode, cb)
+
+Fs.exists: (fs: Fs, path: String) !-> Bool = _fs_unwrap(fs).exists(path)
+Fs.read: (fs: Fs, path: String) !-> Result String IoError =
+    _fs_unwrap(fs).read(path)
+Fs.write: (fs: Fs, path: String, s: String) !-> Result _ IoError =
+    _fs_unwrap(fs).write(path, s)
+Fs.append: (fs: Fs, path: String, s: String) !-> Result _ IoError =
+    _fs_unwrap(fs).append(path, s)
+Fs.read_bytes: (fs: Fs, path: String) !-> Result Bytes IoError =
+    _fs_unwrap(fs).read_bytes(path)
+Fs.append_bytes: (fs: Fs, path: String, bs: Bytes) !-> Result _ IoError =
+    _fs_unwrap(fs).append_bytes(path, bs)
+Fs.list_dir: (fs: Fs, path: String) !-> Result ([]String) IoError =
+    _fs_unwrap(fs).list_dir(path)
+Fs.mkdir: (fs: Fs, path: String) !-> Result _ IoError =
+    _fs_unwrap(fs).mkdir(path)
+Fs.mkdir_all: (fs: Fs, path: String) !-> Result _ IoError =
+    _fs_unwrap(fs).mkdir_all(path)
+Fs.rm: (fs: Fs, path: String) !-> Result _ IoError =
+    _fs_unwrap(fs).rm(path)
+Fs.rm_dir: (fs: Fs, path: String) !-> Result _ IoError =
+    _fs_unwrap(fs).rm_dir(path)
+Fs.rename: (fs: Fs, from: String, to: String) !-> Result _ IoError =
+    _fs_unwrap(fs).rename(from, to)
+Fs.stat: (fs: Fs, path: String) !-> Result FileInfo IoError =
+    _fs_unwrap(fs).stat(path)
+Fs.realpath: (fs: Fs, path: String) !-> Result String IoError =
+    _fs_unwrap(fs).realpath(path)
+
+// The zero-grant derivation: every path reports Err NotFound and
+// `exists` is False; the `with_file` callback never runs (Clause
+// 9.14.5).
+Fs.null: () -> Fs =
+    _fs_wrap({
+        open: (path, mode): Err NotFound,
+        with_file: (path, mode, cb): Err NotFound,
+        exists: (path): False,
+        read: (path): Err NotFound,
+        write: (path, s): Err NotFound,
+        append: (path, s): Err NotFound,
+        read_bytes: (path): Err NotFound,
+        append_bytes: (path, bs): Err NotFound,
+        list_dir: (path): Err NotFound,
+        mkdir: (path): Err NotFound,
+        mkdir_all: (path): Err NotFound,
+        rm: (path): Err NotFound,
+        rm_dir: (path): Err NotFound,
+        rename: (src, dst): Err NotFound,
+        stat: (path): Err NotFound,
+        realpath: (path): Err NotFound
+    })
+
+// The subtree restriction: every path but `realpath`'s joins under
+// `root` before it reaches the wrapped closures, with no existence
+// check (Clause 9.12.5); `realpath` forwards unchanged, since its
+// resolution runs through the file system (Clause 9.12.6).
+Fs.root: (fs: Fs, root: String) -> Fs =
+    b := _fs_unwrap(fs)
+    _fs_wrap({
+        open: (path, mode): b.open(Path.join(root, path), mode),
+        with_file: (path, mode, cb): b.with_file(Path.join(root, path), mode, cb),
+        exists: (path): b.exists(Path.join(root, path)),
+        read: (path): b.read(Path.join(root, path)),
+        write: (path, s): b.write(Path.join(root, path), s),
+        append: (path, s): b.append(Path.join(root, path), s),
+        read_bytes: (path): b.read_bytes(Path.join(root, path)),
+        append_bytes: (path, bs): b.append_bytes(Path.join(root, path), bs),
+        list_dir: (path): b.list_dir(Path.join(root, path)),
+        mkdir: (path): b.mkdir(Path.join(root, path)),
+        mkdir_all: (path): b.mkdir_all(Path.join(root, path)),
+        rm: (path): b.rm(Path.join(root, path)),
+        rm_dir: (path): b.rm_dir(Path.join(root, path)),
+        rename: (src, dst): b.rename(Path.join(root, src), Path.join(root, dst)),
+        stat: (path): b.stat(Path.join(root, path)),
+        realpath: (path): b.realpath(path)
+    })
+
+// The write withdrawal: the write family reports Err Permission, the
+// read family forwards, and `open` and `with_file` refuse every mode
+// that grants a write right (Clause 9.12.5).
+Fs.read_only: (fs: Fs) -> Fs =
+    b := _fs_unwrap(fs)
+    _fs_wrap({
+        open: (path, mode): if mode.eq(Read): b.open(path, mode) else: Err Permission,
+        with_file: (path, mode, cb): if mode.eq(Read): b.with_file(path, mode, cb) else: Err Permission,
+        exists: (path): b.exists(path),
+        read: (path): b.read(path),
+        write: (path, s): Err Permission,
+        append: (path, s): Err Permission,
+        read_bytes: (path): b.read_bytes(path),
+        append_bytes: (path, bs): Err Permission,
+        list_dir: (path): b.list_dir(path),
+        mkdir: (path): Err Permission,
+        mkdir_all: (path): Err Permission,
+        rm: (path): Err Permission,
+        rm_dir: (path): Err Permission,
+        rename: (src, dst): Err Permission,
+        stat: (path): b.stat(path),
+        realpath: (path): b.realpath(path)
+    })
+
+// The environment bundle the injected pair unwraps to (Clause 10.8).
+_EnvB: type = [get: (String) !-> Option String]
+
+// Reading one variable forwards through the bundle's own closure
+// (Clause 10.8); an unset name is None (Clause 7.9.1).
+Env.get: (e: Env, k: String) !-> Option String = _env_unwrap(e).get(k)
+
+// The fixed-table derivation: reads never leave the table (Clause
+// 9.14.5).
+Env.frozen: (tbl: [String]String) -> Env =
+    _env_wrap({get: (k): tbl.get(k)})
+
+// The argument-vector bundle the injected pair unwraps to (Clause 10.8).
+_ArgsB: type = [all: () !-> []String]
+
+// The vector forwards through the bundle's own closure (Clause 10.8);
+// the program name is absent (Clause 7.9.1).
+Args.all: (a: Args) !-> []String = _args_unwrap(a).all()
+
+// The fixed-vector derivation: the vector never changes (Clause 9.14.5).
+Args.frozen: (v: []String) -> Args = _args_wrap({all: (): v})
+
+// The clock bundle the injected pair unwraps to (Clause 10.8).
+_ClockB: type = [now: () !-> Time, mono: () !-> Mono, sleep: (Duration) !]
+
+// The readings and the sleep forward through the bundle's own closures
+// (Clause 10.8); a negative duration returns immediately (Clause 9.7.2).
+Clock.now: (c: Clock) !-> Time = _clock_unwrap(c).now()
+Clock.mono: (c: Clock) !-> Mono = _clock_unwrap(c).mono()
+Clock.sleep: (c: Clock, d: Duration) ! = _clock_unwrap(c).sleep(d)
+
+// The frozen derivation: `now` holds `at`, `mono` holds one fixed
+// reading of its own, and sleep returns immediately; the readings
+// still set the world bit (Clause 9.7.3).
+Clock.frozen: (at: Time) -> Clock =
+    _clock_wrap({now: (): at, mono: (): Mono 0, sleep: (d): _})
+
+// The randomness bundle the injected pair unwraps to (Clause 10.8).
+_RandB: type = [int: (UInt) !-> UInt]
+
+// Drawing forwards through the bundle's own closure (Clause 10.8);
+// the bound is exclusive and a zero bound panics (Clause 9.2.3).
+Rand.int: (r: Rand, bound: UInt) !-> UInt = _rand_unwrap(r).int(bound)

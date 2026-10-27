@@ -314,10 +314,24 @@ static void test_binding_no_reconcile(void)
 }
 
 /* An inverted binding has no separate bit rule: the callback body's
-   world calls surface in the enclosing body. The bridged dispatcher
-   keeps the invert shape; a landed row without a callback parameter
-   no longer admits one. */
+   world calls surface in the enclosing body. The landed with_file row
+   admits the invert shape. */
 static void invert_feeds_dispatcher(void)
+{
+    cfx f;
+
+    cfx_begin(&f,
+              "run: (fs: Fs) !-> Result _ IoError =\n"
+              "    h <- fs.with_file(\"f\", Read)\n"
+              "    _\n");
+    EK_CHECK(cfx_errors(&f) == 0);
+    EK_CHECK(cfx_bit_at(&f, 1, EK_BIT_WORLD));
+    cfx_end(&f);
+}
+
+/* A landed member without a callback parameter admits no invert: the
+   implicit callback does not fit its signature. */
+static void invert_rejected_without_callback(void)
 {
     cfx f;
 
@@ -325,8 +339,8 @@ static void invert_feeds_dispatcher(void)
               "run: (fs: Fs) !-> _ =\n"
               "    x <- fs.read(\"f\")\n"
               "    x\n");
-    EK_CHECK(cfx_errors(&f) == 0);
-    EK_CHECK(cfx_bit_at(&f, 1, EK_BIT_WORLD));
+    EK_CHECK(cfx_errors(&f) >= 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-call-arity", 2));
     cfx_end(&f);
 }
 
@@ -380,6 +394,7 @@ int main(void)
     pure_body_open_decl();
     test_binding_no_reconcile();
     invert_feeds_dispatcher();
+    invert_rejected_without_callback();
     member_dispatcher_instantiation();
     return ek_test_report("check/worlds");
 }

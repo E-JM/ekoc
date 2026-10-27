@@ -5,32 +5,42 @@
 
 /* The capability module, parsed from the embedded cap/cap.eko bytes
    like the std module. Its surface holds the file's own declarations
-   (the handle and data types with their constructors, and the Out
-   members) plus the two `_`-prefixed rows of the injected pair
-   (Clause 10.8): plain functions with no declaration behind them,
-   whose signatures check supplies. The nine capability type names stay
-   std placeholder rows, and the capability module owns their namespace
-   members (Clause 7.9.1). No import path names the module, so its
-   surface reaches a file only as the fallback beneath std. */
+   (the handle and data types with their constructors, and the
+   capability members) plus the `_`-prefixed rows of the injected
+   pairs (Clause 10.8): plain functions with no declaration behind
+   them, whose signatures check supplies. The nine capability type
+   names stay std placeholder rows, and the capability module owns
+   their namespace members (Clause 7.9.1). No import path names the
+   module, so its surface reaches a file only as the fallback beneath
+   std. */
 
 #define CAP_FILE "cap.eko"
 
-/* The injected pair of the Out capability: the unwrap and wrap of the
-   session-write bundle. The spellings are compiler-owned, and no
-   source line declares them. */
+/* The injected pairs, one per capability: the unwrap and wrap of each
+   session bundle. The spellings are compiler-owned, and no source line
+   declares them. */
 static const char *injected_names[] = {
-    "_out_unwrap", "_out_wrap", NULL
+    "_out_unwrap", "_out_wrap",
+    "_in_unwrap", "_in_wrap",
+    "_fs_unwrap", "_fs_wrap",
+    "_env_unwrap", "_env_wrap",
+    "_args_unwrap", "_args_wrap",
+    "_clock_unwrap", "_clock_wrap",
+    "_rand_unwrap", "_rand_wrap",
+    NULL
 };
 
-/* Appends the injected pair to the module surface. The surface array
-   was sized by the upper bound of the source alone, so the pair moves
+#define INJECTED_COUNT (sizeof injected_names / sizeof *injected_names - 1)
+
+/* Appends the injected pairs to the module surface. The surface array
+   was sized by the upper bound of the source alone, so the pairs move
    to a fresh one; each row is a private function with no declaration
    and no annotation, and check hangs the signatures on these
    symbols. */
 static void inject(r_ctx *c, ek_surface *s)
 {
     ek_symbol *grown;
-    size_t i, cap = s->count + 2;
+    size_t i, cap = s->count + INJECTED_COUNT;
 
     grown = ek_arena_alloc(c->arena, cap * sizeof *grown);
     if (!grown) {
@@ -39,7 +49,7 @@ static void inject(r_ctx *c, ek_surface *s)
     }
     memcpy(grown, s->syms, s->count * sizeof *grown);
     s->syms = grown;
-    for (i = 0; injected_names[i]; i++) {
+    for (i = 0; i < INJECTED_COUNT; i++) {
         ek_symbol *sym = r_sym(c, injected_names[i], EK_SYM_FUNC, "cap",
                                0, 0);
 
@@ -51,7 +61,7 @@ static void inject(r_ctx *c, ek_surface *s)
 }
 
 /* Parses the embedded cap source into a module of the closure and
-   hangs the injected pair off its surface. */
+   hangs the injected pairs off its surface. */
 void r_cap_boot(r_ctx *c)
 {
     r_mod *m;
