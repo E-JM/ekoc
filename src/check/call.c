@@ -278,8 +278,9 @@ static const ek_type *call_member(ck_ctx *c, const ek_node *e,
 
 /* The free-call form of a compiler service: its first argument is the
    receiver, exactly as the receiver form passes it, so the same member
-   machinery selects the reading. Without an argument nothing supplies
-   a receiver and the call stays opaque. */
+   machinery selects the reading. A function-valued field is called
+   without a receiver, matching the receiver form. Without an argument
+   nothing supplies a receiver and the call stays opaque. */
 static const ek_type *call_service(ck_ctx *c, const ek_node *e,
                                    const ek_node *callee, int implicit)
 {
@@ -297,6 +298,17 @@ static const ek_type *call_service(ck_ctx *c, const ek_node *e,
     t = ck_link(c, callee, recv, name, &rd);
     rest.data = e->u.call.args.data + 1;
     rest.count = e->u.call.args.count - 1;
+    if (rd == EK_RD_FIELD) {
+        /* The field's value is the callee; the receiver is not an
+           argument. */
+        if (t && ck_prune(t)->kind == EK_T_FN) {
+            return call_fn(c, e, t, name, NULL, NULL, &rest, 0, implicit);
+        }
+        ck_error(c, e, "E-not-callable",
+                 "the field `%s` is not a function value "
+                 "(Clause 7.4.3)", name);
+        return call_fn(c, e, NULL, name, NULL, NULL, &rest, 1, implicit);
+    }
     return call_fn(c, e, t, name, recv, NULL, &rest, 0, implicit);
 }
 

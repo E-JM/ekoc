@@ -72,10 +72,42 @@ static void bare_service_value(void)
     cfx_end(&f);
 }
 
+/* A record field holding a function is station 1 for both spellings:
+   the free call is the receiver call, and the receiver is not an
+   argument. */
+static void field_service(void)
+{
+    cfx f;
+
+    cfx_begin(&f,
+              "Money: type = [cents: Int, show: (String) -> String]\n"
+              "fmt: (s: String) -> String = s\n"
+              "m: Money = {cents: 1, show: fmt}\n"
+              "a: String = m.show(\"x\")\n"
+              "b: String = show(m, \"x\")\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    EK_CHECK(cfx_reading_at(&f, 4, EK_RD_FIELD));
+    EK_CHECK(cfx_reading_at(&f, 5, EK_RD_FIELD));
+    cfx_end(&f);
+
+    /* The arity is the field's arity in both spellings. */
+    cfx_begin(&f,
+              "Money: type = [cents: Int, show: (String) -> String]\n"
+              "fmt: (s: String) -> String = s\n"
+              "m: Money = {cents: 1, show: fmt}\n"
+              "a: String = m.show()\n"
+              "b: String = show(m)\n");
+    EK_CHECK_U64(cfx_errors(&f), 2);
+    EK_CHECK(cfx_code_at_line(&f, "E-call-arity", 4));
+    EK_CHECK(cfx_code_at_line(&f, "E-call-arity", 5));
+    cfx_end(&f);
+}
+
 int main(void)
 {
     show_on_string();
     show_on_record();
+    field_service();
     panic_both_forms();
     zero_argument_service();
     bare_service_value();
