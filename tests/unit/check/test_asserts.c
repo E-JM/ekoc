@@ -169,6 +169,36 @@ static void qualified_calls(void)
     cfx_end(&f);
 }
 
+/* A test body may be one expression instead of a block; the ordinary
+   binding form is the same sibling shape. */
+static void single_expression_bodies(void)
+{
+    cfx f;
+    const ek_ck_row *r;
+
+    cfx_begin(&f, "t: test = assert_eq(1, 1)\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+
+    cfx_begin(&f, "t: test = assert(True)\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "die: (m: String) -> Never = panic(m)\n"
+              "t: test = die(\"x\")\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "f: () -> Int = 1\n"
+              "_use: Int = f()\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    r = cfx_row_at_line(&f, 1);
+    EK_CHECK(r != NULL && r->type != NULL && r->type->kind == EK_T_FN);
+    cfx_end(&f);
+}
+
 int main(void)
 {
     bare_forms();
@@ -178,5 +208,6 @@ int main(void)
     capability_in_scope();
     capability_operator();
     qualified_calls();
+    single_expression_bodies();
     return ek_test_report("check/asserts");
 }

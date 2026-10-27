@@ -490,6 +490,20 @@ static const ek_type *ck_annotated_decl(ck_ctx *c, const ek_node *m,
     return t;
 }
 
+/* A declaration body is a block or one expression; both are checked
+   in the same scope and against the same expected type. */
+static const ek_type *decl_body(ck_ctx *c, const ek_node *body,
+                                const ek_type *expected)
+{
+    if (!body) {
+        return ck_unit(c);
+    }
+    if (body->kind == EK_N_BLOCK) {
+        return ck_block(c, body, expected);
+    }
+    return ck_expr(c, body, expected);
+}
+
 const ek_type *ck_stmt(ck_ctx *c, const ek_node *m, int top)
 {
     if (c->oom || !m) {
@@ -504,7 +518,7 @@ const ek_type *ck_stmt(ck_ctx *c, const ek_node *m, int top)
         return ck_annotated_decl(c, m, m->u.namespace.type,
                                  m->u.namespace.value, 1);
     case EK_N_TEST_DECL:
-        ck_block(c, m->u.decl.body, NULL);
+        (void)decl_body(c, m->u.decl.body, NULL);
         return ck_unit(c);
     case EK_N_EXTERN_DECL:
         return ck_annotated_decl(c, m, m->u.extern_decl.type, NULL, 0);
