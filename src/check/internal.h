@@ -68,6 +68,14 @@ typedef struct {
     ck_map pats;     /* constructor pattern node -> selected symbol */
     ck_map firsts;   /* tvar node -> first T_NAME node (E-phantom) */
     ck_map stdsyms;  /* std type name -> the std surface symbol */
+    struct ck_synth_row { /* the synthesized std symbols, keyed by
+                             spelling: the name reaches several call
+                             sites as distinct literals, and the map
+                             above is keyed by pointer */
+        const char *name;
+        const ek_symbol *sym;
+    } *synth;
+    size_t nsynth, csynth;
     ck_map subst;    /* final substitution memo */
     ck_map bits;     /* node -> own bit: a call's bit, a lambda's body
                         bit, a binding's declared bit (worlds.c) */

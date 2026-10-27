@@ -42,16 +42,20 @@ int ck_is_numeric(const ek_type *t)
         || is_std_named(t, "Float");
 }
 
-/* Canonical std type symbol for name: memoized; the std module's
-   surface row, or synthesized for names no row declares. */
+/* Canonical std type symbol for name: memoized by spelling; the std
+   module's surface row, or the one synthesized symbol for names no
+   row declares. The synthesized table is content-keyed: a name
+   reaches several call sites as distinct literals, and two symbols
+   for one spelling would split nominal identity. */
 static const ek_symbol *std_sym(ck_ctx *c, const char *name)
 {
-    const ek_symbol *hit = ck_map_get(&c->stdsyms, name);
     ek_symbol *fresh;
     size_t k, i;
 
-    if (hit) {
-        return hit;
+    for (k = 0; k < c->nsynth; k++) {
+        if (strcmp(c->synth[k].name, name) == 0) {
+            return c->synth[k].sym;
+        }
     }
     if (c->oom) {
         return NULL;
@@ -66,7 +70,6 @@ static const ek_symbol *std_sym(ck_ctx *c, const char *name)
             const ek_symbol *sym = &s->syms[i];
 
             if (sym->kind == EK_SYM_TYPE && strcmp(sym->name, name) == 0) {
-                ck_map_put(c, &c->stdsyms, name, sym);
                 return sym;
             }
         }
@@ -80,7 +83,24 @@ static const ek_symbol *std_sym(ck_ctx *c, const char *name)
     fresh->name = name;
     fresh->kind = EK_SYM_TYPE;
     fresh->module = "std";
-    ck_map_put(c, &c->stdsyms, name, fresh);
+    if (c->nsynth == c->csynth) {
+        size_t ncap = c->csynth ? c->csynth * 2 : 16;
+        struct ck_synth_row *grown = ek_arena_alloc(c->arena,
+                                                    ncap * sizeof *grown);
+
+        if (!grown) {
+            c->oom = 1;
+            return fresh;
+        }
+        if (c->nsynth) {
+            memcpy(grown, c->synth, c->nsynth * sizeof *grown);
+        }
+        c->synth = grown;
+        c->csynth = ncap;
+    }
+    c->synth[c->nsynth].name = fresh->name;
+    c->synth[c->nsynth].sym = fresh;
+    c->nsynth++;
     return fresh;
 }
 
