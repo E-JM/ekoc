@@ -49,6 +49,7 @@ RESOLVE_SRC := \
 	src/resolve/resolve.c \
 	src/resolve/scope.c \
 	src/resolve/std.c \
+	src/resolve/std_source.c \
 	src/resolve/surface.c \
 	src/resolve/type.c
 
