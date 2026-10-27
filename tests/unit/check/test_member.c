@@ -89,37 +89,46 @@ static void opaque_members(void)
 {
     cfx f;
 
-    /* The std namespace members a landed row does not cover stay
-       unknown under the placeholder: the reading is opaque and
-       nothing is diagnosed. */
+    /* The dictionary namespace has a complete row set: a name no row
+       carries is absent, not bridged. */
     cfx_begin(&f,
               "d: [String]Int = {\"a\": 1}\n"
               "v: Int = d.bogus()\n");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-unbound-member", 2));
+    cfx_end(&f);
+
+    /* A landed row makes a receiver known: Bytes has a namespace and
+       its length row types as Int. */
+    cfx_begin(&f,
+              "w: Bytes = \"ab\".to_bytes()\n"
+              "n: Int = w.length()\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    EK_CHECK(cfx_reading_at(&f, 2, EK_RD_NAMESPACE));
+    cfx_end(&f);
+
+    /* A capability namespace the rows do not own keeps the bridge:
+       the reading is opaque and nothing is diagnosed. */
+    cfx_begin(&f,
+              "c: Clock = Clock.frozen(Time 0)\n"
+              "w := c.bogus()\n");
     EK_CHECK_U64(cfx_errors(&f), 0);
     EK_CHECK(cfx_reading_at(&f, 2, EK_RD_EXTERNAL));
     cfx_end(&f);
 
-    /* A receiver of unknown type reads as unknown. */
-    cfx_begin(&f,
-              "w := \"ab\".to_bytes()\n"
-              "n := w.length()\n");
-    EK_CHECK_U64(cfx_errors(&f), 0);
-    EK_CHECK(cfx_reading_at(&f, 2, EK_RD_UNKNOWN));
-    cfx_end(&f);
-
-    /* A placeholder nominal receiver keeps the bridge. */
+    /* A String receiver has a complete row set plus its derived
+       services: a name no station answers is absent. */
     cfx_begin(&f,
               "s: String = \"x\"\n"
               "t: String = s.bogus()\n");
-    EK_CHECK_U64(cfx_errors(&f), 0);
-    EK_CHECK(cfx_reading_at(&f, 2, EK_RD_EXTERNAL));
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-unbound-member", 2));
     cfx_end(&f);
 }
 
 /* A declared module's namespace is complete: a name the type does not
-   carry is reported, in a call and in a bare field read alike. The std
-   and container namespaces keep the bridge, because their members are
-   supplied by the compiler. */
+   carry is reported, in a call and in a bare field read alike. A std
+   or container namespace is closed once its row set is complete. */
 static void declared_namespace_is_complete(void)
 {
     cfx f;
@@ -164,9 +173,9 @@ static void declared_namespace_is_complete(void)
     EK_CHECK(cfx_code_at_line(&f, "E-unbound-member", 3));
     cfx_end(&f);
 
-    /* The std namespaces still bridge their members. */
+    /* The std namespace rows answer alongside the closed namespaces. */
     cfx_begin(&f,
-              "j: Json = Json.parse(\"{}\").unwrap()\n"
+              "j: Json = Json.parse(\"null\").unwrap()\n"
               "d: Duration = Time.sub(Time 5, Time 2)\n"
               "i: Int = Int.add(1, 2)\n"
               "xs: []Int = {1}\n"
