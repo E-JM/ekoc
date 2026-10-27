@@ -52,6 +52,9 @@
  *   selective list, the listed free names; an empty names list means
  *   the import carries no list. The list's braces are plain tokens on
  *   the import's own line, so layout never sees them.
+ * - A binding node carries `deprecated` when the document before it has
+ *   a line beginning `@deprecated`. The document's text is not stored;
+ *   extraction and rendering are toolchain work.
  * - The record-update form `p.with({...})` has no node of its own: the
  *   grammar defines it as an ordinary postfix member call whose one
  *   argument is a composite literal (annex A.3.5 Postfix; Clauses
@@ -126,6 +129,7 @@ struct ek_node {
     int line;  /* 1-based, of the construct's first token */
     int col;   /* 1-based, counted in Unicode scalar values */
     int depth; /* parse-time tree height; consumers ignore it */
+    int deprecated; /* the document before the binding marks it deprecated */
     union {
         ek_nlist kids;    /* MODULE, BLOCK, LAMBDA_PARAMS, P_PAREN, P_OR,
                              T_TUPLE, T_RECORD */

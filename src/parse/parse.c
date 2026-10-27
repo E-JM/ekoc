@@ -173,12 +173,55 @@ static ek_node *p_import(p_ctx *c)
     return n;
 }
 
-/* One member line: a value binding or an expression. */
-ek_node *p_member(p_ctx *c, int top_level)
+/* A documentation line marks deprecation when its text begins with the
+   convention after optional whitespace. */
+static int deprecated_doc(const char *text)
 {
-    if (c->oom) {
-        return NULL;
+    if (!text) {
+        return 0;
     }
+    while (*text == ' ' || *text == '\t') {
+        text++;
+    }
+    return strncmp(text, "@deprecated", 11) == 0;
+}
+
+/* Consumes the document before a member and reports whether any line
+   marks the binding deprecated. */
+static int take_docs(p_ctx *c)
+{
+    int deprecated = 0;
+
+    while (p_at(c, EK_TOK_DOC)) {
+        const ek_layout_token *t = p_take(c);
+
+        if (deprecated_doc(t->tok.text)) {
+            deprecated = 1;
+        }
+    }
+    return deprecated;
+}
+
+/* Whether a node introduces a name that a document can describe. */
+static int named_binding(ek_node_kind kind)
+{
+    switch (kind) {
+    case EK_N_LET:
+    case EK_N_REBIND:
+    case EK_N_INVERT:
+    case EK_N_NAMESPACE:
+    case EK_N_TYPE_DECL:
+    case EK_N_CTYPE_DECL:
+    case EK_N_TEST_DECL:
+    case EK_N_EXTERN_DECL:
+        return 1;
+    default:
+        return 0;
+    }
+}
+
+static ek_node *member_node(p_ctx *c, int top_level)
+{
     if (p_at(c, EK_TOK_KW_IMPORT)) {
         if (top_level) {
             return p_import(c);
@@ -216,6 +259,25 @@ ek_node *p_member(p_ctx *c, int top_level)
         }
         return e;
     }
+}
+
+/* One member line: a value binding or an expression. The document that
+   rides before the line belongs to the member it introduces; a line
+   that yields no named binding leaves it unused. */
+ek_node *p_member(p_ctx *c, int top_level)
+{
+    int deprecated;
+    ek_node *n;
+
+    if (c->oom) {
+        return NULL;
+    }
+    deprecated = take_docs(c);
+    n = member_node(c, top_level);
+    if (n && deprecated && named_binding(n->kind)) {
+        n->deprecated = 1;
+    }
+    return n;
 }
 
 /* The zero-pattern form `<- Call`. */
