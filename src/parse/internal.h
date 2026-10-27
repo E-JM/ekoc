@@ -21,6 +21,8 @@ typedef struct {
                   pattern parsers; bounded by EK_PARSE_MAX_DEPTH */
     int depth_hit; /* the ceiling was diagnosed once on this parse */
     int fatal;     /* the ceiling was reached: recovery drains to EOF */
+    int operand_pos; /* inside an operator operand: a parameter group
+                        followed by `:` is a grouping, not a lambda */
     size_t *match; /* memoized bracket partners, built on first use */
     size_t *match_stack;
 } p_ctx;

@@ -461,6 +461,13 @@ exactly as it separates the branches of an inline `if` or the arms of an
 inline `case` (Clauses 5.3.2, 6.7.5), so `(n): out.println(n); n + 1` is
 one body of two expressions.
 
+A lambda in operand position — the operand of a unary or binary operator,
+or the argument of a constructor application by juxtaposition — is spelled
+parenthesized: in those positions `( parameters ) :` is the parenthesized
+expression followed by the enclosing header's colon, and the unparenthesized
+lambda form is not read. Call arguments, statement positions, and trailing
+callbacks read the unparenthesized form.
+
 ### 6.4.2 Named Functions
 
 A named function is a binding whose annotation is a function type:

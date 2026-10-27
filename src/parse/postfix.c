@@ -39,7 +39,13 @@ static ek_node *apply_ctor(p_ctx *c, ek_node *head)
     if (!p_depth_enter(c)) {
         return NULL;
     }
-    arg = p_postfix(c);
+    {
+        int saved = c->operand_pos;
+
+        c->operand_pos = 1; /* the juxtaposition argument is an operand */
+        arg = p_postfix(c);
+        c->operand_pos = saved;
+    }
     p_depth_leave(c);
     if (!arg) {
         return NULL;

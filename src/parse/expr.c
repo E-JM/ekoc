@@ -83,6 +83,20 @@ static ek_node *operand(p_ctx *c, ek_node *e)
     return e;
 }
 
+/* One operator operand: in operand position a parameter group
+   followed by `:` is a parenthesized expression, not a lambda — the
+   colon belongs to the enclosing header. */
+static ek_node *operand_of(p_ctx *c, ek_node *(*next)(p_ctx *))
+{
+    int saved = c->operand_pos;
+    ek_node *e;
+
+    c->operand_pos = 1;
+    e = next(c);
+    c->operand_pos = saved;
+    return e ? operand(c, e) : NULL;
+}
+
 static ek_node *add(p_ctx *c)
 {
     ek_node *e = mul(c);
@@ -95,7 +109,7 @@ static ek_node *add(p_ctx *c)
             return e;
         }
         p_take(c);
-        e = bin(c, add_op(k), e, operand(c, mul(c)));
+        e = bin(c, add_op(k), e, operand_of(c, mul));
     }
     return e;
 }
@@ -112,7 +126,7 @@ static ek_node *mul(p_ctx *c)
             return e;
         }
         p_take(c);
-        e = bin(c, mul_op(k), e, operand(c, unary(c)));
+        e = bin(c, mul_op(k), e, operand_of(c, unary));
     }
     return e;
 }
@@ -129,7 +143,7 @@ static ek_node *unary(p_ctx *c)
         return p_postfix(c);
     }
     p_take(c);
-    val = operand(c, p_postfix(c));
+    val = operand_of(c, p_postfix);
     if (!val) {
         return NULL;
     }
@@ -153,7 +167,7 @@ static ek_node *comparison(p_ctx *c)
 
     while (e && !c->oom && is_cmp(p_src_kind(p_peek(c)))) {
         ek_binop op = cmp_op(p_take(c)->tok.kind);
-        ek_node *rhs = operand(c, range(c));
+        ek_node *rhs = operand_of(c, range);
 
         if (!rhs) {
             return NULL;
@@ -179,7 +193,7 @@ static ek_node *range(p_ctx *c)
     while (e && !c->oom && is_range(p_src_kind(p_peek(c)))) {
         ek_binop op = p_take(c)->tok.kind == EK_TOK_DOTDOT
             ? EK_BIN_RANGE_EXC : EK_BIN_RANGE_INC;
-        ek_node *rhs = operand(c, add(c));
+        ek_node *rhs = operand_of(c, add);
 
         if (!rhs) {
             return NULL;
@@ -200,7 +214,7 @@ static ek_node *and_expr(p_ctx *c)
     ek_node *e = comparison(c);
 
     while (e && !c->oom && p_got(c, EK_TOK_ANDAND)) {
-        e = bin(c, EK_BIN_AND, e, operand(c, comparison(c)));
+        e = bin(c, EK_BIN_AND, e, operand_of(c, comparison));
     }
     return e;
 }
@@ -210,7 +224,7 @@ static ek_node *or_expr(p_ctx *c)
     ek_node *e = and_expr(c);
 
     while (e && !c->oom && p_got(c, EK_TOK_OROR)) {
-        e = bin(c, EK_BIN_OR, e, operand(c, and_expr(c)));
+        e = bin(c, EK_BIN_OR, e, operand_of(c, and_expr));
     }
     return e;
 }
@@ -222,6 +236,8 @@ ek_node *p_expr(p_ctx *c)
     if (c->oom) {
         return NULL;
     }
+    c->operand_pos = 0; /* a fresh expression context: arguments,
+                           items, and bodies are not operand tails */
     if (!p_depth_enter(c)) {
         return NULL;
     }

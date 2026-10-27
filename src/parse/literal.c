@@ -187,13 +187,16 @@ static ek_node *composite_item(p_ctx *c)
 }
 
 /* '(' in primary position: a parenthesized expression, or a lambda
-   when the matching ')' is followed by ':'. */
+   when the matching ')' is followed by ':' and the position is not
+   an operator operand (the colon of an enclosing header wins
+   there). */
 ek_node *p_paren_primary(p_ctx *c)
 {
     size_t close = match_bracket(c, c->pos);
     const ek_layout_token *after = p_peek_at(c, close - c->pos + 1);
 
-    if (after->kind == EK_LTOK_SOURCE && after->tok.kind == EK_TOK_COLON) {
+    if (!c->operand_pos && after->kind == EK_LTOK_SOURCE
+        && after->tok.kind == EK_TOK_COLON) {
         return lambda(c);
     }
     {

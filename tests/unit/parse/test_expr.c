@@ -442,6 +442,49 @@ static void with_updates(void)
     pfx_end(&f);
 }
 
+/* The operand-position lambda rule: `( parameters ) :` in operand
+   position is a grouping followed by the header colon, never a
+   lambda; statement, argument, and callback positions keep the
+   unparenthesized form. */
+static void operand_lambdas(void)
+{
+    parse_fixture f;
+
+    /* A call argument reads the lambda form. */
+    pfx_begin(&f, "_t: Int = xs.map((n): n * 2)\n");
+    pfx_item(&f, 0);
+    EK_CHECK_U64(pfx_errors(&f), 0);
+    pfx_end(&f);
+
+    /* A statement opens with the lambda form. */
+    pfx_begin(&f, "_run: (xs: []Int) -> Int =\n    (n): n + 1\n");
+    pfx_item(&f, 0);
+    EK_CHECK_U64(pfx_errors(&f), 0);
+    pfx_end(&f);
+
+    /* A binary operand before a header colon is a grouping. */
+    pfx_begin(&f,
+              "_f: (a: Bool, b: Bool) -> Int =\n"
+              "    if (a) || (b): 1 else: 2\n");
+    pfx_item(&f, 0);
+    EK_CHECK_U64(pfx_errors(&f), 0);
+    pfx_end(&f);
+
+    /* The whole condition, parenthesized, keeps the lambda reading
+       inside its brackets. */
+    pfx_begin(&f,
+              "_f: (a: Bool) -> Bool =\n"
+              "    if ((a) || pick()): a else: a\n");
+    pfx_item(&f, 0);
+    pfx_end(&f);
+
+    /* An operand lambda without its parentheses is rejected. */
+    pfx_begin(&f, "_t: Int =\n    1 + (n): 2\n");
+    pfx_item(&f, 0);
+    EK_CHECK(pfx_errors(&f) >= 1);
+    pfx_end(&f);
+}
+
 int main(void)
 {
     literals_and_names();
@@ -453,5 +496,6 @@ int main(void)
     lambdas();
     lambda_shapes();
     operand_blocks();
+    operand_lambdas();
     return ek_test_report("parse/expr");
 }
