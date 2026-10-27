@@ -1,10 +1,35 @@
 #include "common.h"
 
+#include <sys/stat.h>
+
 /* Anchored constructors: same-named constructors of different types
    coexist; an expected type anchors a value reference and the
    scrutinee type anchors a pattern. A reference with no anchor is
    legal only when exactly one constructor of its name is visible and
    that constructor is non-generic. */
+
+#define CTOR_DIR "build/tmp-check-ctors"
+#define CONF_DIR "tests/conformance"
+
+/* A module fixture for the cross-module application cases; the
+   conformance directory supplies geolib. */
+static int put_module(const char *name, const char *content)
+{
+    char path[512];
+    FILE *fp;
+    int ok;
+
+    mkdir("build", 0755);
+    mkdir(CTOR_DIR, 0755);
+    snprintf(path, sizeof path, "%s/%s", CTOR_DIR, name);
+    fp = fopen(path, "wb");
+    if (!fp) {
+        return 0;
+    }
+    ok = fwrite(content, 1, strlen(content), fp) == strlen(content);
+    fclose(fp);
+    return ok;
+}
 
 /* No row is a check error at any of these source lines. */
 static int clean_lines(const cfx *f, const int *lines, size_t n)
@@ -236,6 +261,80 @@ static void payload_conforms(void)
     cfx_end(&f);
 }
 
+/* A qualified constructor application is typed by the constructor,
+   not by the opaque member reading. */
+static void qualified_application(void)
+{
+    static const char *const mpath[2] = {CONF_DIR, CTOR_DIR};
+    cfx f;
+
+    EK_CHECK(put_module("qliba.eko",
+                        "ABool: type = True | False\n"));
+    EK_CHECK(put_module("qwrap.eko",
+                        "Wrap: type a = Wrap a\n"));
+
+    /* A zero-payload constructor takes no argument; the empty call is
+       the qualified spelling. */
+    cfx_run(&f,
+            "import qliba\n"
+            "a: ABool = qliba.True()\n"
+            "b: ABool = qliba.True\n",
+            mpath, 2, "qapp1.eko");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+
+    cfx_run(&f,
+            "import qliba\n"
+            "a: ABool = qliba.True(1)\n",
+            mpath, 2, "qapp2.eko");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-call-arity", 2));
+    cfx_end(&f);
+
+    /* A payload constructor takes one argument, conformed at the
+       payload type. */
+    cfx_run(&f,
+            "import geolib\n"
+            "a: Shape = geolib.Circle(2.0)\n"
+            "b: Shape = geolib.Circle(\"s\")\n",
+            mpath, 2, "qapp3.eko");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-nominal-mismatch", 3));
+    cfx_end(&f);
+
+    cfx_run(&f,
+            "import geolib\n"
+            "a: Shape = geolib.Circle(1.0, 2.0, 3.0)\n",
+            mpath, 2, "qapp4.eko");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-call-arity", 2));
+    cfx_end(&f);
+
+    /* A generic constructor takes its instantiation from the anchor. */
+    cfx_run(&f,
+            "import qwrap\n"
+            "a: qwrap.Wrap String = qwrap.Wrap(\"s\")\n"
+            "b: qwrap.Wrap String = qwrap.Wrap(3)\n",
+            mpath, 2, "qapp5.eko");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-nominal-mismatch", 3));
+    cfx_end(&f);
+
+    cfx_run(&f,
+            "import qwrap\n"
+            "v := qwrap.Wrap(3)\n",
+            mpath, 2, "qapp6.eko");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-undetermined", 2));
+    cfx_end(&f);
+
+    /* A std placeholder constructor keeps the bridge opacity. */
+    cfx_run(&f, "a: Option Int = std.Some(3)\n", mpath, 2,
+            "qapp7.eko");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+}
+
 int main(void)
 {
     std_only();
@@ -248,5 +347,6 @@ int main(void)
     anchor_mismatch();
     qualified_std_type();
     payload_conforms();
+    qualified_application();
     return ek_test_report("check/ctors");
 }

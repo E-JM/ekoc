@@ -300,6 +300,28 @@ static const ek_type *call_service(ck_ctx *c, const ek_node *e,
     return call_fn(c, e, t, name, recv, NULL, &rest, 0, implicit);
 }
 
+/* The constructor application over an argument list, defined with the
+   juxtaposition path below. */
+static const ek_type *ctor_apply(ck_ctx *c, const ek_node *e,
+                                 const ck_ctor *ct, const ek_type *expected,
+                                 ek_node *const *args, size_t nargs);
+
+/* A qualified constructor applied as a call on its dotted head:
+   the application is typed by the constructor, not by the opaque
+   member reading. */
+static const ek_type *call_ctor(ck_ctx *c, const ek_node *e,
+                                const ek_node *callee, const ek_ref *ref,
+                                const ek_type *expected, int implicit)
+{
+    const ck_ctor *ct = ref->symbol ? ck_ctor_of(c, ref->symbol) : NULL;
+
+    if (!ct || !ct->owner) {
+        return call_member(c, e, callee, implicit);
+    }
+    return ctor_apply(c, e, ct, expected, e->u.call.args.data,
+                      e->u.call.args.count);
+}
+
 /* Typing one EK_N_CALL: a plain head, or the last link of a receiver
    chain. */
 const ek_type *ck_call(ck_ctx *c, const ek_node *e, const ek_type *expected)
@@ -308,7 +330,6 @@ const ek_type *ck_call(ck_ctx *c, const ek_node *e, const ek_type *expected)
     const ek_ref *ref = NULL;
     int implicit = c->invert_call;
 
-    (void)expected;
     if (c->oom) {
         return NULL;
     }
@@ -345,6 +366,9 @@ const ek_type *ck_call(ck_ctx *c, const ek_node *e, const ek_type *expected)
                services, and supplies no receiver value. */
             return call_member(c, e, callee, implicit);
         }
+    }
+    if (ck_ref_at(c, callee, EK_SYM_CONSTRUCTOR, &ref) && ref->symbol) {
+        return call_ctor(c, e, callee, ref, expected, implicit);
     }
     if (ck_ref_at(c, callee, 0, &ref) && ref->symbol != NULL
         && (ref->kind == EK_SYM_FUNC || ref->kind == EK_SYM_NAMESPACE
@@ -455,21 +479,6 @@ const ek_type *ck_lambda(ck_ctx *c, const ek_node *e, const ek_type *expected)
     return pe;
 }
 
-/* A generic constructor anchored by the expected instantiation: the
-   payload is checked at the substituted payload type. */
-static const ek_type *apply_generic(ck_ctx *c, const ek_node *e,
-                                    const ck_ctor *ct, const ck_decl *d,
-                                    const ek_node *arg, const ek_type *exp,
-                                    size_t nb)
-{
-    const ek_type *pt = ck_apply_binders(c, ct->payload, d->binders,
-                                         exp->u.nominal.args, nb);
-
-    arg_conform(c, arg, pt);
-    ck_row(c, e, exp, EK_RD_NONE);
-    return exp;
-}
-
 /* An opaque constructor application: the std placeholder bridge, and
    the reading an unknown declaration falls back to. The payload binds
    loosely and the value conforms into the expected type. */
@@ -486,41 +495,70 @@ static const ek_type *apply_opaque(ck_ctx *c, const ek_node *e,
     return iv;
 }
 
+/* Typing one constructor application over its argument nodes: the
+   anchor fixes a generic instantiation, a payload constructor takes
+   exactly one argument, placed and conformed at the instantiated
+   payload type, and a zero-payload one takes none. */
+static const ek_type *ctor_apply(ck_ctx *c, const ek_node *e,
+                                 const ck_ctor *ct, const ek_type *expected,
+                                 ek_node *const *args, size_t nargs)
+{
+    const ek_type *exp = ck_prune(expected);
+    const ck_decl *d = ct->owner ? ck_decl_of(c, ct->owner) : NULL;
+    const ek_type *payload = NULL;
+    const ek_type *out;
+    size_t i, nb = d ? d->nbinders : 0, want = ct->payload ? 1 : 0;
+
+    if (nb == 0) {
+        out = ck_nominal(c, ct->owner, NULL, 0);
+        payload = ct->payload;
+    } else if (exp && exp->kind == EK_T_NOMINAL
+               && exp->u.nominal.sym == ct->owner
+               && exp->u.nominal.argc == nb) {
+        out = exp;
+        payload = ct->payload
+                      ? ck_apply_binders(c, ct->payload, d->binders,
+                                         exp->u.nominal.args, nb)
+                      : NULL;
+    } else {
+        ck_error(c, e, "E-undetermined",
+                 "the constructor `%s` has no unique instantiation; an "
+                 "expected type determines it (Clause 7.6.4)",
+                 ct->sym ? ct->sym->name : "?");
+        for (i = 0; i < nargs; i++) {
+            ck_expr(c, args[i], NULL);
+        }
+        return ck_ivar(c);
+    }
+    if (nargs != want) {
+        ck_error(c, e, "E-call-arity",
+                 "the constructor `%s` takes %zu argument%s, the call "
+                 "supplies %zu (Clause 7.5.2)", ct->sym->name, want,
+                 want == 1 ? "" : "s", nargs);
+    }
+    for (i = 0; i < nargs; i++) {
+        if (i == 0 && payload) {
+            arg_conform(c, args[i], payload);
+        } else {
+            ck_expr(c, args[i], NULL);
+        }
+    }
+    ck_row(c, e, out, EK_RD_NONE);
+    return out;
+}
+
 /* A constructor with a known declaration: a zero-binder owner
    self-anchors, a generic one takes its instantiation from the
    anchor. NULL when the declaration carries no owner. */
 static const ek_type *apply_known(ck_ctx *c, const ek_node *e,
                                   const ck_ctor *ct, const ek_type *expected)
 {
-    const ek_node *arg = e->u.pair.b;
-    const ek_type *exp = ck_prune(expected);
-    const ck_decl *d;
-    size_t nb;
+    ek_node *arg = e->u.pair.b;
 
     if (!ct || !ct->owner) {
         return NULL;
     }
-    d = ck_decl_of(c, ct->owner);
-    nb = d ? d->nbinders : 0;
-    if (nb == 0) {
-        const ek_type *t = ck_nominal(c, ct->owner, NULL, 0);
-
-        if (ct->payload) {
-            arg_conform(c, arg, ct->payload);
-        }
-        ck_row(c, e, t, EK_RD_NONE);
-        return t;
-    }
-    if (exp && exp->kind == EK_T_NOMINAL && exp->u.nominal.sym == ct->owner
-        && exp->u.nominal.argc == nb) {
-        return apply_generic(c, e, ct, d, arg, exp, nb);
-    }
-    ck_error(c, e->u.pair.a, "E-undetermined",
-             "the constructor `%s` has no unique instantiation; an "
-             "expected type determines it (Clause 7.6.4)",
-             ct->sym ? ct->sym->name : "?");
-    ck_expr(c, arg, NULL);
-    return ck_ivar(c);
+    return ctor_apply(c, e, ct, expected, &arg, 1);
 }
 
 /* A constructor application over the reference's candidate set. */

@@ -264,10 +264,48 @@ const ck_decl *ck_decl_of(ck_ctx *c, const ek_symbol *sym)
     return build_decl(c, sym);
 }
 
+/* The declared type that owns a constructor symbol: the type symbol of
+   the constructor's module whose declaration node is the same. */
+static const ek_symbol *ctor_owner(ck_ctx *c, const ek_symbol *sym)
+{
+    size_t i, j;
+
+    if (!sym->decl || !sym->owner || !sym->module) {
+        return NULL;
+    }
+    for (i = 0; i < c->in->module_count; i++) {
+        const ek_surface *s = &c->in->modules[i];
+
+        if (strcmp(s->module, sym->module) != 0) {
+            continue;
+        }
+        for (j = 0; j < s->count; j++) {
+            const ek_symbol *m = &s->syms[j];
+
+            if (m->kind == EK_SYM_TYPE && m->decl == sym->decl
+                && strcmp(m->name, sym->owner) == 0) {
+                return m;
+            }
+        }
+    }
+    return NULL;
+}
+
 const ck_ctor *ck_ctor_of(ck_ctx *c, const ek_symbol *sym)
 {
+    const ck_ctor *ct;
+    const ek_symbol *owner;
+
     if (!sym) {
         return NULL;
+    }
+    ct = (const ck_ctor *)ck_map_get(&c->ctors, sym);
+    if (ct || c->oom) {
+        return ct;
+    }
+    owner = ctor_owner(c, sym);
+    if (owner) {
+        (void)ck_decl_of(c, owner);
     }
     return (const ck_ctor *)ck_map_get(&c->ctors, sym);
 }
