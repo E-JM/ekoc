@@ -12,8 +12,8 @@ void ck_prebind(ck_ctx *c)
 {
     size_t i;
 
-    for (i = 0; i < c->root->count; i++) {
-        const ek_symbol *sym = &c->root->syms[i];
+    for (i = 0; i < c->cur->count; i++) {
+        const ek_symbol *sym = &c->cur->syms[i];
 
         if ((sym->kind == EK_SYM_FUNC || sym->kind == EK_SYM_EXTERN)
             && !sym->type && !ck_map_get(&c->schemes, sym)) {
@@ -100,7 +100,9 @@ static void check_main(ck_ctx *c, const ek_symbol *sym)
     }
 }
 
-static void main_rules(ck_ctx *c)
+/* The `main` rules read the whole closure once: the entry name is
+   legal only in the entry module. */
+void ck_entry_rules(ck_ctx *c)
 {
     size_t k, i;
 
@@ -132,18 +134,17 @@ static void main_rules(ck_ctx *c)
     }
 }
 
-/* The root's declared types, with the phantom-binder check, and the
-   entry rules. */
+/* The current module's declared types, with the phantom-binder
+   check. */
 void ck_decls(ck_ctx *c)
 {
     size_t i;
 
-    for (i = 0; i < c->root->count; i++) {
-        const ek_symbol *sym = &c->root->syms[i];
+    for (i = 0; i < c->cur->count; i++) {
+        const ek_symbol *sym = &c->cur->syms[i];
 
         if (sym->kind == EK_SYM_TYPE && sym->decl) {
             ck_decl_of(c, sym);
         }
     }
-    main_rules(c);
 }

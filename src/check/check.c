@@ -5,8 +5,10 @@
 
 #include "check/internal.h"
 
-/* The entry point. One ek_check call checks the compilation root of
-   the resolve result against the closure's interfaces; the rows come
+/* The entry point. One ek_check call checks every module of the
+   closure, root first: a compilation is the whole program, so an
+   imported module's bodies are checked in the same pass, under their
+   own file. The rows come
    back sorted by node address with inference variables substituted
    away (check.h). The growable buffers and pointer maps of the shared
    context live here too. */
@@ -124,10 +126,10 @@ static int row_cmp(const void *a, const void *b)
     return x->node == y->node ? 0 : 1;
 }
 
-/* The root module's body: binding forms through ck_stmt, everything
+/* One module's body: binding forms through ck_stmt, everything
    else as an expression; type declarations and imports were built by
    ck_decls. */
-static void check_root(ck_ctx *c, const ek_node *mod)
+static void check_module(ck_ctx *c, const ek_node *mod)
 {
     size_t i, n = mod->u.kids.count;
 
@@ -159,7 +161,6 @@ ek_check_result ek_check(ek_resolve_result in, ek_arena *arena,
 {
     ck_ctx c;
     ek_check_result r;
-    const ek_node *mod;
     size_t i;
 
     memset(&c, 0, sizeof c);
@@ -171,14 +172,35 @@ ek_check_result ek_check(ek_resolve_result in, ek_arena *arena,
         return r;
     }
     c.root = &in.modules[0];
-    mod = c.root->ast;
-    if (!mod || mod->kind != EK_N_MODULE) {
-        return r;
+    c.cur = c.root;
+
+    /* The binding rows and declared types of every module are in place
+       before any body is checked: a body reaches across the closure,
+       and the tables are keyed by the closure's symbols. The entry
+       rules read the closure once. */
+    for (i = 0; i < in.module_count && !c.oom; i++) {
+        const ek_node *mod = in.modules[i].ast;
+
+        if (!mod || mod->kind != EK_N_MODULE) {
+            continue;
+        }
+        c.cur = &in.modules[i];
+        ck_prebind(&c);
+        ck_decls(&c);
     }
-    ck_prebind(&c);
-    ck_decls(&c);
-    check_root(&c, mod);
-    ck_externs(&c);
+    ck_entry_rules(&c);
+    c.locals = NULL;
+    for (i = 0; i < in.module_count && !c.oom; i++) {
+        const ek_node *mod = in.modules[i].ast;
+
+        if (!mod || mod->kind != EK_N_MODULE) {
+            continue;
+        }
+        c.cur = &in.modules[i];
+        check_module(&c, mod);
+        ck_externs(&c);
+        c.locals = NULL;
+    }
     if (c.nrows) {
         qsort(c.rows, c.nrows, sizeof *c.rows, row_cmp);
         for (i = 0; i < c.nrows; i++) {
@@ -247,5 +269,8 @@ void ck_warn(ck_ctx *c, const ek_node *n, const char *code, const char *fmt,
 
 const char *ck_file(const ck_ctx *c)
 {
+    if (c->cur) {
+        return c->cur->file;
+    }
     return c->in->module_count ? c->root->file : "test.eko";
 }

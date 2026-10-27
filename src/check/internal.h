@@ -6,7 +6,8 @@
 #include "check/check.h"
 
 /* State shared by the files of this directory. One ek_check call
-   checks one compilation root; everything grows in the arena. */
+   checks every module of the closure, root first; everything grows in
+   the arena. */
 
 /* Pointer-keyed map (symbol -> scheme, node -> type, type -> type).
    FNV-1a over the pointer bytes; the map layer and the intern table
@@ -59,7 +60,8 @@ typedef struct {
     ek_arena *arena;
     ek_diag *diag;
     const ek_resolve_result *in;
-    const ek_surface *root; /* in->modules[0] */
+    const ek_surface *root; /* in->modules[0], the entry module */
+    const ek_surface *cur;  /* the module whose members are checked */
     unsigned next_ivar;
     ck_map types;    /* intern table: candidate node -> canonical */
     ck_map schemes;  /* ek_symbol -> ck_scheme */
@@ -155,7 +157,7 @@ void ck_error(ck_ctx *c, const ek_node *n, const char *code, const char *fmt,
               ...);
 void ck_warn(ck_ctx *c, const ek_node *n, const char *code, const char *fmt,
              ...);
-const char *ck_file(const ck_ctx *c); /* the root module's file */
+const char *ck_file(const ck_ctx *c); /* the current module's file */
 
 /* unify.c: occurs check and conformance.
    scheme.c: generalization and instantiation. */
@@ -189,7 +191,8 @@ const ek_type *ck_type_of(ck_ctx *c, const ek_symbol *sym);
 const ck_decl *ck_decl_of(ck_ctx *c, const ek_symbol *sym);
 const ck_ctor *ck_ctor_of(ck_ctx *c, const ek_symbol *sym);
 void ck_prebind(ck_ctx *c); /* unannotated top-level rows */
-void ck_decls(ck_ctx *c);   /* root type decls, entry rules */
+void ck_decls(ck_ctx *c);   /* the current module's type decls */
+void ck_entry_rules(ck_ctx *c); /* the `main` rules over the closure */
 
 /* expr.c: expression typing. ctl.c: the control forms. */
 const ek_type *ck_expr(ck_ctx *c, const ek_node *e, const ek_type *expected);
@@ -302,8 +305,8 @@ const ek_type *ck_apply(ck_ctx *c, const ek_node *e, const ek_type *expected);
 int ck_ref_at(const ck_ctx *c, const ek_node *n, ek_sym_kind kind,
               const ek_ref **out);
 
-/* extern.c: the compile-time extern and ctype checks over the root's
-   declarations. */
+/* extern.c: the compile-time extern and ctype checks over the current
+   module's declarations. */
 void ck_externs(ck_ctx *c);
 
 /* bind.c: the binding forms. */

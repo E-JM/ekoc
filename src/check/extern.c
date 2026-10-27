@@ -230,7 +230,7 @@ static void check_type_decl(ck_ctx *c, const ek_node *d)
 
 void ck_externs(ck_ctx *c)
 {
-    const ek_node *mod = c->root->ast;
+    const ek_node *mod = c->cur->ast;
     size_t i, n;
 
     if (!mod || mod->kind != EK_N_MODULE) {
