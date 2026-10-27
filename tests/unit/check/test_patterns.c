@@ -386,6 +386,35 @@ static void constructor_and_product_coverage(void)
     cfx_end(&f);
 }
 
+/* A rejected or-alternative still binds its payload names, so the arm
+   reports the constructor mismatch alone instead of a second missing
+   binding; a genuine bind-set difference still reports. */
+static void rejected_alternative(void)
+{
+    cfx f;
+
+    cfx_begin(&f,
+              "A: type = Only Int\n"
+              "B: type = Both Int\n"
+              "f: (b: B) -> Int =\n"
+              "    case b:\n"
+              "        Both n | Only n -> 1\n");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-nominal-mismatch", 5));
+    EK_CHECK(!cfx_has_code(&f, "E-type-mismatch"));
+    cfx_end(&f);
+
+    /* A different name set is a second, independent defect. */
+    cfx_begin(&f,
+              "A: type = Both Int\n"
+              "f: (b: A) -> Int =\n"
+              "    case b:\n"
+              "        Both n | Both -> 1\n");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-type-mismatch", 4));
+    cfx_end(&f);
+}
+
 int main(void)
 {
     variants();
@@ -395,5 +424,6 @@ int main(void)
     cross_pattern();
     bindings();
     constructor_and_product_coverage();
+    rejected_alternative();
     return ek_test_report("check/patterns");
 }

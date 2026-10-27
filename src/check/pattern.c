@@ -106,6 +106,9 @@ static const ek_symbol *cons_select(const ek_ref *ref,
     return NULL;
 }
 
+static const ek_type *opaque_cons(ck_ctx *c, const ek_node *p,
+                                  const ek_type *scrut);
+
 /* A pattern over a known ADT: the selected constructor must belong to
    the scrutinee's type, and its payload walks at the instantiated
    payload type. */
@@ -126,7 +129,7 @@ static const ek_type *adt_cons(ck_ctx *c, const ek_node *p,
                  "the constructor `%s` does not match the scrutinee "
                  "type %s (Clause 7.7.1)",
                  name ? name->name : "?", ck_type_name(c, scrut));
-        return scrut;
+        return opaque_cons(c, p, scrut);
     }
     {
         const ck_decl *d = ck_decl_of(c, ct->owner);
@@ -143,7 +146,7 @@ static const ek_type *adt_cons(ck_ctx *c, const ek_node *p,
                  "the constructor `%s` does not match the scrutinee "
                  "type %s (Clause 7.7.1)", name->name,
                  ck_type_name(c, scrut));
-        return scrut;
+        return opaque_cons(c, p, scrut);
     }
     if (ct->payload) {
         const ck_decl *d = ck_decl_of(c, ct->owner);
