@@ -160,6 +160,42 @@ static line_run *split_lines(layout_ctx *c, const ek_token *tokens,
     return lines;
 }
 
+/* Guarantees the stream terminator after an allocation failure: the
+   parser drains to a final EOF, so the terminator is appended when the
+   arena recovers and replaces the last token when it does not. */
+static void terminate(layout_ctx *c)
+{
+    int saved = c->oom;
+    ek_layout_token *slot = NULL;
+    int room = 0;
+
+    c->oom = 0;
+    if (c->out.len == c->out.cap) {
+        ek_layout_token *p = grow(c, c->out.data, c->out.len, &c->out.cap,
+                                  sizeof *p);
+
+        if (!c->oom) {
+            c->out.data = p;
+            room = 1;
+        }
+    } else {
+        room = 1;
+    }
+    if (room) {
+        slot = &c->out.data[c->out.len++];
+    } else if (c->out.data && c->out.len > 0) {
+        slot = &c->out.data[c->out.len - 1];
+    }
+    c->oom = saved || c->oom;
+    if (!slot) {
+        return;
+    }
+    memset(slot, 0, sizeof *slot);
+    slot->kind = EK_LTOK_EOF;
+    slot->line = c->eof->line;
+    slot->col = c->eof->col;
+}
+
 ek_layout_result ek_layout(const ek_token *tokens, size_t count, const char *file,
                            ek_arena *arena, ek_diag *diag)
 {
@@ -188,8 +224,10 @@ ek_layout_result ek_layout(const ek_token *tokens, size_t count, const char *fil
     lines = split_lines(&ctx, tokens, count, &line_count);
     if (lines) {
         lo_process(&ctx, lines, line_count);
-    } else {
-        lo_emit(&ctx, EK_LTOK_EOF, ctx.eof->line, ctx.eof->col);
+    }
+    if (!ctx.out.data || ctx.out.len == 0
+        || ctx.out.data[ctx.out.len - 1].kind != EK_LTOK_EOF) {
+        terminate(&ctx);
     }
     r.tokens = ctx.out.data;
     r.count = ctx.out.len;
