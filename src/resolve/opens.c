@@ -86,17 +86,32 @@ static void open_member(r_ctx *c, r_file *f, const r_mod *target,
     r_open_name(c, f, name, sym, target->stem, imp);
 }
 
-/* The std placeholder knows exactly the injected free names; the
-   injected import already opened them, so a repeated one adds
-   nothing. */
+/* A std list names free functions of the std module or of a companion.
+   The injected import already opened its three names, so a repeated one
+   asks for nothing; any other name is validated against the target
+   surface, which a companion does not have. */
 static void open_std(r_ctx *c, r_file *f, const r_mod *target,
                      const ek_node *imp, const char *name)
 {
-    if (!r_std_find(c->std, EK_SYM_FUNC, name)) {
+    const ek_symbol *sym;
+
+    if (r_std_opened_name(name)) {
+        return;
+    }
+    sym = r_module_member(target, name);
+    if (!sym || sym->kind != EK_SYM_FUNC) {
         r_error(c, f->mod->file, imp->line, imp->col, "E-unbound-member",
                 "module `%s` exposes no free function `%s` "
                 "(Clauses 7.2.3, 9.1.2)", target->stem, name);
+        return;
     }
+    if (!sym->public) {
+        r_error(c, f->mod->file, imp->line, imp->col, "E-private-name",
+                "member `%s` is private in module `%s` (Clause 7.3.1)",
+                name, target->stem);
+        return;
+    }
+    r_open_name(c, f, name, sym, target->stem, imp);
 }
 
 /* Validates and opens every name of one import's list. */
@@ -108,7 +123,7 @@ void r_opened_import(r_ctx *c, r_file *f, const r_mod *target,
     for (i = 0; i < imp->u.imports.names.count && !c->oom; i++) {
         const char *name = imp->u.imports.names.data[i];
 
-        if (target->external) {
+        if (target->external || target->surf == c->std) {
             open_std(c, f, target, imp, name);
         } else {
             open_member(c, f, target, imp, name);

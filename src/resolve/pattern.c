@@ -40,14 +40,10 @@ static void cons_ref_qualified(r_ctx *c, r_file *f, const ek_node *pat,
     }
     target = r_module_find(c, mod->name);
     cs = r_module_ctor(target, cname);
-    if (!cs && strcmp(mod->name, "std") == 0) {
-        /* The std placeholder bridge (resolve.h): the companion has
-           no surface. */
-        cs = r_std_ctor(c, cname);
-        if (cs) {
-            r_add_ref(c, pat, EK_SYM_EXTERNAL, EK_ST_EXTERNAL, cs);
-            return;
-        }
+    if (cs && r_is_placeholder(cs)) {
+        /* A placeholder constructor keeps the bridged reading. */
+        r_add_ref(c, pat, EK_SYM_EXTERNAL, EK_ST_EXTERNAL, cs);
+        return;
     }
     if (!cs) {
         r_error(c, f->mod->file, pat->line, pat->col, "E-unbound-member",

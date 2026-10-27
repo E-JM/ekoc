@@ -95,8 +95,8 @@ static void file_setup(r_ctx *c, r_file *f, r_mod *m)
     f->mod = m;
     add_module_name(c, f, m->stem);
     add_module_name(c, f, "std"); /* the implicit import */
-    r_std_open(c, f);
     open_surface(c, f, m->surf);
+    r_std_open(c, f);
     if (mod) {
         for (i = 0; i < mod->u.kids.count; i++) {
             const ek_node *imp = mod->u.kids.data[i];
@@ -233,6 +233,7 @@ ek_resolve_result ek_resolve(const ek_node *module, const char *file,
     if (!register_root(&ctx, module, file, stem)) {
         return r;
     }
+    r_std_boot(&ctx);
     r_surface_build(&ctx, ctx.mods);
     r_closure(&ctx, ctx.mods);
     resolve_bodies(&ctx);

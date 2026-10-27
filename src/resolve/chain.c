@@ -169,9 +169,25 @@ static int module_walk(r_ctx *c, r_file *f, r_head *cur, const ek_node *link,
     }
     m = r_module_member(*walk_mod, name);
     if (!m) {
+        if ((*walk_mod)->surf == c->std) {
+            /* A std name the file does not declare yet keeps the
+               external bridge (resolve.h). */
+            external_link(c, cur, link);
+            *state = 0;
+            *walk_mod = NULL;
+            return 1;
+        }
         r_error(c, f->mod->file, link->line, link->col, "E-unbound-member",
                 "module `%s` declares no member `%s` (Clause 7.4.4)",
                 (*walk_mod)->stem, name);
+        external_link(c, cur, link);
+        *state = 0;
+        *walk_mod = NULL;
+        return 1;
+    }
+    if (r_is_placeholder(m)) {
+        /* A placeholder row without a declaration behind it keeps its
+           bridged reading. */
         external_link(c, cur, link);
         *state = 0;
         *walk_mod = NULL;

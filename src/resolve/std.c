@@ -1,14 +1,16 @@
 #include <string.h>
 
 #include "resolve/internal.h"
+#include "resolve/std_source.h"
 
-/* PLACEHOLDER STD SURFACE, standing in until the real interface is
-   derived from lib/std.eko. It holds exactly what the implicit import
-   opens: the three free names of the injected list, the opened types,
-   the capability module names, and the zero-payload constructors of
-   Bool, Option, Result, Time, and Duration. Everything else a file uses
-   from the implicit import resolves to EK_SYM_EXTERNAL without a
-   diagnostic (the bridge described in resolve.h). */
+/* The std module, parsed from the embedded lib/std.eko bytes. Its
+   surface holds the file's own declarations first, then the placeholder
+   rows for the names the compiler still supplies: the opened type names
+   and the zero-payload constructors of the std types. A real-file row
+   wins over a placeholder row of the same kind and name; a name no row
+   declares stays the external bridge (resolve.h). */
+
+#define STD_FILE "std.eko"
 
 /* The free names the injected selective import opens. The list is a
    constant of the language definition. */
@@ -36,9 +38,9 @@ static const struct {
     {NULL, NULL}
 };
 
-#define R_STD_COUNT (sizeof opened_names / sizeof *opened_names \
-    + sizeof type_names / sizeof *type_names \
-    + sizeof ctor_names / sizeof *ctor_names)
+#define TYPE_ROWS (sizeof type_names / sizeof *type_names - 1)
+#define CTOR_ROWS (sizeof ctor_names / sizeof *ctor_names - 1)
+#define STD_ROWS (TYPE_ROWS + CTOR_ROWS)
 
 int r_std_opened_name(const char *name)
 {
@@ -54,89 +56,12 @@ int r_std_opened_name(const char *name)
     return 0;
 }
 
-/* One placeholder row per name; stops silently on arena failure. */
-static size_t fill(r_ctx *c, ek_surface *s, size_t n, const char **names,
-                   ek_sym_kind kind)
+/* A placeholder std row: the module is std and no declaration stands
+   behind it. Its reading stays bridged. */
+int r_is_placeholder(const ek_symbol *sym)
 {
-    size_t i;
-
-    for (i = 0; names[i]; i++) {
-        ek_symbol *sym = r_sym(c, names[i], kind, "std", 0, 0);
-
-        if (!sym) {
-            return n;
-        }
-        s->syms[n++] = *sym;
-    }
-    return n;
-}
-
-/* A constructor row carries the opened type that owns it. */
-static size_t fill_ctors(r_ctx *c, ek_surface *s, size_t n)
-{
-    size_t i;
-
-    for (i = 0; ctor_names[i].name; i++) {
-        ek_symbol *sym = r_sym(c, ctor_names[i].name, EK_SYM_CONSTRUCTOR,
-                               "std", 0, 0);
-
-        if (!sym) {
-            return n;
-        }
-        sym->owner = ctor_names[i].owner;
-        s->syms[n++] = *sym;
-    }
-    return n;
-}
-
-void r_std_init(r_ctx *c)
-{
-    ek_surface *s;
-    size_t n;
-
-    if (c->std || c->oom) {
-        return;
-    }
-    s = ek_arena_alloc(c->arena, sizeof *s);
-    if (!s) {
-        c->oom = 1;
-        return;
-    }
-    s->syms = ek_arena_alloc(c->arena, R_STD_COUNT * sizeof *s->syms);
-    if (!s->syms) {
-        c->oom = 1;
-        return;
-    }
-    s->module = "std";
-    s->file = "(std)";
-    n = fill(c, s, 0, opened_names, EK_SYM_FUNC);
-    n = fill(c, s, n, type_names, EK_SYM_TYPE);
-    n = fill_ctors(c, s, n);
-    if (c->oom) {
-        c->std = NULL;
-        return;
-    }
-    s->count = n;
-    c->std = s;
-}
-
-/* Binds the implicit import into a file: the shared surface stays the
-   bottom layer for types and constructors, and the three injected free
-   names enter the file's opened table. */
-void r_std_open(r_ctx *c, r_file *f)
-{
-    size_t i;
-
-    r_std_init(c);
-    f->std = c->std;
-    for (i = 0; opened_names[i]; i++) {
-        const ek_symbol *sym = r_std_find(c->std, EK_SYM_FUNC,
-                                          opened_names[i]);
-
-        if (sym) {
-            r_open_name(c, f, opened_names[i], sym, "std", NULL);
-        }
-    }
+    return sym && sym->module && strcmp(sym->module, "std") == 0
+        && sym->decl == NULL;
 }
 
 /* The std surface symbol of one kind and name, or NULL. */
@@ -156,8 +81,132 @@ const ek_symbol *r_std_find(const ek_surface *s, ek_sym_kind kind,
     return NULL;
 }
 
-const ek_symbol *r_std_ctor(r_ctx *c, const char *name)
+/* Appends one placeholder row unless the surface already declares the
+   name in that kind. */
+static void add_row(r_ctx *c, ek_surface *s, const char *name,
+                    ek_sym_kind kind, const char *owner)
 {
-    r_std_init(c);
-    return r_std_find(c->std, EK_SYM_CONSTRUCTOR, name);
+    ek_symbol *sym;
+
+    if (r_std_find(s, kind, name)) {
+        return;
+    }
+    sym = r_sym(c, name, kind, "std", 0, 0);
+    if (!sym) {
+        return;
+    }
+    if (owner) {
+        sym->owner = owner;
+    }
+    s->syms[s->count++] = *sym;
+}
+
+/* The placeholder rows beneath the file surface: the opened type names
+   and the constructors of the placeholder types. */
+static void extend(r_ctx *c, ek_surface *s)
+{
+    ek_symbol *grown;
+    size_t i, cap = s->count + STD_ROWS;
+
+    grown = ek_arena_alloc(c->arena, cap * sizeof *grown);
+    if (!grown) {
+        c->oom = 1;
+        return;
+    }
+    memcpy(grown, s->syms, s->count * sizeof *grown);
+    s->syms = grown;
+    for (i = 0; type_names[i]; i++) {
+        add_row(c, s, type_names[i], EK_SYM_TYPE, NULL);
+    }
+    for (i = 0; ctor_names[i].name; i++) {
+        add_row(c, s, ctor_names[i].name, EK_SYM_CONSTRUCTOR,
+                ctor_names[i].owner);
+    }
+}
+
+/* The injected list is a constant of the language definition, so every
+   name it carries is a free function of the parsed file. A missing one
+   is a defect of the compiler's own surface, never a bridge. */
+static void require_opened(r_ctx *c)
+{
+    size_t i;
+
+    for (i = 0; opened_names[i]; i++) {
+        const ek_symbol *sym = r_std_find(c->std, EK_SYM_FUNC,
+                                          opened_names[i]);
+
+        if (!sym || !sym->decl) {
+            r_error(c, STD_FILE, 1, 1, "E-std-surface",
+                    "the embedded std source declares no free function "
+                    "`%s`, so the implicit import cannot open it",
+                    opened_names[i]);
+        }
+    }
+}
+
+/* Parses the embedded std source into a module of the closure. */
+void r_std_boot(r_ctx *c)
+{
+    r_mod *m;
+    ek_node *ast;
+
+    if (c->oom || c->std) {
+        return;
+    }
+    if (r_module_find(c, "std")) {
+        /* Only a root illegally named `std` claims the stem first; it is
+           already rejected, and the closure keeps one module per stem. */
+        return;
+    }
+    ast = r_parse_source(c, ek_std_source, ek_std_source_len, STD_FILE);
+    if (!ast) {
+        return;
+    }
+    m = r_module_add(c, "std", STD_FILE, ast);
+    if (!m || !m->surf) {
+        return;
+    }
+    extend(c, m->surf);
+    if (c->oom) {
+        return;
+    }
+    m->state = 2; /* parsed, and it imports nothing */
+    c->std = m->surf;
+    require_opened(c);
+}
+
+/* The std module declares the names its own injection would open; a
+   module cannot import itself, and its own binding already carries the
+   name. */
+static int own_binding(const r_file *f, const ek_symbol *sym)
+{
+    size_t i;
+
+    for (i = 0; i < f->ntops; i++) {
+        if (f->tops[i].sym == sym) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* Binds the implicit import into a file: the shared surface stays the
+   bottom layer for types and constructors, and the three injected free
+   names enter the file's opened table. */
+void r_std_open(r_ctx *c, r_file *f)
+{
+    size_t i;
+
+    if (!c->std) {
+        return;
+    }
+    f->std = c->std;
+    for (i = 0; opened_names[i]; i++) {
+        const ek_symbol *sym = r_std_find(c->std, EK_SYM_FUNC,
+                                          opened_names[i]);
+
+        if (sym && !own_binding(f, sym)) {
+            r_open_name(c, f, opened_names[i], sym, "std", NULL);
+        }
+    }
 }

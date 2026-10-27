@@ -72,20 +72,37 @@ size_t r_lookup_type(const r_file *f, const char *name,
     return n;
 }
 
+/* Whether the visible constructors already hold this symbol: the std
+   module's own rows arrive both through its surface and through the
+   fallback below it, and one constructor is one candidate. */
+static int ctor_listed(const r_var *vars, size_t n, const ek_symbol *sym)
+{
+    size_t i;
+
+    for (i = 0; i < n; i++) {
+        if (vars[i].sym == sym) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 size_t r_lookup_ctor(r_ctx *c, const r_file *f, const char *name,
                      const ek_symbol *const **cands)
 {
     const ek_symbol *std_ct = r_std_find(f->std, EK_SYM_CONSTRUCTOR, name);
     const ek_symbol **out;
+    int fallback;
     size_t i, n = 0;
 
     *cands = NULL;
+    fallback = std_ct && !ctor_listed(f->ctors, f->nctors, std_ct);
     for (i = 0; i < f->nctors; i++) {
         if (strcmp(f->ctors[i].name, name) == 0) {
             n++;
         }
     }
-    if (std_ct) {
+    if (fallback) {
         n++;
     }
     if (n == 0) {
@@ -102,19 +119,11 @@ size_t r_lookup_ctor(r_ctx *c, const r_file *f, const char *name,
             out[n++] = f->ctors[i].sym;
         }
     }
-    if (std_ct) {
+    if (fallback) {
         out[n++] = std_ct;
     }
     *cands = out;
     return n;
-}
-
-/* A placeholder std symbol: module std, no declaration behind it
-   (the resolve.h bridge). */
-static int is_std_placeholder(const ek_symbol *sym)
-{
-    return sym && sym->module && strcmp(sym->module, "std") == 0
-        && sym->decl == NULL;
 }
 
 /* Constructor value position: the visible same-named constructors are
@@ -136,7 +145,7 @@ void r_cons_head(r_ctx *c, r_file *f, const ek_node *n, r_head *out)
         return;
     }
     out->sym = cands[0];
-    if (is_std_placeholder(cands[0])) {
+    if (r_is_placeholder(cands[0])) {
         out->kind = EK_SYM_EXTERNAL;
         out->st = EK_ST_EXTERNAL;
     } else {
@@ -185,9 +194,9 @@ void r_name_head(r_ctx *c, r_file *f, const ek_node *n, int chained,
         out->st = EK_ST_HEAD_LOCAL;
     } else if ((sym = r_lookup_top(f, name)) != NULL) {
         out->sym = sym;
-        if (is_std_placeholder(sym)) {
-            /* The free names of the implicit import resolve to the
-               unresolved-external placeholder (resolve.h). */
+        if (r_is_placeholder(sym)) {
+            /* A row without a declaration behind it keeps the bridged
+               reading (resolve.h). */
             out->kind = EK_SYM_EXTERNAL;
             out->st = EK_ST_EXTERNAL;
         } else {

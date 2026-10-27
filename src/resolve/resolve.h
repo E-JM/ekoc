@@ -36,13 +36,16 @@
  * check selects the field, namespace, or current-module reading from
  * the receiver's type.
  *
- * PLACEHOLDER STD SURFACE, standing in until the real interface is
- * derived from lib/std.eko. resolve answers the implicit `import std`
- * from a built-in surface holding the free names the injected list
- * opens and the type names the import opens. A name the placeholder
- * does not know resolves to EK_SYM_EXTERNAL with no diagnostic; this
- * bridge must be replaced when lib/std.eko lands. Explicit imports of
- * user modules resolve for real and are diagnosed.
+ * STD SURFACE. resolve answers the implicit `import std` from the
+ * compiler-embedded lib/std.eko: the source is parsed and its surface
+ * built like any other module's, then extended with the placeholder
+ * rows the file does not own yet -- the opened type names and the
+ * zero-payload constructors of the std types. A real-file row wins
+ * over a placeholder row of the same kind and name; the placeholder is
+ * the fallback. A std name no row declares resolves to EK_SYM_EXTERNAL
+ * with no diagnostic (the bridge), so a std name the file does not
+ * declare yet keeps its bridged reading. Explicit imports of user
+ * modules resolve for real and are diagnosed.
  */
 
 /* What a resolved name denotes; the trailing kinds carry data only
@@ -61,8 +64,8 @@ typedef enum {
     EK_SYM_EXTERN,      /* extern declaration */
     EK_SYM_MEMBER,      /* receiver-form member; check selects the
                            reading */
-    EK_SYM_EXTERNAL     /* unresolved external: the placeholder std
-                           bridge described above */
+    EK_SYM_EXTERNAL     /* unresolved external: the std bridge
+                           described above */
 } ek_sym_kind;
 
 /* The lookup order that produced the symbol, one value per name layer
@@ -81,7 +84,7 @@ typedef enum {
                            receiver's static type */
     EK_ST_MODULE_PATH,  /* `x.Mod.f(args)`: a module segment inside a
                            receiver chain */
-    EK_ST_EXTERNAL      /* the placeholder std bridge */
+    EK_ST_EXTERNAL      /* the std bridge */
 } ek_station;
 
 /* One symbol of a module surface. The interface data check needs
@@ -103,9 +106,9 @@ typedef struct ek_symbol {
 } ek_symbol;
 
 /* The surface of one module in the closure. modules[0] of a result is
-   the compilation root. ast is the module's own AST (NULL for the
-   std placeholder), so check walks the root and reads the interface
-   annotations of the modules it imports. */
+   the compilation root. ast is the module's own AST (NULL for a
+   reserved std companion, a stem with no file), so check walks the root
+   and reads the interface annotations of the modules it imports. */
 typedef struct {
     const char *module; /* the stem, the module's name in code */
     const char *file;   /* path the module was loaded from */

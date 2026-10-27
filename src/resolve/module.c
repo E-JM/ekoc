@@ -106,6 +106,20 @@ static r_mod *register_mod(r_ctx *c, const char *stem, const char *file,
     return m;
 }
 
+/* Registers one parsed module in the closure and builds its surface. */
+r_mod *r_module_add(r_ctx *c, const char *stem, const char *file,
+                    const ek_node *ast)
+{
+    return register_mod(c, stem, file, ast, 0);
+}
+
+/* Registers a reserved std companion: a stem an import opens with no
+   file behind it. */
+r_mod *r_module_companion(r_ctx *c, const char *stem)
+{
+    return register_mod(c, stem, "(std)", NULL, 1);
+}
+
 /* Two imported modules with the same stem collide over the closure.
    file may be NULL when the collision surfaces before the second file
    resolves; the diagnostic still carries the registered module. */
@@ -133,18 +147,15 @@ static void stage_dropped(r_ctx *c, const char *path, const char *stage)
     c->oom = 1;
 }
 
-/* Lex, layout, and parse one module file. */
-static ek_node *parse_file(r_ctx *c, const char *path)
+/* Lex, layout, and parse one module source. */
+ek_node *r_parse_source(r_ctx *c, const char *src, size_t len,
+                        const char *path)
 {
-    char *src = read_file(c, path);
     ek_lex_result lex;
     ek_layout_result lay;
     ek_node *mod;
 
-    if (!src) {
-        return NULL;
-    }
-    lex = ek_lex(src, strlen(src), path, c->arena, c->diag);
+    lex = ek_lex(src, len, path, c->arena, c->diag);
     if (!lex.tokens || lex.count == 0) {
         stage_dropped(c, path, "lex");
         return NULL;
@@ -159,6 +170,17 @@ static ek_node *parse_file(r_ctx *c, const char *path)
         stage_dropped(c, path, "parse");
     }
     return mod;
+}
+
+/* Lex, layout, and parse one module file. */
+static ek_node *parse_file(r_ctx *c, const char *path)
+{
+    char *src = read_file(c, path);
+
+    if (!src) {
+        return NULL;
+    }
+    return r_parse_source(c, src, strlen(src), path);
 }
 
 /* Resolves an import path to a file on the module path. */
@@ -308,11 +330,15 @@ static void load_import(r_ctx *c, r_mod *from, const ek_node *imp)
     }
     stem = imp->u.imports.path.data[imp->u.imports.path.count - 1];
     if (strcmp(imp->u.imports.path.data[0], "std") == 0) {
-        r_mod *held = r_module_find(c, stem);
+        r_mod *held;
 
         if (imp->u.imports.path.count == 1) {
+            /* The implicit import already put the std module in the
+               closure; an explicit line only repeats it. */
             std_redundant(c, file, imp);
+            return;
         }
+        held = r_module_find(c, stem);
         if (held && !held->external) {
             /* The std/ path is reserved; a user module already holding
                the companion's stem collides over the closure, whichever
@@ -321,7 +347,7 @@ static void load_import(r_ctx *c, r_mod *from, const ek_node *imp)
                     "module stem `%s` is already imported from `%s` "
                     "(Clauses 7.2.2, 7.4.6)", stem, held->file);
         } else if (!held) {
-            register_mod(c, stem, "(std)", NULL, 1);
+            r_module_companion(c, stem);
         }
         return;
     }

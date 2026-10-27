@@ -27,7 +27,7 @@ typedef struct {
     const ek_node *ast; /* EK_N_MODULE */
     ek_surface *surf;
     int state;
-    int external; /* placeholder std module: no file, no surface */
+    int external; /* reserved std companion: a stem with no file */
 } r_mod;
 
 /* A free name an import opened into the file's top layer, with the
@@ -41,8 +41,9 @@ typedef struct {
 } r_open;
 
 /* The per-file name layers, in lookup order. Top-level bindings and
-   the free names the imports opened share one layer; the std surface
-   supplies the type and constructor fallback below it. */
+   the free names the imports opened share one layer; the parsed std
+   module's surface supplies the type and constructor fallback below
+   it. */
 typedef struct {
     r_mod *mod;
     scope *locals; /* innermost lexical scope, NULL at top level */
@@ -68,7 +69,8 @@ typedef struct {
     size_t nmods, cmods;
     ek_ref *refs;
     size_t nrefs, crefs;
-    ek_surface *std; /* the placeholder std surface */
+    ek_surface *std; /* the parsed std surface and its
+                        placeholder rows */
     int oom;
 } r_ctx;
 
@@ -91,13 +93,15 @@ void r_error(r_ctx *c, const char *file, int line, int col,
              const char *code, const char *fmt, ...);
 void r_refs_sort(ek_ref *refs, size_t count);
 
-/* std.c: the placeholder std surface (temporary bridge). */
-void r_std_init(r_ctx *c);
+/* std.c: the parsed std module, its placeholder rows, and the implicit
+   import. r_std_boot parses the embedded source into the closure and
+   extends its surface; r_std_open binds the injected free names. */
+void r_std_boot(r_ctx *c);
 int r_std_opened_name(const char *name);
 void r_std_open(r_ctx *c, r_file *f);
 const ek_symbol *r_std_find(const ek_surface *s, ek_sym_kind kind,
                             const char *name);
-const ek_symbol *r_std_ctor(r_ctx *c, const char *name);
+int r_is_placeholder(const ek_symbol *sym);
 
 /* opens.c: the per-file opened free-name table. One import's list is
    validated against the target surface and each eligible name enters
@@ -112,9 +116,16 @@ void r_opened_vs_tops(r_ctx *c, r_file *f);
 /* surface.c: the top-level surface of one module. */
 void r_surface_build(r_ctx *c, r_mod *m);
 
-/* module.c: file loading and the import closure. */
+/* module.c: file loading and the import closure. r_parse_source is the
+   normal lex/layout/parse chain over one source buffer; the std module
+   takes it with its embedded bytes. */
 char *r_path_stem(r_ctx *c, const char *file);
 r_mod *r_module_find(r_ctx *c, const char *stem);
+r_mod *r_module_add(r_ctx *c, const char *stem, const char *file,
+                    const ek_node *ast);
+r_mod *r_module_companion(r_ctx *c, const char *stem);
+ek_node *r_parse_source(r_ctx *c, const char *src, size_t len,
+                        const char *path);
 void r_closure_walk(r_ctx *c, r_mod *m);
 void r_closure(r_ctx *c, r_mod *root);
 

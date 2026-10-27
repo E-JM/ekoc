@@ -62,17 +62,8 @@ static void qualified(r_ctx *c, r_file *f, const ek_node *t)
     }
     m = r_module_find(c, mod->name);
     if (!m || !m->surf) {
-        /* The std placeholder surface (resolve.h) holds the opened
-           types, so the qualified spelling names one of them. A
-           companion path has no such surface and stays bridged. */
-        const ek_symbol *s = strcmp(mname, "std") == 0
-                                 ? r_std_find(c->std, EK_SYM_TYPE, tname)
-                                 : NULL;
-
-        if (s) {
-            r_add_ref(c, t, EK_SYM_TYPE, EK_ST_QUALIFIED, s);
-            return;
-        }
+        /* A companion path has no surface behind it, so the qualified
+           spelling stays bridged (resolve.h). */
         r_add_ref(c, t, EK_SYM_EXTERNAL, EK_ST_TYPE, NULL);
         return;
     }
@@ -92,6 +83,12 @@ static void qualified(r_ctx *c, r_file *f, const ek_node *t)
                 return;
             }
         }
+    }
+    if (m->surf == c->std) {
+        /* A std type the file does not declare yet keeps the external
+           bridge (resolve.h). */
+        r_add_ref(c, t, EK_SYM_EXTERNAL, EK_ST_TYPE, NULL);
+        return;
     }
     r_error(c, file, t->line, t->col, "E-unbound-member",
             "module `%s` declares no type `%s` (Clause 7.4.4)", mname,

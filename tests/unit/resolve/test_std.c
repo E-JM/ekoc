@@ -1,9 +1,28 @@
 #include "common.h"
+#include "refcheck.h"
 
-/* The placeholder std surface: the free names and the opened types
-   resolve without diagnostics; everything else a file uses from the
-   implicit import is the unresolved-external bridge (resolve.h; the
-   placeholder stands in for lib/std.eko). */
+/* The std surface: the compiled std module is parsed from lib/std.eko,
+   so its free names are ordinary functions with declarations behind
+   them; the opened types and constructors, and every name the file does
+   not declare yet, are the placeholder rows beneath it. A name no layer
+   declares is the unresolved-external bridge (resolve.h). */
+
+/* Any bridged reference at a source line: the external station with no
+   symbol behind it. */
+static int bridge_at(const rfx *f, int line)
+{
+    size_t i;
+
+    for (i = 0; i < f->res.ref_count; i++) {
+        const ek_ref *r = &f->res.refs[i];
+
+        if (r->node->line == line && r->kind == EK_SYM_EXTERNAL
+            && r->station == EK_ST_EXTERNAL && r->symbol == NULL) {
+            return 1;
+        }
+    }
+    return 0;
+}
 
 static void free_names(void)
 {
@@ -17,10 +36,11 @@ static void free_names(void)
     EK_CHECK_U64(rfx_errors(&f), 0);
     r = rfx_ref_named(&f, 2, "assert_eq");
     EK_CHECK(r != NULL);
-    EK_CHECK(r->kind == EK_SYM_EXTERNAL);
-    EK_CHECK(r->station == EK_ST_EXTERNAL);
+    EK_CHECK(r->kind == EK_SYM_FUNC);
+    EK_CHECK(r->station == EK_ST_HEAD_TOP);
     EK_CHECK_STR(r->symbol ? r->symbol->name : NULL, "assert_eq");
     EK_CHECK_STR(r->symbol ? r->symbol->module : NULL, "std");
+    EK_CHECK(r->symbol != NULL && r->symbol->decl != NULL);
     rfx_end(&f);
 }
 
@@ -38,9 +58,39 @@ static void injected_opens(void)
     EK_CHECK_U64(rfx_errors(&f), 0);
     r = rfx_ref_named(&f, 2, "assert");
     EK_CHECK(r != NULL);
-    EK_CHECK(r->kind == EK_SYM_EXTERNAL);
-    EK_CHECK(r->station == EK_ST_EXTERNAL);
+    EK_CHECK(r->kind == EK_SYM_FUNC);
+    EK_CHECK(r->station == EK_ST_HEAD_TOP);
     EK_CHECK_STR(r->symbol ? r->symbol->module : NULL, "std");
+    EK_CHECK(r->symbol != NULL && r->symbol->decl != NULL);
+    rfx_end(&f);
+}
+
+/* The std module joins the closure as a parsed module: its file is the
+   release spelling, its AST is present, and its surface holds both the
+   file's own declarations and the placeholder rows. */
+static void std_module_surface(void)
+{
+    rfx f;
+    const ek_symbol *assert_sym;
+    const ek_symbol *bool_sym;
+    const ek_symbol *true_sym;
+
+    rfx_begin(&f, "v: Int = 1\n");
+    EK_CHECK_U64(rfx_errors(&f), 0);
+    EK_CHECK_U64(f.res.module_count, 2); /* the root and std */
+    if (f.res.module_count < 2) {
+        rfx_end(&f);
+        return;
+    }
+    EK_CHECK_STR(f.res.modules[1].module, "std");
+    EK_CHECK_STR(f.res.modules[1].file, "std.eko");
+    EK_CHECK(f.res.modules[1].ast != NULL);
+    assert_sym = rfx_surface_sym(&f, "std", "assert");
+    bool_sym = rfx_surface_sym(&f, "std", "Bool");
+    true_sym = rfx_surface_sym(&f, "std", "True");
+    EK_CHECK(assert_sym != NULL && assert_sym->decl != NULL);
+    EK_CHECK(bool_sym != NULL && bool_sym->decl == NULL);
+    EK_CHECK(true_sym != NULL && true_sym->decl == NULL);
     rfx_end(&f);
 }
 
@@ -113,6 +163,101 @@ static void qualified_std(void)
         "    _\n");
     EK_CHECK_U64(rfx_errors(&f), 0);
     rfx_end(&f);
+}
+
+/* The qualified spelling denotes the file's declaration, so the call
+   carries the real arrow. */
+static void qualified_real_function(void)
+{
+    rfx f;
+    const ek_ref *r;
+
+    rfx_begin(&f,
+        "f: () -> _ =\n"
+        "    std.assert(True)\n"
+        "    std.assert_eq(1, 2)\n"
+        "    _\n");
+    EK_CHECK_U64(rfx_errors(&f), 0);
+    r = rfx_ref_named(&f, 2, "assert");
+    EK_CHECK(r != NULL);
+    EK_CHECK(r->kind == EK_SYM_FUNC);
+    EK_CHECK(r->station == EK_ST_QUALIFIED);
+    EK_CHECK(r->symbol != NULL && r->symbol->decl != NULL);
+    r = rfx_ref_named(&f, 3, "assert_eq");
+    EK_CHECK(r != NULL);
+    EK_CHECK(r->kind == EK_SYM_FUNC);
+    EK_CHECK(r->station == EK_ST_QUALIFIED);
+    EK_CHECK(r->symbol != NULL && r->symbol->decl != NULL);
+    rfx_end(&f);
+}
+
+/* A std member the file does not declare keeps the external bridge, not
+   a new diagnostic. */
+static void std_unknown_member(void)
+{
+    rfx f;
+
+    rfx_begin(&f,
+        "f: () -> _ =\n"
+        "    std.nope(1)\n"
+        "    _\n");
+    EK_CHECK_U64(rfx_errors(&f), 0);
+    EK_CHECK(bridge_at(&f, 2));
+    rfx_end(&f);
+}
+
+/* The std module's own body resolves through the ordinary layers: its
+   reference sites are covered by the refs table, so the module is a
+   parsed module and not only a surface row. */
+static void std_body_resolved(void)
+{
+    rfx f;
+    const ek_node *std_ast;
+    size_t i, own = 0;
+
+    rfx_begin(&f, "v: Int = 1\n");
+    EK_CHECK_U64(rfx_errors(&f), 0);
+    EK_CHECK_U64(f.res.module_count, 2);
+    if (f.res.module_count < 2) {
+        rfx_end(&f);
+        return;
+    }
+    std_ast = f.res.modules[1].ast;
+    for (i = 0; i < f.res.ref_count; i++) {
+        if ((size_t)f.res.refs[i].node > (size_t)std_ast) {
+            own++;
+        }
+    }
+    EK_CHECK(own > 0);
+    EK_CHECK_U64(rfx_check_refs(&f), 0);
+    rfx_end(&f);
+}
+
+/* The boot is deterministic: two resolutions of one source yield the
+   same closure and the same std surface, in the same order. */
+static void boot_deterministic(void)
+{
+    rfx a, b;
+    size_t i;
+
+    rfx_begin(&a, "v: Int = 1\n");
+    rfx_begin(&b, "v: Int = 1\n");
+    EK_CHECK_U64(a.res.module_count, b.res.module_count);
+    if (a.res.module_count == b.res.module_count
+        && a.res.module_count >= 2) {
+        const ek_surface *x = &a.res.modules[1];
+        const ek_surface *y = &b.res.modules[1];
+
+        EK_CHECK_U64(x->count, y->count);
+        if (x->count == y->count) {
+            for (i = 0; i < x->count; i++) {
+                EK_CHECK(x->syms[i].kind == y->syms[i].kind);
+                EK_CHECK_STR(x->syms[i].name, y->syms[i].name);
+            }
+        }
+    }
+    rfx_end(&a);
+    rfx_end(&b);
 }
 
 /* A service free name that no layer binds is the receiver form of the
@@ -235,6 +380,11 @@ int main(void)
 {
     free_names();
     injected_opens();
+    std_module_surface();
+    std_body_resolved();
+    boot_deterministic();
+    qualified_real_function();
+    std_unknown_member();
     opened_types();
     std_constructors();
     unknown_names();
