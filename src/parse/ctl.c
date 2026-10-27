@@ -8,6 +8,7 @@ static ek_node *arm(p_ctx *c);
 static void arm_lines(p_ctx *c, ek_node *n);
 static void arm_inline(p_ctx *c, ek_node *n);
 static ek_node *else_branch(p_ctx *c);
+static int header_paren(p_ctx *c);
 
 /* A case expression: 'case' scrutinees ':' then either an indented arm
    block or a `;`-separated inline arm run. */
@@ -22,8 +23,9 @@ ek_node *p_case_expr(p_ctx *c)
     p_list_init(&n->u.caseexpr.scrutinees);
     p_list_init(&n->u.caseexpr.arms);
     for (;;) {
-        ek_node *e = p_expr(c);
+        ek_node *e;
 
+        e = p_expr_head(c, header_paren(c));
         p_list_add(c, n, &n->u.caseexpr.scrutinees, e);
         if (!e || c->oom) {
             return n;
@@ -147,6 +149,24 @@ static ek_node *arm(p_ctx *c)
     return n;
 }
 
+/* A header expression whose first bracket group is followed by the
+   header's own colon parses with the lambda reading suppressed: the
+   group is a parenthesized expression, and nested positions inside
+   brackets reset on their own (p_expr entry). */
+static int header_paren(p_ctx *c)
+{
+    if (!p_at(c, EK_TOK_LPAREN)) {
+        return 0;
+    }
+    {
+        size_t close = p_match_bracket(c, c->pos);
+        const ek_layout_token *after = p_peek_at(c, close - c->pos + 1);
+
+        return after->kind == EK_LTOK_SOURCE
+            && after->tok.kind == EK_TOK_COLON;
+    }
+}
+
 /* An if expression: 'if' condition ':' suite, with an optional `else`
    suite. Layout emits the DEDENTs owed by the stack before a matching
    `else` line, so the parser reattaches it across NEWLINE and DEDENT
@@ -161,7 +181,7 @@ ek_node *p_if_expr(p_ctx *c)
     if (c->oom) {
         return NULL;
     }
-    cond = p_expr(c);
+    cond = p_expr_head(c, header_paren(c));
     if (!cond) {
         p_sync(c);
         return NULL;

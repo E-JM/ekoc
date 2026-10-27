@@ -23,6 +23,8 @@ typedef struct {
     int fatal;     /* the ceiling was reached: recovery drains to EOF */
     int operand_pos; /* inside an operator operand: a parameter group
                         followed by `:` is a grouping, not a lambda */
+    int head_colon;  /* a header expression whose first group is
+                        followed by the header colon: no lambda grab */
     size_t *match; /* memoized bracket partners, built on first use */
     size_t *match_stack;
 } p_ctx;
@@ -126,6 +128,8 @@ ek_node *p_variant(p_ctx *c);
 
 /* expr.c */
 ek_node *p_expr(p_ctx *c);
+ek_node *p_expr_head(p_ctx *c, int head_colon); /* p_expr with the
+    header-colon suppression of a leading bracket group */
 
 /* postfix.c: the operand layer of the expression ladder. */
 ek_node *p_postfix(p_ctx *c);
@@ -133,6 +137,9 @@ ek_node *p_postfix(p_ctx *c);
 /* literal.c */
 ek_node *p_literal(p_ctx *c, const ek_layout_token *t);
 ek_node *p_paren_primary(p_ctx *c); /* grouping or lambda */
+size_t p_match_bracket(p_ctx *c, size_t from); /* index of the bracket
+                                                   closing the one at from,
+                                                   or the last token */
 ek_node *p_composite(p_ctx *c);     /* '{' consumed */
 ek_node *p_slot_expr(p_ctx *c, const ek_token *toks, size_t n);
 

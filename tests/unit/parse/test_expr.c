@@ -485,6 +485,39 @@ static void operand_lambdas(void)
     pfx_end(&f);
 }
 
+
+/* A header expression whose first bracket group is followed by the
+   header colon: the group is a parenthesized condition, and the
+   lambda reading is suppressed. */
+static void header_paren_conditions(void)
+{
+    parse_fixture f;
+
+    pfx_begin(&f,
+              "_g: (b: Bool) -> Int =\n"
+              "    if (b): 1 else: 2\n");
+    pfx_item(&f, 0);
+    EK_CHECK_U64(pfx_errors(&f), 0);
+    pfx_end(&f);
+
+    pfx_begin(&f,
+              "_k: (b: Bool) -> String =\n"
+              "    case (b):\n"
+              "        True -> \"t\"\n"
+              "        False -> \"f\"\n");
+    pfx_item(&f, 0);
+    EK_CHECK_U64(pfx_errors(&f), 0);
+    pfx_end(&f);
+
+    /* A nested lambda inside the group keeps its reading. */
+    pfx_begin(&f,
+              "_m: (xs: []Int) -> Int =\n"
+              "    if (xs.map((n): n).length() == 0): 0 else: 1\n");
+    pfx_item(&f, 0);
+    EK_CHECK_U64(pfx_errors(&f), 0);
+    pfx_end(&f);
+}
+
 int main(void)
 {
     literals_and_names();
@@ -497,5 +530,6 @@ int main(void)
     lambda_shapes();
     operand_blocks();
     operand_lambdas();
+    header_paren_conditions();
     return ek_test_report("parse/expr");
 }

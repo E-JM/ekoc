@@ -7,7 +7,6 @@ static ek_node *lambda(p_ctx *c);
 static ek_node *lambda_param(p_ctx *c);
 static ek_node *string_lit(p_ctx *c, const ek_layout_token *t);
 static ek_node *composite_item(p_ctx *c);
-static size_t match_bracket(p_ctx *c, size_t from);
 
 ek_node *p_literal(p_ctx *c, const ek_layout_token *t)
 {
@@ -192,10 +191,10 @@ static ek_node *composite_item(p_ctx *c)
    there). */
 ek_node *p_paren_primary(p_ctx *c)
 {
-    size_t close = match_bracket(c, c->pos);
+    size_t close = p_match_bracket(c, c->pos);
     const ek_layout_token *after = p_peek_at(c, close - c->pos + 1);
 
-    if (!c->operand_pos && after->kind == EK_LTOK_SOURCE
+    if (!c->operand_pos && !c->head_colon && after->kind == EK_LTOK_SOURCE
         && after->tok.kind == EK_TOK_COLON) {
         return lambda(c);
     }
@@ -224,7 +223,7 @@ ek_node *p_paren_primary(p_ctx *c)
 
 /* Index of the bracket matching the opener at from, counting all three
    bracket pairs; markers never carry brackets. */
-size_t match_bracket(p_ctx *c, size_t from)
+size_t p_match_bracket(p_ctx *c, size_t from)
 {
     size_t i;
     size_t top = 0;

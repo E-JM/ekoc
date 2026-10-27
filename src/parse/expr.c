@@ -231,6 +231,11 @@ static ek_node *or_expr(p_ctx *c)
 
 ek_node *p_expr(p_ctx *c)
 {
+    return p_expr_head(c, 0);
+}
+
+ek_node *p_expr_head(p_ctx *c, int head_colon)
+{
     ek_node *e;
 
     if (c->oom) {
@@ -238,6 +243,7 @@ ek_node *p_expr(p_ctx *c)
     }
     c->operand_pos = 0; /* a fresh expression context: arguments,
                            items, and bodies are not operand tails */
+    c->head_colon = head_colon;
     if (!p_depth_enter(c)) {
         return NULL;
     }
