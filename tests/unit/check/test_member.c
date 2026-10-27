@@ -105,6 +105,35 @@ static void opaque_members(void)
     EK_CHECK_U64(cfx_errors(&f), 0);
     EK_CHECK(cfx_reading_at(&f, 2, EK_RD_UNKNOWN));
     cfx_end(&f);
+
+    /* A placeholder nominal receiver keeps the bridge. */
+    cfx_begin(&f,
+              "s: String = \"x\"\n"
+              "t: String = s.bogus()\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    EK_CHECK(cfx_reading_at(&f, 2, EK_RD_EXTERNAL));
+    cfx_end(&f);
+}
+
+/* A member link on a known function-typed receiver is rejected: a
+   function type has no fields and no namespace. */
+static void function_receiver(void)
+{
+    cfx f;
+
+    cfx_begin(&f,
+              "area: (n: Int) -> Float = 1.0\n"
+              "v: Float = area.shape(1)\n");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-unbound-member", 2));
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "area: (n: Int) -> Float = 1.0\n"
+              "v: Float = area.bogus\n");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-unbound-member", 2));
+    cfx_end(&f);
 }
 
 static void qualified_calls(void)
@@ -314,6 +343,7 @@ int main(void)
     derived_services();
     derived_with();
     opaque_members();
+    function_receiver();
     qualified_calls();
     type_qualified_calls();
     return ek_test_report("check/member");

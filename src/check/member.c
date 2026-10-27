@@ -281,6 +281,14 @@ static const ek_type *link_type(ck_ctx *c, const ek_node *at,
     if (r && r->kind == EK_T_NOMINAL && r->u.nominal.sym) {
         return nominal_link(c, at, r, name, rd, bool_t);
     }
+    if (r && r->kind == EK_T_FN) {
+        /* A function type has fields only in a record that carries
+           it; it has no namespace and no module reading. */
+        ck_error(c, at, "E-unbound-member",
+                 "the receiver type %s has no member `%s` "
+                 "(Clause 7.4.3)", ck_type_name(c, r), name);
+        return ck_ivar(c);
+    }
     if (!r || r->kind == EK_T_IVAR || r->kind == EK_T_TVAR) {
         *rd = EK_RD_UNKNOWN;
     }
