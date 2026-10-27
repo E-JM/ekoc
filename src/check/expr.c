@@ -186,14 +186,25 @@ static const ek_type *name_type(ck_ctx *c, const ek_node *n,
     }
 }
 
+/* `Never` arrives as its own type or as the std nominal spelling. */
+static int is_never_type(const ek_type *t)
+{
+    const ek_type *p = ck_prune(t);
+
+    return p && (p->kind == EK_T_NEVER || ck_is_std(p, "Never"));
+}
+
 /* The members of a block from one index. An inverted binding consumes
    the remaining members as its callback body, so the loop ends there;
-   the binding's call result is the block's type. */
+   the binding's call result is the block's type. A member after the
+   first one of type `Never` is unreachable; the warning does not
+   change the typing. */
 const ek_type *ck_members(ck_ctx *c, const ek_node *b, size_t start,
                           const ek_type *expected)
 {
     const ek_type *t = ck_unit(c);
     size_t i, n = b->u.kids.count;
+    int warned = 0;
 
     for (i = start; i < n; i++) {
         const ek_node *m = b->u.kids.data[i];
@@ -210,6 +221,11 @@ const ek_type *ck_members(ck_ctx *c, const ek_node *b, size_t start,
         default:
             t = ck_expr(c, m, i + 1 == n ? expected : NULL);
             break;
+        }
+        if (!warned && i + 1 < n && is_never_type(t)) {
+            ck_warn(c, b->u.kids.data[i + 1], "W-unreachable",
+                    "this code follows an expression of type `Never`");
+            warned = 1;
         }
     }
     return t ? t : ck_unit(c);

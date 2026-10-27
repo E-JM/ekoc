@@ -209,13 +209,13 @@ void ck_row(ck_ctx *c, const ek_node *n, const ek_type *t, ek_reading r)
     c->nrows++;
 }
 
-static void row_error(ck_ctx *c, const ek_node *n, const char *code,
-                      const char *fmt, va_list ap)
+static void row_diag(ck_ctx *c, ek_severity sev, const ek_node *n,
+                     const char *code, const char *fmt, va_list ap)
 {
     char msg[400];
 
     vsnprintf(msg, sizeof msg, fmt, ap);
-    ek_diag_emit(c->diag, EK_SEV_ERROR, code, ck_file(c),
+    ek_diag_emit(c->diag, sev, code, ck_file(c),
                  n ? n->line : 1, n ? n->col : 1, "%s", msg);
 }
 
@@ -228,7 +228,20 @@ void ck_error(ck_ctx *c, const ek_node *n, const char *code, const char *fmt,
         return;
     }
     va_start(ap, fmt);
-    row_error(c, n, code, fmt, ap);
+    row_diag(c, EK_SEV_ERROR, n, code, fmt, ap);
+    va_end(ap);
+}
+
+void ck_warn(ck_ctx *c, const ek_node *n, const char *code, const char *fmt,
+             ...)
+{
+    va_list ap;
+
+    if (c->oom) {
+        return;
+    }
+    va_start(ap, fmt);
+    row_diag(c, EK_SEV_WARNING, n, code, fmt, ap);
     va_end(ap);
 }
 
