@@ -211,8 +211,9 @@ static int value_layer(const ek_type *r)
 static void no_order_error(ck_ctx *c, const ek_node *at, const ek_type *r)
 {
     ck_error(c, at, "E-no-eq",
-             "ordering over %s has no derivation; capabilities and "
-             "functions have no `lt` (Clause 9.8.5)", ck_type_name(c, r));
+             "ordering over %s has no derivation; capabilities, "
+             "handles, and functions have no `lt` (Clause 9.8.5)",
+             ck_type_name(c, r));
 }
 
 /* The derived ordering family: the value layer, and declared ADTs
@@ -229,7 +230,7 @@ static const ek_type *derive_lt(ck_ctx *c, const ek_node *at,
         && strcmp(name, "gt") != 0 && strcmp(name, "ge") != 0) {
         return NULL;
     }
-    if (ck_is_capability(r) || r->kind == EK_T_FN) {
+    if (ck_is_capability(r) || ck_is_handle(r) || r->kind == EK_T_FN) {
         no_order_error(c, at, r);
         return NULL;
     }

@@ -27,6 +27,27 @@ int ck_is_capability(const ek_type *t)
     return 0;
 }
 
+/* The handle types: reached only through a capability member, opaque
+   under the bridge like the capabilities, and their equality and
+   ordering halt the same way. `Task t` carries its binder. */
+int ck_is_handle(const ek_type *t)
+{
+    static const char *handles[] = {"File", "Scope", "Task"};
+    size_t i;
+
+    t = ck_prune(t);
+    if (!t || t->kind != EK_T_NOMINAL || !t->u.nominal.sym
+        || t->u.nominal.argc > 1 || t->u.nominal.sym->decl) {
+        return 0;
+    }
+    for (i = 0; i < sizeof handles / sizeof *handles; i++) {
+        if (strcmp(t->u.nominal.sym->name, handles[i]) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 /* The eq derivation halts at capabilities and functions, recursively:
    a type built over either has no eq. */
 static int no_eq_walk(ck_ctx *c, const ek_type *t, int depth);
@@ -39,7 +60,7 @@ static int no_eq_nominal(ck_ctx *c, const ek_type *t, int depth)
     const ck_decl *d;
     size_t i;
 
-    if (ck_is_capability(t)) {
+    if (ck_is_capability(t) || ck_is_handle(t)) {
         return 1;
     }
     if (!t->u.nominal.sym) {
@@ -116,8 +137,9 @@ void ck_no_eq_error(ck_ctx *c, const ek_node *at, const ek_type *t)
         return;
     }
     ck_error(c, at, "E-no-eq",
-             "equality over %s has no derivation; capabilities and "
-             "functions have no `eq` (Clause 9.8.4)", ck_type_name(c, t));
+             "equality over %s has no derivation; capabilities, "
+             "handles, and functions have no `eq` (Clause 9.8.4)",
+             ck_type_name(c, t));
 }
 
 /* The JSON mapping halts at a capability, a function, and a

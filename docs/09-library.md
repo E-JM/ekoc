@@ -524,7 +524,7 @@ declaration order with short-circuit. ADTs compare when constructors match and p
 recursively. Containers compare element by element. Each field or payload compares through that type's
 `eq` member, so derivation composes at every level.
 A declaration `T.eq:` in the module that declares `T` replaces the derivation entirely (Clause 7.4.5).
-Derivation halts at capabilities and functions, recursively: a type with a capability or function field
+Derivation halts at capabilities, handles, and functions, recursively: a type with a capability, handle, or function field
 has no `eq`, and equality, keying, or assertion over it is a compile error (`E-no-eq`, Annex B).
 `Float.eq` follows IEEE 754: `NaN == NaN` is `False`. This rule also governs `Float` dictionary keys
 and `Set` elements (Clause 9.10.4).

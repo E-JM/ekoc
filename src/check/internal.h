@@ -245,6 +245,8 @@ void ck_fill_bits(ck_ctx *c); /* the final row pass (check.c) */
 
 /* reconcile.c: the no-eq rule and the declared-bit binding rules. */
 int ck_is_capability(const ek_type *t); /* the nine capability types */
+int ck_is_handle(const ek_type *t); /* File, Scope, Task: opaque
+                                        handles */
 int ck_no_eq(ck_ctx *c, const ek_type *t); /* the eq derivation halts
                                               here */
 void ck_no_eq_error(ck_ctx *c, const ek_node *at, const ek_type *t);

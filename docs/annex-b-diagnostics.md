@@ -122,7 +122,7 @@ collide with a code in the table.
 | `E-open-bit-unfed` | an open bit in a signature has no parameter to feed it | Clause 7.9.6 |
 | `E-open-bit-position` | `?` occurs in a position where no binding is generalized: a result type, a container element, or a record field | Clause 7.9.6 |
 | `E-instantiation-depth` | generic instantiation does not terminate | Clause 8.7.3 |
-| `E-no-eq` | equality, keying, or assertion over a type whose `eq` derivation halts at a capability or a function | Clause 9.8.4 |
+| `E-no-eq` | equality, keying, or assertion over a type whose `eq` derivation halts at a capability, a handle, or a function | Clause 9.8.4 |
 | `E-json-shape` | a type has no default JSON isomorphic form, for example a dictionary with a non-string key | Clause 9.9.3 |
 | `E-ctype-field` | a `ctype` field is neither a machine word nor a `ctype` record | Clause 10.3.3 |
 | `E-service-fixed` | a namespace declaration names a service whose derivation is fixed: `inspect`, `to_json`, `from_json`, or `with` | Clause 9.8.1, Clause 9.8.6, Clause 9.9.5 |

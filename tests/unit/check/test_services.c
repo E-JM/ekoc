@@ -160,6 +160,34 @@ static void service_signatures(void)
     cfx_end(&f);
 }
 
+/* The handle types are opaque like the capabilities: equality and
+   ordering over them halt, in both the receiver and the namespace
+   spelling. */
+static void handle_halt(void)
+{
+    cfx f;
+
+    cfx_begin(&f,
+              "g: (f: File) -> Bool = f.eq(f)\n");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-no-eq", 1));
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "g: (t: Task Int) -> Bool = t.eq(t)\n"
+              "h: (s: Scope) -> Bool = s.lt(s)\n");
+    EK_CHECK_U64(cfx_errors(&f), 2);
+    EK_CHECK(cfx_code_at_line(&f, "E-no-eq", 1));
+    EK_CHECK(cfx_code_at_line(&f, "E-no-eq", 2));
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "g: (f1: File, f2: File) -> Bool = File.eq(f1, f2)\n");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-no-eq", 1));
+    cfx_end(&f);
+}
+
 int main(void)
 {
     show_on_string();
@@ -169,5 +197,6 @@ int main(void)
     zero_argument_service();
     bare_service_value();
     service_signatures();
+    handle_halt();
     return ek_test_report("check/services");
 }
