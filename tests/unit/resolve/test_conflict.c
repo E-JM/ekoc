@@ -187,6 +187,32 @@ static void constructor_candidates(void)
     rfx_end(&f);
 }
 
+/* A variant name declared twice in one type is a declaration
+   duplicate: one diagnostic at the second variant, and the surface
+   carries the constructor once. */
+static void duplicate_variants(void)
+{
+    rfx f;
+    const ek_ref *r;
+
+    rfx_begin(&f,
+        "T: type = Dup Int | Dup String\n"
+        "x: T = Dup 1\n");
+    EK_CHECK_U64(rfx_errors(&f), 1);
+    EK_CHECK(rfx_code_at_line(&f, "E-name-conflict", 1));
+    EK_CHECK(f.dn == 1);
+    EK_CHECK(f.dn == 1 && f.ds[0].code != NULL
+             && strcmp(f.ds[0].code, "E-name-conflict") == 0);
+    EK_CHECK(f.dn == 1 && f.ds[0].message != NULL
+             && strcmp(f.ds[0].message,
+                       "the constructor `Dup` is declared twice in the "
+                       "type `T` (Clause 7.4.6)") == 0);
+    r = rfx_ref_named(&f, 2, "Dup");
+    EK_CHECK(r != NULL);
+    EK_CHECK_U64(r->ncands, 1);
+    rfx_end(&f);
+}
+
 static void same_named_types(void)
 {
     rfx f;
@@ -252,6 +278,7 @@ int main(void)
     pattern_repeats();
     tvar_vs_module();
     constructor_candidates();
+    duplicate_variants();
     same_named_types();
     namespace_owner();
     name_case();

@@ -203,6 +203,22 @@ static const ck_ctor *decl_ctor(ck_ctx *c, const ck_decl *info,
                       tv);
 }
 
+/* The first variant of the declaration carrying the name at k; a
+   repeated name is a rejected declaration and contributes no row. */
+static int variant_first(const ek_node *dn, size_t k)
+{
+    const char *name = dn->u.type_decl.variants.data[k]->u.variant.name;
+    size_t i;
+
+    for (i = 0; i < k; i++) {
+        if (strcmp(dn->u.type_decl.variants.data[i]->u.variant.name,
+                   name) == 0) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 /* The declared type behind a surface symbol. */
 static const ck_decl *build_decl(ck_ctx *c, const ek_symbol *sym)
 {
@@ -231,6 +247,8 @@ static const ck_decl *build_decl(ck_ctx *c, const ek_symbol *sym)
         }
         info->nctors = dn->u.type_decl.variants.count;
         if (info->nctors) {
+            size_t m = 0;
+
             info->ctors = ek_arena_alloc(c->arena,
                                          info->nctors * sizeof *info->ctors);
 
@@ -239,8 +257,12 @@ static const ck_decl *build_decl(ck_ctx *c, const ek_symbol *sym)
                 return info;
             }
             for (k = 0; k < info->nctors; k++) {
-                info->ctors[k] = decl_ctor(c, info, dn, k, &tv);
+                if (!variant_first(dn, k)) {
+                    continue;
+                }
+                info->ctors[m++] = decl_ctor(c, info, dn, k, &tv);
             }
+            info->nctors = m;
         }
         check_phantom_binders(c, info);
     } else if (dn->kind == EK_N_CTYPE_DECL) {

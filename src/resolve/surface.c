@@ -79,6 +79,21 @@ static void emit(r_surf *s, ek_symbol *sym)
     s->syms[s->n++] = *sym;
 }
 
+/* A constructor of the name already emitted for the type declaration
+   whose first symbol sits at first. */
+static int variant_seen(const r_surf *s, size_t first, const char *name)
+{
+    size_t i;
+
+    for (i = first; i < s->n; i++) {
+        if (s->syms[i].kind == EK_SYM_CONSTRUCTOR
+            && strcmp(s->syms[i].name, name) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 /* A declared type or ctype: one symbol of the identity layer. */
 static void collect_type(r_surf *s, const ek_node *d)
 {
@@ -86,7 +101,7 @@ static void collect_type(r_surf *s, const ek_node *d)
                            ? d->u.type_decl.name : d->u.decl.name;
     ek_symbol *sym = r_sym(s->c, name, EK_SYM_TYPE,
                            s->m->stem, d->line, d->col);
-    size_t i;
+    size_t i, first = s->n;
     int seen;
 
     if (!sym) {
@@ -108,8 +123,16 @@ static void collect_type(r_surf *s, const ek_node *d)
     }
     for (i = 0; i < d->u.type_decl.variants.count; i++) {
         const ek_node *v = d->u.type_decl.variants.data[i];
-        ek_symbol *cs = r_sym(s->c, v->u.variant.name, EK_SYM_CONSTRUCTOR,
-                              s->m->stem, v->line, v->col);
+        ek_symbol *cs;
+
+        if (variant_seen(s, first, v->u.variant.name)) {
+            r_error(s->c, s->m->file, v->line, v->col, "E-name-conflict",
+                    "the constructor `%s` is declared twice in the type "
+                    "`%s` (Clause 7.4.6)", v->u.variant.name, name);
+            continue;
+        }
+        cs = r_sym(s->c, v->u.variant.name, EK_SYM_CONSTRUCTOR,
+                   s->m->stem, v->line, v->col);
 
         if (!cs) {
             return;

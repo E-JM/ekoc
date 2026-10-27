@@ -335,6 +335,23 @@ static void qualified_application(void)
     cfx_end(&f);
 }
 
+/* A variant declared twice is rejected once by resolve, and the
+   declaration still drains through check without a second defect. */
+static void duplicate_variants(void)
+{
+    cfx f;
+
+    cfx_begin(&f,
+              "T: type = Dup Int | Dup String\n"
+              "x: T = Dup 1\n"
+              "f: (t: T) -> Int =\n"
+              "    case t:\n"
+              "        Dup n -> n + 1\n");
+    EK_CHECK_U64(cfx_stage_errors(f.ds, f.dn), 1);
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+}
+
 int main(void)
 {
     std_only();
@@ -348,5 +365,6 @@ int main(void)
     qualified_std_type();
     payload_conforms();
     qualified_application();
+    duplicate_variants();
     return ek_test_report("check/ctors");
 }
