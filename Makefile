@@ -70,6 +70,7 @@ CHECK_SRC := \
 	src/check/expr.c \
 	src/check/literal.c \
 	src/check/member.c \
+	src/check/namespace.c \
 	src/check/op.c \
 	src/check/patbind.c \
 	src/check/pattern.c \

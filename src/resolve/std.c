@@ -21,7 +21,7 @@ static const char *opened_names[] = {
 
 static const char *type_names[] = {
     "Char", "String", "Bytes", "Int", "UInt", "Float",
-    "Range", "Set",
+    "Set", "List",
     "Out", "In", "Fs", "Env", "Args", "Clock", "Rand", "Proc", "Conc",
     "File", "OpenMode", "FileInfo", "IoError", "Scope", "Task", NULL
 };

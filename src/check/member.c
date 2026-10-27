@@ -441,7 +441,9 @@ static const ek_type *no_member(ck_ctx *c, const ek_node *at,
     if (ck_service_name(name)) {
         return ck_ivar(c);
     }
-    if (!std_namespace(r)) {
+    /* A namespace the compiler rows complete has no opaque names
+       left; every other std namespace keeps the bridge. */
+    if (!std_namespace(r) || ck_ns_owned(r)) {
         absent(c, at, r, name);
     }
     return ck_ivar(c);
@@ -494,6 +496,17 @@ static const ek_type *nominal_link(ck_ctx *c, const ek_node *at,
     t = derive_with(c, at, r, name, rd);
     if (t) {
         return t;
+    }
+    {
+        /* A compiler-provided row of the namespace: the default of a
+           name no declaration owns. */
+        int owned = 0;
+        const ek_type *row = ck_ns_row(c, r, name, &owned);
+
+        if (row) {
+            *rd = EK_RD_NAMESPACE;
+            return row;
+        }
     }
     /* The current module extends the foreign type. */
     m = module_fn(c, name, r);
@@ -555,6 +568,15 @@ static const ek_type *link_type(ck_ctx *c, const ek_node *at,
         t = derive_json(c, at, r, name, rd);
         if (t) {
             return t;
+        }
+        {
+            int owned = 0;
+            const ek_type *row = ck_ns_row(c, r, name, &owned);
+
+            if (row) {
+                *rd = EK_RD_NAMESPACE;
+                return row;
+            }
         }
         return no_member(c, at, r, name);
     }

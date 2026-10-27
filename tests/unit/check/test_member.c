@@ -89,11 +89,12 @@ static void opaque_members(void)
 {
     cfx f;
 
-    /* The std namespace members are unknown under the placeholder:
-       the reading is opaque and nothing is diagnosed. */
+    /* The std namespace members a landed row does not cover stay
+       unknown under the placeholder: the reading is opaque and
+       nothing is diagnosed. */
     cfx_begin(&f,
-              "xs: []Int = {1, 2}\n"
-              "ys: []Int = xs.map((n): n + 1)\n");
+              "d: [String]Int = {\"a\": 1}\n"
+              "v: Int = d.bogus()\n");
     EK_CHECK_U64(cfx_errors(&f), 0);
     EK_CHECK(cfx_reading_at(&f, 2, EK_RD_EXTERNAL));
     cfx_end(&f);
