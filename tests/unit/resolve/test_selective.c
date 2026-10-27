@@ -14,6 +14,19 @@ static void run_in(rfx *f, const char *src, const char *name)
     rfx_run(f, src, path, 1, name);
 }
 
+/* The message of the first resolve diagnostic at a line. */
+static const char *message_at(const rfx *f, int line)
+{
+    size_t i;
+
+    for (i = 0; i < f->dn; i++) {
+        if (f->ds[i].line == line) {
+            return f->ds[i].message;
+        }
+    }
+    return NULL;
+}
+
 /* A listed free function answers a bare call at the top layer. */
 static void opened_lookup(void)
 {
@@ -147,6 +160,19 @@ static void std_lists(void)
     EK_CHECK_U64(rfx_errors(&f), 1);
     EK_CHECK(rfx_code_at_line(&f, "E-unbound-member", 1));
     EK_CHECK(!rfx_has_code(&f, "W-redundant-import"));
+    rfx_end(&f);
+
+    /* A companion list names the companion module the import asked
+       for, not the placeholder's stem. */
+    rfx_begin(&f,
+        "import std/io.{read}\n"
+        "\n"
+        "v: Int = 1\n");
+    EK_CHECK_U64(rfx_errors(&f), 1);
+    EK_CHECK(rfx_code_at_line(&f, "E-unbound-member", 1));
+    EK_CHECK_STR(message_at(&f, 1),
+                 "module `io` exposes no free function `read` "
+                 "(Clauses 7.2.3, 9.1.2)");
     rfx_end(&f);
 }
 

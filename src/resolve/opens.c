@@ -89,13 +89,13 @@ static void open_member(r_ctx *c, r_file *f, const r_mod *target,
 /* The std placeholder knows exactly the injected free names; the
    injected import already opened them, so a repeated one adds
    nothing. */
-static void open_std(r_ctx *c, r_file *f, const ek_node *imp,
-                     const char *name)
+static void open_std(r_ctx *c, r_file *f, const r_mod *target,
+                     const ek_node *imp, const char *name)
 {
     if (!r_std_find(c->std, EK_SYM_FUNC, name)) {
         r_error(c, f->mod->file, imp->line, imp->col, "E-unbound-member",
-                "std exposes no free function `%s` (Clauses 7.2.3, "
-                "9.1.2)", name);
+                "module `%s` exposes no free function `%s` "
+                "(Clauses 7.2.3, 9.1.2)", target->stem, name);
     }
 }
 
@@ -109,7 +109,7 @@ void r_opened_import(r_ctx *c, r_file *f, const r_mod *target,
         const char *name = imp->u.imports.names.data[i];
 
         if (target->external) {
-            open_std(c, f, imp, name);
+            open_std(c, f, target, imp, name);
         } else {
             open_member(c, f, target, imp, name);
         }
