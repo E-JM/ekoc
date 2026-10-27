@@ -318,9 +318,11 @@ ek_bit ck_call_bit_of(ck_ctx *c, const ek_type *f, const char *member,
         return EK_BIT_PURE;
     }
     b = c->open_scope ? EK_BIT_OPEN : EK_BIT_PURE;
-    for (i = off; i < f->u.fn.count && i - off < n; i++) {
+    /* The arrays are parameter-aligned with the receiver at slot 0,
+       so parameter i reads slot i. */
+    for (i = off; i < f->u.fn.count && i < off + n; i++) {
         if (ck_type_opens(f->u.fn.params[i])) {
-            b = fold(b, ck_arg_bit(c, args[i - off], types[i - off]));
+            b = fold(b, ck_arg_bit(c, args[i], types[i]));
         }
     }
     return b;

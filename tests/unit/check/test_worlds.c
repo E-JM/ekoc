@@ -327,6 +327,33 @@ static void invert_feeds_dispatcher(void)
     cfx_end(&f);
 }
 
+/* A declared open dispatcher called in member form: the world bit of
+   the callback argument instantiates the call's open bit through the
+   receiver-prepended slot. */
+static void member_dispatcher_instantiation(void)
+{
+    cfx f;
+
+    cfx_begin(&f,
+              "Foo: type = Foo\n"
+              "Foo.each: (f: Foo, cb: (Int) ?-> _) ?-> _ = cb(1)\n"
+              "w: (out: Out) -> _ =\n"
+              "    f: Foo = Foo\n"
+              "    f.each((x): out.println(\"a\"))\n");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-world-bit", 3));
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "Foo: type = Foo\n"
+              "Foo.each: (f: Foo, cb: (Int) ?-> _) ?-> _ = cb(1)\n"
+              "w: (out: Out) !-> _ =\n"
+              "    f: Foo = Foo\n"
+              "    f.each((x): out.println(\"a\"))\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+}
+
 int main(void)
 {
     n05();
@@ -350,5 +377,6 @@ int main(void)
     pure_body_open_decl();
     test_binding_no_reconcile();
     invert_feeds_dispatcher();
+    member_dispatcher_instantiation();
     return ek_test_report("check/worlds");
 }
