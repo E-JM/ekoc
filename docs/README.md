@@ -1,7 +1,6 @@
 # Eko Language Specification
 
-**Version:** 1.0.0-draft  
-**Status:** Draft Standard
+**Version:** 0.0.1-draft  
 
 ## Abstract
 
