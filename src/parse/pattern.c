@@ -109,6 +109,11 @@ static ek_node *name_pattern(p_ctx *c, const ek_layout_token *t)
 
     p_take(c);
     dotted_name(c, t, &path);
+    if (path.count == 0) {
+        /* The path allocation failed; the context is already
+           aborted. */
+        return NULL;
+    }
     /* A dotted head is a qualified constructor `Mod.Name`; the module
        segment is snake_case. */
     if (path.count > 1 || p_is_pascal(path.data[0])) {
