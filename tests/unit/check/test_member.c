@@ -396,6 +396,27 @@ static void type_qualified_calls(void)
     cfx_end(&f);
 }
 
+/* The receiver of a member call conforms before the arguments, so an
+   argument checked under a parameter that shares the receiver's
+   variables sees them determined. */
+static void receiver_binds_first(void)
+{
+    cfx f;
+
+    cfx_begin(&f,
+              "apply2: (i: Int, cb: (Int) -> Bool) -> Bool = cb(i)\n"
+              "v: Bool = 1.apply2((x): x.eq(2))\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "apply2: (i: Int, cb: (Int) -> Bool) -> Bool = cb(i)\n"
+              "v: Bool = 1.apply2((x): x.eq(\"no\"))\n");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-nominal-mismatch", 2));
+    cfx_end(&f);
+}
+
 int main(void)
 {
     station_field();
@@ -408,5 +429,6 @@ int main(void)
     function_receiver();
     qualified_calls();
     type_qualified_calls();
+    receiver_binds_first();
     return ek_test_report("check/member");
 }

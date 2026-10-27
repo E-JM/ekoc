@@ -139,8 +139,10 @@ static const ek_type *call_fn(ck_ctx *c, const ek_node *e,
                  "the call supplies %zu arguments, the function takes %zu "
                  "(Clause 7.8.1)", nargs, f->u.fn.count);
     }
-    call_args(c, f, args, nodes, types, off);
     if (recv && f->u.fn.count >= 1) {
+        /* The receiver conforms before the arguments: an argument
+           checked under a parameter that shares the receiver's
+           variables sees them determined. */
         ck_conform k = ck_conforms(c, recv, f->u.fn.params[0], 1);
 
         if (k != CK_OK) {
@@ -150,6 +152,7 @@ static const ek_type *call_fn(ck_ctx *c, const ek_node *e,
                      ck_type_name(c, f->u.fn.params[0]));
         }
     }
+    call_args(c, f, args, nodes, types, off);
     ret = f->u.fn.result;
     ck_call_bit(c, e, ck_call_bit_of(c, f, member,
                                      bit_recv ? bit_recv : recv, nodes, types,
