@@ -32,6 +32,29 @@ Mono: type = Mono Int
 // A signed span of time, in nanoseconds.
 Duration: type = Duration Int
 
+// The decimal-seconds display: whole seconds, a fraction of at most
+// nine digits with its trailing zeros carried away, and the unit
+// (Clause 9.7.4).
+Duration.show: (d: Duration) -> String =
+    case d:
+        Duration n ->
+            m := n.abs()
+            q := m / 1_000_000_000
+            r := m % 1_000_000_000
+            body :=
+                if r == 0: "{q}" else: "{q}." ++ _duration_frac(r, 9)
+            sign :=
+                if n < 0: "-" else: ""
+            sign ++ body ++ "s"
+
+// The fractional digits: a trailing zero of the remainder drops one
+// digit and one place together, so the padding never refills it.
+_duration_frac: (r: Int, width: UInt) -> String =
+    if r != 0 && r % 10 == 0:
+        _duration_frac(r / 10, width - 1)
+    else:
+        "{r}".pad_left(width, '0')
+
 // The interchange form: the seven JSON variants.
 Json: type =
     | Null
