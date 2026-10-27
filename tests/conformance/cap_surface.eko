@@ -1,13 +1,97 @@
 // The capability surface through its own module: the handle types
-// exist, the Out derivations construct, and the compiler-provided
-// declarations stay reachable (Clauses 9.1.1, 9.12, 9.14.5, 10.8).
+// exist, every derivation constructs and forwards, the
+// compiler-provided declarations stay reachable, and the File family
+// answers at a handle parameter (Clauses 9.1.1, 9.12, 9.14.5, 10.8).
 
 handles_exist: test =
     m: OpenMode = Read
     info: FileInfo = {size: 0, mtime: Time 0, is_dir: False}
     e: IoError = NotFound
+    assert(m.eq(Read))
+    assert(info.is_dir)
+    assert(e.eq(NotFound))
     assert_eq(Out.null().show(), "<cap>")
 
 derivation_types: test =
     o := Out.null()
     o.println("hi")
+    t := o.tee((s): o.println("echo: {s}"))
+    t.println("done")
+
+in_reads_lines: test =
+    empty: In = In.empty()
+    case empty.read_line():
+        Ok None -> _
+        _ -> assert(False)
+    lined: In = In.from_lines({"one", "two"})
+    case lined.read_line():
+        Ok (Some s) -> assert_eq(s, "one")
+        _ -> assert(False)
+
+env_reads_table: test =
+    env: Env = Env.frozen({"HOME": "/home/e"})
+    case env.get("HOME"):
+        Some v -> assert_eq(v, "/home/e")
+        None -> assert(False)
+    case env.get("NOPE"):
+        None -> _
+        _ -> assert(False)
+
+args_and_clock_frozen: test =
+    a: Args = Args.frozen({"-v", "file"})
+    assert_eq(a.all().length(), 2)
+    c: Clock = Clock.frozen(Time 0)
+    case c.now():
+        Time 0 -> _
+        _ -> assert(False)
+    case c.mono():
+        Mono 0 -> _
+        _ -> assert(False)
+    c.sleep(Duration 500)
+
+fs_null_and_attenuated: test =
+    fs: Fs = Fs.null()
+    case fs.read("anywhere"):
+        Err NotFound -> _
+        _ -> assert(False)
+    case fs.exists("anywhere"):
+        False -> _
+        _ -> assert(False)
+    rooted: Fs = Fs.root(fs, "/tmp")
+    case rooted.read("work/f"):
+        Err NotFound -> _
+        _ -> assert(False)
+    quiet: Fs = Fs.read_only(rooted)
+    case quiet.write("f", "x"):
+        Err Permission -> _
+        _ -> assert(False)
+    case quiet.read("f"):
+        Err NotFound -> _
+        _ -> assert(False)
+
+rand_draws_in_bound: test =
+    r: Rand = Rand.with_seed(7)
+    n := r.int(10)
+    assert(n.lt(10))
+
+// The File rows answer at a handle parameter; no test constructs a
+// File, which only Fs.open and Fs.with_file yield (Clause 9.12.2).
+_file_rows: (f: File) !-> _ =
+    f.read(8)
+    f.read_bytes(8)
+    f.read_line()
+    f.seek(0)
+    f.write("x")
+    f.write_bytes("x".to_bytes())
+    f.flush()
+    f.close()
+    _
+
+// The concurrency and process rows answer at their capability and
+// handle parameters; no test constructs a Conc, a Scope, a Task, or a
+// Proc (Clauses 8.4.3, 8.9).
+_conc_rows: (c: Conc, cb: (Scope) ?-> Int) ?-> Int = Conc.scope(c, cb)
+_spawn_row: (s: Scope, cb: () ?-> Int) ?-> Task Int = s.spawn(cb)
+_task_rows: (t: Task Int) -> Option Int = t.join()
+_cancel_row: (t: Task Int) -> _ = t.cancel()
+_exit_row: (p: Proc, code: Int) !-> Never = Proc.exit(p, code)
