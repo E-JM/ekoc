@@ -10,6 +10,23 @@
 #define CODE_DEDENT "E-indent-dedent"
 #define CODE_CONTINUATION "E-syntax"
 
+/* A documentation line carries only DOC tokens. It is trivia: the
+   layout state machine ignores it for now. */
+static int doc_only_line(const line_run *l)
+{
+    size_t i;
+
+    if (l->count == 0 || l->tok[0].kind != EK_TOK_DOC) {
+        return 0;
+    }
+    for (i = 1; i < l->count; i++) {
+        if (l->tok[i].kind != EK_TOK_DOC) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 /* The stack is empty only while an allocation failure drains the run;
    the bottom column 0 is the safe answer then. */
 static int top_col(const layout_ctx *c)
@@ -417,7 +434,7 @@ void lo_process(layout_ctx *c, const line_run *lines, size_t count)
     for (i = 0; i < count; i++) {
         const line_run *l = &lines[i];
 
-        if (l->count == 0) {
+        if (l->count == 0 || doc_only_line(l)) {
             continue;
         }
         line_start(c, l);

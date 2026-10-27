@@ -114,7 +114,12 @@ static void test_comments(void)
     fx_end(&f);
 
     fx_begin(&f, "/// doc\n/// more\nx");
-    EK_CHECK_U64(fx_count(&f), 4);
+    EK_CHECK_U64(fx_count(&f), 6); /* DOC NL DOC NL IDENT EOF */
+    EK_CHECK_U64(fx_tok(&f, 0).kind, EK_TOK_DOC);
+    EK_CHECK_STR(fx_tok(&f, 0).text, "doc");
+    EK_CHECK_U64(fx_tok(&f, 2).kind, EK_TOK_DOC);
+    EK_CHECK_STR(fx_tok(&f, 2).text, "more");
+    EK_CHECK_U64(fx_tok(&f, 4).kind, EK_TOK_IDENT);
     EK_CHECK_U64(fx_errors(&f), 0);
     fx_end(&f);
 

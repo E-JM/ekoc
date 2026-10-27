@@ -125,6 +125,45 @@ void lex_skip_line_comment(lex_ctx *c)
     }
 }
 
+/* One documentation comment: the line after `///` becomes a DOC token
+   and the line break itself still reaches the layout stage. The text
+   keeps the comment's bytes, minus the three slashes and one leading
+   space. */
+static int lex_doc_comment(lex_ctx *c, gbuf *out)
+{
+    size_t start;
+    ek_token t;
+    char *text;
+
+    memset(&t, 0, sizeof t);
+    t.kind = EK_TOK_DOC;
+    t.line = c->line;
+    t.col = c->col;
+    c->pos += 3;
+    c->col += 3;
+    start = c->pos;
+    if (ctx_byte(c, 0) == ' ') {
+        start++;
+        c->pos++;
+        c->col++;
+    }
+    while (ctx_byte(c, 0) >= 0) {
+        int b = ctx_byte(c, 0);
+
+        if (b == '\n' || b == '\r') {
+            break;
+        }
+        ctx_skip_checked(c);
+    }
+    text = ctx_slice(c, start, c->pos);
+    if (!text) {
+        return 0;
+    }
+    t.text = text;
+    t.len = c->pos - start;
+    return emit_token(c, out, &t);
+}
+
 /* Consumes one '\r'. Returns 1 when a line terminator
    follows and the literal scanning the CR must end, 0 for a stray CR,
    diagnosed here. */
@@ -240,12 +279,15 @@ int lex_token(lex_ctx *c, gbuf *out)
 
 /* The comment spellings at a '/'. Returns 1 when consumed, 0 when the
    byte is no comment. */
-static int scan_comment(lex_ctx *c)
+static int scan_comment(lex_ctx *c, gbuf *out)
 {
     int b = ctx_byte(c, 0);
 
     if (b != '/') {
         return 0;
+    }
+    if (b == '/' && ctx_byte(c, 1) == '/' && ctx_byte(c, 2) == '/') {
+        return lex_doc_comment(c, out);
     }
     if (ctx_byte(c, 1) == '/') {
         lex_skip_line_comment(c);
@@ -299,7 +341,7 @@ static int scan_trivia(lex_ctx *c, gbuf *out)
         c->col = 1;
         return 1;
     }
-    return scan_comment(c);
+    return scan_comment(c, out);
 }
 
 static void scan_all(lex_ctx *c, gbuf *out)

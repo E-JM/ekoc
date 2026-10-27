@@ -8,7 +8,9 @@
 #include "support/diag.h"
 
 /* Source bytes -> token stream. The stream ends with EOF; line
-   terminators survive as NEWLINE tokens for the layout stage. */
+   terminators survive as NEWLINE tokens for the layout stage. A `///`
+   line yields one DOC token before its NEWLINE; plain `//` comments
+   are skipped. */
 
 typedef enum {
     EK_TOK_IDENT = 0,
@@ -57,6 +59,7 @@ typedef enum {
     EK_TOK_COLONEQ,
     EK_TOK_PIPE,
     EK_TOK_SEMI,
+    EK_TOK_DOC,     /* documentation comment: text is the line after /// */
     EK_TOK_NEWLINE,
     EK_TOK_EOF
 } ek_token_kind;
@@ -76,7 +79,9 @@ typedef struct ek_token {
     int line; /* 1-based */
     int col;  /* 1-based, counted in Unicode scalar values */
     /* EK_TOK_IDENT, EK_TOK_INT, EK_TOK_FLOAT: raw source spelling,
-       NUL-terminated, arena-owned. */
+       NUL-terminated, arena-owned.
+       EK_TOK_DOC: the comment's line after `///`, one leading space
+       removed, NUL-terminated and arena-owned. */
     const char *text;
     size_t len;
     /* EK_TOK_INT: the mathematical value. magnitude is the value modulo
