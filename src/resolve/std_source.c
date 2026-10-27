@@ -2,11 +2,24 @@
 #include "resolve/std_source.h"
 
 const char ek_std_source[] =
-    "// The standard library root: the assertion family the implicit import\n"
-    "// opens in every file. The rest of the std surface (the opened types and\n"
-    "// their constructors, the capability module names, and the compiler\n"
+    "// The standard library root: the core types whose bare names are part of\n"
+    "// the language vocabulary, and the assertion family the implicit import\n"
+    "// opens in every file. The rest of the std surface (the scalar types, the\n"
+    "// capability module names, the range placeholder, and the compiler\n"
     "// services) arrives incrementally; the compiler supplies the names this\n"
     "// file does not declare yet (Clauses 9.1.1, 9.1.2, 9.14.3).\n"
+    "\n"
+    "// The two-valued Boolean type.\n"
+    "Bool: type = True | False\n"
+    "\n"
+    "// A domain answer: a payload, or the absence of one.\n"
+    "Option: type t = Some t | None\n"
+    "\n"
+    "// A recoverable failure: an `Ok` payload, or the reason it failed.\n"
+    "Result: type t e = Ok t | Err e\n"
+    "\n"
+    "// The zero-variant type: no constructors, no values, the bottom type.\n"
+    "Never: type =\n"
     "\n"
     "// Panics when `c` is False. Pure and always enabled.\n"
     "assert: (c: Bool) -> _ =\n"
@@ -26,4 +39,4 @@ const char ek_std_source[] =
     "        True -> panic(\"assert_ne failed: {inspect(a)} == {inspect(b)}\")\n"
     "        False -> _\n";
 
-const size_t ek_std_source_len = 910;
+const size_t ek_std_source_len = 1318;

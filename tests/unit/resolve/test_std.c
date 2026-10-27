@@ -2,10 +2,11 @@
 #include "refcheck.h"
 
 /* The std surface: the compiled std module is parsed from lib/std.eko,
-   so its free names are ordinary functions with declarations behind
-   them; the opened types and constructors, and every name the file does
-   not declare yet, are the placeholder rows beneath it. A name no layer
-   declares is the unresolved-external bridge (resolve.h). */
+   so its free names and its core types and constructors are ordinary
+   declarations; the scalar, container, capability, and time type names,
+   and the constructors of the types the file does not declare, are the
+   placeholder rows beneath it. A name no layer declares is the
+   unresolved-external bridge (resolve.h). */
 
 /* Any bridged reference at a source line: the external station with no
    symbol behind it. */
@@ -67,7 +68,8 @@ static void injected_opens(void)
 
 /* The std module joins the closure as a parsed module: its file is the
    release spelling, its AST is present, and its surface holds both the
-   file's own declarations and the placeholder rows. */
+   file's own declarations and the placeholder rows. The core types and
+   their constructors are file rows. */
 static void std_module_surface(void)
 {
     rfx f;
@@ -89,8 +91,10 @@ static void std_module_surface(void)
     bool_sym = rfx_surface_sym(&f, "std", "Bool");
     true_sym = rfx_surface_sym(&f, "std", "True");
     EK_CHECK(assert_sym != NULL && assert_sym->decl != NULL);
-    EK_CHECK(bool_sym != NULL && bool_sym->decl == NULL);
-    EK_CHECK(true_sym != NULL && true_sym->decl == NULL);
+    EK_CHECK(bool_sym != NULL && bool_sym->decl != NULL);
+    EK_CHECK(true_sym != NULL && true_sym->decl != NULL);
+    EK_CHECK(true_sym != NULL && true_sym->owner != NULL
+             && strcmp(true_sym->owner, "Bool") == 0);
     rfx_end(&f);
 }
 
@@ -109,6 +113,8 @@ static void opened_types(void)
     rfx_end(&f);
 }
 
+/* A core-type constructor is a file declaration, so the reference is a
+   constructor reference, not the external bridge. */
 static void std_constructors(void)
 {
     rfx f;
@@ -119,8 +125,12 @@ static void std_constructors(void)
     EK_CHECK_U64(rfx_errors(&f), 0);
     r = rfx_ref_named(&f, 1, "Ok");
     EK_CHECK(r != NULL);
-    EK_CHECK(r->kind == EK_SYM_EXTERNAL);
+    EK_CHECK(r->kind == EK_SYM_CONSTRUCTOR);
+    EK_CHECK(r->station == EK_ST_CONS);
     EK_CHECK_STR(r->symbol ? r->symbol->module : NULL, "std");
+    EK_CHECK(r->symbol != NULL && r->symbol->decl != NULL);
+    EK_CHECK(r->symbol != NULL && r->symbol->owner != NULL
+             && strcmp(r->symbol->owner, "Result") == 0);
     rfx_end(&f);
 }
 
@@ -308,8 +318,8 @@ static void top_level_service_name(void)
     rfx_end(&f);
 }
 
-/* The qualified spelling is legal at every name position, including
-   the pattern constructor position of the bridge. */
+/* The qualified spelling is legal at every name position, including a
+   pattern constructor of a core type. */
 static void qualified_std_constructors(void)
 {
     rfx f;
@@ -323,14 +333,16 @@ static void qualified_std_constructors(void)
     EK_CHECK_U64(rfx_errors(&f), 0);
     r = rfx_ref_named(&f, 3, "True");
     EK_CHECK(r != NULL);
-    EK_CHECK(r->kind == EK_SYM_EXTERNAL);
-    EK_CHECK(r->station == EK_ST_EXTERNAL);
+    EK_CHECK(r->kind == EK_SYM_CONSTRUCTOR);
+    EK_CHECK(r->station == EK_ST_QUALIFIED);
     EK_CHECK_STR(r->symbol ? r->symbol->module : NULL, "std");
+    EK_CHECK(r->symbol != NULL && r->symbol->decl != NULL);
     rfx_end(&f);
 }
 
-/* The qualified spelling of an opened std type names that type's
-   symbol; a name the placeholder does not declare stays the bridge. */
+/* The qualified spelling of an opened std type names that type's file
+   row even when a user type shadows the bare name; a name the
+   placeholder does not declare stays the bridge. */
 static void qualified_std_types(void)
 {
     rfx f;
@@ -344,7 +356,7 @@ static void qualified_std_types(void)
     EK_CHECK(r != NULL);
     EK_CHECK(r->station == EK_ST_QUALIFIED);
     EK_CHECK_STR(r->symbol ? r->symbol->module : NULL, "std");
-    EK_CHECK(r->symbol != NULL && r->symbol->decl == NULL);
+    EK_CHECK(r->symbol != NULL && r->symbol->decl != NULL);
     rfx_end(&f);
 
     rfx_begin(&f, "z: std.Nope = 1\n");

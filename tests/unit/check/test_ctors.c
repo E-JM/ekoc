@@ -31,6 +31,28 @@ static int put_module(const char *name, const char *content)
     return ok;
 }
 
+/* Any check row on a source line whose type is the nominal of the
+   module and name. */
+static int row_nominal_at(const cfx *f, int line, const char *module,
+                          const char *name)
+{
+    size_t i;
+
+    for (i = 0; i < f->chk.count; i++) {
+        const ek_type *t = f->chk.rows[i].type;
+
+        if (!f->chk.rows[i].node || f->chk.rows[i].node->line != line
+            || !t || t->kind != EK_T_NOMINAL || !t->u.nominal.sym) {
+            continue;
+        }
+        if (strcmp(t->u.nominal.sym->module, module) == 0
+            && strcmp(t->u.nominal.sym->name, name) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 /* No row is a check error at any of these source lines. */
 static int clean_lines(const cfx *f, const int *lines, size_t n)
 {
@@ -50,7 +72,7 @@ static int clean_lines(const cfx *f, const int *lines, size_t n)
 }
 
 /* A std constructor anchors to its own type; with no user constructor
-   of the name, an unannotated one self-anchors. */
+   of the name, an unannotated one self-anchors the nominal std type. */
 static void std_only(void)
 {
     cfx f;
@@ -63,6 +85,7 @@ static void std_only(void)
 
     cfx_begin(&f, "t = True\n");
     EK_CHECK_U64(cfx_errors(&f), 0);
+    EK_CHECK(row_nominal_at(&f, 1, "std", "Bool"));
     cfx_end(&f);
 }
 
@@ -174,8 +197,9 @@ static void user_scrutinee(void)
     cfx_end(&f);
 }
 
-/* A case over std Bool stays exhaustive while a user MyBool with the
-   same constructor names is visible. */
+/* A case over std Bool is judged against Bool's real constructor set,
+   while a user MyBool with the same names is visible; a missing arm is
+   E-exhaust. */
 static void std_scrutinee(void)
 {
     cfx f;
@@ -187,6 +211,67 @@ static void std_scrutinee(void)
               "    case b:\n"
               "        True -> \"yes\"\n"
               "        False -> \"no\"\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "f: (b: Bool) -> Int =\n"
+              "    case b:\n"
+              "        True -> 1\n");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-exhaust", 2));
+    cfx_end(&f);
+
+    /* The same case with a user constructor of the missing name stays
+       incomplete: only the scrutinee's own constructors count. */
+    cfx_begin(&f,
+              "Other: type = False\n"
+              "f: (b: Bool) -> Int =\n"
+              "    case b:\n"
+              "        True -> 1\n");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-exhaust", 3));
+    cfx_end(&f);
+
+    /* Option and Result scrutinees carry their real constructor sets,
+       and the two arms of each cover them. */
+    cfx_begin(&f,
+              "f: (o: Option Int) -> Int =\n"
+              "    case o:\n"
+              "        Some n -> n\n"
+              "        None -> 0\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "f: (o: Option Int) -> Int =\n"
+              "    case o:\n"
+              "        Some n -> n\n");
+    EK_CHECK(cfx_code_at_line(&f, "E-exhaust", 2));
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "f: (r: Result Int String) -> Int =\n"
+              "    case r:\n"
+              "        Ok n -> n\n"
+              "        Err e -> 0\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "f: (r: Result Int String) -> Int =\n"
+              "    case r:\n"
+              "        Ok n -> n\n");
+    EK_CHECK(cfx_code_at_line(&f, "E-exhaust", 2));
+    cfx_end(&f);
+
+    /* A never arm's pattern still covers its constructor. */
+    cfx_begin(&f,
+              "die: (m: String) -> Never = panic(m)\n"
+              "f: (b: Bool) -> Int =\n"
+              "    case b:\n"
+              "        True -> die(\"x\")\n"
+              "        False -> 1\n");
     EK_CHECK_U64(cfx_errors(&f), 0);
     cfx_end(&f);
 }
@@ -258,6 +343,36 @@ static void payload_conforms(void)
               "a: T = Same 1\n"
               "b: Wrap String = Wrap \"s\"\n");
     EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+}
+
+/* The core generic types conform their payloads for real: a payload of
+   the wrong type at an anchored instantiation is E-nominal-mismatch. */
+static void std_payload_conforms(void)
+{
+    cfx f;
+
+    cfx_begin(&f,
+              "a: Result Int String = Ok 3\n"
+              "b: Result Int String = Err \"no\"\n"
+              "c: Option Int = Some 1\n"
+              "d: Option Int = None\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+
+    cfx_begin(&f, "a: Result Int String = Ok \"s\"\n");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-nominal-mismatch", 1));
+    cfx_end(&f);
+
+    cfx_begin(&f, "a: Result Int String = Err 1\n");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-nominal-mismatch", 1));
+    cfx_end(&f);
+
+    cfx_begin(&f, "a: Option Int = Some \"s\"\n");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-nominal-mismatch", 1));
     cfx_end(&f);
 }
 
@@ -334,11 +449,19 @@ static void qualified_application(void)
     EK_CHECK(cfx_code_at_line(&f, "E-undetermined", 2));
     cfx_end(&f);
 
-    /* A std placeholder constructor keeps the bridge opacity. */
+    /* A core-type constructor applied by call is typed by the
+       constructor, so its payload conforms for real. */
     cfx_run(&f, "a: Option Int = std.Some(3)\n", mpath, 2,
             "qapp7.eko");
     EK_CHECK_U64(cfx_stage_errors(f.ds, f.dn), 0);
     EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+
+    cfx_run(&f, "a: Option Int = std.Some(\"s\")\n", mpath, 2,
+            "qapp8.eko");
+    EK_CHECK_U64(cfx_stage_errors(f.ds, f.dn), 0);
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-nominal-mismatch", 1));
     cfx_end(&f);
 }
 
@@ -403,6 +526,7 @@ int main(void)
     anchor_mismatch();
     qualified_std_type();
     payload_conforms();
+    std_payload_conforms();
     qualified_application();
     duplicate_variants();
     undetermined_owner_text();

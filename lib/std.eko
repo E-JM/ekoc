@@ -1,8 +1,21 @@
-// The standard library root: the assertion family the implicit import
-// opens in every file. The rest of the std surface (the opened types and
-// their constructors, the capability module names, and the compiler
+// The standard library root: the core types whose bare names are part of
+// the language vocabulary, and the assertion family the implicit import
+// opens in every file. The rest of the std surface (the scalar types, the
+// capability module names, the range placeholder, and the compiler
 // services) arrives incrementally; the compiler supplies the names this
 // file does not declare yet (Clauses 9.1.1, 9.1.2, 9.14.3).
+
+// The two-valued Boolean type.
+Bool: type = True | False
+
+// A domain answer: a payload, or the absence of one.
+Option: type t = Some t | None
+
+// A recoverable failure: an `Ok` payload, or the reason it failed.
+Result: type t e = Ok t | Err e
+
+// The zero-variant type: no constructors, no values, the bottom type.
+Never: type =
 
 // Panics when `c` is False. Pure and always enabled.
 assert: (c: Bool) -> _ =

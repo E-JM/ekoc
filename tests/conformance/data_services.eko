@@ -51,7 +51,7 @@ conversions: test =
 
 parsing: test =
     assert_eq(Int.parse("42"), Ok 42)
-    assert_eq(Int.parse("-7"), Ok -7)
+    assert_eq(Int.parse("-7"), Ok (-7))
     u42: UInt = 42
     assert_eq(UInt.parse("42"), Ok u42)
     assert_eq(Float.parse(show(3.5)), Ok 3.5)
