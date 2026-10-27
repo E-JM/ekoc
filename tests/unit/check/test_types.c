@@ -306,6 +306,32 @@ static void type_names(void)
     cfx_end(&f);
 }
 
+/* A type name that two modules declare prints with its module, so a
+   message about the two reads as two distinct types; a name only one
+   module declares stays bare. */
+static void shared_names(void)
+{
+    cfx f;
+
+    cfx_begin(&f,
+              "Json: type = [text: String]\n"
+              "j: Json = {text: \"x\"}\n"
+              "k: std.Json = j\n");
+    EK_CHECK(cfx_has_code(&f, "E-nominal-mismatch"));
+    EK_CHECK(diag_has(&f, 3, "test.Json"));
+    EK_CHECK(diag_has(&f, 3, "std.Json"));
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "A: type = [x: Int]\n"
+              "B: type = [x: Int]\n"
+              "a: A = {x: 1}\n"
+              "b: B = a\n");
+    EK_CHECK(diag_has(&f, 4, "binding is A"));
+    EK_CHECK(diag_has(&f, 4, "annotation is B"));
+    cfx_end(&f);
+}
+
 int main(void)
 {
     nominal_vs_structural();
@@ -316,5 +342,6 @@ int main(void)
     never_adaptation();
     wide_decls();
     type_names();
+    shared_names();
     return ek_test_report("check/types");
 }

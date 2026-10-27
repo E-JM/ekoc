@@ -73,6 +73,10 @@ typedef struct {
                         bit, a binding's declared bit (worlds.c) */
     ck_map contrib;  /* node -> OR of call bits in its subtree, lambda
                         interiors excluded (memo) */
+    const char **shared; /* type names more than one module declares,
+                            built on first use (subst.c) */
+    size_t nshared, cshared;
+    int shared_ready;
     ck_scope *locals;
     int open_scope;  /* inside the body of a declaration whose signature
                         contains the open bit: calls through `?` arrows
@@ -126,6 +130,10 @@ const ek_type *ck_apply_binders(ck_ctx *c, const ek_type *t,
                                 const ek_type **vars, const ek_type **repls,
                                 size_t n);
 const char *ck_type_name(ck_ctx *c, const ek_type *t); /* arena text */
+
+/* True when more than one module of the closure declares a type of
+   this name: a printable name then carries the declaring module. */
+int ck_shared_name(ck_ctx *c, const char *name);
 void ck_row(ck_ctx *c, const ek_node *n, const ek_type *t, ek_reading r);
 void ck_error(ck_ctx *c, const ek_node *n, const char *code, const char *fmt,
               ...);

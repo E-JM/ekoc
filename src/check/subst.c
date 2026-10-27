@@ -215,6 +215,88 @@ static const char *arrow_text(ek_arrow a)
     return a == EK_ARROW_OPEN ? "?->" : "->";
 }
 
+/* True when one surface declares a type of this name. */
+static int surface_declares(const ek_surface *s, const char *name)
+{
+    size_t i;
+
+    for (i = 0; i < s->count; i++) {
+        if (s->syms[i].kind == EK_SYM_TYPE
+            && strcmp(s->syms[i].name, name) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int shared_has(const ck_ctx *c, const char *name)
+{
+    size_t i;
+
+    for (i = 0; i < c->nshared; i++) {
+        if (strcmp(c->shared[i], name) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* Appends one name to the shared list, growing it. */
+static void shared_add(ck_ctx *c, const char *name)
+{
+    if (c->nshared == c->cshared) {
+        size_t ncap = c->cshared ? c->cshared * 2 : 16;
+        const char **grown = ek_arena_alloc(c->arena, ncap * sizeof *grown);
+
+        if (!grown) {
+            c->oom = 1;
+            return;
+        }
+        if (c->shared) {
+            memcpy(grown, c->shared, c->nshared * sizeof *grown);
+        }
+        c->shared = grown;
+        c->cshared = ncap;
+    }
+    c->shared[c->nshared++] = name;
+}
+
+/* The type names more than one module of the closure declares: the
+   printable form of such a name carries its module, so a message about
+   two of them tells them apart. Built once; the surfaces are fixed. */
+int ck_shared_name(ck_ctx *c, const char *name)
+{
+    size_t i, k, m;
+
+    if (!c || !c->in || !name) {
+        return 0;
+    }
+    if (!c->shared_ready) {
+        c->shared_ready = 1;
+        for (k = 0; k < c->in->module_count; k++) {
+            const ek_surface *s = &c->in->modules[k];
+
+            for (i = 0; i < s->count; i++) {
+                const ek_symbol *sym = &s->syms[i];
+                size_t owners = 0;
+
+                if (sym->kind != EK_SYM_TYPE || shared_has(c, sym->name)) {
+                    continue;
+                }
+                for (m = 0; m < c->in->module_count; m++) {
+                    if (surface_declares(&c->in->modules[m], sym->name)) {
+                        owners++;
+                    }
+                }
+                if (owners > 1) {
+                    shared_add(c, sym->name);
+                }
+            }
+        }
+    }
+    return shared_has(c, name);
+}
+
 static int name_append(ck_ctx *c, ek_buf *b, const ek_type *t, int depth)
 {
     size_t i;
@@ -232,14 +314,22 @@ static int name_append(ck_ctx *c, ek_buf *b, const ek_type *t, int depth)
         return ek_buf_append_str(b, "_");
     case EK_T_NEVER:
         return ek_buf_append_str(b, "Never");
-    case EK_T_NOMINAL:
-        ok = ek_buf_append_str(b, t->u.nominal.sym
-                                      ? t->u.nominal.sym->name : "?");
+    case EK_T_NOMINAL: {
+        const ek_symbol *sym = t->u.nominal.sym;
+
+        if (sym && ck_shared_name(c, sym->name)) {
+            ok = ek_buf_append_str(b, sym->module)
+                && ek_buf_append_char(b, '.')
+                && ek_buf_append_str(b, sym->name);
+        } else {
+            ok = ek_buf_append_str(b, sym ? sym->name : "?");
+        }
         for (i = 0; ok && i < t->u.nominal.argc; i++) {
             ok = ek_buf_append_char(b, ' ')
                 && arg_append(c, b, t->u.nominal.args[i], depth - 1);
         }
         return ok;
+    }
     case EK_T_LIST:
         return ek_buf_append_str(b, "[]")
             && name_append(c, b, t->u.list.elem, depth - 1);
