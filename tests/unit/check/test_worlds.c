@@ -157,6 +157,37 @@ static void world_declared_world(void)
     cfx_end(&f);
 }
 
+/* An arm body block carries the bit of its members: a world call in
+   any member makes the enclosing function's bit world. */
+static void world_arm_body_block(void)
+{
+    cfx f;
+
+    cfx_begin(&f,
+              "hit: (o: Out, n: Int) !-> Int =\n"
+              "    case n:\n"
+              "        0 ->\n"
+              "            o.println(\"zero\")\n"
+              "            1\n"
+              "        _ -> 2\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    EK_CHECK(cfx_bits_filled(&f));
+    EK_CHECK(cfx_bit_at(&f, 1, EK_BIT_WORLD));
+    EK_CHECK(cfx_bit_at(&f, 4, EK_BIT_WORLD));
+    cfx_end(&f);
+
+    /* The same body under a pure declaration is under-declared. */
+    cfx_begin(&f,
+              "hit: (o: Out, n: Int) -> Int =\n"
+              "    case n:\n"
+              "        0 ->\n"
+              "            o.println(\"zero\")\n"
+              "            1\n"
+              "        _ -> 2\n");
+    EK_CHECK(cfx_code_at_line(&f, "E-world-bit", 1));
+    cfx_end(&f);
+}
+
 /* The pure factory: a pure body returning a `!` closure. The lambda's
    calls belong to the closure's arrow. */
 static void pure_factory_world_closure(void)
@@ -309,6 +340,7 @@ int main(void)
     open_in_result();
     pure_declared_pure();
     world_declared_world();
+    world_arm_body_block();
     pure_factory_world_closure();
     open_fed_and_instantiated();
     open_fed_by_value();
