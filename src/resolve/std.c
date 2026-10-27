@@ -4,13 +4,12 @@
 #include "resolve/std_source.h"
 
 /* The std module, parsed from the embedded lib/std.eko bytes. Its
-   surface holds the file's own declarations first (the core types with
+   surface holds the file's own declarations first (the types with
    their constructors, and the opened assert family), then the
    placeholder rows for the names the compiler still supplies: the
-   scalar, container, capability, and time type names, and the
-   constructor rows of the types this file does not declare yet. A
-   real-file row wins over a placeholder row of the same kind and name;
-   a name no row declares stays the external bridge (resolve.h). */
+   scalar, container, capability, and time type names. A real-file row
+   wins over a placeholder row of the same kind and name; a name no row
+   declares stays the external bridge (resolve.h). */
 
 #define STD_FILE "std.eko"
 
@@ -22,26 +21,12 @@ static const char *opened_names[] = {
 
 static const char *type_names[] = {
     "Char", "String", "Bytes", "Int", "UInt", "Float",
-    "Range", "Json", "Time", "Duration",
+    "Range", "Set",
     "Out", "In", "Fs", "Env", "Args", "Clock", "Rand", "Proc", "Conc",
     "File", "OpenMode", "FileInfo", "IoError", "Scope", "Task", NULL
 };
 
-/* The placeholder constructors and the type name that owns each: the
-   owner spelling is the anchor a reference is matched against. Only the
-   types the file does not declare are listed; the core types' own
-   variants come from the parsed declaration. */
-static const struct {
-    const char *name;
-    const char *owner;
-} ctor_names[] = {
-    {"Time", "Time"}, {"Duration", "Duration"},
-    {NULL, NULL}
-};
-
 #define TYPE_ROWS (sizeof type_names / sizeof *type_names - 1)
-#define CTOR_ROWS (sizeof ctor_names / sizeof *ctor_names - 1)
-#define STD_ROWS (TYPE_ROWS + CTOR_ROWS)
 
 int r_std_opened_name(const char *name)
 {
@@ -103,12 +88,11 @@ static void add_row(r_ctx *c, ek_surface *s, const char *name,
 }
 
 /* The placeholder rows beneath the file surface: the type names the
-   compiler still supplies, and the constructors of the placeholder
-   types. */
+   compiler still supplies. */
 static void extend(r_ctx *c, ek_surface *s)
 {
     ek_symbol *grown;
-    size_t i, cap = s->count + STD_ROWS;
+    size_t i, cap = s->count + TYPE_ROWS;
 
     grown = ek_arena_alloc(c->arena, cap * sizeof *grown);
     if (!grown) {
@@ -119,10 +103,6 @@ static void extend(r_ctx *c, ek_surface *s)
     s->syms = grown;
     for (i = 0; type_names[i]; i++) {
         add_row(c, s, type_names[i], EK_SYM_TYPE, NULL);
-    }
-    for (i = 0; ctor_names[i].name; i++) {
-        add_row(c, s, ctor_names[i].name, EK_SYM_CONSTRUCTOR,
-                ctor_names[i].owner);
     }
 }
 

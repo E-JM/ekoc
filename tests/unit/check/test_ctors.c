@@ -514,6 +514,52 @@ static void undetermined_owner_text(void)
     cfx_end(&f);
 }
 
+/* The fixed standard-library forms are ordinary declarations: their
+   constructors anchor, their cases are exhaustive, their payloads
+   conform, and the time types are distinct nominals. */
+static void std_fixed_forms(void)
+{
+    cfx f;
+
+    cfx_begin(&f,
+              "code: (e: ParseError) -> Int =\n"
+              "    case e:\n"
+              "        Empty -> 0\n"
+              "        Invalid s -> 1\n"
+              "        OutOfRange -> 2\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "code: (e: ParseError) -> Int =\n"
+              "    case e:\n"
+              "        Empty -> 0\n");
+    EK_CHECK(cfx_errors(&f) >= 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-exhaust", 2));
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "j: Json = Obj {\"a\": Arr {Int 1, Str \"x\"}}\n"
+              "k: Json = Bool True\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    EK_CHECK(row_nominal_at(&f, 1, "std", "Json"));
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "now: Time = Time 5\n"
+              "tick: Mono = Mono 6\n"
+              "span: Duration = Duration 7\n"
+              "same: Bool = now.eq(Time 5)\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+
+    /* The three readings do not interchange. */
+    cfx_begin(&f, "bad: Time = Duration 5\n");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-nominal-mismatch", 1));
+    cfx_end(&f);
+}
+
 int main(void)
 {
     std_only();
@@ -530,5 +576,6 @@ int main(void)
     qualified_application();
     duplicate_variants();
     undetermined_owner_text();
+    std_fixed_forms();
     return ek_test_report("check/ctors");
 }

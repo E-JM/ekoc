@@ -1,9 +1,9 @@
 // The standard library root: the core types whose bare names are part of
 // the language vocabulary, and the assertion family the implicit import
 // opens in every file. The rest of the std surface (the scalar types, the
-// capability module names, the range placeholder, and the compiler
-// services) arrives incrementally; the compiler supplies the names this
-// file does not declare yet (Clauses 9.1.1, 9.1.2, 9.14.3).
+// container namespaces, the members of the declared types, and the
+// compiler services) arrives incrementally; the compiler supplies the
+// names this file does not declare yet (Clauses 9.1.1, 9.1.2, 9.14.3).
 
 // The two-valued Boolean type.
 Bool: type = True | False
@@ -16,6 +16,29 @@ Result: type t e = Ok t | Err e
 
 // The zero-variant type: no constructors, no values, the bottom type.
 Never: type =
+
+// A closed failure reason for the parse family: a missing value, a
+// malformed one, or one outside the target's limits.
+ParseError: type = Empty | Invalid String | OutOfRange
+
+// A wall-clock instant, as nanoseconds since the epoch.
+Time: type = Time Int
+
+// A monotonic reading, as nanoseconds from an arbitrary epoch.
+Mono: type = Mono Int
+
+// A signed span of time, in nanoseconds.
+Duration: type = Duration Int
+
+// The interchange form: the seven JSON variants.
+Json: type =
+    | Null
+    | Bool Bool
+    | Int Int
+    | Float Float
+    | Str String
+    | Arr []Json
+    | Obj ([String]Json)
 
 // Panics when `c` is False. Pure and always enabled.
 assert: (c: Bool) -> _ =

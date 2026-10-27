@@ -2,11 +2,10 @@
 #include "refcheck.h"
 
 /* The std surface: the compiled std module is parsed from lib/std.eko,
-   so its free names and its core types and constructors are ordinary
-   declarations; the scalar, container, capability, and time type names,
-   and the constructors of the types the file does not declare, are the
-   placeholder rows beneath it. A name no layer declares is the
-   unresolved-external bridge (resolve.h). */
+   so its declared types, their constructors, and its free names are
+   ordinary declarations; the scalar, container, and capability type
+   names are the placeholder rows beneath it. A name no layer declares
+   is the unresolved-external bridge (resolve.h). */
 
 /* Any bridged reference at a source line: the external station with no
    symbol behind it. */
@@ -388,11 +387,62 @@ static void local_shadow_free_name(void)
     rfx_end(&f);
 }
 
+/* The fixed forms of the standard library are file declarations: the
+   constructors of the time and failure types are rows of the declaring
+   file, not placeholder rows, and each type has exactly one row. */
+static void declared_std_types(void)
+{
+    rfx f;
+    const ek_ref *r;
+    size_t i, k, ctors = 0;
+    int std_seen = 0;
+
+    rfx_begin(&f,
+        "p: ParseError = Invalid \"x\"\n"
+        "j: Json = Obj {\"a\": Null}\n"
+        "t: Time = Time 5\n"
+        "m: Mono = Mono 0\n"
+        "d: Duration = Duration 3\n");
+    EK_CHECK_U64(rfx_errors(&f), 0);
+    r = rfx_ref_named(&f, 1, "Invalid");
+    EK_CHECK(r != NULL);
+    EK_CHECK(r->kind == EK_SYM_CONSTRUCTOR);
+    EK_CHECK(r->symbol != NULL && r->symbol->decl != NULL);
+    EK_CHECK(r->symbol != NULL && r->symbol->owner != NULL
+             && strcmp(r->symbol->owner, "ParseError") == 0);
+    r = rfx_ref_named(&f, 2, "Obj");
+    EK_CHECK(r != NULL);
+    EK_CHECK(r->kind == EK_SYM_CONSTRUCTOR);
+    EK_CHECK(r->symbol != NULL && r->symbol->owner != NULL
+             && strcmp(r->symbol->owner, "Json") == 0);
+    r = rfx_ref_named_kind(&f, 3, "Time", EK_SYM_CONSTRUCTOR);
+    EK_CHECK(r != NULL);
+    EK_CHECK(r->symbol != NULL && r->symbol->decl != NULL);
+    for (k = 0; k < f.res.module_count; k++) {
+        const ek_surface *s = &f.res.modules[k];
+
+        if (strcmp(s->module, "std") != 0) {
+            continue;
+        }
+        std_seen = 1;
+        for (i = 0; i < s->count; i++) {
+            if (s->syms[i].kind == EK_SYM_CONSTRUCTOR
+                && strcmp(s->syms[i].name, "Time") == 0) {
+                ctors++;
+            }
+        }
+    }
+    EK_CHECK(std_seen);
+    EK_CHECK_U64(ctors, 1); /* the file's row, no placeholder beside it */
+    rfx_end(&f);
+}
+
 int main(void)
 {
     free_names();
     injected_opens();
     std_module_surface();
+    declared_std_types();
     std_body_resolved();
     boot_deterministic();
     qualified_real_function();
