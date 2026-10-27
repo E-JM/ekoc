@@ -184,6 +184,33 @@ static void qualified_std_constructors(void)
     rfx_end(&f);
 }
 
+/* The qualified spelling of an opened std type names that type's
+   symbol; a name the placeholder does not declare stays the bridge. */
+static void qualified_std_types(void)
+{
+    rfx f;
+    const ek_ref *r;
+
+    rfx_begin(&f,
+        "Bool: type = True | False\n"
+        "x: std.Bool = True\n");
+    EK_CHECK_U64(rfx_errors(&f), 0);
+    r = rfx_ref_named_kind(&f, 2, "Bool", EK_SYM_TYPE);
+    EK_CHECK(r != NULL);
+    EK_CHECK(r->station == EK_ST_QUALIFIED);
+    EK_CHECK_STR(r->symbol ? r->symbol->module : NULL, "std");
+    EK_CHECK(r->symbol != NULL && r->symbol->decl == NULL);
+    rfx_end(&f);
+
+    rfx_begin(&f, "z: std.Nope = 1\n");
+    EK_CHECK_U64(rfx_errors(&f), 0);
+    r = rfx_ref_at(&f, 1);
+    EK_CHECK(r != NULL);
+    EK_CHECK(r->kind == EK_SYM_EXTERNAL);
+    EK_CHECK(r->station == EK_ST_TYPE);
+    rfx_end(&f);
+}
+
 /* Local shadowing of an opened free name is legal; only a top-level
    binding collides with the layer it occupies. */
 static void local_shadow_free_name(void)
@@ -215,6 +242,7 @@ int main(void)
     service_identity();
     top_level_service_name();
     qualified_std_constructors();
+    qualified_std_types();
     local_shadow_free_name();
     return ek_test_report("resolve/std");
 }

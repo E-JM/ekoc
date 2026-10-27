@@ -181,6 +181,32 @@ static void anchor_mismatch(void)
     cfx_end(&f);
 }
 
+/* The qualified spelling names the opened std type even when a user
+   type of that spelling shadows the bare name. */
+static void qualified_std_type(void)
+{
+    cfx f;
+
+    cfx_begin(&f,
+              "Bool: type = True | False\n"
+              "y: std.Bool = True\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+
+    /* The nominal std type rejects a literal of another type. */
+    cfx_begin(&f,
+              "Bool: type = True | False\n"
+              "x: std.Bool = 3\n");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-nominal-mismatch", 2));
+    cfx_end(&f);
+
+    /* A name the placeholder does not declare keeps the bridge. */
+    cfx_begin(&f, "x: std.Nope = 1\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+}
+
 int main(void)
 {
     std_only();
@@ -191,5 +217,6 @@ int main(void)
     user_scrutinee();
     std_scrutinee();
     anchor_mismatch();
+    qualified_std_type();
     return ek_test_report("check/ctors");
 }
