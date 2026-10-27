@@ -190,6 +190,14 @@ static void never_adaptation(void)
     EK_CHECK(cfx_code_at_line(&f, "E-type-mismatch", 3));
     EK_CHECK(cfx_code_at_line(&f, "E-type-mismatch", 4));
     cfx_end(&f);
+
+    /* A zero-variant type derives its ordering vacuously, like any
+       other ADT. */
+    cfx_begin(&f,
+              "lt: (a: Never, b: Never) -> Bool = a.lt(b)\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    EK_CHECK(cfx_reading_at(&f, 1, EK_RD_DERIVED));
+    cfx_end(&f);
 }
 
 /* A declared type whose width passes any fixed buffer: every binder

@@ -240,7 +240,9 @@ static const ek_type *derive_lt(ck_ctx *c, const ek_node *at,
             return NULL;
         }
         d = ck_decl_of(c, r->u.nominal.sym);
-        if (!d || d->rhs != EK_TYPE_RHS_VARIANTS || ck_is_std(r, "Bool")) {
+        if (!d || (d->rhs != EK_TYPE_RHS_VARIANTS
+                   && d->rhs != EK_TYPE_RHS_EMPTY)
+            || ck_is_std(r, "Bool")) {
             absent(c, at, r, name);
             return NULL;
         }
