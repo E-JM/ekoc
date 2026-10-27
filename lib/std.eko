@@ -1,0 +1,23 @@
+// The standard library root: the assertion family the implicit import
+// opens in every file. The rest of the std surface (the opened types and
+// their constructors, the capability module names, and the compiler
+// services) arrives incrementally; the compiler supplies the names this
+// file does not declare yet (Clauses 9.1.1, 9.1.2, 9.14.3).
+
+// Panics when `c` is False. Pure and always enabled.
+assert: (c: Bool) -> _ =
+    case c:
+        True -> _
+        False -> panic("assert failed")
+
+// Panics when the arguments are not equal. Both lock to one type.
+assert_eq: (a: t, b: t) -> _ =
+    case a.eq(b):
+        True -> _
+        False -> panic("assert_eq failed: {inspect(a)} != {inspect(b)}")
+
+// Panics when the arguments are equal. Both lock to one type.
+assert_ne: (a: t, b: t) -> _ =
+    case a.eq(b):
+        True -> panic("assert_ne failed: {inspect(a)} == {inspect(b)}")
+        False -> _
