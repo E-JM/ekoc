@@ -103,6 +103,63 @@ static void field_service(void)
     cfx_end(&f);
 }
 
+/* A declared service carries its fixed signature over the owner: the
+   receiver, the result, the arity, and the pure arrow. */
+static void service_signatures(void)
+{
+    cfx f;
+
+    cfx_begin(&f,
+              "Money: type = [cents: Int, cur: String]\n"
+              "Money.show: (m: Money) -> Int = 1\n");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-service-signature", 2));
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "Money: type = [cents: Int, cur: String]\n"
+              "Money.eq: (a: Money, b: Money) -> String = \"x\"\n");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-service-signature", 2));
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "Money: type = [cents: Int, cur: String]\n"
+              "Person: type = [name: String]\n"
+              "Money.lt: (a: Money, b: Person) -> Bool = True\n");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-service-signature", 3));
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "Money: type = [cents: Int, cur: String]\n"
+              "Money.show: (i: Int) -> String = \"x\"\n");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-service-signature", 2));
+    cfx_end(&f);
+
+    /* The world arrow breaks the signature and costs the bit too. */
+    cfx_begin(&f,
+              "Money: type = [cents: Int, cur: String]\n"
+              "Money.show: (m: Money) !-> String = \"x\"\n");
+    EK_CHECK_U64(cfx_errors(&f), 2);
+    EK_CHECK(cfx_has_code(&f, "E-service-signature"));
+    EK_CHECK(cfx_has_code(&f, "E-world-bit"));
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "Money: type = [cents: Int, cur: String]\n"
+              "Money.show: (m: Money) -> String = \"x\"\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "Money: type = [cents: Int, cur: String]\n"
+              "Money.ne: (a: Money, b: Money) -> Bool = a.eq(b)\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+}
+
 int main(void)
 {
     show_on_string();
@@ -111,5 +168,6 @@ int main(void)
     panic_both_forms();
     zero_argument_service();
     bare_service_value();
+    service_signatures();
     return ek_test_report("check/services");
 }

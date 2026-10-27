@@ -125,6 +125,8 @@ collide with a code in the table.
 | `E-no-eq` | equality, keying, or assertion over a type whose `eq` derivation halts at a capability or a function | Clause 9.8.4 |
 | `E-json-shape` | a type has no default JSON isomorphic form, for example a dictionary with a non-string key | Clause 9.9.3 |
 | `E-ctype-field` | a `ctype` field is neither a machine word nor a `ctype` record | Clause 10.3.3 |
+| `E-service-fixed` | a namespace declaration names a service whose derivation is fixed: `inspect`, `to_json`, `from_json`, or `with` | Clause 9.8.1, Clause 9.8.6, Clause 9.9.5 |
+| `E-service-signature` | a declared `show`, equality, or ordering service does not carry its fixed signature over the receiver type | Clause 9.8.2, Clause 9.8.4, Clause 9.8.5 |
 | `E-extern-type` | an `extern` signature uses a type outside the marshalling whitelist, or contains a type variable or variadic parameter | Clause 10.2.3, Clause 10.3.5 |
 | `E-extern-arrow` | an open arrow appears in an extern signature, as the declaration's own arrow or inside a parameter type | Clause 10.2.3 |
 | `E-refutable-binding` | a refutable pattern in a value binding | Clause 7.7.1 |

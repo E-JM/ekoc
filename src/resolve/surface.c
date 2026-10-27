@@ -229,6 +229,26 @@ static ek_symbol *collect_namespace(r_surf *s, const ek_node *item)
                 "namespace member `%s` is not snake_case "
                 "(Clauses 5.5.2, 7.4.1)", name);
     }
+    {
+        /* The services the compiler derives on every type and whose
+           derivation is the whole meaning of the name. */
+        const char *clause = NULL;
+
+        if (strcmp(name, "inspect") == 0) {
+            clause = "9.8.1";
+        } else if (strcmp(name, "to_json") == 0
+                   || strcmp(name, "from_json") == 0) {
+            clause = "9.9.5";
+        } else if (strcmp(name, "with") == 0) {
+            clause = "9.8.6";
+        }
+        if (clause) {
+            r_error(s->c, s->m->file, item->line, item->col,
+                    "E-service-fixed",
+                    "`%s` over `%s` is always derived and admits no "
+                    "declaration (Clause %s)", name, type, clause);
+        }
+    }
     if (!type_owned(s, type)) {
         r_error(s->c, s->m->file, item->line, item->col,
                 "E-namespace-owner",

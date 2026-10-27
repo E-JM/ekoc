@@ -242,6 +242,47 @@ static void namespace_owner(void)
     rfx_end(&f);
 }
 
+/* A namespace declaration of a derived-only service is rejected over
+   an owned type; the derivable show still declares. */
+static void fixed_services(void)
+{
+    rfx f;
+
+    rfx_begin(&f,
+        "Money: type = [cents: Int, cur: String]\n"
+        "Money.inspect: (m: Money) -> String = 0\n");
+    EK_CHECK_U64(rfx_errors(&f), 1);
+    EK_CHECK(rfx_code_at_line(&f, "E-service-fixed", 2));
+    rfx_end(&f);
+
+    rfx_begin(&f,
+        "Money: type = [cents: Int, cur: String]\n"
+        "Money.to_json: (m: Money) -> Json = 0\n");
+    EK_CHECK_U64(rfx_errors(&f), 1);
+    EK_CHECK(rfx_code_at_line(&f, "E-service-fixed", 2));
+    rfx_end(&f);
+
+    rfx_begin(&f,
+        "Money: type = [cents: Int, cur: String]\n"
+        "Money.from_json: (j: Json) -> Result Money ParseError = 0\n");
+    EK_CHECK_U64(rfx_errors(&f), 1);
+    EK_CHECK(rfx_code_at_line(&f, "E-service-fixed", 2));
+    rfx_end(&f);
+
+    rfx_begin(&f,
+        "Money: type = [cents: Int, cur: String]\n"
+        "Money.with: (m: Money, cur: String) -> Money = 0\n");
+    EK_CHECK_U64(rfx_errors(&f), 1);
+    EK_CHECK(rfx_code_at_line(&f, "E-service-fixed", 2));
+    rfx_end(&f);
+
+    rfx_begin(&f,
+        "Money: type = [cents: Int, cur: String]\n"
+        "Money.show: (m: Money) -> String = 0\n");
+    EK_CHECK_U64(rfx_errors(&f), 0);
+    rfx_end(&f);
+}
+
 static void name_case(void)
 {
     rfx f;
@@ -322,6 +363,7 @@ int main(void)
     duplicate_variants();
     same_named_types();
     namespace_owner();
+    fixed_services();
     never_owned_by_language();
     name_case();
     return ek_test_report("resolve/conflict");

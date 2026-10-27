@@ -493,6 +493,61 @@ static const ek_type *ck_annotated_decl(ck_ctx *c, const ek_node *m,
     return t;
 }
 
+/* A declared service name and its fixed parameter count: `show` is
+   one receiver, the equality and ordering family two. Zero names a
+   service no dispatch fixes; those members are ordinary. */
+static int service_arity(const char *name)
+{
+    if (strcmp(name, "show") == 0) {
+        return 1;
+    }
+    if (strcmp(name, "eq") == 0 || strcmp(name, "ne") == 0
+        || strcmp(name, "lt") == 0 || strcmp(name, "le") == 0
+        || strcmp(name, "gt") == 0 || strcmp(name, "ge") == 0) {
+        return 2;
+    }
+    return 0;
+}
+
+/* A declared service of the dispatch set carries a fixed signature:
+   the receiver type the namespace names, the fixed result, and the
+   pure arrow. A wrong signature breaks every call site that reads
+   the member as the service, so the declaration is where it is
+   reported. */
+static void service_signature(ck_ctx *c, const ek_node *m, const ek_type *t)
+{
+    const ek_type *f = ck_prune(t);
+    const char *name = m->u.namespace.name;
+    const char *owner = m->u.namespace.owner.count
+        ? m->u.namespace.owner.data[m->u.namespace.owner.count - 1]
+        : m->u.namespace.name;
+    const ek_type *p0;
+    int want = service_arity(name);
+    int ok;
+
+    if (!want || !f) {
+        return;
+    }
+    p0 = f->kind == EK_T_FN && f->u.fn.count ? f->u.fn.params[0] : NULL;
+    ok = f->kind == EK_T_FN && f->u.fn.arrow == EK_ARROW_PURE
+        && f->u.fn.count == (size_t)want && p0 && p0->kind == EK_T_NOMINAL
+        && p0->u.nominal.sym
+        && strcmp(p0->u.nominal.sym->name, owner) == 0
+        && (want == 1 ? ck_is_std(f->u.fn.result, "String")
+                      : p0 == f->u.fn.params[1]
+                            && ck_is_std(f->u.fn.result, "Bool"));
+    if (ok) {
+        return;
+    }
+    ck_error(c, m, "E-service-signature",
+             want == 1
+                 ? "`%s` over `%s` is `(t: %s) -> String`, pure "
+                   "(Clause 9.8.2)"
+                 : "`%s` over `%s` is `(a: %s, b: %s) -> Bool`, pure "
+                   "(Clauses 9.8.4, 9.8.5)",
+             name, owner, owner, owner);
+}
+
 /* A declaration body is a block or one expression; both are checked
    in the same scope and against the same expected type. */
 static const ek_type *decl_body(ck_ctx *c, const ek_node *body,
@@ -517,9 +572,13 @@ const ek_type *ck_stmt(ck_ctx *c, const ek_node *m, int top)
     case EK_N_REBIND:
     case EK_N_INVERT:
         return ck_binding(c, m, top);
-    case EK_N_NAMESPACE:
-        return ck_annotated_decl(c, m, m->u.namespace.type,
-                                 m->u.namespace.value, 1);
+    case EK_N_NAMESPACE: {
+        const ek_type *t = ck_annotated_decl(c, m, m->u.namespace.type,
+                                             m->u.namespace.value, 1);
+
+        service_signature(c, m, t);
+        return t;
+    }
     case EK_N_TEST_DECL:
         (void)decl_body(c, m->u.decl.body, NULL);
         return ck_unit(c);
