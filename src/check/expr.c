@@ -219,6 +219,9 @@ const ek_type *ck_block(ck_ctx *c, const ek_node *b, const ek_type *expected)
 {
     const ek_type *t;
 
+    if (!b) {
+        return ck_unit(c); /* a truncated parse leaves no body */
+    }
     ck_scope_push(c);
     t = ck_members(c, b, 0, expected);
     ck_scope_pop(c);
