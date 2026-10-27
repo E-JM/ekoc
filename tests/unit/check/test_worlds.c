@@ -303,24 +303,27 @@ static void test_binding_no_reconcile(void)
 
     cfx_begin(&f,
               "probe: test =\n"
+              "    out: Out = Out.null()\n"
               "    xs: []Int = {1}\n"
-              "    xs.each((n): Out.println(\"x\"))\n");
+              "    xs.each((n): out.println(\"x\"))\n");
     EK_CHECK(cfx_errors(&f) == 0);
     EK_CHECK(cfx_bits_filled(&f));
-    EK_CHECK(cfx_bit_at(&f, 3, EK_BIT_WORLD));
+    EK_CHECK(cfx_bit_at(&f, 4, EK_BIT_WORLD));
     EK_CHECK(!cfx_has_code(&f, "E-world-bit"));
     cfx_end(&f);
 }
 
 /* An inverted binding has no separate bit rule: the callback body's
-   world calls surface in the enclosing body. */
+   world calls surface in the enclosing body. The bridged dispatcher
+   keeps the invert shape; a landed row without a callback parameter
+   no longer admits one. */
 static void invert_feeds_dispatcher(void)
 {
     cfx f;
 
     cfx_begin(&f,
-              "run: (o: Out) !-> _ =\n"
-              "    x <- o.println(\"go\")\n"
+              "run: (fs: Fs) !-> _ =\n"
+              "    x <- fs.read(\"f\")\n"
               "    x\n");
     EK_CHECK(cfx_errors(&f) == 0);
     EK_CHECK(cfx_bit_at(&f, 1, EK_BIT_WORLD));

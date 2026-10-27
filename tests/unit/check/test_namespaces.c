@@ -1,8 +1,9 @@
 #include "common.h"
 
-/* The compiler-provided rows of the List namespace: the Annex C.3
-   signatures over the structural list, both spellings, and the closed
-   namespace — a name no row carries is absent, not bridged. */
+/* The compiler-provided rows of the namespace table: the List
+   signatures over the structural list, the scalar arithmetic rows, and
+   the Out capability rows, both spellings, and the closed namespaces —
+   a name no row carries is absent, not bridged. */
 
 static void list_rows(void)
 {
@@ -107,10 +108,108 @@ static void list_namespace_closed(void)
     cfx_end(&f);
 }
 
+static void ints_rows(void)
+{
+    cfx f;
+
+    /* Both spellings, a mixed operand type, and a constant member. */
+    cfx_begin(&f,
+              "a: Int = 1.add(2)\n"
+              "b: Int = Int.sub(10, 4)\n"
+              "c: Int = 2.pow(10)\n"
+              "d: Int = Int.min\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+
+    /* The row's result lands at the binding. */
+    cfx_begin(&f, "a: String = 1.add(2)\n");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-nominal-mismatch", 1));
+    cfx_end(&f);
+
+    /* The row's parameter rejects the wrong operand type. */
+    cfx_begin(&f, "a: Int = 1.add(\"x\")\n");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-nominal-mismatch", 1));
+    cfx_end(&f);
+
+    /* The scalar row set is partial, so a name it does not carry
+       keeps the bridge until the set is complete. */
+    cfx_begin(&f, "v: Int = Int.bogus(1)\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    EK_CHECK(cfx_reading_at(&f, 1, EK_RD_EXTERNAL));
+    cfx_end(&f);
+
+    /* A constant member is a value, not a function. */
+    cfx_begin(&f, "v: Int = Int.min()\n");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-not-callable", 1));
+    cfx_end(&f);
+
+    /* Unsigned values have no negation; the miss reports when the
+       scalar set completes. */
+    cfx_begin(&f, "v: UInt = UInt.neg(1)\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+}
+
+static void out_rows(void)
+{
+    cfx f;
+
+    /* Printing touches the world, so a pure arrow cannot carry it. */
+    cfx_begin(&f,
+              "log: (out: Out) -> _ =\n"
+              "    out.println(\"x\")\n");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-world-bit", 1));
+    cfx_end(&f);
+
+    /* A world arrow admits the print, in both spellings. */
+    cfx_begin(&f,
+              "log: (out: Out) !-> _ =\n"
+              "    out.println(\"x\")\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "log: (out: Out) !-> _ =\n"
+              "    Out.println(out, \"x\")\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+
+    /* null is a pure derivation. */
+    cfx_begin(&f,
+              "cap: () -> Out =\n"
+              "    Out.null()\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+
+    /* tee observes through a world arrow but derives purely. */
+    cfx_begin(&f,
+              "t: (out: Out, obs: (String) !-> _) -> Out =\n"
+              "    out.tee(obs)\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+
+    /* The namespace is closed; the absent
+       member leaves the body pure, so the surplus `!` is the second
+       diagnostic. */
+    cfx_begin(&f,
+              "log: (out: Out) !-> Int =\n"
+              "    v: Int = out.bogus()\n");
+    EK_CHECK_U64(cfx_errors(&f), 2);
+    EK_CHECK(cfx_code_at_line(&f, "E-unbound-member", 2));
+    EK_CHECK(cfx_code_at_line(&f, "E-world-bit", 2));
+    cfx_end(&f);
+}
+
 int main(void)
 {
     list_rows();
     list_rows_types();
     list_namespace_closed();
+    ints_rows();
+    out_rows();
     return ek_test_report("check/namespaces");
 }

@@ -30,7 +30,7 @@ enum { NS_VAR, NS_STD, NS_FN, NS_UNIT, NS_LIST, NS_OPTION, NS_RESULT };
 
 typedef struct {
     const char *ns;
-    const char *name;
+    const char *name; /* NULL marks the namespace's row set complete */
     const ns_sig *sig;
 } ns_row;
 
@@ -46,6 +46,11 @@ typedef struct {
     &(ns_sig){.kind = NS_FN, .params = (const ns_sig *[]){__VA_ARGS__}, \
               .nparams = sizeof((const ns_sig *[]){__VA_ARGS__})       \
                           / sizeof(const ns_sig *),                    \
+              .result = (res), .arrow = (ar)}
+
+/* () arrow result */
+#define SIG_FN0(ar, res)                                              \
+    &(ns_sig){.kind = NS_FN, .params = NULL, .nparams = 0,            \
               .result = (res), .arrow = (ar)}
 
 static const ek_type *build(ck_ctx *c, const ns_sig *s, const ek_type **slots,
@@ -135,9 +140,46 @@ static const char *namespace_of(const ek_type *t)
     return NULL;
 }
 
-/* The rows of Annex C.3: the List namespace over the structural list.
-   The open arrows are the dispatchers of Clause 7.9.6. */
+/* The scalar namespaces: the arithmetic members the compiler supplies
+   when no declaration owns the name. */
 static const ns_row rows[] = {
+    {"Float", "add", SIG_FN(EK_ARROW_PURE, SIG_STD("Float"),
+                            SIG_STD("Float"), SIG_STD("Float"))},
+    {"Float", "div", SIG_FN(EK_ARROW_PURE, SIG_STD("Float"),
+                            SIG_STD("Float"), SIG_STD("Float"))},
+    {"Float", "mul", SIG_FN(EK_ARROW_PURE, SIG_STD("Float"),
+                            SIG_STD("Float"), SIG_STD("Float"))},
+    {"Float", "neg", SIG_FN(EK_ARROW_PURE, SIG_STD("Float"),
+                            SIG_STD("Float"))},
+    {"Float", "rem", SIG_FN(EK_ARROW_PURE, SIG_STD("Float"),
+                            SIG_STD("Float"), SIG_STD("Float"))},
+    {"Float", "sub", SIG_FN(EK_ARROW_PURE, SIG_STD("Float"),
+                            SIG_STD("Float"), SIG_STD("Float"))},
+    {"Int", "abs", SIG_FN(EK_ARROW_PURE, SIG_STD("Int"),
+                          SIG_STD("Int"))},
+    {"Int", "add", SIG_FN(EK_ARROW_PURE, SIG_STD("Int"),
+                          SIG_STD("Int"), SIG_STD("Int"))},
+    {"Int", "div", SIG_FN(EK_ARROW_PURE, SIG_STD("Int"),
+                          SIG_STD("Int"), SIG_STD("Int"))},
+    {"Int", "max", SIG_STD("Int")},
+    {"Int", "min", SIG_STD("Int")},
+    {"Int", "mod", SIG_FN(EK_ARROW_PURE, SIG_STD("Int"),
+                          SIG_STD("Int"), SIG_STD("Int"))},
+    {"Int", "mul", SIG_FN(EK_ARROW_PURE, SIG_STD("Int"),
+                          SIG_STD("Int"), SIG_STD("Int"))},
+    {"Int", "neg", SIG_FN(EK_ARROW_PURE, SIG_STD("Int"),
+                          SIG_STD("Int"))},
+    {"Int", "pow", SIG_FN(EK_ARROW_PURE, SIG_STD("Int"),
+                          SIG_STD("Int"), SIG_STD("UInt"))},
+    {"Int", "quot", SIG_FN(EK_ARROW_PURE, SIG_STD("Int"),
+                           SIG_STD("Int"), SIG_STD("Int"))},
+    {"Int", "rem", SIG_FN(EK_ARROW_PURE, SIG_STD("Int"),
+                          SIG_STD("Int"), SIG_STD("Int"))},
+    {"Int", "sub", SIG_FN(EK_ARROW_PURE, SIG_STD("Int"),
+                          SIG_STD("Int"), SIG_STD("Int"))},
+
+    /* The List namespace over the structural list. The open arrows are
+       the dispatchers. */
     {"List", "length", SIG_FN(EK_ARROW_PURE, SIG_STD("Int"), SIG_LIST(SIG_VAR(0)))},
     {"List", "get", SIG_FN(EK_ARROW_PURE, SIG_OPTION(SIG_VAR(0)),
                            SIG_LIST(SIG_VAR(0)), SIG_STD("Int"))},
@@ -195,6 +237,36 @@ static const ns_row rows[] = {
     {"List", "slice", SIG_FN(EK_ARROW_PURE, SIG_OPTION(SIG_LIST(SIG_VAR(0))),
                              SIG_LIST(SIG_VAR(0)), SIG_STD("Int"),
                              SIG_STD("Int"))},
+
+    /* The Out capability: printing touches the world; null is pure,
+       and tee is a pure derivation whose observer may touch the world. */
+    {"Out", "null", SIG_FN0(EK_ARROW_PURE, SIG_STD("Out"))},
+    {"Out", "print", SIG_FN(EK_ARROW_WORLD, SIG_UNIT,
+                            SIG_STD("Out"), SIG_STD("String"))},
+    {"Out", "println", SIG_FN(EK_ARROW_WORLD, SIG_UNIT,
+                              SIG_STD("Out"), SIG_STD("String"))},
+    {"Out", "tee", SIG_FN(EK_ARROW_PURE, SIG_STD("Out"),
+                          SIG_STD("Out"),
+                          SIG_FN(EK_ARROW_WORLD, SIG_UNIT,
+                                 SIG_STD("String")))},
+
+    /* The unsigned scalar namespace: arithmetic without negation. */
+    {"UInt", "add", SIG_FN(EK_ARROW_PURE, SIG_STD("UInt"),
+                           SIG_STD("UInt"), SIG_STD("UInt"))},
+    {"UInt", "max", SIG_STD("UInt")},
+    {"UInt", "mul", SIG_FN(EK_ARROW_PURE, SIG_STD("UInt"),
+                           SIG_STD("UInt"), SIG_STD("UInt"))},
+    {"UInt", "quot", SIG_FN(EK_ARROW_PURE, SIG_STD("UInt"),
+                            SIG_STD("UInt"), SIG_STD("UInt"))},
+    {"UInt", "rem", SIG_FN(EK_ARROW_PURE, SIG_STD("UInt"),
+                           SIG_STD("UInt"), SIG_STD("UInt"))},
+    {"UInt", "sub", SIG_FN(EK_ARROW_PURE, SIG_STD("UInt"),
+                           SIG_STD("UInt"), SIG_STD("UInt"))},
+    /* A NULL name marks a namespace whose row set is complete: a
+       name no station answers is absent. A partial namespace keeps
+       the bridge for the names its rows do not carry yet. */
+    {"List", NULL, NULL},
+    {"Out", NULL, NULL},
 };
 
 /* The one row a name carries over a namespace the table owns, with
@@ -211,7 +283,7 @@ const ek_type *ck_ns_row(ck_ctx *c, const ek_type *recv, const char *name,
         return NULL;
     }
     for (i = 0; i < sizeof rows / sizeof *rows; i++) {
-        if (strcmp(ns, rows[i].ns) == 0) {
+        if (rows[i].name && strcmp(ns, rows[i].ns) == 0) {
             if (strcmp(rows[i].name, name) == 0) {
                 return build(c, rows[i].sig, slots, 4);
             }
@@ -221,8 +293,8 @@ const ek_type *ck_ns_row(ck_ctx *c, const ek_type *recv, const char *name,
     return NULL;
 }
 
-/* True when the table carries rows over the receiver's namespace: the
-   namespace is complete, so a name no station answered is absent. */
+/* True when the receiver's namespace row set is complete: a name no
+   station answered is absent, not bridged. */
 int ck_ns_owned(const ek_type *recv)
 {
     const char *ns = namespace_of(recv);
@@ -232,7 +304,7 @@ int ck_ns_owned(const ek_type *recv)
         return 0;
     }
     for (i = 0; i < sizeof rows / sizeof *rows; i++) {
-        if (strcmp(ns, rows[i].ns) == 0) {
+        if (rows[i].name == NULL && strcmp(ns, rows[i].ns) == 0) {
             return 1;
         }
     }
