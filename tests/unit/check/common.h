@@ -122,6 +122,20 @@ static inline size_t cfx_errors(const cfx *f)
     return cfx_stage_errors(f->cds, f->cdn);
 }
 
+/* Any occurrence of code among a drained stage slice. */
+static inline int cfx_slice_has(const ek_diagnostic *ds, size_t dn,
+                                const char *code)
+{
+    size_t i;
+
+    for (i = 0; i < dn; i++) {
+        if (ds[i].code && strcmp(ds[i].code, code) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static inline int cfx_has_code(const cfx *f, const char *code)
 {
     size_t i;

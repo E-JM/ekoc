@@ -40,6 +40,14 @@ static int first_dot_col(const line_run *l)
     return -1;
 }
 
+/* Whether a line ending in this token opens a block for the lines
+   indented under it. */
+static int opens_block(ek_token_kind kind)
+{
+    return kind == EK_TOK_COLON || kind == EK_TOK_EQ
+           || kind == EK_TOK_ARROW;
+}
+
 /* Whether a line ending in this token leaves the expression open, so a
    deeper line continues it.  A lone `!` or `?` ends a member. */
 static int continues_member(ek_token_kind kind)
@@ -59,7 +67,6 @@ static int continues_member(ek_token_kind kind)
     case EK_TOK_GTEQ:
     case EK_TOK_ANDAND:
     case EK_TOK_OROR:
-    case EK_TOK_ARROW:
     case EK_TOK_LARROW:
     case EK_TOK_DOTDOT:
     case EK_TOK_DOTDOTEQ:
@@ -312,8 +319,8 @@ static void emit_line(layout_ctx *c, const line_run *l)
 }
 
 /* End-of-line state: a parameter group followed by ':' inside brackets
-   opens a callback block; a depth-zero line ending in ':' or '=' opens
-   a block, and a dot fixes the chain column. */
+   opens a callback block; a depth-zero line ending in a block opener
+   opens a block, and a dot fixes the chain column. */
 static void line_state(layout_ctx *c, const line_run *l)
 {
     const ek_token *last = &l->tok[l->count - 1];
@@ -325,7 +332,7 @@ static void line_state(layout_ctx *c, const line_run *l)
         }
         return;
     }
-    c->expect_block = last->kind == EK_TOK_COLON || last->kind == EK_TOK_EQ;
+    c->expect_block = opens_block(last->kind);
     if (c->expect_block) {
         c->header_col = l->tok[0].col - 1;
     }

@@ -200,6 +200,87 @@ static void guards_and_scrutinees(void)
     cfx_end(&f);
 }
 
+/* A case arm body may be a block: its bindings scope over the rest of
+   the block, the last member carries the arm's value and the expected
+   type, and coverage counts the arm the same way either shape does. */
+static void arm_body_blocks(void)
+{
+    cfx f;
+
+    cfx_begin(&f,
+              "Outcome: type = [count: Int, note: String]\n"
+              "route: (cmd: String) -> Result Outcome String =\n"
+              "    case cmd:\n"
+              "        \"list\" ->\n"
+              "            n: Int = 2\n"
+              "            Ok {count: n, note: \"ok\"}\n"
+              "        _ -> Err \"unknown\"\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    EK_CHECK(cfx_bits_filled(&f));
+    cfx_end(&f);
+
+    /* An aligned `if`/`else` as the arm body's only member keeps the
+       arm's value. */
+    cfx_begin(&f,
+              "f: (n: Int) -> Int =\n"
+              "    case n:\n"
+              "        0 ->\n"
+              "            if n < 0:\n"
+              "                -1\n"
+              "            else:\n"
+              "                1\n"
+              "        _ -> 2\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+
+    /* The last member decides the arm's type, so a block arm whose
+       value disagrees with the other arms reports once at the case. */
+    cfx_begin(&f,
+              "f: (n: Int) -> String =\n"
+              "    case n:\n"
+              "        0 ->\n"
+              "            s: String = \"zero\"\n"
+              "            s\n"
+              "        _ -> 1\n");
+    EK_CHECK(cfx_code_at_line(&f, "E-type-mismatch", 2));
+    cfx_end(&f);
+
+    /* A block arm covers its patterns like an inline one: the two
+       constructors complete the case. */
+    cfx_begin(&f,
+              "Sex: type = Man | Woman\n"
+              "label: (s: Sex) -> String =\n"
+              "    case s:\n"
+              "        Man ->\n"
+              "            \"m\"\n"
+              "        Woman -> \"w\"\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "Sex: type = Man | Woman\n"
+              "label: (s: Sex) -> String =\n"
+              "    case s:\n"
+              "        Man ->\n"
+              "            \"m\"\n");
+    EK_CHECK(cfx_code_at_line(&f, "E-exhaust", 3));
+    cfx_end(&f);
+
+    /* A block arm body is its own scope: a binding made there is not
+       visible to the next arm. */
+    cfx_begin(&f,
+              "f: (n: Int) -> Int =\n"
+              "    case n:\n"
+              "        0 ->\n"
+              "            k: Int = 1\n"
+              "            k\n"
+              "        _ -> k\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    EK_CHECK_U64(cfx_stage_errors(f.ds, f.dn), 1);
+    EK_CHECK(cfx_slice_has(f.ds, f.dn, "E-unbound-name"));
+    cfx_end(&f);
+}
+
 /* One arm of a multi-scrutinee case binds together: a name that two of
    the arm's patterns bind is a conflict at the later occurrence, an
    or-pattern's set counts whole, distinct names pass, different arms
@@ -421,6 +502,7 @@ int main(void)
     records_tuples();
     lists();
     guards_and_scrutinees();
+    arm_body_blocks();
     cross_pattern();
     bindings();
     constructor_and_product_coverage();
