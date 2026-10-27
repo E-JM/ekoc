@@ -232,6 +232,9 @@ int ck_is_capability(const ek_type *t); /* the nine capability types */
 int ck_no_eq(ck_ctx *c, const ek_type *t); /* the eq derivation halts
                                               here */
 void ck_no_eq_error(ck_ctx *c, const ek_node *at, const ek_type *t);
+int ck_no_json(ck_ctx *c, const ek_type *t); /* the JSON mapping halts
+                                                here */
+void ck_json_shape_error(ck_ctx *c, const ek_node *at, const ek_type *t);
 void ck_open_positions(ck_ctx *c, const ek_node *t, int allow);
 int ck_annotation_bits(ck_ctx *c, const ek_node *ann, const ek_type *bound);
 ek_bit ck_own_bit(const ek_type *bound);
