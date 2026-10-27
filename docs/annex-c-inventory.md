@@ -429,8 +429,8 @@ a derivation is pure. `File`, `Scope`, and `Task t` are handles rather than
 capabilities; their namespaces are included here because each is reached only
 through a capability member.
 Every member in this section is capability-module source (Clause 9.1.1), except
-the sixteen compiler-provided declarations (Clause 10.8): `Proc.exit`, the four
-concurrency members, the nine `File` members, and the two advancing derivations
+the fifteen compiler-provided declarations (Clause 10.8): `Proc.exit`, the four
+concurrency members, the eight `File` members, and the two advancing derivations
 `In.from_lines` and `Rand.with_seed`.
 
 | Capability | Member | Signature | Clause |
