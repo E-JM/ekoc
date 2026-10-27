@@ -1,0 +1,22 @@
+// The std show overrides resolve through their declarations:
+// Duration's decimal seconds, Time's ISO 8601 UTC form, and Json's
+// minimal text (Clauses 9.7.4, 9.9.2).
+
+duration_show: test =
+    assert_eq(Duration.millis(500).show(), "0.5s")
+    assert_eq(Duration.secs(1).add(Duration.millis(500)).show(), "1.5s")
+    assert_eq((Duration 5).show(), "0.000000005s")
+    assert_eq(Duration.secs(0).show(), "0s")
+    assert_eq(Duration.millis(-500).show(), "-0.5s")
+
+time_show: test =
+    t := Time 1792632540123000000
+    assert_eq(t.show(), "2026-10-22T01:29:00.123Z")
+    assert_eq((Time 0).show(), "1970-01-01T00:00:00Z")
+
+json_show: test =
+    assert_eq(Null.show(), "null")
+    assert_eq((Bool True).show(), "true")
+    assert_eq((Str "hi").show(), "\"hi\"")
+    assert_eq((Arr {Int 1, Float 2.5}).show(), "[1,2.5]")
+    assert_eq((Obj {"a": Int 1}).show(), "\{\"a\":1}")

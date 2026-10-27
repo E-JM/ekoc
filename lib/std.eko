@@ -26,6 +26,45 @@ ParseError: type = Empty | Invalid String | OutOfRange
 // A wall-clock instant, as nanoseconds since the epoch.
 Time: type = Time Int
 
+// The ISO 8601 UTC display: date, time, an optional fraction trimmed
+// of trailing zeros, and the zone marker (Clause 9.7.4).
+Time.show: (t: Time) -> String =
+    case t:
+        Time n ->
+            date := _civil(n.div(86_400_000_000_000))
+            day_ns := n.mod(86_400_000_000_000)
+            y := "{date.y}".pad_left(4, '0')
+            mon := "{date.m}".pad_left(2, '0')
+            day := "{date.d}".pad_left(2, '0')
+            day_txt := y ++ "-" ++ mon ++ "-" ++ day
+            nanos := day_ns % 1_000_000_000
+            frac :=
+                if nanos == 0: "" else: "." ++ _nanos_frac(nanos, 9)
+            day_txt ++ "T" ++ _clock(day_ns / 1_000_000_000) ++ frac ++ "Z"
+
+// The civil date of a day count since 1970-01-01, floor-division
+// throughout, so dates before the epoch decompose the same way
+// (Hinnant's civil_from_days).
+_civil: (z0: Int) -> [y: Int, m: Int, d: Int] =
+    z := z0 + 719_468
+    era := z.div(146_097)
+    doe := z - era * 146_097
+    yoe := (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365
+    y0 := yoe + era * 400
+    doy := doe - (365 * yoe + yoe / 4 - yoe / 100)
+    mp := (5 * doy + 2) / 153
+    d := doy - (153 * mp + 2) / 5 + 1
+    m := if mp < 10: mp + 3 else: mp - 9
+    y := if m <= 2: y0 + 1 else: y0
+    {y: y, m: m, d: d}
+
+// The time of day of a second count: two digits each.
+_clock: (s: Int) -> String =
+    hh := "{s / 3600}".pad_left(2, '0')
+    mm := "{(s / 60) % 60}".pad_left(2, '0')
+    ss := "{s % 60}".pad_left(2, '0')
+    hh ++ ":" ++ mm ++ ":" ++ ss
+
 // A monotonic reading, as nanoseconds from an arbitrary epoch.
 Mono: type = Mono Int
 
@@ -42,16 +81,17 @@ Duration.show: (d: Duration) -> String =
             q := m / 1_000_000_000
             r := m % 1_000_000_000
             body :=
-                if r == 0: "{q}" else: "{q}." ++ _duration_frac(r, 9)
+                if r == 0: "{q}" else: "{q}." ++ _nanos_frac(r, 9)
             sign :=
                 if n < 0: "-" else: ""
             sign ++ body ++ "s"
 
-// The fractional digits: a trailing zero of the remainder drops one
-// digit and one place together, so the padding never refills it.
-_duration_frac: (r: Int, width: UInt) -> String =
+// The fractional nanosecond digits, shared by the time displays: a
+// trailing zero of the remainder drops one digit and one place
+// together, so the padding never refills it.
+_nanos_frac: (r: Int, width: UInt) -> String =
     if r != 0 && r % 10 == 0:
-        _duration_frac(r / 10, width - 1)
+        _nanos_frac(r / 10, width - 1)
     else:
         "{r}".pad_left(width, '0')
 
