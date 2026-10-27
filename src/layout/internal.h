@@ -3,9 +3,10 @@
 
 #include "layout/layout.h"
 
-/* One physical line. Blank and comment-only lines keep their
-   terminator but carry no tokens: the lexer already dropped comments,
-   so a token-free line is insignificant. */
+/* One physical line. Blank and ordinary comment-only lines keep their
+   terminator but carry no tokens: the lexer drops their text, so a
+   token-free line is insignificant. A documentation line carries DOC
+   tokens only; it is trivia too. */
 typedef struct {
     const ek_token *tok; /* tokens of the line, terminator excluded */
     size_t count;
@@ -47,6 +48,11 @@ typedef struct {
     int seen;          /* a significant line was processed */
     int stray_base;    /* block column below an ignored indent; -1 when none */
     const line_run *prev; /* previous significant line */
+    /* Documents waiting for the next binding line. */
+    const ek_token **docs;
+    size_t doc_count;
+    size_t doc_cap;
+    int after_break; /* the previous line ended at a member boundary */
     int chain_col;    /* column of the chain's first '.'; -1 when none */
     int depth;        /* open ( [ { at the current point */
     cb_block *cb;
@@ -61,6 +67,9 @@ void lo_emit(layout_ctx *c, ek_layout_kind kind, int line, int col);
 void lo_emit_source(layout_ctx *c, const ek_token *t);
 void lo_push_col(layout_ctx *c, int col, int hdr);
 void lo_push_cb(layout_ctx *c, int header_col, int header_depth);
+void lo_push_doc(layout_ctx *c, const ek_token *t);
+void lo_clear_docs(layout_ctx *c);
+void lo_flush_docs(layout_ctx *c);
 
 /* process.c: the layout state machine over the line table. */
 void lo_process(layout_ctx *c, const line_run *lines, size_t count);

@@ -17,7 +17,9 @@ static void test_blank_lines(void)
 }
 
 /* Comment-only lines reach layout as token-free lines: the lexer drops
-   comments, so they establish nothing and terminate nothing. */
+   plain comments, so they establish nothing and terminate nothing. A
+   documentation line is trivia too, and its document reaches the next
+   binding's line. */
 static void test_comment_only_lines(void)
 {
     layout_fixture f;
@@ -26,7 +28,7 @@ static void test_comment_only_lines(void)
     fx_begin(&f, "a: Int = 1\n// note\n/// doc\nb: Int = 2\n");
     EK_CHECK_U64(fx_errors(&f), 0);
     got = fx_skeleton(&f);
-    EK_CHECK_STR(got, "S S S S S N S S S S S N E");
+    EK_CHECK_STR(got, "S S S S S N S S S S S S N E");
     free(got);
     fx_end(&f);
 }

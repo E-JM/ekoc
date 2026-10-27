@@ -105,6 +105,43 @@ void lo_push_col(layout_ctx *c, int col, int hdr)
     c->col_count++;
 }
 
+void lo_push_doc(layout_ctx *c, const ek_token *t)
+{
+    if (c->oom) {
+        return;
+    }
+    if (c->doc_count == c->doc_cap) {
+        size_t want = c->doc_cap ? c->doc_cap * 2 : 16;
+        const ek_token **p = ek_arena_alloc(c->arena, want * sizeof *p);
+
+        if (!p) {
+            lo_oom(c);
+            return;
+        }
+        if (c->doc_count > 0) {
+            memcpy(p, c->docs, c->doc_count * sizeof *p);
+        }
+        c->docs = p;
+        c->doc_cap = want;
+    }
+    c->docs[c->doc_count++] = t;
+}
+
+void lo_clear_docs(layout_ctx *c)
+{
+    c->doc_count = 0;
+}
+
+void lo_flush_docs(layout_ctx *c)
+{
+    size_t i;
+
+    for (i = 0; i < c->doc_count; i++) {
+        lo_emit_source(c, c->docs[i]);
+    }
+    c->doc_count = 0;
+}
+
 void lo_push_cb(layout_ctx *c, int header_col, int header_depth)
 {
     if (c->oom) {
@@ -212,6 +249,7 @@ ek_layout_result ek_layout(const ek_token *tokens, size_t count, const char *fil
     ctx.chain_col = -1;
     ctx.last_if_col = -1;
     ctx.stray_base = -1;
+    ctx.after_break = 1;
     if (count > 0) {
         ctx.eof = &tokens[count - 1];
     } else {

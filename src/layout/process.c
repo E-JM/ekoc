@@ -10,21 +10,78 @@
 #define CODE_DEDENT "E-indent-dedent"
 #define CODE_CONTINUATION "E-syntax"
 
-/* A documentation line carries only DOC tokens. It is trivia: the
-   layout state machine ignores it for now. */
-static int doc_only_line(const line_run *l)
+/* Documentation tokens are trivia for every line-shape decision. */
+static int is_doc(const ek_token *t)
+{
+    return t->kind == EK_TOK_DOC;
+}
+
+static size_t sig_count(const line_run *l)
+{
+    size_t i, n = 0;
+
+    for (i = 0; i < l->count; i++) {
+        if (!is_doc(&l->tok[i])) {
+            n++;
+        }
+    }
+    return n;
+}
+
+static const ek_token *sig_first(const line_run *l)
 {
     size_t i;
 
-    if (l->count == 0 || l->tok[0].kind != EK_TOK_DOC) {
-        return 0;
-    }
-    for (i = 1; i < l->count; i++) {
-        if (l->tok[i].kind != EK_TOK_DOC) {
-            return 0;
+    for (i = 0; i < l->count; i++) {
+        if (!is_doc(&l->tok[i])) {
+            return &l->tok[i];
         }
     }
-    return 1;
+    return NULL;
+}
+
+static const ek_token *sig_last(const line_run *l)
+{
+    size_t i;
+
+    for (i = l->count; i > 0; i--) {
+        if (!is_doc(&l->tok[i - 1])) {
+            return &l->tok[i - 1];
+        }
+    }
+    return NULL;
+}
+
+/* A document attaches to a binding line, so the run is handed over only
+   when the line can begin one. A document before any other construct is
+   dropped silently. */
+static int binding_line(const line_run *l)
+{
+    const ek_token *t = sig_first(l);
+
+    if (!t) {
+        return 0;
+    }
+    switch (t->kind) {
+    case EK_TOK_IDENT:
+    case EK_TOK_LPAREN:
+    case EK_TOK_LBRACE:
+    case EK_TOK_LARROW:
+        return 1;
+    default:
+        return 0;
+    }
+}
+
+static void collect_docs(layout_ctx *c, const line_run *l)
+{
+    size_t i;
+
+    for (i = 0; i < l->count; i++) {
+        if (is_doc(&l->tok[i])) {
+            lo_push_doc(c, &l->tok[i]);
+        }
+    }
 }
 
 /* The stack is empty only while an allocation failure drains the run;
@@ -39,9 +96,11 @@ static void err_at(layout_ctx *c, const char *code, const line_run *l,
 {
     va_list ap;
 
+    const ek_token *t = sig_first(l);
+
     va_start(ap, fmt);
     ek_diag_emitv(c->diag, EK_SEV_ERROR, code, c->file,
-                  l->tok[0].line, l->tok[0].col, fmt, ap);
+                  t->line, t->col, fmt, ap);
     va_end(ap);
 }
 
@@ -136,13 +195,13 @@ static int has_top_colon(const line_run *l)
 static int deeper_licensed(const layout_ctx *c, const line_run *prev,
                            const line_run *cur)
 {
-    if (cur->tok[0].kind == EK_TOK_DOT) {
+    if (sig_first(cur)->kind == EK_TOK_DOT) {
         return 1;
     }
     if (c->case_pending) {
         return 1;
     }
-    return continues_member(prev->tok[prev->count - 1].kind);
+    return continues_member(sig_last(prev)->kind);
 }
 
 /* Pops the indentation stack to col on a dedent, one DEDENT per pop; a
@@ -150,7 +209,7 @@ static int deeper_licensed(const layout_ctx *c, const line_run *prev,
    matched. */
 static void dedent_to(layout_ctx *c, int col, const line_run *l)
 {
-    int line = l->tok[0].line, at = l->tok[0].col;
+    int line = sig_first(l)->line, at = sig_first(l)->col;
 
     while (c->col_count > 1 && top_col(c) > col) {
         c->col_count--;
@@ -170,7 +229,7 @@ static void dedent_to(layout_ctx *c, int col, const line_run *l)
    suite opened no level at all; its else is still a continuation. */
 static void else_dedent(layout_ctx *c, int col, const line_run *l)
 {
-    int line = l->tok[0].line, at = l->tok[0].col;
+    int line = sig_first(l)->line, at = sig_first(l)->col;
 
     while (c->col_count > 1 && top_col(c) > col) {
         int header = c->hdr[c->col_count - 1];
@@ -222,7 +281,7 @@ static void close_cb_depth(layout_ctx *c, int depth, int line, int at)
    every other line break is free formatting. */
 static void bracket_start(layout_ctx *c, const line_run *l, int col)
 {
-    int line = l->tok[0].line, at = l->tok[0].col;
+    int line = sig_first(l)->line, at = sig_first(l)->col;
     const cb_block *cb;
 
     close_cb_col(c, col, line, at);
@@ -238,15 +297,18 @@ static void bracket_start(layout_ctx *c, const line_run *l, int col)
         }
         lo_emit(c, EK_LTOK_NEWLINE, line, at);
         lo_emit(c, EK_LTOK_INDENT, line, at);
+        c->after_break = 1;
         c->cb[c->cb_count - 1].member_col = col;
         c->cb[c->cb_count - 1].opened = 1;
     } else if (col == cb->member_col) {
         lo_emit(c, EK_LTOK_NEWLINE, line, at);
+        c->after_break = 1;
     } else if (col < cb->member_col) {
         err_at(c, CODE_COLUMN, l, "callback body line begins at column %d; "
                "its members begin in column %d", col + 1,
                cb->member_col + 1);
         lo_emit(c, EK_LTOK_NEWLINE, line, at);
+        c->after_break = 1;
     }
 }
 
@@ -254,7 +316,7 @@ static void bracket_start(layout_ctx *c, const line_run *l, int col)
    emitted for the break. */
 static void top_start(layout_ctx *c, const line_run *l, int col)
 {
-    if (l->tok[0].kind == EK_TOK_KW_ELSE) {
+    if (sig_first(l)->kind == EK_TOK_KW_ELSE) {
         else_dedent(c, col, l);
         return;
     }
@@ -270,17 +332,18 @@ static void top_start(layout_ctx *c, const line_run *l, int col)
                        "multiple of four", col - base);
             }
             lo_push_col(c, col, c->header_col);
-            lo_emit(c, EK_LTOK_INDENT, l->tok[0].line, l->tok[0].col);
+            lo_emit(c, EK_LTOK_INDENT, sig_first(l)->line,
+                    sig_first(l)->col);
         } else if (c->stray_base >= 0) {
             return;
         } else if (!c->seen) {
             return;
         } else if (deeper_licensed(c, c->prev, l)) {
-            if (l->tok[0].kind == EK_TOK_DOT && c->chain_col >= 0
-                && c->chain_col != l->tok[0].col) {
+            if (sig_first(l)->kind == EK_TOK_DOT && c->chain_col >= 0
+                && c->chain_col != sig_first(l)->col) {
                 err_at(c, CODE_COLUMN, l, "chain line begins at column %d; "
                        "the chain's first dot is at column %d",
-                       l->tok[0].col, c->chain_col);
+                       sig_first(l)->col, c->chain_col);
             }
         } else {
             err_at(c, CODE_CONTINUATION, l, "indentation to column %d "
@@ -295,7 +358,7 @@ static void top_start(layout_ctx *c, const line_run *l, int col)
 
 static void line_start(layout_ctx *c, const line_run *l)
 {
-    int col = l->tok[0].col - 1;
+    int col = sig_first(l)->col - 1;
 
     if (c->stray_base >= 0 && col <= c->stray_base) {
         c->stray_base = -1;
@@ -318,6 +381,9 @@ static void emit_line(layout_ctx *c, const line_run *l)
     for (i = 0; i < l->count; i++) {
         const ek_token *t = &l->tok[i];
 
+        if (is_doc(t)) {
+            continue;
+        }
         if (t->kind == EK_TOK_LPAREN || t->kind == EK_TOK_LBRACKET
             || t->kind == EK_TOK_LBRACE) {
             lo_emit_source(c, t);
@@ -340,23 +406,24 @@ static void emit_line(layout_ctx *c, const line_run *l)
    opens a block, and a dot fixes the chain column. */
 static void line_state(layout_ctx *c, const line_run *l)
 {
-    const ek_token *last = &l->tok[l->count - 1];
+    const ek_token *first = sig_first(l);
+    const ek_token *last = sig_last(l);
 
     if (c->depth > 0) {
-        if (l->count >= 2 && last->kind == EK_TOK_COLON
+        if (last > l->tok && last->kind == EK_TOK_COLON
             && last[-1].kind == EK_TOK_RPAREN) {
-            lo_push_cb(c, l->tok[0].col - 1, c->depth);
+            lo_push_cb(c, first->col - 1, c->depth);
         }
         return;
     }
     c->expect_block = opens_block(last->kind);
     if (c->expect_block) {
-        c->header_col = l->tok[0].col - 1;
+        c->header_col = first->col - 1;
     }
-    if (l->tok[0].kind == EK_TOK_KW_IF) {
-        c->last_if_col = l->tok[0].col - 1;
+    if (first->kind == EK_TOK_KW_IF) {
+        c->last_if_col = first->col - 1;
     }
-    if (l->tok[0].kind == EK_TOK_KW_CASE) {
+    if (first->kind == EK_TOK_KW_CASE) {
         c->case_pending = 1;
     }
     if (c->case_pending && has_top_colon(l)) {
@@ -370,7 +437,7 @@ static size_t next_sig(const line_run *lines, size_t count, size_t idx)
 {
     size_t j = idx + 1;
 
-    while (j < count && lines[j].count == 0) {
+    while (j < count && sig_count(&lines[j]) == 0) {
         j++;
     }
     return j;
@@ -386,7 +453,7 @@ static int next_is_splice(const layout_ctx *c, const line_run *lines,
     if (j == count) {
         return 0;
     }
-    if (lines[j].tok[0].col - 1 <= top_col(c) || c->expect_block) {
+    if (sig_first(&lines[j])->col - 1 <= top_col(c) || c->expect_block) {
         return 0;
     }
     if (c->stray_base >= 0) {
@@ -403,11 +470,13 @@ static void line_terminator(layout_ctx *c, const line_run *lines,
     const line_run *l = &lines[idx];
     const ek_token *at;
 
+    c->after_break = 0;
     if (c->depth > 0 || next_is_splice(c, lines, count, idx)) {
         return;
     }
     at = l->nl ? l->nl : c->eof;
     lo_emit(c, EK_LTOK_NEWLINE, at->line, at->col);
+    c->after_break = 1;
 }
 
 /* End of file closes every open level, callback blocks first. */
@@ -434,11 +503,22 @@ void lo_process(layout_ctx *c, const line_run *lines, size_t count)
     for (i = 0; i < count; i++) {
         const line_run *l = &lines[i];
 
-        if (l->count == 0 || doc_only_line(l)) {
+        if (sig_count(l) == 0) {
+            if (l->count == 0) {
+                lo_clear_docs(c);
+            } else {
+                collect_docs(c, l);
+            }
             continue;
         }
         line_start(c, l);
+        if (c->after_break && binding_line(l)) {
+            lo_flush_docs(c);
+        } else {
+            lo_clear_docs(c);
+        }
         emit_line(c, l);
+        collect_docs(c, l);
         line_state(c, l);
         line_terminator(c, lines, count, i);
     }

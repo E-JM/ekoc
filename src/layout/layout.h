@@ -29,6 +29,14 @@
  * INDENT at the first token of the member opening the block; DEDENT at
  * the first token of the line that triggered it, or at the closing
  * bracket, or at EOF; EK_LTOK_EOF at the input EOF.
+ *
+ * Documentation tokens are trivia. A run of documentation lines is
+ * held back until the next line that can carry a binding; the run is
+ * then emitted after that line's INDENT/DEDENT markers and before its
+ * source tokens, so the parser sees one document immediately before
+ * the binding. The documentation lines contribute no NEWLINE of their
+ * own. A blank line or an ordinary comment line ends an unattached
+ * run, and a run with no binding line after it is dropped.
  */
 
 typedef enum {
