@@ -147,6 +147,16 @@ static const ek_type *elab_apply(ck_ctx *c, const ek_node *t, ck_tvars *tv)
         && ck_ref_at(c, head, EK_SYM_TYPE, &href)) {
         sym = href->symbol;
     }
+    if (!sym && head && head->kind == EK_N_T_NAME && head->u.path.count) {
+        const char *last = head->u.path.data[head->u.path.count - 1];
+
+        if (last[0] >= 'a' && last[0] <= 'z') {
+            ck_error(c, head, "E-type-apply",
+                     "the type variable `%s` heads an application; a "
+                     "variable denotes a type, not a type constructor "
+                     "(Clause 7.6.1)", last);
+        }
+    }
     arity = type_arity(c, sym);
     if (sym && arity && arity != n) {
         ck_error(c, t, "E-type-arity",

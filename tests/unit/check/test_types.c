@@ -356,6 +356,25 @@ static void type_names(void)
     cfx_end(&f);
 }
 
+/* A type variable denotes a type, never a type constructor: an
+   application headed by a variable is reported at the head, while the
+   same application under a declared generic type stays legal. */
+static void tvar_application(void)
+{
+    cfx f;
+
+    cfx_begin(&f, "f: (x: t Int) -> Int = 0\n");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-type-apply", 1));
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "Pair: type t u = [first: t, second: u]\n"
+              "p: Pair Int String = {first: 1, second: \"a\"}\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+}
+
 /* A type name that two modules declare prints with its module, so a
    message about the two reads as two distinct types; a name only one
    module declares stays bare. */
@@ -392,6 +411,7 @@ int main(void)
     never_adaptation();
     wide_decls();
     type_names();
+    tvar_application();
     shared_names();
     return ek_test_report("check/types");
 }
