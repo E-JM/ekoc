@@ -261,6 +261,35 @@ static void name_case(void)
     pfx_end(&f);
 }
 
+/* The case class follows the Unicode categories of the first scalar,
+   not the ASCII range. */
+static void unicode_case(void)
+{
+    parse_fixture f;
+
+    pfx_begin(&f, "\xd0\xa2\xd0\xbe\xd1\x87\xd0\xba\xd0\xb0: type = "
+                  "\xd0\x9d\xd0\xb0\xd1\x87\xd0\xb0\xd0\xbb\xd0\xbe | "
+                  "\xd0\x9a\xd0\xbe\xd0\xbd\xd0\xb5\xd1\x86\n");
+    EK_CHECK_U64(pfx_errors(&f), 0);
+    EK_CHECK_U64(f.ast.module->u.kids.count, 1);
+    EK_CHECK_U64(pfx_item(&f, 0)->kind, EK_N_TYPE_DECL);
+    pfx_end(&f);
+
+    pfx_begin(&f, "\xd1\x82\xd0\xbe\xd1\x87\xd0\xba\xd0\xb0: type = "
+                  "\xd0\x9d | \xd0\x9a\n");
+    EK_CHECK(pfx_errors(&f) > 0);
+    pfx_collect(&f);
+    EK_CHECK(pfx_has_code(&f, "E-name-case"));
+    pfx_end(&f);
+
+    /* A CJK identifier is a word letter, never an uppercase one. */
+    pfx_begin(&f, "\xe5\x9c\xa8: type = A | B\n");
+    EK_CHECK(pfx_errors(&f) > 0);
+    pfx_collect(&f);
+    EK_CHECK(pfx_has_code(&f, "E-name-case"));
+    pfx_end(&f);
+}
+
 int main(void)
 {
     value_bindings();
@@ -272,5 +301,6 @@ int main(void)
     test_decl();
     extern_decl();
     name_case();
+    unicode_case();
     return ek_test_report("parse/decl");
 }

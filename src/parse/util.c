@@ -2,6 +2,8 @@
 #include <string.h>
 
 #include "parse/internal.h"
+#include "support/utf8.h"
+#include "support/xid.h"
 
 void *p_alloc(p_ctx *c, size_t n)
 {
@@ -349,9 +351,9 @@ int p_atom_start(ek_token_kind k)
     return k == EK_TOK_IDENT || k == EK_TOK_LPAREN || k == EK_TOK_LBRACKET;
 }
 
-/* Name case classes, by spelling alone. The tables carry
-   XID data only, so the test is ASCII: a first scalar above ASCII is
-   treated as snake_case. */
+/* Name case classes, by spelling alone. The class rides on the first
+   scalar after the privacy prefix: a PascalCase name opens with an
+   uppercase or titlecase letter and the remainder carries no `_`. */
 static int no_underscore(const char *s)
 {
     for (; *s; s++) {
@@ -364,10 +366,16 @@ static int no_underscore(const char *s)
 
 int p_is_pascal(const char *s)
 {
+    ek_utf8_decoded d;
+
     while (*s == '_') {
         s++;
     }
-    return s[0] >= 'A' && s[0] <= 'Z' && no_underscore(s);
+    d = ek_utf8_decode(s, strlen(s));
+    if (d.status != EK_UTF8_OK || d.len == 0) {
+        return 0;
+    }
+    return ek_xid_pascal_start(d.cp) && no_underscore(s);
 }
 
 int p_is_snake(const char *s)

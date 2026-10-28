@@ -3,6 +3,8 @@
 #include <string.h>
 
 #include "resolve/internal.h"
+#include "support/utf8.h"
+#include "support/xid.h"
 
 void *r_grow(r_ctx *c, void *old, size_t n, size_t *cap, size_t elem)
 {
@@ -28,10 +30,16 @@ void *r_grow(r_ctx *c, void *old, size_t n, size_t *cap, size_t elem)
    the case class. */
 int r_is_pascal(const char *s)
 {
+    ek_utf8_decoded d;
+
     while (*s == '_') {
         s++;
     }
-    return s[0] >= 'A' && s[0] <= 'Z' && !strchr(s, '_');
+    d = ek_utf8_decode(s, strlen(s));
+    if (d.status != EK_UTF8_OK || d.len == 0) {
+        return 0;
+    }
+    return ek_xid_pascal_start(d.cp) && !strchr(s, '_');
 }
 
 int r_is_snake(const char *s)

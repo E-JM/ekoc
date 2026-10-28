@@ -29,3 +29,8 @@ int ek_xid_continue(uint32_t cp)
 {
     return table_has(ek_xid_continue_table, ek_xid_continue_table_len, cp);
 }
+
+int ek_xid_pascal_start(uint32_t cp)
+{
+    return table_has(ek_pascal_start_table, ek_pascal_start_table_len, cp);
+}

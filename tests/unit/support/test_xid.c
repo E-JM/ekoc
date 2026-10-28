@@ -71,6 +71,25 @@ static void test_symbols_and_emoji(void)
     EK_CHECK_U64(ek_xid_continue(0x2192), 0);
 }
 
+static void test_pascal_start(void)
+{
+    /* uppercase and titlecase letters only */
+    EK_CHECK_U64(ek_xid_pascal_start('A'), 1);
+    EK_CHECK_U64(ek_xid_pascal_start('Z'), 1);
+    EK_CHECK_U64(ek_xid_pascal_start('a'), 0);
+    EK_CHECK_U64(ek_xid_pascal_start('0'), 0);
+    EK_CHECK_U64(ek_xid_pascal_start(0x5F), 0); /* '_' */
+    EK_CHECK_U64(ek_xid_pascal_start(0x0398), 1); /* greek capital theta */
+    EK_CHECK_U64(ek_xid_pascal_start(0x03BB), 0); /* greek small lambda */
+    EK_CHECK_U64(ek_xid_pascal_start(0x0410), 1); /* cyrillic capital A */
+    EK_CHECK_U64(ek_xid_pascal_start(0x0430), 0); /* cyrillic small a */
+    EK_CHECK_U64(ek_xid_pascal_start(0x01C5), 1); /* latin capital D with
+                                                     small z with caron,
+                                                     category Lt */
+    EK_CHECK_U64(ek_xid_pascal_start(0x4E00), 0); /* CJK ideograph, Lo */
+    EK_CHECK_U64(ek_xid_pascal_start(0x00E9), 0); /* small e with acute */
+}
+
 static void test_boundaries(void)
 {
     EK_CHECK_U64(ek_xid_start(0x0000), 0);
@@ -108,6 +127,8 @@ static void test_table_invariants(void)
     EK_CHECK(ranges_sorted(ek_xid_start_table, ek_xid_start_table_len));
     EK_CHECK(ranges_sorted(ek_xid_continue_table,
                            ek_xid_continue_table_len));
+    EK_CHECK(ranges_sorted(ek_pascal_start_table,
+                           ek_pascal_start_table_len));
 }
 
 static void test_binary_search_edges(void)
@@ -154,6 +175,7 @@ int main(void)
     test_cjk();
     test_marks_and_punctuation();
     test_symbols_and_emoji();
+    test_pascal_start();
     test_boundaries();
     test_table_invariants();
     test_binary_search_edges();

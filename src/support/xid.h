@@ -9,4 +9,8 @@
 int ek_xid_start(uint32_t cp);
 int ek_xid_continue(uint32_t cp);
 
+/* Whether a scalar is an uppercase or titlecase letter, the categories
+   a PascalCase name begins with. */
+int ek_xid_pascal_start(uint32_t cp);
+
 #endif
