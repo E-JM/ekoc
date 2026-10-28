@@ -99,6 +99,8 @@ int p_binding_op_ahead(p_ctx *c);      /* 1 :=, 2 <-, 3 =, 0 none */
 void p_name_path(p_ctx *c, ek_slist *path, const ek_layout_token **head);
 ek_node *p_path_pattern(p_ctx *c, const ek_slist *path,
                         const ek_layout_token *head);
+ek_node *p_ctor_pattern(p_ctx *c, const ek_slist *path,
+                        const ek_layout_token *head);
 void p_check_invert_pattern(p_ctx *c, const ek_node *pat);
 
 /* binding.c: binding forms and member/suite bodies. */

@@ -373,26 +373,26 @@ void p_name_path(p_ctx *c, ek_slist *path, const ek_layout_token **head)
 }
 
 /* The single-name patterns admitted on a binding line: a variable, the
-   wildcard, or — by spelling — a constructor. */
+   wildcard, or — by spelling — a bare or qualified constructor. */
 ek_node *p_path_pattern(p_ctx *c, const ek_slist *path,
                         const ek_layout_token *head)
 {
     ek_node *n;
+    const char *last = path->data[path->count - 1];
 
-    if (path->count != 1) {
-        p_error_tok(c, "E-syntax", head,
-                    "a binding pattern is one name; write a tuple group to "
-                    "destructure (Clause 6.8.1)");
+    if (path->count > 1 && !p_is_pascal(last)) {
+        p_error(c, "E-name-case", head->line, head->col,
+                "a qualified binding pattern ends in a constructor name "
+                "(Clause 6.8.1)");
         return NULL;
     }
-    if (strcmp(path->data[0], "_") == 0) {
+    if (path->count == 1 && strcmp(last, "_") == 0) {
         return p_node(c, EK_N_P_WILDCARD, head->line, head->col);
     }
-    if (p_is_pascal(path->data[0])) {
+    if (path->count > 1 || p_is_pascal(last)) {
         n = p_node(c, EK_N_P_CONS, head->line, head->col);
         if (n) {
-            p_path_init(&n->u.cons.name);
-            p_path_add(c, &n->u.cons.name, path->data[0]);
+            n->u.cons.name = *path;
             if (n->u.cons.name.count == 0) {
                 return NULL;
             }
@@ -401,8 +401,7 @@ ek_node *p_path_pattern(p_ctx *c, const ek_slist *path,
     }
     n = p_node(c, EK_N_P_VAR, head->line, head->col);
     if (n) {
-        p_path_init(&n->u.path);
-        p_path_add(c, &n->u.path, path->data[0]);
+        n->u.path = *path;
         if (n->u.path.count == 0) {
             return NULL;
         }

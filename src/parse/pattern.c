@@ -142,6 +142,24 @@ static ek_node *name_pattern(p_ctx *c, const ek_layout_token *t)
     }
 }
 
+/* A constructor pattern from an already-consumed dotted or Pascal
+   name, with its payload read from the cursor when one follows. */
+ek_node *p_ctor_pattern(p_ctx *c, const ek_slist *path,
+                        const ek_layout_token *head)
+{
+    ek_node *n = p_node(c, EK_N_P_CONS, head->line, head->col);
+
+    if (!n) {
+        return NULL;
+    }
+    n->u.cons.name = *path;
+    n->u.cons.payload = NULL;
+    if (p_pattern_start(p_src_kind(p_peek(c)))) {
+        n->u.cons.payload = p_adopt(c, n, primary_pattern(c));
+    }
+    return n;
+}
+
 /* A string pattern carries no interpolation. */
 static ek_node *string_pattern(p_ctx *c, const ek_layout_token *t)
 {

@@ -34,6 +34,72 @@ static void value_bindings(void)
     pfx_end(&f);
 }
 
+/* The binding grammar admits every pattern on the left; the refutable
+   families parse and the check stage owns their rejection. */
+static void pattern_bindings(void)
+{
+    parse_fixture f;
+    const ek_node *let;
+
+    pfx_begin(&f, "\"timeout\" = s\n");
+    EK_CHECK_U64(pfx_errors(&f), 0);
+    let = pfx_item(&f, 0);
+    EK_CHECK_U64(let->kind, EK_N_LET);
+    EK_CHECK_U64(let->u.bind.pattern->kind, EK_N_P_LIT);
+    EK_CHECK_U64(let->u.bind.value->kind, EK_N_NAME);
+    pfx_end(&f);
+
+    pfx_begin(&f, "-1 = n\n");
+    EK_CHECK_U64(pfx_errors(&f), 0);
+    EK_CHECK_U64(pfx_item(&f, 0)->u.bind.pattern->kind, EK_N_P_LIT);
+    pfx_end(&f);
+
+    pfx_begin(&f, "Ok x = r\n");
+    EK_CHECK_U64(pfx_errors(&f), 0);
+    let = pfx_item(&f, 0);
+    EK_CHECK_U64(let->kind, EK_N_LET);
+    EK_CHECK_U64(let->u.bind.pattern->kind, EK_N_P_CONS);
+    EK_CHECK_U64(let->u.bind.pattern->u.cons.payload->kind, EK_N_P_VAR);
+    EK_CHECK_U64(let->u.bind.value->kind, EK_N_NAME);
+    pfx_end(&f);
+
+    pfx_begin(&f, "mod.Ctor = e\n");
+    EK_CHECK_U64(pfx_errors(&f), 0);
+    let = pfx_item(&f, 0);
+    EK_CHECK_U64(let->u.bind.pattern->kind, EK_N_P_CONS);
+    EK_CHECK_U64(let->u.bind.pattern->u.cons.name.count, 2);
+    EK_CHECK_U64(let->u.bind.pattern->u.cons.payload, NULL);
+    pfx_end(&f);
+
+    pfx_begin(&f, "(a, b): [Int, Int] = row\n");
+    EK_CHECK_U64(pfx_errors(&f), 0);
+    let = pfx_item(&f, 0);
+    EK_CHECK_U64(let->kind, EK_N_LET);
+    EK_CHECK_U64(let->u.bind.type->kind, EK_N_T_TUPLE);
+    EK_CHECK_U64(let->u.bind.pattern->kind, EK_N_P_PAREN);
+    pfx_end(&f);
+
+    pfx_begin(&f, "{name}: Person = p\n");
+    EK_CHECK_U64(pfx_errors(&f), 0);
+    let = pfx_item(&f, 0);
+    EK_CHECK_U64(let->kind, EK_N_LET);
+    EK_CHECK_U64(let->u.bind.pattern->kind, EK_N_P_BRACE);
+    EK_CHECK_U64(let->u.bind.type->kind, EK_N_T_NAME);
+    pfx_end(&f);
+
+    /* A qualified pattern ends in its constructor. */
+    pfx_begin(&f, "mod.thing = e\n");
+    EK_CHECK(pfx_errors(&f) > 0);
+    pfx_collect(&f);
+    EK_CHECK(pfx_has_code(&f, "E-name-case"));
+    pfx_end(&f);
+
+    /* A snake head admits no payload. */
+    pfx_begin(&f, "f x = e\n");
+    EK_CHECK(pfx_errors(&f) > 0);
+    pfx_end(&f);
+}
+
 static void rebind_and_discard(void)
 {
     parse_fixture f;
@@ -293,6 +359,7 @@ static void unicode_case(void)
 int main(void)
 {
     value_bindings();
+    pattern_bindings();
     rebind_and_discard();
     inverted_bindings();
     namespace_binding();

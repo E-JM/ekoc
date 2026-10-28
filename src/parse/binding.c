@@ -101,32 +101,59 @@ ek_node *p_binding_rhs(p_ctx *c)
     return p_expr(c);
 }
 
-/* A line whose pre-scan found a binding operator. */
+/* `Pattern [= BindingRHS]` under a LET node; the annotation may be
+   NULL. */
+static ek_node *let_tail(p_ctx *c, ek_node *pat, ek_node *ann);
+
+/* A line whose pre-scan found a binding operator. Any pattern may
+   stand on the left; the refutable families are parse-legal and the
+   check stage rejects them. */
 ek_node *p_binding_line(p_ctx *c, int top_level)
 {
+    const ek_layout_token *t = p_peek(c);
+    ek_node *pat;
+
     if (p_at(c, EK_TOK_LARROW)) {
         return p_invert_bare(c);
-    }
-    if (p_at(c, EK_TOK_LPAREN) || p_at(c, EK_TOK_LBRACE)) {
-        ek_node *pat = p_pattern(c);
-
-        if (!pat) {
-            p_sync(c);
-            return NULL;
-        }
-        return p_binding_after_pattern(c, pat);
     }
     if (p_at(c, EK_TOK_IDENT)) {
         return p_binding_name_head(c, top_level);
     }
-    p_error_tok(c, "E-syntax", p_peek(c), "expected a binding");
-    p_sync(c);
-    return NULL;
+    if (p_src_kind(t) != EK_TOK_LPAREN && p_src_kind(t) != EK_TOK_LBRACE
+        && !p_pattern_start(p_src_kind(t))) {
+        p_error_tok(c, "E-syntax", t, "expected a binding");
+        p_sync(c);
+        return NULL;
+    }
+    pat = p_pattern(c);
+    if (!pat) {
+        p_sync(c);
+        return NULL;
+    }
+    return p_binding_after_pattern(c, pat);
 }
 
-/* A binding line that begins with a pattern group or a brace pattern. */
+/* A binding line that begins with a pattern group, a brace pattern, or
+   a literal pattern. */
 ek_node *p_binding_after_pattern(p_ctx *c, ek_node *pat)
 {
+    ek_node *ann;
+
+    if (p_at(c, EK_TOK_COLON)) {
+        p_take(c);
+        ann = p_type(c);
+        if (!ann) {
+            p_sync(c);
+            return NULL;
+        }
+        if (!p_got(c, EK_TOK_EQ)) {
+            p_error_tok(c, "E-syntax", p_peek(c),
+                        "expected `=` after the annotation");
+            p_sync(c);
+            return NULL;
+        }
+        return let_tail(c, pat, ann);
+    }
     if (p_got(c, EK_TOK_COLONEQ)) {
         ek_node *v = p_expr(c);
 
@@ -152,17 +179,24 @@ ek_node *p_binding_after_pattern(p_ctx *c, ek_node *pat)
         return p_node3(c, EK_N_INVERT, pat, NULL, call);
     }
     if (p_got(c, EK_TOK_EQ)) {
-        ek_node *v = p_binding_rhs(c);
-
-        if (!v) {
-            return NULL;
-        }
-        return p_node3(c, EK_N_LET, pat, NULL, v);
+        return let_tail(c, pat, NULL);
     }
     p_error_tok(c, "E-syntax", p_peek(c),
-                "expected `:=`, `<-` or `=` after the pattern");
+                "expected `:`, `:=`, `<-` or `=` after the pattern");
     p_sync(c);
     return NULL;
+}
+
+/* `Pattern [= BindingRHS]` under a LET node; the annotation may be
+   NULL. */
+static ek_node *let_tail(p_ctx *c, ek_node *pat, ek_node *ann)
+{
+    ek_node *v = p_binding_rhs(c);
+
+    if (!v) {
+        return NULL;
+    }
+    return p_node3(c, EK_N_LET, pat, ann, v);
 }
 
 /* `Name := Expression`. */
@@ -224,7 +258,9 @@ static ek_node *plain_let_tail(p_ctx *c, const ek_slist *path,
 }
 
 /* A binding line that begins with a name: `:=`, `<-`, `:` with an
-   annotation or contextual word, or plain `=`. */
+   annotation or contextual word, plain `=`, or — when the name is
+   constructor-shaped and a pattern follows it — a constructor pattern
+   with its payload. */
 ek_node *p_binding_name_head(p_ctx *c, int top_level)
 {
     ek_slist path;
@@ -245,6 +281,10 @@ ek_node *p_binding_name_head(p_ctx *c, int top_level)
     }
     if (p_got(c, EK_TOK_EQ)) {
         return plain_let_tail(c, &path, head);
+    }
+    if (p_pattern_start(p_src_kind(p_peek(c)))
+        && (path.count > 1 || p_is_pascal(path.data[path.count - 1]))) {
+        return p_binding_after_pattern(c, p_ctor_pattern(c, &path, head));
     }
     p_error_tok(c, "E-syntax", p_peek(c),
                 "expected `:=`, `<-`, `:` or `=` after the name");

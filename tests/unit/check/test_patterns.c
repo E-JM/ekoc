@@ -388,6 +388,33 @@ static void bindings(void)
               "{h, ..t} <- disp((n): n)\n");
     EK_CHECK(cfx_code_at_line(&f, "E-refutable-binding", 2));
     cfx_end(&f);
+
+    /* A literal pattern parses and is rejected at the binding. */
+    cfx_begin(&f, "s: String = \"go\"\n"
+                  "\"go\" = s\n");
+    EK_CHECK(cfx_code_at_line(&f, "E-refutable-binding", 2));
+    cfx_end(&f);
+
+    cfx_begin(&f, "n: Int = -1\n"
+                  "-1 = n\n");
+    EK_CHECK(cfx_code_at_line(&f, "E-refutable-binding", 2));
+    cfx_end(&f);
+
+    /* A constructor pattern with its payload parses and is rejected at
+       the binding. */
+    cfx_begin(&f,
+              "r: Result Int String = Ok 1\n"
+              "Ok v = r\n");
+    EK_CHECK(cfx_code_at_line(&f, "E-refutable-binding", 2));
+    cfx_end(&f);
+
+    /* The annotated group binding keeps its check-stage route. */
+    cfx_begin(&f,
+              "row: [Int, Int] = {1, 2}\n"
+              "(a, b): [Int, Int] = row\n"
+              "s: Int = a + b\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
 }
 
 /* One wide multi-scrutinee case over a two-constructor ADT: mode 0 is
