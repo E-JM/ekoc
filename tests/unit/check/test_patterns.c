@@ -136,13 +136,22 @@ static void lists(void)
     EK_CHECK(cfx_code_at_line(&f, "E-exhaust", 2));
     cfx_end(&f);
 
-    /* A prefix-rest covers non-empty when its last element covers. */
+    /* A prefix-rest covers non-empty when its last element covers;
+       a literal names one value of the element type and does not. */
+    cfx_begin(&f,
+              "f: (xs: []Int) -> Int =\n"
+              "    case xs:\n"
+              "        {.., last} -> last\n"
+              "        {} -> 0\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+
     cfx_begin(&f,
               "f: (xs: []Int) -> Bool =\n"
               "    case xs:\n"
               "        {.., 42} -> True\n"
               "        {} -> False\n");
-    EK_CHECK_U64(cfx_errors(&f), 0);
+    EK_CHECK(cfx_code_at_line(&f, "E-exhaust", 2));
     cfx_end(&f);
 }
 
@@ -563,6 +572,91 @@ static void nested_payloads(void)
     cfx_end(&f);
 }
 
+/* Coverage at depth: guards contribute nothing, constructor payloads
+   are judged inside the product, and a scrutinee without case
+   structure is covered only by a catch-all. */
+static void depth_and_scalar_coverage(void)
+{
+    cfx f;
+
+    /* A guarded arm covers nothing: Man rides only on its unguarded
+       arm. */
+    cfx_begin(&f,
+              "Sex: type = Man | Woman\n"
+              "f: (s: Sex) -> Int =\n"
+              "    case s:\n"
+              "        Man if True -> 1\n"
+              "        Woman -> 2\n");
+    EK_CHECK(cfx_code_at_line(&f, "E-exhaust", 3));
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "Sex: type = Man | Woman\n"
+              "f: (s: Sex, g: Bool) -> Int =\n"
+              "    case s:\n"
+              "        Man if g -> 1\n"
+              "        Man -> 2\n"
+              "        Woman -> 3\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+
+    /* The payload of a constructor column is judged per split: the
+       True rows answer `Some None` only. */
+    cfx_begin(&f,
+              "f: (o: Option (Option Int), b: Bool) -> Int =\n"
+              "    case o, b:\n"
+              "        Some None, True -> 1\n"
+              "        Some _, False -> 2\n"
+              "        None, _ -> 3\n");
+    EK_CHECK(cfx_code_at_line(&f, "E-exhaust", 2));
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "f: (o: Option (Option Int), b: Bool) -> Int =\n"
+              "    case o, b:\n"
+              "        Some None, True -> 1\n"
+              "        Some (Some v), _ -> v\n"
+              "        Some None, False -> 2\n"
+              "        None, _ -> 3\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+
+    /* A scalar scrutinee is covered only by a variable or `_`. */
+    cfx_begin(&f,
+              "f: (n: Int) -> String =\n"
+              "    case n:\n"
+              "        0 -> \"zero\"\n");
+    EK_CHECK(cfx_code_at_line(&f, "E-exhaust", 2));
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "f: (n: Int) -> String =\n"
+              "    case n:\n"
+              "        0 -> \"zero\"\n"
+              "        _ -> \"many\"\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+
+    /* Scalar columns split over their literals; everything else wants
+       a catch-all row. */
+    cfx_begin(&f,
+              "f: (n: Int, b: Bool) -> Int =\n"
+              "    case n, b:\n"
+              "        0, True -> 1\n"
+              "        _, False -> 2\n");
+    EK_CHECK(cfx_code_at_line(&f, "E-exhaust", 2));
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "f: (n: Int, b: Bool) -> Int =\n"
+              "    case n, b:\n"
+              "        0, True -> 1\n"
+              "        _, True -> 2\n"
+              "        _, False -> 3\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+}
+
 int main(void)
 {
     variants();
@@ -575,5 +669,6 @@ int main(void)
     constructor_and_product_coverage();
     nested_payloads();
     rejected_alternative();
+    depth_and_scalar_coverage();
     return ek_test_report("check/patterns");
 }

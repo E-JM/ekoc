@@ -5,10 +5,10 @@
 /* Coverage of one scrutinee type, judged by constructors at every
    depth: an algebraic scrutinee must have every constructor covered, a
    tuple every component, a record one arm whose named fields are
-   covered, a list both the empty and the non-empty lists. Scrutinee
-   types whose case structure the placeholder bridge leaves unknown
-   (the std scalars and their constructors) defer the judgment. The
-   multi-scrutinee product is in exhaust_prod.c. */
+   covered, a list both the empty and the non-empty lists. A scrutinee
+   with no visible case structure is covered only by a catch-all; an
+   inference variable suspends the judgment. The multi-scrutinee
+   product is in exhaust_prod.c. */
 
 static int pat_catchall(const ek_node *p)
 {
@@ -202,8 +202,8 @@ static int covers_record(ck_ctx *c, const ek_type *t,
 
 /* One constructor of the scrutinee ADT: the arms headed by it must
    jointly cover its instantiated payload. */
-static int covers_ctor(ck_ctx *c, const ck_ctor *ct, const ek_type *scrut,
-                       const ek_node *const *rows, size_t nr)
+int ck_covers_ctor(ck_ctx *c, const ck_ctor *ct, const ek_type *scrut,
+                   const ek_node *const *rows, size_t nr)
 {
     const ek_node *payloads[32];
     size_t np = 0, i;
@@ -275,12 +275,16 @@ static int covers_adt(ck_ctx *c, const ck_decl *d, const ek_type *scrut,
                 rows[nr++] = pats[k];
             }
         }
-        all = nr ? covers_ctor(c, ct, scrut, rows, nr) : 0;
+        all = nr ? ck_covers_ctor(c, ct, scrut, rows, nr) : 0;
     }
     return all;
 }
 
-/* Does one of pats cover every value of t? */
+/* Does one of pats cover every value of t? A scrutinee whose case
+   structure is invisible — the std scalars and every type without a
+   declaration here — is covered only by a variable or `_`; a literal
+   names one value of many. An inference variable suspends the
+   judgment: the bridge owes the type, not the coverage. */
 int ck_covers(ck_ctx *c, const ek_type *t, const ek_node *const *pats,
               size_t n)
 {
@@ -292,8 +296,11 @@ int ck_covers(ck_ctx *c, const ek_type *t, const ek_node *const *pats,
             return 1;
         }
     }
-    if (!s || !n) {
+    if (!s || s->kind == EK_T_IVAR || s->kind == EK_T_TVAR) {
         return 1;
+    }
+    if (!n) {
+        return 0;
     }
     if (s->kind == EK_T_LIST) {
         return covers_list(c, s, pats, n);
@@ -319,5 +326,5 @@ int ck_covers(ck_ctx *c, const ek_type *t, const ek_node *const *pats,
             }
         }
     }
-    return 1; /* the deferred cases: std scalars, opaque scrutinees */
+    return 0;
 }
