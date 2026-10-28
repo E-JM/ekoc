@@ -46,6 +46,33 @@ static void station_namespace(void)
     cfx_end(&f);
 }
 
+/* The phantom rule reaches a namespace member's annotation the way it
+   reaches an ordinary annotated binding: a variable only in the result
+   is reported at the member, while a variable occurring inside a
+   parameter type stays legal. */
+static void station_namespace_phantom(void)
+{
+    cfx f;
+
+    cfx_begin(&f,
+              "Money: type = [cents: Int, cur: String]\n"
+              "Money.bad: () -> Option t = None\n");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-phantom", 2));
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "Money: type = [cents: Int, cur: String]\n"
+              "Money.wrap: (g: () -> t) -> t = g()\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+
+    cfx_begin(&f, "bad: () -> Option t = None\n");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-phantom", 1));
+    cfx_end(&f);
+}
+
 static void station_module_fn(void)
 {
     cfx f;
@@ -432,6 +459,7 @@ int main(void)
 {
     station_field();
     station_namespace();
+    station_namespace_phantom();
     station_module_fn();
     derived_services();
     derived_with();

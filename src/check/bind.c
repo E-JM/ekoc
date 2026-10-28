@@ -464,6 +464,7 @@ static const ek_type *ck_annotated_decl(ck_ctx *c, const ek_node *m,
     memset(&tv, 0, sizeof tv);
     t = ck_elaborate(c, ann, &tv);
     if (binding) {
+        ck_check_phantom(c, ann, t);
         ck_annotation_bits(c, ann, t);
         c->open_scope = ck_signature_opens(t);
     }
