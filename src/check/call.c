@@ -9,6 +9,33 @@
    unknown callee unifies with the function type of its synthesized
    arguments. Every call records its world bit and a row. */
 
+/* The callee expression, typed with its call marked so a generic
+   instantiation here records an instance edge. */
+static const ek_type *callee_expr(ck_ctx *c, const ek_node *callee,
+                                  const ek_node *call)
+{
+    const ek_node *saved = c->inst_call;
+    const ek_type *t;
+
+    c->inst_call = call;
+    t = ck_expr(c, callee, NULL);
+    c->inst_call = saved;
+    return t;
+}
+
+/* A callee symbol's type, marked likewise. */
+static const ek_type *callee_symbol_type(ck_ctx *c, const ek_symbol *sym,
+                                         const ek_node *call)
+{
+    const ek_node *saved = c->inst_call;
+    const ek_type *t;
+
+    c->inst_call = call;
+    t = ck_type_of(c, sym);
+    c->inst_call = saved;
+    return t;
+}
+
 /* An unknown callee: the arguments synthesize and the callee unifies
    with their function type (opacity). */
 static const ek_type *call_opaque(ck_ctx *c, const ek_node *e,
@@ -310,9 +337,15 @@ static const ek_type *call_member_walk(ck_ctx *c, const ek_node *e,
     } else {
         chain_receiver(c, callee->u.field.recv, &w);
     }
-    t = ck_link_mod(c, callee, qualified ? head : w.recv,
-                         callee->u.field.name,
-                         qualified ? NULL : w.module, &rd);
+    {
+        const ek_node *saved = c->inst_call;
+
+        c->inst_call = e;
+        t = ck_link_mod(c, callee, qualified ? head : w.recv,
+                        callee->u.field.name,
+                        qualified ? NULL : w.module, &rd);
+        c->inst_call = saved;
+    }
     pt = rd == EK_RD_FIELD ? ck_prune(t) : NULL;
     if (rd == EK_RD_DERIVED && !qualified
         && strcmp(callee->u.field.name, "with") == 0) {
@@ -363,7 +396,13 @@ static const ek_type *call_service(ck_ctx *c, const ek_node *e,
                        implicit);
     }
     recv = ck_expr(c, e->u.call.args.data[0], NULL);
-    t = ck_link(c, callee, recv, name, &rd);
+    {
+        const ek_node *saved = c->inst_call;
+
+        c->inst_call = e;
+        t = ck_link(c, callee, recv, name, &rd);
+        c->inst_call = saved;
+    }
     rest.data = e->u.call.args.data + 1;
     rest.count = e->u.call.args.count - 1;
     if (rd == EK_RD_FIELD) {
@@ -426,14 +465,14 @@ const ek_type *ck_call(ck_ctx *c, const ek_node *e, const ek_type *expected)
             return call_service(c, e, callee, implicit);
         }
         {
-            const ek_type *t = ck_expr(c, callee, NULL);
+            const ek_type *t = callee_expr(c, callee, e);
 
             return call_fn(c, e, t, NULL, NULL, NULL, &e->u.call.args, 0,
                            implicit);
         }
     }
     if (!callee || callee->kind != EK_N_FIELD) {
-        const ek_type *t = ck_expr(c, callee, NULL);
+        const ek_type *t = callee_expr(c, callee, e);
 
         return call_fn(c, e, t, NULL, NULL, NULL, &e->u.call.args, 0,
                        implicit);
@@ -468,7 +507,7 @@ const ek_type *ck_call(ck_ctx *c, const ek_node *e, const ek_type *expected)
             chain_receiver(c, callee->u.field.recv, &w);
         }
         if (!w.shadowed) {
-            const ek_type *t = ck_type_of(c, ref->symbol);
+            const ek_type *t = callee_symbol_type(c, ref->symbol, e);
 
             return call_fn(c, e, t, callee->u.field.name, w.recv, NULL,
                            &e->u.call.args, 0, implicit);

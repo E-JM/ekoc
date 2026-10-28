@@ -116,6 +116,9 @@ static const ek_type *inst_leaf(ck_ctx *c, const ek_type *t,
             }
             got = c->inst_bridge ? ck_opaque(c) : ck_ivar(c);
             ck_map_put(c, memo, t, got);
+            if (c->inst_capture) {
+                ck_map_put(c, c->inst_capture, t, got);
+            }
             return got;
         }
     }

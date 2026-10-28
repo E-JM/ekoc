@@ -294,6 +294,10 @@ ek_check_result ek_check(ek_resolve_result in, ek_arena *arena,
         ck_undetermined(&c, from);
         c.locals = NULL;
     }
+    /* The instantiation graph is complete once every body is checked;
+       the instance-set simulation reports a non-terminating
+       expansion (Clause 8.7.3). */
+    ck_inst_depth(&c);
     if (c.nrows) {
         qsort(c.rows, c.nrows, sizeof *c.rows, row_cmp);
         for (i = 0; i < c.nrows; i++) {

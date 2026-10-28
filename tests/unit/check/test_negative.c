@@ -289,6 +289,22 @@ static void n29(void)
 }
 
 
+/* N30 — non-terminating generic instantiation. */
+static void n30(void)
+{
+    cfx f;
+
+    cfx_begin(&f,
+              "W: type t = W t\n"
+              "wrap: (x: t) -> W t = W x\n"
+              "f: (x: t) -> Int = f(wrap(x))\n"
+              "\n"
+              "n: Int = f(0)\n");
+    EK_CHECK(cfx_errors(&f) >= 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-instantiation-depth", 3));
+    cfx_end(&f);
+}
+
 /* A malformed type declaration is one parse diagnostic. The alias has
    no representation, so dependent check claims about its literals are
    not emitted; the legal shapes around it stay clean. */
@@ -330,6 +346,7 @@ int main(void)
     n27();
     n28();
     n29();
+    n30();
     alias_cascade();
     return ek_test_report("check/negative");
 }

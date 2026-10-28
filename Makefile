@@ -71,6 +71,7 @@ CHECK_SRC := \
 	src/check/extern.c \
 	src/check/expr.c \
 	src/check/halt.c \
+	src/check/instdepth.c \
 	src/check/literal.c \
 	src/check/member.c \
 	src/check/namespace.c \

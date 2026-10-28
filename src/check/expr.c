@@ -96,7 +96,7 @@ const ek_type *ck_scope_get(const ck_ctx *c, const char *name)
 
 /* The scheme of a surface symbol, built once from its annotation and
    instantiated per use. */
-static ck_scheme *scheme_of(ck_ctx *c, const ek_symbol *sym)
+ck_scheme *ck_scheme_of(ck_ctx *c, const ek_symbol *sym)
 {
     ck_scheme *s = (ck_scheme *)ck_map_get(&c->schemes, sym);
     const ek_type *t;
@@ -128,11 +128,11 @@ const ek_type *ck_type_of(ck_ctx *c, const ek_symbol *sym)
     if (!sym) {
         return ck_opaque(c);
     }
-    s = scheme_of(c, sym);
+    s = ck_scheme_of(c, sym);
     if (!s || !s->type) {
         return ck_opaque(c); /* unannotated interface rows: opacity */
     }
-    return ck_instantiate(c, s);
+    return ck_instantiate_use(c, sym->name, s);
 }
 
 /* A name in value position: its kind comes from the resolver, its
@@ -154,7 +154,7 @@ static const ek_type *name_type(ck_ctx *c, const ek_node *n,
                 ck_scheme *s = ck_scope_get_scheme(c, ref->symbol->name);
 
                 if (s && s->type) {
-                    return ck_instantiate(c, s);
+                    return ck_instantiate_use(c, name, s);
                 }
             }
             return ck_opaque(c);

@@ -29,6 +29,22 @@ typedef struct {
     int bridge;
 } ck_scheme;
 
+/* One instantiation recorded at a use site: the callee scheme at the
+   actuals its variables took, written in the variables of the body
+   being checked (the edge's caller). A caller with no variables is a
+   seed of the instance-set simulation. */
+typedef struct {
+    const ck_scheme *caller;      /* NULL in a body with no declaration */
+    const ck_scheme *callee;
+    const char *name;             /* callee spelling, for the diagnostic */
+    const ek_surface *mod;        /* the module of the use site */
+    const ek_type **caller_vars;  /* caller scheme vars, scheme order */
+    size_t ncaller_vars;
+    const ek_type **args;         /* one actual per callee scheme var */
+    size_t nargs;
+    const ek_node *at;            /* the call node */
+} ck_inst_edge;
+
 /* A constructor's payload in its declaration's binders. */
 typedef struct {
     const ek_symbol *sym;   /* the constructor symbol */
@@ -103,6 +119,17 @@ typedef struct {
                         record field values it contains */
     ek_ck_row *rows;
     size_t nrows, crows;
+    /* The instantiation graph: the body being checked, its rigid
+       variables, the call marked as the current callee's, and the
+       instantiate capture of its scheme variables. */
+    const ck_scheme *inst_decl;
+    const ek_type **inst_vars;
+    size_t inst_nvars;
+    int inst_body;
+    const ek_node *inst_call;
+    ck_map *inst_capture;
+    ck_inst_edge *inst_edges;
+    size_t ninst, cinst;
     int oom;
 } ck_ctx;
 
@@ -195,6 +222,7 @@ void ck_tv_add(ck_ctx *c, ck_tvars *tv, const char *name, const ek_type *t,
 void ck_binder_scope(ck_ctx *c, const ck_decl *d, ck_tvars *tv);
 const ek_type *ck_decl_repr(ck_ctx *c, const ek_type *nom);
 const ek_type *ck_type_of(ck_ctx *c, const ek_symbol *sym);
+ck_scheme *ck_scheme_of(ck_ctx *c, const ek_symbol *sym);
 const ck_decl *ck_decl_of(ck_ctx *c, const ek_symbol *sym);
 const ck_ctor *ck_ctor_of(ck_ctx *c, const ek_symbol *sym);
 void ck_prebind(ck_ctx *c); /* unannotated top-level rows */
@@ -319,6 +347,15 @@ int ck_ref_at(const ck_ctx *c, const ek_node *n, ek_sym_kind kind,
 /* extern.c: the compile-time extern and ctype checks over the current
    module's declarations. */
 void ck_externs(ck_ctx *c);
+
+/* instdepth.c: the instantiation graph and its instance set
+   (Clause 8.7.3). An instantiation in a body records an edge; the
+   final pass expands ground seeds until the set is exhausted or the
+   depth bound is crossed. */
+const ek_symbol *ck_decl_symbol(ck_ctx *c, const ek_node *m);
+const ek_type *ck_instantiate_use(ck_ctx *c, const char *name,
+                                  const ck_scheme *s);
+void ck_inst_depth(ck_ctx *c);
 
 /* bind.c: the binding forms. */
 ck_scheme *ck_mono(ck_ctx *c, const ek_type *t);

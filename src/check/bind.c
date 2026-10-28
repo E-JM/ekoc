@@ -375,7 +375,11 @@ static const ek_type *annotated_binding(ck_ctx *c, const ek_node *m,
                                         const ek_node *val, ck_scheme *gen)
 {
     const ek_node *ann = m->u.bind.type;
+    const ek_symbol *sym = ck_decl_symbol(c, m);
     const ek_type *bound;
+    const ck_scheme *saved_decl = c->inst_decl;
+    const ek_type **saved_vars = c->inst_vars;
+    size_t saved_nvars = c->inst_nvars;
     int unfed, saved_open;
     ck_tvars tv;
 
@@ -385,6 +389,24 @@ static const ek_type *annotated_binding(ck_ctx *c, const ek_node *m,
     unfed = ck_annotation_bits(c, ann, bound);
     if (gen) {
         *gen = ck_generalize(c, bound);
+    }
+    /* The body is checked under its own generalized scheme: a
+       top-level declaration reuses (or installs) the canonical one, a
+       nested binding is identified by its own scheme. */
+    if (c->inst_body && gen) {
+        if (sym && sym->type) {
+            ck_scheme *have = (ck_scheme *)ck_map_get(&c->schemes, sym);
+
+            if (!have) {
+                ck_map_put(c, &c->schemes, sym, gen);
+                have = gen;
+            }
+            c->inst_decl = have;
+        } else {
+            c->inst_decl = gen;
+        }
+        c->inst_vars = gen->vars;
+        c->inst_nvars = gen->nvars;
     }
     saved_open = c->open_scope;
     c->open_scope = ck_signature_opens(bound);
@@ -402,6 +424,9 @@ static const ek_type *annotated_binding(ck_ctx *c, const ek_node *m,
         }
     }
     c->open_scope = saved_open;
+    c->inst_decl = saved_decl;
+    c->inst_vars = saved_vars;
+    c->inst_nvars = saved_nvars;
     if (val) {
         ck_declare_bit(c, m, ck_own_bit(bound));
         if (!unfed) {
@@ -422,6 +447,13 @@ static const ek_type *ck_binding(ck_ctx *c, const ek_node *m, int top)
 
     if (m->kind == EK_N_INVERT) {
         return invert_binding(c, m, pat, top);
+    }
+    if (top) {
+        /* A top-level body: the module pass records its generic uses. */
+        c->inst_body = 1;
+        c->inst_decl = NULL;
+        c->inst_vars = NULL;
+        c->inst_nvars = 0;
     }
     if (m->u.bind.type) {
         gen = ck_mono(c, NULL);
@@ -446,6 +478,12 @@ static const ek_type *ck_binding(ck_ctx *c, const ek_node *m, int top)
     if (!top) {
         bind_pattern(c, pat, bound, gen);
     }
+    if (top) {
+        c->inst_body = 0;
+        c->inst_decl = NULL;
+        c->inst_vars = NULL;
+        c->inst_nvars = 0;
+    }
     ck_row(c, m, bound, EK_RD_NONE);
     return bound;
 }
@@ -461,12 +499,47 @@ static const ek_type *ck_annotated_decl(ck_ctx *c, const ek_node *m,
     const ek_type *t;
     int saved_open = c->open_scope;
 
+    const ek_symbol *sym = ck_decl_symbol(c, m);
+    const ck_scheme *saved_decl = c->inst_decl;
+    const ek_type **saved_vars = c->inst_vars;
+    size_t saved_nvars = c->inst_nvars;
+    ck_scheme *gen = NULL;
+
     memset(&tv, 0, sizeof tv);
     t = ck_elaborate(c, ann, &tv);
     if (binding) {
         ck_check_phantom(c, ann, t);
         ck_annotation_bits(c, ann, t);
         c->open_scope = ck_signature_opens(t);
+    }
+    if (binding && body && c->inst_body) {
+        if (sym && sym->type) {
+            ck_scheme *have = (ck_scheme *)ck_map_get(&c->schemes, sym);
+
+            if (!have) {
+                have = ek_arena_alloc(c->arena, sizeof *have);
+                if (!have) {
+                    c->oom = 1;
+                    return t;
+                }
+                *have = ck_generalize(c, t);
+                ck_map_put(c, &c->schemes, sym, have);
+            }
+            gen = have;
+            c->inst_decl = gen;
+        } else if (t) {
+            gen = ek_arena_alloc(c->arena, sizeof *gen);
+            if (!gen) {
+                c->oom = 1;
+                return t;
+            }
+            *gen = ck_generalize(c, t);
+            c->inst_decl = gen;
+        }
+        if (gen) {
+            c->inst_vars = gen->vars;
+            c->inst_nvars = gen->nvars;
+        }
     }
     if (body && ann->kind == EK_N_T_FN) {
         size_t i, n = ann->u.t_fn.params.count;
@@ -487,6 +560,9 @@ static const ek_type *ck_annotated_decl(ck_ctx *c, const ek_node *m,
         ck_expr(c, body, t);
     }
     c->open_scope = saved_open;
+    c->inst_decl = saved_decl;
+    c->inst_vars = saved_vars;
+    c->inst_nvars = saved_nvars;
     if (binding && body) {
         ck_declare_bit(c, m, ck_own_bit(t));
         ck_reconcile(c, m, t, body);
@@ -574,15 +650,42 @@ const ek_type *ck_stmt(ck_ctx *c, const ek_node *m, int top)
     case EK_N_INVERT:
         return ck_binding(c, m, top);
     case EK_N_NAMESPACE: {
-        const ek_type *t = ck_annotated_decl(c, m, m->u.namespace.type,
-                                             m->u.namespace.value, 1);
+        int saved_body = c->inst_body;
+        const ck_scheme *saved_decl = c->inst_decl;
+        const ek_type **saved_vars = c->inst_vars;
+        size_t saved_nvars = c->inst_nvars;
+        const ek_type *t;
 
+        c->inst_body = 1;
+        c->inst_decl = NULL;
+        c->inst_vars = NULL;
+        c->inst_nvars = 0;
+        t = ck_annotated_decl(c, m, m->u.namespace.type,
+                              m->u.namespace.value, 1);
+        c->inst_body = saved_body;
+        c->inst_decl = saved_decl;
+        c->inst_vars = saved_vars;
+        c->inst_nvars = saved_nvars;
         service_signature(c, m, t);
         return t;
     }
-    case EK_N_TEST_DECL:
+    case EK_N_TEST_DECL: {
+        int saved_body = c->inst_body;
+        const ck_scheme *saved_decl = c->inst_decl;
+        const ek_type **saved_vars = c->inst_vars;
+        size_t saved_nvars = c->inst_nvars;
+
+        c->inst_body = 1;
+        c->inst_decl = NULL;
+        c->inst_vars = NULL;
+        c->inst_nvars = 0;
         (void)decl_body(c, m->u.decl.body, NULL);
+        c->inst_body = saved_body;
+        c->inst_decl = saved_decl;
+        c->inst_vars = saved_vars;
+        c->inst_nvars = saved_nvars;
         return ck_unit(c);
+    }
     case EK_N_EXTERN_DECL:
         return ck_annotated_decl(c, m, m->u.extern_decl.type, NULL, 0);
     default:

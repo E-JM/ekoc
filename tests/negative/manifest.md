@@ -35,6 +35,7 @@ otherwise it names the rejection and the normative clause.
 | N27 | two visible constructors and no anchor | `E-undetermined` |
 | N28 | opened free name and a top-level binding share a name | `E-name-conflict` |
 | N29 | two imports open the same free name | `E-name-conflict` |
+| N30 | non-terminating generic instantiation | `E-instantiation-depth` |
 
 ## N01 — nominal mismatch
 
@@ -368,3 +369,22 @@ Expected: `E-name-conflict`, at the second import. Two imports that open
 the same free name conflict at the declaration point (`Clause 7.2.3`).
 The duplicate may sit in one list or across two lists; both are the same
 rejection.
+
+## N30 — non-terminating generic instantiation
+
+The generic `f` calls itself at a fresh wrapper type, so expansion keeps
+producing `Int`, `W Int`, `W (W Int)`, and so on. A ground use seeds the
+expansion.
+
+```eko
+W: type t = W t
+wrap: (x: t) -> W t = W x
+f: (x: t) -> Int = f(wrap(x))
+
+n: Int = f(0)
+```
+
+Expected: `E-instantiation-depth`, at the recursive call. A conforming
+program has a finite set of generic instances (`Clause 8.7.3`); expansion
+follows the call graph, so a diverging generic with no ground use is not
+an error and leaves no instance to expand.
