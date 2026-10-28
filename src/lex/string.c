@@ -89,7 +89,9 @@ static void track_braces(const gbuf *run, int *depth)
 
 /* Slot trivia. Returns 1 when consumed, 0 when a token or the closing
    brace is due, -1 when a line terminator ends the string. A tab is
-   whitespace between slot tokens, so it is E-tab. */
+   whitespace between slot tokens, so it is E-tab. A slot's content is
+   an expression: no comment form exists there, and a '/' lexes as the
+   operator. */
 static int slot_trivia(lex_ctx *c)
 {
     int b = ctx_byte(c, 0);
@@ -111,17 +113,6 @@ static int slot_trivia(lex_ctx *c)
     }
     if (b < 0 || b == '\n') {
         return -1;
-    }
-    if (b == '/' && ctx_byte(c, 1) == '/') {
-        lex_skip_line_comment(c);
-        return 1;
-    }
-    if (b == '/' && ctx_byte(c, 1) == '*') {
-        ctx_error(c, "E-block-comment", c->line, c->col,
-                  "block comments do not exist; use //");
-        c->pos += 2;
-        c->col += 2;
-        return 1;
     }
     return 0;
 }

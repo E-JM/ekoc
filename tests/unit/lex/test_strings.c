@@ -344,13 +344,41 @@ static void test_surplus_brace_in_slot(void)
     fx_end(&f);
 }
 
-/* A slot comment runs to end of line and takes the string's close. */
-static void test_slot_comment_to_eol(void)
+/* A slot is an expression region: comment spellings do not occur
+   there, so slashes and stars lex as operators and any odd shape is
+   diagnosed downstream at the expression level. */
+static void test_slot_operators(void)
 {
     lex_fixture f;
+    const ek_token *t;
 
-    fx_begin(&f, "\"{// x}");
-    EK_CHECK(fx_has_error(&f, "E-unterminated-string"));
+    fx_begin(&f, "\"a{x//y}b\"");
+    EK_CHECK_U64(fx_errors(&f), 0);
+    t = &f.r.tokens[0];
+    EK_CHECK_U64(t->kind, EK_TOK_STRING);
+    EK_CHECK_U64(t->part_count, 3);
+    if (t->part_count == 3) {
+        EK_CHECK_U64(t->parts[1].token_count, 4);
+        if (t->parts[1].token_count == 4) {
+            EK_CHECK_U64(t->parts[1].tokens[0].kind, EK_TOK_IDENT);
+            EK_CHECK_U64(t->parts[1].tokens[1].kind, EK_TOK_SLASH);
+            EK_CHECK_U64(t->parts[1].tokens[2].kind, EK_TOK_SLASH);
+            EK_CHECK_U64(t->parts[1].tokens[3].kind, EK_TOK_IDENT);
+        }
+    }
+    fx_end(&f);
+
+    fx_begin(&f, "\"a{x/*y}b\"");
+    EK_CHECK_U64(fx_errors(&f), 0);
+    t = &f.r.tokens[0];
+    EK_CHECK_U64(t->part_count, 3);
+    if (t->part_count == 3) {
+        EK_CHECK_U64(t->parts[1].token_count, 4);
+        if (t->parts[1].token_count == 4) {
+            EK_CHECK_U64(t->parts[1].tokens[1].kind, EK_TOK_SLASH);
+            EK_CHECK_U64(t->parts[1].tokens[2].kind, EK_TOK_STAR);
+        }
+    }
     fx_end(&f);
 }
 
@@ -432,7 +460,7 @@ int main(void)
     test_slot_only_string();
     test_slot_depth();
     test_surplus_brace_in_slot();
-    test_slot_comment_to_eol();
+    test_slot_operators();
     test_unbalanced_slot();
     test_unterminated_stops_at_bracket();
     test_string_position();
