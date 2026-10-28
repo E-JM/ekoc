@@ -177,6 +177,11 @@ static int type_head(ck_ctx *c, const ek_node *recv, const ek_type **out)
     if (!ck_ref_at(c, recv, EK_SYM_TYPE, &r)) {
         return 0;
     }
+    if (r->station == EK_ST_MODULE_PATH) {
+        /* A type reached through a receiver is a namespace segment of
+           that receiver's chain, not a type-position head. */
+        return 0;
+    }
     *out = r->symbol ? ck_nominal(c, r->symbol, NULL, 0) : NULL;
     return 1;
 }
@@ -195,11 +200,20 @@ static const ek_type *direct_receiver(ck_ctx *c, const ek_node *recv)
     if (type_head(c, recv, &head)) {
         return NULL; /* the head is a type namespace */
     }
-    if (recv->kind == EK_N_NAME && ck_ref_at(c, recv, EK_SYM_MODULE, &r)) {
-        return NULL; /* the head is the module itself */
+    /* Peel the module-path segments of a receiver chain: `a.Mod` and
+       `a.Mod.Type` both take `a` as the receiver. */
+    while (recv && recv->kind == EK_N_FIELD) {
+        if (ck_ref_at(c, recv, EK_SYM_MODULE, &r)
+            || (ck_ref_at(c, recv, EK_SYM_TYPE, &r)
+                && r->station == EK_ST_MODULE_PATH)) {
+            recv = recv->u.field.recv;
+            continue;
+        }
+        break;
     }
-    if (recv->kind == EK_N_FIELD && ck_ref_at(c, recv, EK_SYM_MODULE, &r)) {
-        return ck_expr(c, recv->u.field.recv, NULL);
+    if (recv && recv->kind == EK_N_NAME
+        && ck_ref_at(c, recv, EK_SYM_MODULE, &r)) {
+        return NULL; /* the head is the module itself */
     }
     return ck_expr(c, recv, NULL);
 }
