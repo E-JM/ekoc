@@ -34,6 +34,15 @@ static int open_type(const ek_type *t)
     return !t || t->kind == EK_T_IVAR;
 }
 
+/* True when the type is pruned to a determinate form: neither an
+   inference variable nor a type variable, so a failed unification is
+   a real mismatch. */
+static int determinate(const ek_type *t)
+{
+    t = ck_prune(t);
+    return t && t->kind != EK_T_IVAR && t->kind != EK_T_TVAR;
+}
+
 static const char *op_spelling(ek_binop op)
 {
     switch (op) {
@@ -170,6 +179,12 @@ static const ek_type *binary_arith(ck_ctx *c, const ek_node *e,
     }
     same = ck_unify(c, lt, rt, 1);
     if (!same) {
+        if (determinate(lt) && determinate(rt)) {
+            ck_error(c, e, "E-type-mismatch",
+                     "the operands of `%s` are %s and %s (Clause 7.8.4)",
+                     op_spelling(op), ck_type_name(c, lt),
+                     ck_type_name(c, rt));
+        }
         same = ck_prune(lt); /* judge the domain on the left type */
     }
     if (same && !open_type(same)) {
@@ -197,6 +212,12 @@ static const ek_type *binary_cmp(ck_ctx *c, const ek_node *e)
     const ek_type *same = ck_unify(c, lt, rt, 1);
 
     if (!same) {
+        if (determinate(lt) && determinate(rt)) {
+            ck_error(c, e, "E-type-mismatch",
+                     "the operands of `%s` are %s and %s (Clause 7.8.3)",
+                     op_spelling(op), ck_type_name(c, lt),
+                     ck_type_name(c, rt));
+        }
         same = ck_prune(lt); /* judge the domain on the left type */
     }
     if (same && !open_type(same)) {

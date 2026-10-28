@@ -147,6 +147,43 @@ static void ranges(void)
     cfx_end(&f);
 }
 
+/* Two determinate operand types unify or the operator is a mismatch,
+   even when neither operand is a literal; a type-variable pair and a
+   literal against its variable stay legal. */
+static void operand_mismatch(void)
+{
+    cfx f;
+
+    cfx_begin(&f,
+              "f: (n: Int, m: Float) -> Bool =\n"
+              "    s: Int = n + m\n"
+              "    n.eq(1)\n");
+    EK_CHECK(cfx_code_at_line(&f, "E-type-mismatch", 2));
+    cfx_end(&f);
+
+    cfx_begin(&f, "f: (n: Int, m: Float) -> Bool = n == m\n");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-type-mismatch", 1));
+    cfx_end(&f);
+
+    cfx_begin(&f, "f: (n: Int, m: Float) -> Bool = n < m\n");
+    EK_CHECK(cfx_code_at_line(&f, "E-type-mismatch", 1));
+    cfx_end(&f);
+
+    /* A type-variable pair keeps compiling, even at two distinct
+       variables whose unification fails. */
+    cfx_begin(&f,
+              "eq: (x: t, y: t) -> Bool = x == y\n"
+              "any_eq: (x: t, y: u) -> Bool = x == y\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+
+    /* A literal operand is placed at the other operand's type. */
+    cfx_begin(&f, "f: (n: Int) -> Int = n + 1\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+}
+
 int main(void)
 {
     arithmetic();
@@ -154,5 +191,6 @@ int main(void)
     logical();
     concat();
     ranges();
+    operand_mismatch();
     return ek_test_report("check/operators");
 }
