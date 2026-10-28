@@ -196,9 +196,10 @@ static int module_walk(r_ctx *c, r_file *f, r_head *cur, const ek_node *link,
     }
     m = r_module_member(*walk_mod, name);
     if (!m) {
-        if ((*walk_mod)->surf == c->std) {
-            /* A std name the file does not declare yet keeps the
-               external bridge (resolve.h). */
+        if ((*walk_mod)->surf == c->std || from_receiver) {
+            /* The std placeholder keeps its bridge, and a receiver-form
+               miss defers to check: a record field of the same spelling
+               wins the link there, and only the receiver's type knows. */
             external_link(c, cur, link);
             *state = 0;
             *walk_mod = NULL;
@@ -221,6 +222,15 @@ static int module_walk(r_ctx *c, r_file *f, r_head *cur, const ek_node *link,
         return 1;
     }
     if (!m->public) {
+        if (from_receiver) {
+            /* The same deferral as a miss: the field that wins the
+               module segment decides whether the name was ever
+               read here. */
+            external_link(c, cur, link);
+            *state = 0;
+            *walk_mod = NULL;
+            return 1;
+        }
         r_error(c, f->mod->file, link->line, link->col, "E-private-name",
                 "member `%s` is private in module `%s` (Clause 7.3.1)",
                 name, (*walk_mod)->stem);

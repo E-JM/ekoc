@@ -462,9 +462,20 @@ static int std_namespace(const ek_type *r)
    derivation; any other name is reported too, unless the namespace is
    one the compiler still supplies, where the opaque bridge stands. */
 static const ek_type *no_member(ck_ctx *c, const ek_node *at,
-                                const ek_type *r, const char *name)
+                                const ek_type *r, const char *name,
+                                const ek_symbol *mod)
 {
     if (ck_service_name(name)) {
+        return ck_opaque(c);
+    }
+    if (mod) {
+        /* The chain named a module that holds no member of this
+           spelling for this receiver: the deferral resolve made ends
+           here, with the module's own words. */
+        ck_error(c, at, "E-unbound-member",
+                 "module `%s` declares no member `%s` for the receiver %s "
+                 "(Clauses 7.4.3, 7.4.4)", mod->name, name,
+                 ck_type_name(c, r));
         return ck_opaque(c);
     }
     /* A namespace the compiler rows complete has no opaque names
@@ -480,7 +491,8 @@ static const ek_type *no_member(ck_ctx *c, const ek_node *at,
    function. */
 static const ek_type *nominal_link(ck_ctx *c, const ek_node *at,
                                    const ek_type *r, const char *name,
-                                   ek_reading *rd, const ek_type *bool_t)
+                                   const ek_symbol *mod, ek_reading *rd,
+                                   const ek_type *bool_t)
 {
     const ek_type *repr = ck_decl_repr(c, r);
     const ek_type *t;
@@ -544,7 +556,7 @@ static const ek_type *nominal_link(ck_ctx *c, const ek_node *at,
         *rd = EK_RD_MODULE_FN;
         return ck_type_of(c, m);
     }
-    return no_member(c, at, r, name);
+    return no_member(c, at, r, name, mod);
 }
 
 /* The reading of one member link at its receiver's type. Derived
@@ -554,7 +566,7 @@ static const ek_type *nominal_link(ck_ctx *c, const ek_node *at,
    the receivers each service covers. */
 static const ek_type *link_type(ck_ctx *c, const ek_node *at,
                                 const ek_type *recv, const char *name,
-                                ek_reading *rd)
+                                const ek_symbol *mod, ek_reading *rd)
 {
     const ek_type *r = ck_prune(recv);
     const ek_type *bool_t = ck_std_type(c, "Bool");
@@ -608,10 +620,10 @@ static const ek_type *link_type(ck_ctx *c, const ek_node *at,
                 return row;
             }
         }
-        return no_member(c, at, r, name);
+        return no_member(c, at, r, name, mod);
     }
     if (r && r->kind == EK_T_NOMINAL && r->u.nominal.sym) {
-        return nominal_link(c, at, r, name, rd, bool_t);
+        return nominal_link(c, at, r, name, mod, rd, bool_t);
     }
     if (r && r->kind == EK_T_FN) {
         /* A function type has no fields, no namespace, and no module
@@ -637,12 +649,33 @@ static const ek_type *link_type(ck_ctx *c, const ek_node *at,
         if (t) {
             return t;
         }
-        return no_member(c, at, r, name);
+        return no_member(c, at, r, name, mod);
     }
     if (!r || r->kind == EK_T_IVAR || r->kind == EK_T_TVAR) {
         *rd = EK_RD_UNKNOWN;
     }
     return ck_opaque(c);
+}
+
+/* The field of a record type, direct or through a record-shaped
+   nominal's representation. */
+const ek_type *ck_field_of(ck_ctx *c, const ek_type *r, const char *name)
+{
+    const ek_type *p = ck_prune(r);
+
+    if (!p) {
+        return NULL;
+    }
+    if (p->kind == EK_T_RECORD) {
+        return field_of(p, name);
+    }
+    if (p->kind == EK_T_NOMINAL && p->u.nominal.sym) {
+        p = ck_decl_repr(c, p);
+        if (p && p->kind == EK_T_RECORD) {
+            return field_of(p, name);
+        }
+    }
+    return NULL;
 }
 
 /* A bare x.f is a field access. */
@@ -660,7 +693,16 @@ const ek_type *ck_field(ck_ctx *c, const ek_node *e)
 const ek_type *ck_link(ck_ctx *c, const ek_node *link, const ek_type *recv,
                        const char *name, ek_reading *rd)
 {
-    const ek_type *t = link_type(c, link, recv, name, rd);
+    return ck_link_mod(c, link, recv, name, NULL, rd);
+}
+
+/* One member link at its receiver's type, with the module a chain
+   named when no station answers: the miss reports against it. */
+const ek_type *ck_link_mod(ck_ctx *c, const ek_node *link,
+                                const ek_type *recv, const char *name,
+                                const ek_symbol *mod, ek_reading *rd)
+{
+    const ek_type *t = link_type(c, link, recv, name, mod, rd);
 
     ck_row(c, link, t, *rd);
     return t;

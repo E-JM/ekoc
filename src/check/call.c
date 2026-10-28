@@ -186,36 +186,67 @@ static int type_head(ck_ctx *c, const ek_node *recv, const ek_type **out)
     return 1;
 }
 
-/* The receiver of a direct (symbol-bearing) callee: `Mod.f(x)` and
-   `T.f(x)` have no receiver; `a.Mod.f(x)` is `Mod.f(a, x)`. Returns
-   the value to prepend, or NULL. */
-static const ek_type *direct_receiver(ck_ctx *c, const ek_node *recv)
+/* The receiver walk of a receiver-form chain. A module segment peels
+   away unless the receiver's type carries a record field of the same
+   spelling: the field wins the link, and the rest of the chain reads
+   as member links off the field's value. `module` names the module
+   while the link inside the callee is an unshadowed module segment. */
+typedef struct {
+    const ek_type *recv;
+    const ek_symbol *module;
+    int shadowed;
+} chain_recv;
+
+static void chain_receiver(ck_ctx *c, const ek_node *recv, chain_recv *w);
+
+/* One link of the walk, innermost first. */
+static void chain_link(ck_ctx *c, const ek_node *link, chain_recv *w)
 {
     const ek_ref *r = NULL;
-    const ek_type *head = NULL;
+    const ek_type *field;
+    ek_reading rd = EK_RD_NONE;
 
-    if (!recv) {
-        return NULL;
-    }
-    if (type_head(c, recv, &head)) {
-        return NULL; /* the head is a type namespace */
-    }
-    /* Peel the module-path segments of a receiver chain: `a.Mod` and
-       `a.Mod.Type` both take `a` as the receiver. */
-    while (recv && recv->kind == EK_N_FIELD) {
-        if (ck_ref_at(c, recv, EK_SYM_MODULE, &r)
-            || (ck_ref_at(c, recv, EK_SYM_TYPE, &r)
-                && r->station == EK_ST_MODULE_PATH)) {
-            recv = recv->u.field.recv;
-            continue;
+    if (ck_ref_at(c, link, EK_SYM_MODULE, &r)
+        || (ck_ref_at(c, link, EK_SYM_TYPE, &r)
+            && r->station == EK_ST_MODULE_PATH)) {
+        field = ck_field_of(c, w->recv, link->u.field.name);
+        if (field) {
+            /* Station one wins the segment: it reads as the field,
+               and the chain continues as member links. */
+            w->shadowed = 1;
+            w->module = NULL;
+            w->recv = ck_link(c, link, w->recv, link->u.field.name, &rd);
+            return;
         }
-        break;
+        if (r->kind == EK_SYM_MODULE) {
+            w->module = r->symbol;
+        }
+        return; /* a module or type segment contributes no value */
     }
-    if (recv && recv->kind == EK_N_NAME
-        && ck_ref_at(c, recv, EK_SYM_MODULE, &r)) {
-        return NULL; /* the head is the module itself */
+    w->module = NULL;
+    w->recv = ck_link(c, link, w->recv, link->u.field.name, &rd);
+}
+
+static void chain_receiver(ck_ctx *c, const ek_node *recv, chain_recv *w)
+{
+    const ek_ref *r = NULL;
+
+    w->recv = NULL;
+    w->module = NULL;
+    w->shadowed = 0;
+    if (!recv) {
+        return;
     }
-    return ck_expr(c, recv, NULL);
+    if (recv->kind != EK_N_FIELD) {
+        if (recv->kind == EK_N_NAME
+            && ck_ref_at(c, recv, EK_SYM_MODULE, &r)) {
+            return; /* the chain heads at the module itself */
+        }
+        w->recv = ck_expr(c, recv, NULL);
+        return;
+    }
+    chain_receiver(c, recv->u.field.recv, w);
+    chain_link(c, recv, w);
 }
 
 /* The derived `with` service (Clause 9.8.6): the receiver's record
@@ -259,30 +290,41 @@ static const ek_type *call_with(ck_ctx *c, const ek_node *e,
 }
 
 /* A receiver-chain call: the link is typed at the receiver, and a
-   function-valued field calls its value. */
-static const ek_type *call_member(ck_ctx *c, const ek_node *e,
-                                  const ek_node *callee, int implicit)
+   function-valued field calls its value. `pre` reuses a walk the
+   caller already made. */
+static const ek_type *call_member_walk(ck_ctx *c, const ek_node *e,
+                                       const ek_node *callee, int implicit,
+                                       const chain_recv *pre)
 {
     ek_reading rd = EK_RD_NONE;
     const ek_type *head = NULL;
     int qualified = type_head(c, callee->u.field.recv, &head);
-    const ek_type *recv = qualified ? NULL
-                          : direct_receiver(c, callee->u.field.recv);
-    const ek_type *t = ck_link(c, callee, qualified ? head : recv,
-                               callee->u.field.name, &rd);
-    const ek_type *pt = rd == EK_RD_FIELD ? ck_prune(t) : NULL;
+    chain_recv w;
+    const ek_type *t;
+    const ek_type *pt;
 
+    if (qualified) {
+        memset(&w, 0, sizeof w);
+    } else if (pre) {
+        w = *pre;
+    } else {
+        chain_receiver(c, callee->u.field.recv, &w);
+    }
+    t = ck_link_mod(c, callee, qualified ? head : w.recv,
+                         callee->u.field.name,
+                         qualified ? NULL : w.module, &rd);
+    pt = rd == EK_RD_FIELD ? ck_prune(t) : NULL;
     if (rd == EK_RD_DERIVED && !qualified
         && strcmp(callee->u.field.name, "with") == 0) {
         /* The with service takes its literal argument directly; its
            link type is only the expressible stand-in. */
-        return call_with(c, e, recv);
+        return call_with(c, e, w.recv);
     }
     if (rd != EK_RD_FIELD) {
         /* Namespace, module, derived, and opaque readings all take
            the receiver first; a type head supplies namespace context,
            not an argument. */
-        return call_fn(c, e, t, callee->u.field.name, recv,
+        return call_fn(c, e, t, callee->u.field.name, w.recv,
                        qualified ? head : NULL, &e->u.call.args, 0, implicit);
     }
     if (pt && pt->kind == EK_T_FN) {
@@ -294,6 +336,12 @@ static const ek_type *call_member(ck_ctx *c, const ek_node *e,
              callee->u.field.name);
     return call_fn(c, e, NULL, callee->u.field.name, NULL, NULL,
                    &e->u.call.args, 1, implicit);
+}
+
+static const ek_type *call_member(ck_ctx *c, const ek_node *e,
+                                  const ek_node *callee, int implicit)
+{
+    return call_member_walk(c, e, callee, implicit, NULL);
 }
 
 /* The free-call form of a compiler service: its first argument is the
@@ -409,12 +457,23 @@ const ek_type *ck_call(ck_ctx *c, const ek_node *e, const ek_type *expected)
         && (ref->kind == EK_SYM_FUNC || ref->kind == EK_SYM_NAMESPACE
             || ref->kind == EK_SYM_EXTERN)) {
         /* A qualified or module-path member: the receiver is the
-           first argument. */
-        const ek_type *recv = direct_receiver(c, callee->u.field.recv);
-        const ek_type *t = ck_type_of(c, ref->symbol);
+           first argument. A record field of the same spelling wins a
+           module segment of the chain, so the walk decides whether
+           this reading stands. */
+        const ek_type *head = NULL;
+        chain_recv w;
 
-        return call_fn(c, e, t, callee->u.field.name, recv, NULL,
-                       &e->u.call.args, 0, implicit);
+        memset(&w, 0, sizeof w);
+        if (!type_head(c, callee->u.field.recv, &head)) {
+            chain_receiver(c, callee->u.field.recv, &w);
+        }
+        if (!w.shadowed) {
+            const ek_type *t = ck_type_of(c, ref->symbol);
+
+            return call_fn(c, e, t, callee->u.field.name, w.recv, NULL,
+                           &e->u.call.args, 0, implicit);
+        }
+        return call_member_walk(c, e, callee, implicit, &w);
     }
     return call_member(c, e, callee, implicit);
 }
