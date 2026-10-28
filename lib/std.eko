@@ -1,12 +1,23 @@
-// The standard library root: the core types whose bare names are part of
-// the language vocabulary, and the assertion family the implicit import
-// opens in every file. The rest of the std surface (the scalar types, the
-// container namespaces, the members of the declared types, and the
-// compiler services) arrives incrementally; the compiler supplies the
-// names this file does not declare yet (Clauses 9.1.1, 9.1.2, 9.14.3).
+// The standard library root: the types whose bare names are part of the
+// language vocabulary, the assertion family the implicit import opens
+// in every file, and the source members of the value layer and the
+// containers (Clauses 9.1.1, 9.1.2, 9.14.3).
+//
+// The compiler supplies the intrinsic rows this source builds on: the
+// Int/UInt/Float arithmetic, conversions, formatting, and parsers; the
+// machine-word padding rows; Char's code-point bridge; String's scalar
+// access and the Bytes operations; the Dict, Set, Range, and Path
+// operations; the time parsers; Json.parse; List.append; and the
+// panic-coded unwrap/expect pair. Every other member of the inventory
+// is declared here.
 
 // The two-valued Boolean type.
 Bool: type = True | False
+
+Bool.not: (b: Bool) -> Bool =
+    case b:
+        True -> False
+        False -> True
 
 // A domain answer: a payload, or the absence of one.
 Option: type t = Some t | None
@@ -18,6 +29,239 @@ Result: type t e = Ok t | Err e
 // `..=` operators construct it; the constructor is private, so no
 // other form exists and the endpoint domain stays the operators'.
 Range: type t = _Range [start: t, end: t, closed: Bool]
+
+// The Option combinators: the payload variable runs through the
+// callback and the result. The maps are open-bit dispatchers, so a
+// world-touching callback makes the call world-touching.
+Option.map: (o: Option t, f: (t) ?-> u) ?-> Option u =
+    case o:
+        Some x -> Some f(x)
+        None -> None
+
+Option.and_then: (o: Option t, f: (t) ?-> Option u) ?-> Option u =
+    case o:
+        Some x -> f(x)
+        None -> None
+
+Option.or_else: (o: Option t, f: () ?-> Option t) ?-> Option t =
+    case o:
+        Some x -> Some x
+        None -> f()
+
+Option.filter: (o: Option t, f: (t) ?-> Bool) ?-> Option t =
+    case o:
+        Some x -> if f(x): Some x else: None
+        None -> None
+
+Option.is_some: (o: Option t) -> Bool =
+    case o:
+        Some _ -> True
+        None -> False
+
+Option.is_none: (o: Option t) -> Bool =
+    case o:
+        Some _ -> False
+        None -> True
+
+Option.unwrap_or: (o: Option t, d: t) -> t =
+    case o:
+        Some x -> x
+        None -> d
+
+// The nested-access helper: an Option of a list and an index.
+Option.get: (o: Option ([]t), i: Int) -> Option t =
+    case o:
+        Some xs -> xs.get(i)
+        None -> None
+
+// The failure bridge used by `<-` chains.
+Option.to_result: (o: Option t, reason: e) -> Result t e =
+    case o:
+        Some x -> Ok x
+        None -> Err reason
+
+// The list namespace. `++` is the compiler-supplied append; every
+// other member is source over the inductive list patterns.
+List.length: (xs: []t) -> Int =
+    case xs:
+        {} -> 0
+        {h, ..rest} -> 1 + List.length(rest)
+
+List.get: (xs: []t, i: Int) -> Option t =
+    case xs:
+        {} -> None
+        {h, ..rest} ->
+            if i == 0: Some h
+            else: if i < 0: None else: List.get(rest, i - 1)
+
+List.reverse: (xs: []t) -> []t = _list_rev(xs, {})
+
+_list_rev: (xs: []t, acc: []t) -> []t =
+    case xs:
+        {} -> acc
+        {h, ..rest} -> _list_rev(rest, {h} ++ acc)
+
+List.map: (xs: []t, f: (t) ?-> u) ?-> []u =
+    case xs:
+        {} -> {}
+        {h, ..rest} -> {f(h)} ++ List.map(rest, f)
+
+List.filter: (xs: []t, f: (t) ?-> Bool) ?-> []t =
+    case xs:
+        {} -> {}
+        {h, ..rest} ->
+            if f(h): {h} ++ List.filter(rest, f)
+            else: List.filter(rest, f)
+
+List.fold: (xs: []t, init: u, f: (u, t) ?-> u) ?-> u =
+    case xs:
+        {} -> init
+        {h, ..rest} -> List.fold(rest, f(init, h), f)
+
+List.each: (xs: []t, f: (t) ?-> _) ?-> _ =
+    case xs:
+        {} -> _
+        {h, ..rest} ->
+            f(h)
+            List.each(rest, f)
+
+List.each_with_index: (xs: []t, f: (t, Int) ?-> _) ?-> _ =
+    _list_each_at(xs, 0, f)
+
+_list_each_at: (xs: []t, i: Int, f: (t, Int) ?-> _) ?-> _ =
+    case xs:
+        {} -> _
+        {h, ..rest} ->
+            f(h, i)
+            _list_each_at(rest, i + 1, f)
+
+List.any: (xs: []t, f: (t) ?-> Bool) ?-> Bool =
+    case xs:
+        {} -> False
+        {h, ..rest} -> if f(h): True else: List.any(rest, f)
+
+List.all: (xs: []t, f: (t) ?-> Bool) ?-> Bool =
+    case xs:
+        {} -> True
+        {h, ..rest} -> if f(h): List.all(rest, f) else: False
+
+List.find_by: (xs: []t, f: (t) ?-> Bool) ?-> Option t =
+    case xs:
+        {} -> None
+        {h, ..rest} -> if f(h): Some h else: List.find_by(rest, f)
+
+// Stable merge sort; the comparator is the explicit less-than.
+List.sort: (xs: []t) -> []t =
+    List.sort_by(xs, (a, b): a.lt(b))
+
+List.sort_by: (xs: []t, before: (t, t) ?-> Bool) ?-> []t =
+    if xs.length() <= 1: xs
+    else:
+        mid := xs.length() / 2
+        _list_merge(List.sort_by(List.take(xs, mid), before),
+                   List.sort_by(List.drop(xs, mid), before), before)
+
+_list_merge: (a: []t, b: []t, before: (t, t) ?-> Bool) ?-> []t =
+    case a, b:
+        {}, _ -> b
+        _, {} -> a
+        {x, ..xr}, {y, ..yr} ->
+            if before(y, x): {y} ++ _list_merge(a, yr, before)
+            else: {x} ++ _list_merge(xr, b, before)
+
+List.zip_with: (xs: []t, ys: []u, f: (t, u) ?-> v) ?-> []v =
+    case xs, ys:
+        {}, _ -> {}
+        _, {} -> {}
+        {x, ..xr}, {y, ..yr} -> {f(x, y)} ++ List.zip_with(xr, yr, f)
+
+List.take: (xs: []t, n: Int) -> []t =
+    if n <= 0: {}
+    else:
+        case xs:
+            {} -> {}
+            {h, ..rest} -> {h} ++ List.take(rest, n - 1)
+
+List.drop: (xs: []t, n: Int) -> []t =
+    if n <= 0: xs
+    else:
+        case xs:
+            {} -> {}
+            {h, ..rest} -> List.drop(rest, n - 1)
+
+List.take_while: (xs: []t, f: (t) ?-> Bool) ?-> []t =
+    case xs:
+        {} -> {}
+        {h, ..rest} ->
+            if f(h): {h} ++ List.take_while(rest, f)
+            else: {}
+
+List.drop_while: (xs: []t, f: (t) ?-> Bool) ?-> []t =
+    case xs:
+        {} -> {}
+        {h, ..rest} ->
+            if f(h): List.drop_while(rest, f)
+            else: xs
+
+List.join: (xs: []t, sep: String) -> String =
+    case xs:
+        {} -> ""
+        {h, ..rest} ->
+            if rest.length() == 0: h.show()
+            else: h.show() ++ sep ++ List.join(rest, sep)
+
+// A slice is a start and a length; a request outside the list is a
+// domain miss, never a clamp.
+List.slice: (xs: []t, start: Int, len: Int) -> Option ([]t) =
+    if start < 0 || len < 0 || start + len > xs.length():
+        None
+    else:
+        Some (List.drop(xs, start).take(len))
+
+// The Result combinators behind the inverted binding: the payload and
+// error variables run through the callbacks. The maps are open-bit
+// dispatchers.
+Result.try: (r: Result t e, f: (t) ?-> Result u e) ?-> Result u e =
+    case r:
+        Ok x -> f(x)
+        Err reason -> Err reason
+
+Result.map: (r: Result t e, f: (t) ?-> u) ?-> Result u e =
+    case r:
+        Ok x -> Ok f(x)
+        Err reason -> Err reason
+
+Result.map_err: (r: Result t e, f: (e) ?-> g) ?-> Result t g =
+    case r:
+        Ok x -> Ok x
+        Err reason -> Err f(reason)
+
+// The successes collect in order; the first error short-circuits.
+Result.traverse: (xs: []t, f: (t) ?-> Result u e) ?-> Result ([]u) e =
+    case xs:
+        {} -> Ok {}
+        {h, ..rest} ->
+            case f(h):
+                Err reason -> Err reason
+                Ok x ->
+                    case Result.traverse(rest, f):
+                        Err reason -> Err reason
+                        Ok ys -> Ok ({x} ++ ys)
+
+Result.is_ok: (r: Result t e) -> Bool =
+    case r:
+        Ok _ -> True
+        Err _ -> False
+
+Result.is_err: (r: Result t e) -> Bool =
+    case r:
+        Ok _ -> False
+        Err _ -> True
+
+Result.unwrap_or: (r: Result t e, d: t) -> t =
+    case r:
+        Ok x -> x
+        Err _ -> d
 
 // A closed failure reason for the parse family: a missing value, a
 // malformed one, or one outside the target's limits.
@@ -86,6 +330,62 @@ Duration.show: (d: Duration) -> String =
                 if n < 0: "-" else: ""
             sign ++ body ++ "s"
 
+// The time arithmetic: the payload is the nanosecond count, and a
+// difference is a signed span.
+Time.sub: (a: Time, b: Time) -> Duration =
+    case a:
+        Time x ->
+            case b:
+                Time y -> Duration (x - y)
+
+Time.add: (t: Time, d: Duration) -> Time =
+    case t:
+        Time x ->
+            case d:
+                Duration y -> Time (x + y)
+
+Time.to_ns: (t: Time) -> Int =
+    case t:
+        Time x -> x
+
+Mono.sub: (a: Mono, b: Mono) -> Duration =
+    case a:
+        Mono x ->
+            case b:
+                Mono y -> Duration (x - y)
+
+Mono.add: (m: Mono, d: Duration) -> Mono =
+    case m:
+        Mono x ->
+            case d:
+                Duration y -> Mono (x + y)
+
+Mono.to_ns: (m: Mono) -> Int =
+    case m:
+        Mono x -> x
+
+Duration.add: (a: Duration, b: Duration) -> Duration =
+    case a:
+        Duration x ->
+            case b:
+                Duration y -> Duration (x + y)
+
+Duration.mul: (d: Duration, n: Int) -> Duration =
+    case d:
+        Duration x -> Duration (x * n)
+
+Duration.neg: (d: Duration) -> Duration =
+    case d:
+        Duration x -> Duration (0 - x)
+
+Duration.secs: (n: Int) -> Duration = Duration (n * 1_000_000_000)
+
+Duration.millis: (n: Int) -> Duration = Duration (n * 1_000_000)
+
+Duration.to_ns: (d: Duration) -> Int =
+    case d:
+        Duration x -> x
+
 // The fractional nanosecond digits, shared by the time displays: a
 // trailing zero of the remainder drops one digit and one place
 // together, so the padding never refills it.
@@ -141,6 +441,146 @@ _json_char: (c: Char) -> String =
             n := c.to_code()
             if n < 32: "\\u" ++ n.to_hex().pad_left(4, '0')
             else: String.from_char(c)
+
+// The string namespace. `length`, `chars`, `from_char`, `from_chars`,
+// and `append` are the compiler-supplied scalar primitives; the rest
+// is source over the scalar sequence.
+String.at: (s: String, i: Int) -> Option Char = List.get(s.chars(), i)
+
+String.lines: (s: String) -> []String =
+    parts := s.split("\n")
+    if s.ends_with("\n"): _drop_last(parts) else: parts
+
+_drop_last: (xs: []t) -> []t =
+    case xs:
+        {} -> {}
+        {h, ..rest} ->
+            case rest:
+                {} -> {}
+                _ -> {h} ++ _drop_last(rest)
+
+String.split: (s: String, sep: String) -> []String =
+    if sep.length() == 0:
+        panic("String.split: empty separator")
+    else:
+        _split_chars(s.chars(), sep.chars(), {}, {})
+
+_split_chars: (cs: []Char, sep: []Char, cur: []Char, acc: []String) -> []String =
+    if _starts_with_chars(cs, sep):
+        _split_chars(_drop_chars(cs, sep.length()), sep, {},
+                     acc ++ {String.from_chars(cur)})
+    else:
+        case cs:
+            {} -> acc ++ {String.from_chars(cur)}
+            {c, ..rest} -> _split_chars(rest, sep, cur ++ {c}, acc)
+
+String.contains: (s: String, sub: String) -> Bool =
+    _chars_contains(s.chars(), sub.chars())
+
+_chars_contains: (cs: []Char, sub: []Char) -> Bool =
+    if sub.length() == 0:
+        True
+    else:
+        if _starts_with_chars(cs, sub):
+            True
+        else:
+            case cs:
+                {} -> False
+                {_, ..rest} -> _chars_contains(rest, sub)
+
+String.starts_with: (s: String, pre: String) -> Bool =
+    _starts_with_chars(s.chars(), pre.chars())
+
+String.ends_with: (s: String, suf: String) -> Bool =
+    _starts_with_chars(s.chars().reverse(), suf.chars().reverse())
+
+String.replace: (s: String, from: String, to: String) -> String =
+    if from.length() == 0: s
+    else: _replace_all(s.chars(), from.chars(), to, "")
+
+_replace_all: (cs: []Char, from: []Char, to: String, out: String) -> String =
+    if _starts_with_chars(cs, from):
+        _replace_all(_drop_chars(cs, from.length()), from, to, out ++ to)
+    else:
+        case cs:
+            {} -> out
+            {c, ..rest} ->
+                _replace_all(rest, from, to, out ++ String.from_char(c))
+
+String.replace_first: (s: String, from: String, to: String) -> String =
+    if from.length() == 0: s
+    else: _replace_first(s.chars(), from.chars(), to, "")
+
+_replace_first: (cs: []Char, from: []Char, to: String, out: String) -> String =
+    if _starts_with_chars(cs, from):
+        out ++ to ++ String.from_chars(_drop_chars(cs, from.length()))
+    else:
+        case cs:
+            {} -> out
+            {c, ..rest} ->
+                _replace_first(rest, from, to, out ++ String.from_char(c))
+
+String.slice: (s: String, start: Int, len: Int) -> Option String =
+    case List.slice(s.chars(), start, len):
+        None -> None
+        Some cs -> Some (String.from_chars(cs))
+
+String.trim: (s: String) -> String =
+    String.from_chars(_trim_start_chars(_trim_end_chars(s.chars())))
+
+String.trim_start: (s: String) -> String =
+    String.from_chars(_trim_start_chars(s.chars()))
+
+String.trim_end: (s: String) -> String =
+    String.from_chars(_trim_end_chars(s.chars()))
+
+_trim_start_chars: (cs: []Char) -> []Char =
+    case cs:
+        {} -> {}
+        {c, ..rest} -> if _is_space(c): _trim_start_chars(rest) else: cs
+
+_trim_end_chars: (cs: []Char) -> []Char =
+    _list_rev(_trim_start_chars(_list_rev(cs, {})), {})
+
+String.pad_left: (s: String, width: UInt, c: Char) -> String =
+    w := width.to_int().unwrap_or(0)
+    n := s.length()
+    if n >= w: s else: _repeat_char(c, w - n) ++ s
+
+String.pad_right: (s: String, width: UInt, c: Char) -> String =
+    w := width.to_int().unwrap_or(0)
+    n := s.length()
+    if n >= w: s else: s ++ _repeat_char(c, w - n)
+
+_repeat_char: (c: Char, n: Int) -> String =
+    if n <= 0: "" else: String.from_char(c) ++ _repeat_char(c, n - 1)
+
+// True when the character is Unicode White_Space (Clause 9.11.1).
+_is_space: (c: Char) -> Bool =
+    n := c.to_code()
+    n == 9 || n == 10 || n == 11 || n == 12 || n == 13 || n == 32 ||
+        n == 133 || n == 160 || n == 5760 ||
+        (n >= 8192 && n <= 8202) ||
+        n == 8232 || n == 8233 || n == 8239 || n == 8287 ||
+        n == 12288
+
+// True when `cs` begins with `pre`.
+_starts_with_chars: (cs: []Char, pre: []Char) -> Bool =
+    case pre:
+        {} -> True
+        {p, ..pr} ->
+            case cs:
+                {} -> False
+                {c, ..cr} ->
+                    if c == p: _starts_with_chars(cr, pr)
+                    else: False
+
+_drop_chars: (cs: []Char, n: Int) -> []Char =
+    if n <= 0: cs
+    else:
+        case cs:
+            {} -> {}
+            {c, ..rest} -> _drop_chars(rest, n - 1)
 
 // Panics when `c` is False. Pure and always enabled.
 assert: (c: Bool) -> _ =

@@ -47,6 +47,26 @@ int r_std_cap_name(const char *name)
     return 0;
 }
 
+/* True for a type name the std surface supplies as a placeholder row
+   (the scalar, container, and time vocabulary), except the capability
+   names: their namespaces belong to the capability module. The std
+   source may declare members of these namespaces, so the ownership
+   check accepts the module that owns the placeholder row. */
+int r_std_type_name(const char *name)
+{
+    size_t i;
+
+    if (r_std_cap_name(name)) {
+        return 0;
+    }
+    for (i = 0; i < TYPE_ROWS; i++) {
+        if (strcmp(type_names[i], name) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 int r_std_opened_name(const char *name)
 {
     /* The sentinel NULL is not an entry. */

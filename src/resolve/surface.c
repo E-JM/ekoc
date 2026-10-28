@@ -211,6 +211,12 @@ static int type_owned(r_surf *s, const char *type)
             }
         }
     }
+    /* The std source declares the members of the placeholder type rows
+       it owns: the scalar, container, and time vocabulary. The
+       capability namespaces stay the capability module's. */
+    if (strcmp(s->m->stem, "std") == 0 && r_std_type_name(type)) {
+        return 1;
+    }
     return 0;
 }
 

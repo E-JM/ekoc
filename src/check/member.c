@@ -41,6 +41,33 @@ int ck_ref_at(const ck_ctx *c, const ek_node *n, ek_sym_kind kind,
     return 0;
 }
 
+/* A declared namespace member by owner spelling, for the structural
+   list and dictionary namespaces: std declares their members in its
+   source, and no nominal symbol carries the owner. */
+static const ek_symbol *ns_member_owner(ck_ctx *c, const char *owner,
+                                        const char *name)
+{
+    size_t k, i;
+
+    for (k = 0; k < c->in->module_count; k++) {
+        const ek_surface *s = &c->in->modules[k];
+
+        if (strcmp(s->module, "std") != 0) {
+            continue;
+        }
+        for (i = 0; i < s->count; i++) {
+            const ek_symbol *m = &s->syms[i];
+
+            if (m->kind == EK_SYM_NAMESPACE && m->owner
+                && strcmp(m->owner, owner) == 0
+                && strcmp(m->name, name) == 0) {
+                return m;
+            }
+        }
+    }
+    return NULL;
+}
+
 /* The declared namespace member of the type's head, found in the
    declaring module's surface. The nine capability types are std
    placeholder rows, so their declared members live in the capability
@@ -590,6 +617,15 @@ static const ek_type *link_type(ck_ctx *c, const ek_node *at,
         if (t) {
             *rd = EK_RD_FIELD;
             return t;
+        }
+        if (r->kind == EK_T_LIST || r->kind == EK_T_DICT) {
+            const ek_symbol *m = ns_member_owner(
+                c, r->kind == EK_T_LIST ? "List" : "Dict", name);
+
+            if (m) {
+                *rd = EK_RD_NAMESPACE;
+                return ck_type_of(c, m);
+            }
         }
         t = derive_eq(c, at, r, name, rd, bool_t);
         if (t) {

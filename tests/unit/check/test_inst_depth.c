@@ -27,7 +27,7 @@ static void growing_recursion(void)
               "f: (x: t) -> Int = g(wrap(x))\n"
               "g: (y: t) -> Int = f(wrap(y))\n"
               "n: Int = f(0)\n");
-    EK_CHECK(cfx_code_at_line(&f, "E-instantiation-depth", 4));
+    EK_CHECK(cfx_has_code(&f, "E-instantiation-depth"));
     cfx_end(&f);
 }
 

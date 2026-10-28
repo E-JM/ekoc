@@ -2,10 +2,9 @@
 
 #include "check/internal.h"
 
-/* The compiler-provided members of the std namespaces the surface
-   does not declare yet: the container, string, time, and scalar
-   namespaces whose signatures Annex C fixes. A declared namespace member wins over a
-   row, and the derived services win over both, so a row is the
+/* The compiler-provided members of the std namespaces: the intrinsic
+   boundary of the shipped surface. A declared namespace member wins
+   over a row, and the derived services win over both, so a row is the
    default of a name no declaration owns. A namespace the table owns
    is complete: a name no station answers is absent, not bridged. */
 
@@ -237,12 +236,14 @@ static const char *namespace_of(const ek_type *t)
 }
 
 /* The members the compiler supplies when no declaration owns the
-   name. */
+   name. This table is the intrinsic boundary of the shipped surface:
+   the scalar arithmetic, conversion, formatting, and parsing rows; the
+   String scalar access and the Bytes operations; the Dict, Set, Range,
+   and Path operations; the time parsers; Json.parse; List.append; the
+   panic-coded unwrap/expect pair; and the compiler-provided capability
+   rows. Every other inventory member is std or cap source. */
 static const ns_row rows[] = {
-    /* The boolean namespace: negation is the one non-derived member;
-       the logical operators are sugar for `if`. */
-    {"Bool", "not", SIG_FN(EK_ARROW_PURE, SIG_STD("Bool"),
-                           SIG_STD("Bool"))},
+    /* Bool.not is std source; the logical operators are sugar. */
 
     {"Float", "add", SIG_FN(EK_ARROW_PURE, SIG_STD("Float"),
                             SIG_STD("Float"), SIG_STD("Float"))},
@@ -430,65 +431,11 @@ static const ns_row rows[] = {
     {"Int", "from_u32", SIG_FN(EK_ARROW_PURE, SIG_STD("Int"),
                                SIG_STD("U32"))},
 
-    /* The List namespace over the structural list. The open arrows are
-       the dispatchers. */
-    {"List", "length", SIG_FN(EK_ARROW_PURE, SIG_STD("Int"), SIG_LIST(SIG_VAR(0)))},
-    {"List", "get", SIG_FN(EK_ARROW_PURE, SIG_OPTION(SIG_VAR(0)),
-                           SIG_LIST(SIG_VAR(0)), SIG_STD("Int"))},
-    {"List", "reverse", SIG_FN(EK_ARROW_PURE, SIG_LIST(SIG_VAR(0)),
-                               SIG_LIST(SIG_VAR(0)))},
+    /* The List namespace: only append is compiler-supplied, because a
+       list has no source-level cons form; the std source declares the
+       rest against the inductive patterns. */
     {"List", "append", SIG_FN(EK_ARROW_PURE, SIG_LIST(SIG_VAR(0)),
                               SIG_LIST(SIG_VAR(0)), SIG_LIST(SIG_VAR(0)))},
-    {"List", "map", SIG_FN(EK_ARROW_OPEN, SIG_LIST(SIG_VAR(1)),
-                           SIG_LIST(SIG_VAR(0)),
-                           SIG_FN(EK_ARROW_OPEN, SIG_VAR(1), SIG_VAR(0)))},
-    {"List", "filter", SIG_FN(EK_ARROW_OPEN, SIG_LIST(SIG_VAR(0)),
-                              SIG_LIST(SIG_VAR(0)),
-                              SIG_FN(EK_ARROW_OPEN, SIG_STD("Bool"), SIG_VAR(0)))},
-    {"List", "fold", SIG_FN(EK_ARROW_OPEN, SIG_VAR(1),
-                            SIG_LIST(SIG_VAR(0)), SIG_VAR(1),
-                            SIG_FN(EK_ARROW_OPEN, SIG_VAR(1), SIG_VAR(1), SIG_VAR(0)))},
-    {"List", "each", SIG_FN(EK_ARROW_OPEN, SIG_UNIT,
-                            SIG_LIST(SIG_VAR(0)),
-                            SIG_FN(EK_ARROW_OPEN, SIG_UNIT, SIG_VAR(0)))},
-    {"List", "each_with_index", SIG_FN(EK_ARROW_OPEN, SIG_UNIT,
-                                       SIG_LIST(SIG_VAR(0)),
-                                       SIG_FN(EK_ARROW_OPEN, SIG_UNIT,
-                                              SIG_VAR(0), SIG_STD("Int")))},
-    {"List", "any", SIG_FN(EK_ARROW_OPEN, SIG_STD("Bool"),
-                           SIG_LIST(SIG_VAR(0)),
-                           SIG_FN(EK_ARROW_OPEN, SIG_STD("Bool"), SIG_VAR(0)))},
-    {"List", "all", SIG_FN(EK_ARROW_OPEN, SIG_STD("Bool"),
-                           SIG_LIST(SIG_VAR(0)),
-                           SIG_FN(EK_ARROW_OPEN, SIG_STD("Bool"), SIG_VAR(0)))},
-    {"List", "find_by", SIG_FN(EK_ARROW_OPEN, SIG_OPTION(SIG_VAR(0)),
-                               SIG_LIST(SIG_VAR(0)),
-                               SIG_FN(EK_ARROW_OPEN, SIG_STD("Bool"), SIG_VAR(0)))},
-    {"List", "sort", SIG_FN(EK_ARROW_PURE, SIG_LIST(SIG_VAR(0)),
-                            SIG_LIST(SIG_VAR(0)))},
-    {"List", "sort_by", SIG_FN(EK_ARROW_OPEN, SIG_LIST(SIG_VAR(0)),
-                               SIG_LIST(SIG_VAR(0)),
-                               SIG_FN(EK_ARROW_OPEN, SIG_STD("Bool"),
-                                      SIG_VAR(0), SIG_VAR(0)))},
-    {"List", "zip_with", SIG_FN(EK_ARROW_OPEN, SIG_LIST(SIG_VAR(2)),
-                                SIG_LIST(SIG_VAR(0)), SIG_LIST(SIG_VAR(1)),
-                                SIG_FN(EK_ARROW_OPEN, SIG_VAR(2),
-                                       SIG_VAR(0), SIG_VAR(1)))},
-    {"List", "take", SIG_FN(EK_ARROW_PURE, SIG_LIST(SIG_VAR(0)),
-                            SIG_LIST(SIG_VAR(0)), SIG_STD("Int"))},
-    {"List", "drop", SIG_FN(EK_ARROW_PURE, SIG_LIST(SIG_VAR(0)),
-                            SIG_LIST(SIG_VAR(0)), SIG_STD("Int"))},
-    {"List", "take_while", SIG_FN(EK_ARROW_OPEN, SIG_LIST(SIG_VAR(0)),
-                                  SIG_LIST(SIG_VAR(0)),
-                                  SIG_FN(EK_ARROW_OPEN, SIG_STD("Bool"), SIG_VAR(0)))},
-    {"List", "drop_while", SIG_FN(EK_ARROW_OPEN, SIG_LIST(SIG_VAR(0)),
-                                  SIG_LIST(SIG_VAR(0)),
-                                  SIG_FN(EK_ARROW_OPEN, SIG_STD("Bool"), SIG_VAR(0)))},
-    {"List", "join", SIG_FN(EK_ARROW_PURE, SIG_STD("String"),
-                            SIG_LIST(SIG_VAR(0)), SIG_STD("String"))},
-    {"List", "slice", SIG_FN(EK_ARROW_PURE, SIG_OPTION(SIG_LIST(SIG_VAR(0))),
-                             SIG_LIST(SIG_VAR(0)), SIG_STD("Int"),
-                             SIG_STD("Int"))},
 
     /* The Dict namespace over the structural dictionary: the key and
        value variables stay paired across every member, and the
@@ -554,12 +501,11 @@ static const ns_row rows[] = {
                             SIG_APP1("Set", SIG_VAR(0)),
                             SIG_APP1("Set", SIG_VAR(0)))},
 
-    /* The String namespace: the scalar sequence, its split and trim
-       families, and the byte bridge. */
+    /* The String namespace: the scalar sequence primitives. The
+       composition (split, trim, replace, slice, padding) is std
+       source over these. */
     {"String", "length", SIG_FN(EK_ARROW_PURE, SIG_STD("Int"),
                                 SIG_STD("String"))},
-    {"String", "at", SIG_FN(EK_ARROW_PURE, SIG_OPTION(SIG_STD("Char")),
-                            SIG_STD("String"), SIG_STD("Int"))},
     {"String", "chars", SIG_FN(EK_ARROW_PURE, SIG_LIST(SIG_STD("Char")),
                                SIG_STD("String"))},
     {"String", "from_char", SIG_FN(EK_ARROW_PURE, SIG_STD("String"),
@@ -568,39 +514,8 @@ static const ns_row rows[] = {
                                     SIG_LIST(SIG_STD("Char")))},
     {"String", "append", SIG_FN(EK_ARROW_PURE, SIG_STD("String"),
                                 SIG_STD("String"), SIG_STD("String"))},
-    {"String", "lines", SIG_FN(EK_ARROW_PURE, SIG_LIST(SIG_STD("String")),
-                               SIG_STD("String"))},
-    {"String", "split", SIG_FN(EK_ARROW_PURE, SIG_LIST(SIG_STD("String")),
-                               SIG_STD("String"), SIG_STD("String"))},
-    {"String", "contains", SIG_FN(EK_ARROW_PURE, SIG_STD("Bool"),
-                                  SIG_STD("String"), SIG_STD("String"))},
-    {"String", "starts_with", SIG_FN(EK_ARROW_PURE, SIG_STD("Bool"),
-                                     SIG_STD("String"), SIG_STD("String"))},
-    {"String", "ends_with", SIG_FN(EK_ARROW_PURE, SIG_STD("Bool"),
-                                   SIG_STD("String"), SIG_STD("String"))},
-    {"String", "replace", SIG_FN(EK_ARROW_PURE, SIG_STD("String"),
-                                 SIG_STD("String"), SIG_STD("String"),
-                                 SIG_STD("String"))},
-    {"String", "replace_first", SIG_FN(EK_ARROW_PURE, SIG_STD("String"),
-                                       SIG_STD("String"), SIG_STD("String"),
-                                       SIG_STD("String"))},
-    {"String", "slice", SIG_FN(EK_ARROW_PURE, SIG_OPTION(SIG_STD("String")),
-                               SIG_STD("String"), SIG_STD("Int"),
-                               SIG_STD("Int"))},
-    {"String", "trim", SIG_FN(EK_ARROW_PURE, SIG_STD("String"),
-                              SIG_STD("String"))},
-    {"String", "trim_start", SIG_FN(EK_ARROW_PURE, SIG_STD("String"),
-                                    SIG_STD("String"))},
-    {"String", "trim_end", SIG_FN(EK_ARROW_PURE, SIG_STD("String"),
-                                  SIG_STD("String"))},
     {"String", "to_bytes", SIG_FN(EK_ARROW_PURE, SIG_STD("Bytes"),
                                   SIG_STD("String"))},
-    {"String", "pad_left", SIG_FN(EK_ARROW_PURE, SIG_STD("String"),
-                                  SIG_STD("String"), SIG_STD("UInt"),
-                                  SIG_STD("Char"))},
-    {"String", "pad_right", SIG_FN(EK_ARROW_PURE, SIG_STD("String"),
-                                   SIG_STD("String"), SIG_STD("UInt"),
-                                   SIG_STD("Char"))},
 
     /* The Char namespace: the code-point bridge in both directions. */
     {"Char", "to_code", SIG_FN(EK_ARROW_PURE, SIG_STD("Int"),
@@ -633,83 +548,18 @@ static const ns_row rows[] = {
                                   SIG_RESULT(SIG_STD("String")),
                                   SIG_STD("Bytes"))},
 
-    /* The Option namespace: the payload variable runs through the
-       callback and the result; the nested-access helper narrows an
-       Option of a list. */
-    {"Option", "map", SIG_FN(EK_ARROW_OPEN, SIG_OPTION(SIG_VAR(1)),
-                             SIG_OPTION(SIG_VAR(0)),
-                             SIG_FN(EK_ARROW_OPEN, SIG_VAR(1), SIG_VAR(0)))},
-    {"Option", "and_then", SIG_FN(EK_ARROW_OPEN, SIG_OPTION(SIG_VAR(1)),
-                                  SIG_OPTION(SIG_VAR(0)),
-                                  SIG_FN(EK_ARROW_OPEN,
-                                         SIG_OPTION(SIG_VAR(1)), SIG_VAR(0)))},
-    {"Option", "or_else", SIG_FN(EK_ARROW_OPEN, SIG_OPTION(SIG_VAR(0)),
-                                 SIG_OPTION(SIG_VAR(0)),
-                                 SIG_FN0(EK_ARROW_OPEN,
-                                         SIG_OPTION(SIG_VAR(0))))},
-    {"Option", "filter", SIG_FN(EK_ARROW_OPEN, SIG_OPTION(SIG_VAR(0)),
-                                SIG_OPTION(SIG_VAR(0)),
-                                SIG_FN(EK_ARROW_OPEN, SIG_STD("Bool"),
-                                       SIG_VAR(0)))},
-    {"Option", "is_some", SIG_FN(EK_ARROW_PURE, SIG_STD("Bool"),
-                                 SIG_OPTION(SIG_VAR(0)))},
-    {"Option", "is_none", SIG_FN(EK_ARROW_PURE, SIG_STD("Bool"),
-                                 SIG_OPTION(SIG_VAR(0)))},
+    /* The Option namespace: the combinators are std source; the
+       panicking observations carry the fixed P-codes and stay here. */
     {"Option", "unwrap", SIG_FN(EK_ARROW_PURE, SIG_VAR(0),
                                 SIG_OPTION(SIG_VAR(0)))},
-    {"Option", "unwrap_or", SIG_FN(EK_ARROW_PURE, SIG_VAR(0),
-                                   SIG_OPTION(SIG_VAR(0)), SIG_VAR(0))},
     {"Option", "expect", SIG_FN(EK_ARROW_PURE, SIG_VAR(0),
                                 SIG_OPTION(SIG_VAR(0)), SIG_STD("String"))},
-    {"Option", "get", SIG_FN(EK_ARROW_PURE, SIG_OPTION(SIG_VAR(0)),
-                             SIG_OPTION(SIG_LIST(SIG_VAR(0))),
-                             SIG_STD("Int"))},
-    {"Option", "to_result", SIG_FN(EK_ARROW_PURE,
-                                   SIG_APP2("Result", SIG_VAR(0), SIG_VAR(1)),
-                                   SIG_OPTION(SIG_VAR(0)), SIG_VAR(1))},
 
-    /* The Result namespace: the payload and error variables run
-       through the combinators, and traverse keeps the error while it
-       lifts a list of results. */
-    {"Result", "try", SIG_FN(EK_ARROW_OPEN,
-                             SIG_APP2("Result", SIG_VAR(2), SIG_VAR(1)),
-                             SIG_APP2("Result", SIG_VAR(0), SIG_VAR(1)),
-                             SIG_FN(EK_ARROW_OPEN,
-                                    SIG_APP2("Result", SIG_VAR(2),
-                                             SIG_VAR(1)),
-                                    SIG_VAR(0)))},
-    {"Result", "map", SIG_FN(EK_ARROW_OPEN,
-                             SIG_APP2("Result", SIG_VAR(2), SIG_VAR(1)),
-                             SIG_APP2("Result", SIG_VAR(0), SIG_VAR(1)),
-                             SIG_FN(EK_ARROW_OPEN, SIG_VAR(2), SIG_VAR(0)))},
-    {"Result", "map_err", SIG_FN(EK_ARROW_OPEN,
-                                 SIG_APP2("Result", SIG_VAR(0),
-                                          SIG_VAR(2)),
-                                 SIG_APP2("Result", SIG_VAR(0),
-                                          SIG_VAR(1)),
-                                 SIG_FN(EK_ARROW_OPEN, SIG_VAR(2),
-                                        SIG_VAR(1)))},
-    {"Result", "traverse", SIG_FN(EK_ARROW_OPEN,
-                                  SIG_APP2("Result",
-                                           SIG_LIST(SIG_VAR(2)),
-                                           SIG_VAR(1)),
-                                  SIG_LIST(SIG_VAR(0)),
-                                  SIG_FN(EK_ARROW_OPEN,
-                                         SIG_APP2("Result", SIG_VAR(2),
-                                                  SIG_VAR(1)),
-                                         SIG_VAR(0)))},
-    {"Result", "is_ok", SIG_FN(EK_ARROW_PURE, SIG_STD("Bool"),
-                               SIG_APP2("Result", SIG_VAR(0),
-                                        SIG_VAR(1)))},
-    {"Result", "is_err", SIG_FN(EK_ARROW_PURE, SIG_STD("Bool"),
-                                SIG_APP2("Result", SIG_VAR(0),
-                                         SIG_VAR(1)))},
+    /* The Result namespace: the combinators are std source; the
+       panicking observations carry the fixed P-codes and stay here. */
     {"Result", "unwrap", SIG_FN(EK_ARROW_PURE, SIG_VAR(0),
                                 SIG_APP2("Result", SIG_VAR(0),
                                          SIG_VAR(1)))},
-    {"Result", "unwrap_or", SIG_FN(EK_ARROW_PURE, SIG_VAR(0),
-                                   SIG_APP2("Result", SIG_VAR(0),
-                                            SIG_VAR(1)), SIG_VAR(0))},
     {"Result", "expect", SIG_FN(EK_ARROW_PURE, SIG_VAR(0),
                                 SIG_APP2("Result", SIG_VAR(0),
                                          SIG_VAR(1)), SIG_STD("String"))},
@@ -737,40 +587,14 @@ static const ns_row rows[] = {
                              SIG_FN(EK_ARROW_OPEN, SIG_VAR(1), SIG_VAR(1),
                                     SIG_VAR(0)))},
 
-    /* The wall-clock namespace: the duration arithmetic and the
-       nanosecond payload, with the parser of the printed form. */
-    {"Time", "sub", SIG_FN(EK_ARROW_PURE, SIG_STD("Duration"),
-                            SIG_STD("Time"), SIG_STD("Time"))},
-    {"Time", "add", SIG_FN(EK_ARROW_PURE, SIG_STD("Time"),
-                            SIG_STD("Time"), SIG_STD("Duration"))},
-    {"Time", "to_ns", SIG_FN(EK_ARROW_PURE, SIG_STD("Int"),
-                              SIG_STD("Time"))},
+    /* The wall-clock namespace: the printed form's parser alone; the
+       arithmetic and the payload are std source. */
     {"Time", "parse", SIG_FN(EK_ARROW_PURE, SIG_RESULT(SIG_STD("Time")),
                               SIG_STD("String"))},
 
-    /* The monotonic namespace: the same arithmetic over a reading
-       with no printed form. */
-    {"Mono", "sub", SIG_FN(EK_ARROW_PURE, SIG_STD("Duration"),
-                            SIG_STD("Mono"), SIG_STD("Mono"))},
-    {"Mono", "add", SIG_FN(EK_ARROW_PURE, SIG_STD("Mono"),
-                            SIG_STD("Mono"), SIG_STD("Duration"))},
-    {"Mono", "to_ns", SIG_FN(EK_ARROW_PURE, SIG_STD("Int"),
-                              SIG_STD("Mono"))},
+    /* The monotonic namespace is std source. */
 
-    /* The duration namespace: construction from a count, the span
-       arithmetic, the payload, and the parser. */
-    {"Duration", "add", SIG_FN(EK_ARROW_PURE, SIG_STD("Duration"),
-                                SIG_STD("Duration"), SIG_STD("Duration"))},
-    {"Duration", "mul", SIG_FN(EK_ARROW_PURE, SIG_STD("Duration"),
-                                SIG_STD("Duration"), SIG_STD("Int"))},
-    {"Duration", "neg", SIG_FN(EK_ARROW_PURE, SIG_STD("Duration"),
-                                SIG_STD("Duration"))},
-    {"Duration", "secs", SIG_FN(EK_ARROW_PURE, SIG_STD("Duration"),
-                                 SIG_STD("Int"))},
-    {"Duration", "millis", SIG_FN(EK_ARROW_PURE, SIG_STD("Duration"),
-                                   SIG_STD("Int"))},
-    {"Duration", "to_ns", SIG_FN(EK_ARROW_PURE, SIG_STD("Int"),
-                                  SIG_STD("Duration"))},
+    /* The duration namespace: the printed form's parser alone. */
     {"Duration", "parse", SIG_FN(EK_ARROW_PURE,
                                   SIG_RESULT(SIG_STD("Duration")),
                                   SIG_STD("String"))},

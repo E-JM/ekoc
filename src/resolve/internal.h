@@ -124,6 +124,7 @@ const ek_symbol *r_std_find(const ek_surface *s, ek_sym_kind kind,
                             const char *name);
 int r_is_placeholder(const ek_symbol *sym);
 int r_std_cap_name(const char *name);
+int r_std_type_name(const char *name);
 
 /* cap.c: the capability module, parsed from the embedded cap/cap.eko
    source. r_cap_boot parses the embedded source into the closure and
