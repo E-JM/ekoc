@@ -126,8 +126,11 @@ static void cons_ref(r_ctx *c, r_file *f, const ek_node *pat)
                     "the constructor `%s` is private in module `%s` "
                     "(Clause 7.3.3)", path->data[0], priv->module);
         }
-        /* Unknown to the file and to std: the bridge records the
-           miss. */
+        /* Unknown to the file, std, and cap: an unbound name, not the
+           unresolved-external bridge (resolve.h). */
+        r_error(c, f->mod->file, pat->line, pat->col, "E-unbound-name",
+                "`%s` names no visible constructor (Clause 7.4.2)",
+                path->data[0]);
         r_add_ref(c, pat, EK_SYM_EXTERNAL, EK_ST_EXTERNAL, NULL);
         return;
     }

@@ -186,8 +186,10 @@ void r_cons_head(r_ctx *c, r_file *f, const ek_node *n, r_head *out)
                     "the constructor `%s` is private in module `%s` "
                     "(Clause 7.3.3)", name, priv->module);
         }
-        /* Unknown to the file and to std: the unresolved-external
-           bridge (resolve.h). */
+        /* Unknown to the file, std, and cap: an unbound name, not the
+           unresolved-external bridge (resolve.h). */
+        r_error(c, f->mod->file, n->line, n->col, "E-unbound-name",
+                "`%s` names no visible constructor (Clause 7.4.2)", name);
         out->kind = EK_SYM_EXTERNAL;
         out->st = EK_ST_EXTERNAL;
         r_add_ref(c, n, out->kind, out->st, NULL);

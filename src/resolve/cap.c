@@ -70,6 +70,13 @@ void r_cap_boot(r_ctx *c)
     if (c->oom || c->cap) {
         return;
     }
+    if (!c->std) {
+        /* The capability source reads the std layer; when an illegally
+           named root kept std from booting, the closure is already
+           rejected and cap stays out rather than resolving against a
+           broken surface. */
+        return;
+    }
     if (r_module_find(c, "cap")) {
         /* Only a root illegally named `cap` claims the stem first; it
            is already rejected, and the closure keeps one module per
