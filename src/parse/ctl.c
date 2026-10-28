@@ -7,7 +7,7 @@
 static ek_node *arm(p_ctx *c);
 static void arm_lines(p_ctx *c, ek_node *n);
 static void arm_inline(p_ctx *c, ek_node *n);
-static ek_node *else_branch(p_ctx *c);
+static ek_node *else_branch(p_ctx *c, const ek_layout_token *head);
 static int header_paren(p_ctx *c);
 
 /* A case expression: 'case' scrutinees ':' then either an indented arm
@@ -202,30 +202,39 @@ ek_node *p_if_expr(p_ctx *c)
     }
     n->u.ifexpr.cond = p_adopt(c, n, cond);
     n->u.ifexpr.then = p_adopt(c, n, then_body);
-    n->u.ifexpr.els = p_adopt(c, n, else_branch(c));
+    n->u.ifexpr.els = p_adopt(c, n, else_branch(c, kw));
     if (!n->u.ifexpr.cond || !n->u.ifexpr.then) {
         return NULL;
     }
     return n;
 }
 
-/* 'else' Suite when present; the lookahead restores the cursor when no
-   else belongs to this if. */
-static ek_node *else_branch(p_ctx *c)
+/* 'else' Suite when present. An else on the header's own line needs no
+   column test; once a marker intervenes the else line belongs to this
+   if only at the header's column, and the lookahead restores the
+   cursor — markers included — when the line belongs to an outer if or
+   to nothing. */
+static ek_node *else_branch(p_ctx *c, const ek_layout_token *head)
 {
     size_t save = c->pos;
     ek_node *body;
+    int new_line = 0;
 
     for (;;) {
         const ek_layout_token *t = p_peek(c);
 
         if (t->kind == EK_LTOK_DEDENT || t->kind == EK_LTOK_NEWLINE) {
+            new_line = 1;
             p_take(c);
             continue;
         }
         break;
     }
     if (!p_at(c, EK_TOK_KW_ELSE)) {
+        c->pos = save;
+        return NULL;
+    }
+    if (new_line && p_peek(c)->col != head->col) {
         c->pos = save;
         return NULL;
     }

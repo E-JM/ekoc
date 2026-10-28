@@ -135,18 +135,49 @@ static void else_reattachment(void)
     parse_fixture f;
     const ek_node *ie;
 
-    /* An else line left of the then block reattaches across the
-       DEDENTs the layout emitted. */
+    /* An else line at its if's column reattaches across the DEDENTs
+       the layout emitted. */
+    pfx_begin(&f,
+        "f: (c: Bool) -> Int =\n"
+        "    if c:\n"
+        "        1\n"
+        "    else:\n"
+        "        2\n");
+    EK_CHECK_U64(pfx_errors(&f), 0);
+    ie = pfx_find(f.ast.module, EK_N_IF);
+    EK_CHECK(ie != NULL);
+    EK_CHECK(ie->u.ifexpr.els != NULL);
+    pfx_end(&f);
+
+    /* A column-matching else reattaches to the OUTER if: the inner
+       if's suite closed, and the inner header's column differs. */
+    pfx_begin(&f,
+        "f: (c: Bool, d: Bool) -> Int =\n"
+        "    if c:\n"
+        "        if d:\n"
+        "            1\n"
+        "        else:\n"
+        "            2\n"
+        "    else:\n"
+        "        3\n");
+    EK_CHECK_U64(pfx_errors(&f), 0);
+    ie = pfx_find(f.ast.module, EK_N_IF);
+    EK_CHECK(ie != NULL);
+    EK_CHECK(ie->u.ifexpr.els != NULL);
+    EK_CHECK(ie->u.ifexpr.then->kind == EK_N_BLOCK
+             || ie->u.ifexpr.then->kind == EK_N_IF);
+    pfx_end(&f);
+
+    /* An else line left of every open if header belongs to nothing. */
     pfx_begin(&f,
         "f: (c: Bool) -> Int =\n"
         "    if c:\n"
         "        1\n"
         "else:\n"
         "        2\n");
-    EK_CHECK_U64(pfx_errors(&f), 0);
-    ie = pfx_find(f.ast.module, EK_N_IF);
-    EK_CHECK(ie != NULL);
-    EK_CHECK(ie->u.ifexpr.els != NULL);
+    EK_CHECK(pfx_errors(&f) > 0);
+    pfx_collect(&f);
+    EK_CHECK(pfx_msg_has(&f, "6.7.4"));
     pfx_end(&f);
 
     /* An if inside a case arm body (geolib_use._kind shape). */

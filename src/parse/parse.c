@@ -238,6 +238,16 @@ static ek_node *member_node(p_ctx *c, int top_level)
     if (p_at(c, EK_TOK_KW_IF)) {
         return p_if_expr(c);
     }
+    if (p_at(c, EK_TOK_KW_ELSE)) {
+        const ek_layout_token *e = p_take(c);
+
+        p_error_tok(c, "E-syntax", e,
+                    "an `else` line continues the `if` at its own column "
+                    "(Clause 6.7.4)");
+        p_got(c, EK_TOK_COLON);
+        p_body_suite(c);
+        return NULL;
+    }
     if (p_at(c, EK_TOK_LARROW)) {
         return p_invert_bare(c);
     }
