@@ -175,6 +175,22 @@ static void namespace_binding(void)
     EK_CHECK_U64(pfx_errors(&f), 0);
     EK_CHECK_STR(pfx_item(&f, 0)->u.namespace.name, "_hide");
     pfx_end(&f);
+
+    /* The owner chain's last segment names the type; its head is a
+       module path of any case class. */
+    pfx_begin(&f,
+        "geolib.Shape.area: (s: Shape) -> Float = 0.0\n");
+    EK_CHECK_U64(pfx_errors(&f), 0);
+    n = pfx_item(&f, 0);
+    EK_CHECK_U64(n->u.namespace.owner.count, 2);
+    EK_CHECK_STR(n->u.namespace.owner.data[1], "Shape");
+    pfx_end(&f);
+
+    pfx_begin(&f, "Shape.sub.area: (s: Shape) -> Float = 0.0\n");
+    EK_CHECK(pfx_errors(&f) > 0);
+    pfx_collect(&f);
+    EK_CHECK(pfx_has_code(&f, "E-name-case"));
+    pfx_end(&f);
 }
 
 static void type_decls(void)
@@ -307,6 +323,16 @@ static void extern_decl(void)
     EK_CHECK_U64(n->u.extern_decl.pure, 0);
     EK_CHECK_U64(n->u.extern_decl.type->u.t_fn.arrow, EK_ARROW_WORLD);
     EK_CHECK_U64(n->u.extern_decl.type->u.t_fn.result, NULL);
+    pfx_end(&f);
+
+    /* An extern declaration is top-level. */
+    pfx_begin(&f,
+        "f: Int =\n"
+        "    _sqrt: (F64) -> F64 = extern \"sqrt\"\n"
+        "    0\n");
+    EK_CHECK(pfx_errors(&f) > 0);
+    pfx_collect(&f);
+    EK_CHECK(pfx_msg_has(&f, "6.3.8"));
     pfx_end(&f);
 }
 

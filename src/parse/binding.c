@@ -361,6 +361,10 @@ ek_node *p_after_colon(p_ctx *c, int top_level, const ek_slist *path,
     if (p_at(c, EK_TOK_IDENT) && strcmp(p_peek(c)->tok.text, "extern") == 0
         && p_peek_at(c, 1)->kind == EK_LTOK_SOURCE
         && p_peek_at(c, 1)->tok.kind == EK_TOK_STRING) {
+        if (!top_level) {
+            p_error(c, "E-syntax", head->line, head->col,
+                    "an extern declaration is top-level (Clause 6.3.8)");
+        }
         return p_extern_tail(c, path->data[path->count - 1], head, ann);
     }
     if (path->count >= 2) {
@@ -386,17 +390,19 @@ static ek_node *annotated_let(p_ctx *c, const ek_slist *path,
     return p_node3(c, EK_N_LET, pat, ann, v);
 }
 
-/* A namespace binding: a Pascal owner chain, a snake_case name,
-   ':' type '=' binding right-hand side. */
+/* A namespace binding: an owner chain whose last segment names the
+   owner type, a snake_case member, ':' type '=' binding right-hand
+   side. */
 ek_node *p_namespace_tail(p_ctx *c, const ek_slist *path,
                           const ek_layout_token *head, ek_node *ann)
 {
     ek_node *n = p_node(c, EK_N_NAMESPACE, head->line, head->col);
     size_t i;
 
-    if (!p_is_pascal(path->data[0])) {
+    if (!p_is_pascal(path->data[path->count - 2])) {
         p_error(c, "E-name-case", head->line, head->col,
-                "a namespace binding is headed by a type name (Clause 6.3.1)");
+                "a namespace owner chain ends in a type name "
+                "(Clause 6.3.1)");
     }
     if (!n) {
         return NULL;
