@@ -12,22 +12,21 @@
  * Resolved AST -> types. ek_check is a pure entry point, (input,
  * arena, diag) -> output; it never aborts.
  *
- * The input is the resolve result. ek_check checks the compilation
- * ROOT's module body against the closure's interfaces; the other
- * modules of the closure are checked when they are roots of their own
- * ek_check calls. Imported surfaces supply the signatures references
- * need; the AST behind an imported signature (symbol->type,
- * symbol->decl) stays alive in the arena and is readable.
+ * The input is the resolve result. ek_check checks every module of
+ * the closure, root first: a compilation is the whole program, so an
+ * imported module's bodies are checked in the same pass, under their
+ * own file. Imported surfaces supply the signatures references need;
+ * the AST behind an imported signature (symbol->type, symbol->decl)
+ * stays alive in the arena and is readable.
  *
  * PLACEHOLDER STD BRIDGE (resolve.h): a reference resolve answered
  * with EK_SYM_EXTERNAL has an unknown-but-fixed type. Each external
  * reference gets a fresh inference variable at its use site (fresh per
  * reference, so occurrence-wise monomorphic); unification binds these
  * variables freely, and no diagnostic ever arises from their opacity.
- * A member link whose reading fails takes the same opaque reading only
- * when the receiver's namespace is one the compiler still supplies:
- * the std surface and the two container namespaces. A name absent from
- * a declared module's own namespace is E-unbound-member.
+ * Member namespaces are complete in the checker, so a member link a
+ * known receiver does not carry is E-unbound-member, not a bridge; a
+ * link on an open receiver type stays opaque.
  *
  * Output: one row per typed AST node, sorted by node address, so lower
  * can binary search by node. `type` is a closed snapshot: bound
@@ -69,9 +68,9 @@
  * otherwise. The derived services (the equality pair, the ordering
  * family, show, inspect, with, and the JSON pair) are pure, so a call
  * naming one contributes no bit whether or not the receiver carries
- * it. No diagnostic ever arises from the opacity itself: an unknown
- * callee is never rejected, it only feeds the OR that an annotated
- * binding reconciles against.
+ * it. No diagnostic ever arises from the opacity itself: a call
+ * through an unknown callee type is never rejected, it only feeds the
+ * OR that an annotated binding reconciles against.
  */
 
 typedef enum {
