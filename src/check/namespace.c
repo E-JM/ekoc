@@ -795,10 +795,13 @@ static const ns_row rows[] = {
        concurrency members, and the File family. `Never` is the bottom
        type, and the open arrows are the dispatchers. The
        capability-module source declares every other member (Clause
-       9.1.1), so the namespaces are complete (Clause 7.9.1). */
-    {"In", "from_lines", SIG_FN(EK_ARROW_PURE, SIG_CAP("In"),
+       9.1.1), so the namespaces are complete (Clause 7.9.1). The
+       advancing derivations land on the std placeholders -- the same
+       nominals the injected pairs wrap -- because the capability module
+       declares no In or Rand type for the capability build to find. */
+    {"In", "from_lines", SIG_FN(EK_ARROW_PURE, SIG_STD("In"),
                                 SIG_LIST(SIG_STD("String")))},
-    {"Rand", "with_seed", SIG_FN(EK_ARROW_PURE, SIG_CAP("Rand"),
+    {"Rand", "with_seed", SIG_FN(EK_ARROW_PURE, SIG_STD("Rand"),
                                  SIG_STD("Int"))},
     {"Proc", "exit", SIG_FN(EK_ARROW_WORLD, SIG_STD("Never"),
                             SIG_STD("Proc"), SIG_STD("Int"))},

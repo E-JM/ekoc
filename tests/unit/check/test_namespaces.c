@@ -235,6 +235,59 @@ static void scalar_completion(void)
     cfx_end(&f);
 }
 
+static void derivation_rows(void)
+{
+    cfx f;
+
+    /* The advancing derivations land on the std placeholders, so the
+       annotated bindings conform. */
+    cfx_begin(&f,
+              "i: In = In.from_lines({\"one\"})\n"
+              "r: Rand = Rand.with_seed(7)\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+
+    /* The unannotated result carries the namespace: a foreign anchor
+       is the mismatch, not a silent variable. */
+    cfx_begin(&f, "n: Int = In.from_lines({\"one\"})\n");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-nominal-mismatch", 1));
+    cfx_end(&f);
+
+    cfx_begin(&f, "n: Int = Rand.with_seed(7)\n");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-nominal-mismatch", 1));
+    cfx_end(&f);
+
+    /* The namespace rides the chain unannotated: read_line checks, its
+       world arrow demands the bit in a pure binding, and its result
+       mismatches the anchor. */
+    cfx_begin(&f,
+              "s: String = In.from_lines({\"one\"}).read_line()\n");
+    EK_CHECK_U64(cfx_errors(&f), 2);
+    EK_CHECK(cfx_code_at_line(&f, "E-nominal-mismatch", 1));
+    EK_CHECK(cfx_code_at_line(&f, "E-world-bit", 1));
+    cfx_end(&f);
+
+    /* In a world arrow the chain simply types: the body's result is
+       read_line's, and the anchor rejects it. */
+    cfx_begin(&f,
+              "go: (l: []String) !-> Int =\n"
+              "    In.from_lines(l).read_line()\n");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-nominal-mismatch", 2));
+    cfx_end(&f);
+
+    /* The chain head's namespace is closed, so an absent member is the
+       miss, not the bridge. */
+    cfx_begin(&f,
+              "v: Int = In.from_lines({\"one\"}).bogus()\n");
+    EK_CHECK_U64(cfx_errors(&f), 2);
+    EK_CHECK(cfx_code_at_line(&f, "E-unbound-member", 1));
+    EK_CHECK(cfx_code_at_line(&f, "E-world-bit", 1));
+    cfx_end(&f);
+}
+
 static void out_rows(void)
 {
     cfx f;
@@ -729,6 +782,7 @@ int main(void)
     bool_rows();
     ints_rows();
     scalar_completion();
+    derivation_rows();
     out_rows();
     dict_rows();
     set_rows();
