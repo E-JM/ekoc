@@ -131,12 +131,31 @@ static void test_comments(void)
     EK_CHECK_U64(fx_errors(&f), 0);
     fx_end(&f);
 
+    /* a block-comment spelling is one consumed span: the body never
+       reaches the token stream */
     fx_begin(&f, "/* c */\nx");
+    EK_CHECK_U64(fx_errors(&f), 1);
     EK_CHECK(fx_has_error(&f, "E-block-comment"));
+    EK_CHECK_U64(fx_count(&f), 3); /* NEWLINE IDENT EOF */
     fx_end(&f);
 
     fx_begin(&f, "/**/");
+    EK_CHECK_U64(fx_errors(&f), 1);
     EK_CHECK(fx_has_error(&f, "E-block-comment"));
+    EK_CHECK_U64(fx_count(&f), 1); /* EOF only */
+    fx_end(&f);
+
+    /* the span closes at the marker on the same line */
+    fx_begin(&f, "a /* x */ b");
+    EK_CHECK(fx_has_error(&f, "E-block-comment"));
+    EK_CHECK_U64(fx_count(&f), 3); /* a b EOF */
+    fx_end(&f);
+
+    /* without the marker the span runs to the line terminator */
+    fx_begin(&f, "a /* x\nb");
+    EK_CHECK_U64(fx_errors(&f), 1);
+    EK_CHECK(fx_has_error(&f, "E-block-comment"));
+    EK_CHECK_U64(fx_count(&f), 4); /* a NEWLINE b EOF */
     fx_end(&f);
 
     FX_KINDS("a/b", EK_TOK_IDENT, EK_TOK_SLASH, EK_TOK_IDENT, EK_TOK_EOF);
@@ -199,6 +218,7 @@ static void test_comment_content_faults(void)
 
     fx_begin(&f, "/*\n");
     EK_CHECK(fx_has_error(&f, "E-block-comment"));
+    EK_CHECK_U64(fx_count(&f), 2); /* NEWLINE EOF, body consumed */
     fx_end(&f);
 }
 

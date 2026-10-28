@@ -281,6 +281,28 @@ int lex_token(lex_ctx *c, gbuf *out)
 
 /* The comment spellings at a '/'. Returns 1 when consumed, 0 when the
    byte is no comment. */
+/* The body of a block-comment spelling, after its opening two bytes:
+   consumed through the closing marker when one follows on the line,
+   else to the line terminator. Consuming the body holds the
+   one-diagnostic rule; lexing it would cascade into tokens the
+   grammar never admitted. */
+static void skip_block_comment(lex_ctx *c)
+{
+    while (ctx_byte(c, 0) >= 0) {
+        int b = ctx_byte(c, 0);
+
+        if (b == '\n' || b == '\r') {
+            return;
+        }
+        if (b == '*' && ctx_byte(c, 1) == '/') {
+            c->pos += 2;
+            c->col += 2;
+            return;
+        }
+        ctx_skip_checked(c);
+    }
+}
+
 static int scan_comment(lex_ctx *c, gbuf *out)
 {
     int b = ctx_byte(c, 0);
@@ -300,6 +322,7 @@ static int scan_comment(lex_ctx *c, gbuf *out)
                   "block comments do not exist; use //");
         c->pos += 2;
         c->col += 2;
+        skip_block_comment(c);
         return 1;
     }
     return 0;
