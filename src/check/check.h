@@ -32,8 +32,13 @@
  * Output: one row per typed AST node, sorted by node address, so lower
  * can binary search by node. `type` is a closed snapshot: bound
  * inference variables are substituted away; a remaining EK_T_IVAR is
- * one the bridge leaves undetermined. `reading` is the selected
- * receiver reading for a member link, EK_RD_NONE otherwise.
+ * one the bridge marked opaque — a placeholder std reference, an
+ * unknown member reading, an injected pair's slot, or a recovery
+ * after an earlier diagnostic. A plain inference variable never
+ * survives: one that no argument and no expected type determines is
+ * rejected with E-undetermined during the module's pass. `reading` is
+ * the selected receiver reading for a member link, EK_RD_NONE
+ * otherwise.
  *
  * `bit` is the node's world classification. A CALL row carries the bit
  * of the call itself: pure through `->`, world-touching through
