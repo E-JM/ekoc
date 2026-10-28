@@ -51,8 +51,18 @@ static int emit_char(lex_ctx *c, gbuf *out, uint32_t value, int count,
     return 1;
 }
 
-static int unterminated(lex_ctx *c, int sline, int scol)
+/* Diagnoses the span and puts the scan back at the first bracket of
+   the literal, so the recovered stream keeps a closer that sits past
+   the defect. A span already diagnosed at or past the bracket stays
+   put: rewinding would scan that material again and report its faults
+   twice. */
+static int unterminated(lex_ctx *c, int sline, int scol, int have_bound,
+                        size_t bound_pos, int bound_col)
 {
+    if (have_bound && !(c->saw_fault && c->last_fault_pos >= bound_pos)) {
+        c->pos = bound_pos;
+        c->col = bound_col;
+    }
     ctx_error(c, "E-unterminated-char", sline, scol,
               "character literal is not terminated");
     return 1;
@@ -63,6 +73,8 @@ int lex_char_literal(lex_ctx *c, gbuf *out)
     int sline = c->line, scol = c->col;
     uint32_t value = 0;
     int count = 0;
+    size_t bound_pos = 0;
+    int bound_col = 0, have_bound = 0;
 
     c->pos++; /* opening quote */
     c->col++;
@@ -70,11 +82,18 @@ int lex_char_literal(lex_ctx *c, gbuf *out)
         int b = ctx_byte(c, 0);
 
         if (b < 0 || b == '\n') {
-            return unterminated(c, sline, scol);
+            return unterminated(c, sline, scol, have_bound, bound_pos,
+                                bound_col);
+        }
+        if (!have_bound && lex_is_bracket(b)) {
+            have_bound = 1;
+            bound_pos = c->pos;
+            bound_col = c->col;
         }
         if (b == '\r') {
             if (lex_consume_cr(c)) {
-                return unterminated(c, sline, scol);
+                return unterminated(c, sline, scol, have_bound, bound_pos,
+                                    bound_col);
             }
             continue;
         }
@@ -88,7 +107,8 @@ int lex_char_literal(lex_ctx *c, gbuf *out)
             esc_result r = scan_escape(c, 1, &cp);
 
             if (r == ESC_END) {
-                return unterminated(c, sline, scol);
+                return unterminated(c, sline, scol, have_bound, bound_pos,
+                                    bound_col);
             }
             if (r == ESC_STOP) {
                 return 1; /* the escape already diagnosed the span */

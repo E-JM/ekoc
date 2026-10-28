@@ -63,6 +63,8 @@ void ctx_error(lex_ctx *c, const char *code, int line, int col,
 {
     va_list ap;
 
+    c->saw_fault = 1;
+    c->last_fault_pos = c->pos;
     va_start(ap, fmt);
     ek_diag_emitv(c->diag, EK_SEV_ERROR, code, c->file, line, col, fmt, ap);
     va_end(ap);

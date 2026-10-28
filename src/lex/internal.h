@@ -26,6 +26,14 @@ void gbuf_init(gbuf *b, ek_arena *arena);
 int gbuf_put(gbuf *b, const void *bytes, size_t n);
 int gbuf_char(gbuf *b, char c);
 
+/* The six brackets: a malformed span ends at the next one, so lexing
+   resumes where a later defect is still nameable. */
+static inline int lex_is_bracket(int b)
+{
+    return b == '(' || b == '[' || b == '{'
+           || b == ')' || b == ']' || b == '}';
+}
+
 typedef struct lex_ctx {
     const char *src;
     size_t len;
@@ -37,6 +45,12 @@ typedef struct lex_ctx {
     ek_diag *diag;
     int depth; /* open interpolation slots, for EK_LEX_MAX_SLOT_DEPTH */
     int oom;   /* stop scanning after the first allocation failure */
+    /* Position of the most recent diagnosed fault. A literal that ends
+       unrecovered over that position does not rewind to its bracket:
+       the rewind would re-scan the material and report its faults
+       twice. */
+    int saw_fault;
+    size_t last_fault_pos;
 } lex_ctx;
 
 /* lex.c */

@@ -373,6 +373,39 @@ static void test_unbalanced_slot(void)
     fx_end(&f);
 }
 
+/* An unterminated string recovers at the next bracket inside its
+   span, so a closer sitting past the defect stays in the stream. */
+static void test_unterminated_stops_at_bracket(void)
+{
+    lex_fixture f;
+
+    fx_begin(&f, "f(\"a, x)");
+    EK_CHECK(fx_has_error(&f, "E-unterminated-string"));
+    EK_CHECK_U64(fx_count(&f), 4); /* f ( ) EOF */
+    if (fx_count(&f) == 4) {
+        EK_CHECK_U64(fx_tok(&f, 1).kind, EK_TOK_LPAREN);
+        EK_CHECK_U64(fx_tok(&f, 2).kind, EK_TOK_RPAREN);
+        EK_CHECK_U64(fx_tok(&f, 3).kind, EK_TOK_EOF);
+    }
+    fx_end(&f);
+
+    /* an opener is a boundary too */
+    fx_begin(&f, "\"a(b\nx");
+    EK_CHECK(fx_has_error(&f, "E-unterminated-string"));
+    EK_CHECK_U64(fx_count(&f), 5); /* ( b NEWLINE x EOF */
+    if (fx_count(&f) == 5) {
+        EK_CHECK_U64(fx_tok(&f, 0).kind, EK_TOK_LPAREN);
+    }
+    fx_end(&f);
+
+    /* a span already diagnosed past its bracket keeps the tail, so no
+       fault is ever reported twice */
+    fx_begin(&f, "'(\xFF\n");
+    EK_CHECK_U64(fx_errors(&f), 2);
+    EK_CHECK(fx_has_error(&f, "E-encoding"));
+    fx_end(&f);
+}
+
 static void test_string_position(void)
 {
     lex_fixture f;
@@ -401,6 +434,7 @@ int main(void)
     test_surplus_brace_in_slot();
     test_slot_comment_to_eol();
     test_unbalanced_slot();
+    test_unterminated_stops_at_bracket();
     test_string_position();
     return ek_test_report("lex/strings");
 }

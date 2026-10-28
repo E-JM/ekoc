@@ -113,6 +113,17 @@ static void test_unterminated(void)
     fx_begin(&f, "'a\\");
     EK_CHECK(fx_has_error(&f, "E-unterminated-char"));
     fx_end(&f);
+
+    /* the span recovers at the next bracket, keeping the call's
+       closing paren in the stream */
+    fx_begin(&f, "f('a, x)");
+    EK_CHECK(fx_has_error(&f, "E-unterminated-char"));
+    EK_CHECK_U64(fx_count(&f), 4); /* f ( ) EOF */
+    if (fx_count(&f) == 4) {
+        EK_CHECK_U64(fx_tok(&f, 1).kind, EK_TOK_LPAREN);
+        EK_CHECK_U64(fx_tok(&f, 2).kind, EK_TOK_RPAREN);
+    }
+    fx_end(&f);
 }
 
 /* An escape that runs into the line terminator is the whole defect:

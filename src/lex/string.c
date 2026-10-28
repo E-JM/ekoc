@@ -241,11 +241,26 @@ static int open_slot(lex_ctx *c, gbuf *seg, gbuf *parts)
     return r < 0 ? -1 : 1;
 }
 
+/* Puts the scan back at the first bracket of the literal's span, so
+   the recovered stream keeps a closer that sits past the defect. A
+   span already diagnosed at or past the bracket stays put: rewinding
+   would scan that material again and report its faults twice. */
+static void recover_at_bracket(lex_ctx *c, int have_bound, size_t pos,
+                               int col)
+{
+    if (have_bound && !(c->saw_fault && c->last_fault_pos >= pos)) {
+        c->pos = pos;
+        c->col = col;
+    }
+}
+
 int lex_string_literal(lex_ctx *c, gbuf *out)
 {
     int sline = c->line, scol = c->col;
     gbuf seg, parts;
     int closed = 0;
+    size_t bound_pos = 0;
+    int bound_col = 0, have_bound = 0;
 
     gbuf_init(&seg, c->arena);
     gbuf_init(&parts, c->arena);
@@ -263,6 +278,11 @@ int lex_string_literal(lex_ctx *c, gbuf *out)
             c->col++;
             closed = 1;
             break;
+        }
+        if (!have_bound && lex_is_bracket(b)) {
+            have_bound = 1;
+            bound_pos = c->pos;
+            bound_col = c->col;
         }
         if (b == '\r') {
             r = lex_consume_cr(c) ? -1 : 1;
@@ -283,6 +303,7 @@ int lex_string_literal(lex_ctx *c, gbuf *out)
         }
         if (r < 0) {
             if (r == -1) {
+                recover_at_bracket(c, have_bound, bound_pos, bound_col);
                 unterminated(c, sline, scol);
             }
             return 1; /* -2: the escape already diagnosed the span */
@@ -290,6 +311,9 @@ int lex_string_literal(lex_ctx *c, gbuf *out)
         if (r == 0) {
             return 0;
         }
+    }
+    if (!closed) {
+        recover_at_bracket(c, have_bound, bound_pos, bound_col);
     }
     return emit_string(c, out, &seg, &parts, closed, sline, scol);
 }
