@@ -49,7 +49,7 @@ operative rules.
 | **module** | a compile-time namespace, equal to one source file | 7.2.1 |
 | **entry module** | the module that contains the `main` binding | 7.1.3 |
 | **project root** | the directory against which import paths are resolved | 7.2.2 |
-| **import** | a declaration that adds a module to the dependency graph and opens its types and constructors | 7.2.3 |
+| **import** | a declaration that adds a module to the dependency graph, opens its types, and makes its constructors visible for anchoring | 7.2.3 |
 | **dependency graph** | the directed graph of modules connected by imports | 7.2.4 |
 | **interface** | the exported types, signatures, and visibility of a module | 7.3.2 |
 | **public** | visible outside the declaring module | 7.3.1 |

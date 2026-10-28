@@ -5,9 +5,10 @@ and rationale for the surface rules.
 
 ## 1. Layout: indentation and the two flow shapes
 
-Blocks are delimited by layout, never braces; `:` opens a block, the first
-member line establishes the column, nesting indents one level
-(`Clause 6.2.2`). Four spaces per level is a fixed constant, not a style
+Blocks are delimited by layout, never braces; `:` and `=` open a block,
+and a `case` arm's `->` opens its body block; the first member line
+establishes the column, nesting indents one level (`Clauses 6.2.2,
+6.2.3`). Four spaces per level is a fixed constant, not a style
 choice — a conforming parser accepts exactly one indentation width, which
 removes an entire configuration axis (tab vs space, width 2/4/8) from
 tooling forever. A raw tab is a compile error (`E-tab`), ignored only inside
@@ -57,6 +58,9 @@ flattened by `<-` (`Clause 6.3.4`). One layer each, no mixing.
 - **`_` digit grouping only.** No separators beyond `_`, no suffixes.
 - **A leading `-` is the unary operator**, never part of the literal — one
   lexing rule, no negative-literal corner cases in patterns.
+- **A floating literal is finite.** `1e999` is `E-literal-overflow`, not
+  `inf`: a literal is a placement checked at compile time, while derived
+  operations may follow the hardware to infinity (`Clause 5.7.2`).
 - **`255.to_hex()` is a postfix call on `255`**, not an incomplete float;
   an integer literal immediately followed by `..` does not begin a float.
   Both are longest-match consequences, stated in Clause 5.10.3 so no lexer
@@ -102,3 +106,9 @@ consecutive lines; treating `type`, `test`, and `main` declarations alike
 costs nothing because the annotation slot already made declarations
 bindings (`Clause 6.3.5`). Rejected: any doc-syntax inside the comment
 (markdown is toolchain's business, not the language's).
+
+A comment form is source-level trivia, recognized only outside a string
+literal. Inside an interpolation slot the content is an expression: `//`
+and `/*` lex as operator tokens, not comments, and the old
+comment-to-end-of-line reading — which swallowed the string's remainder —
+is rejected (`Clauses 5.4.1, 5.9.3`).

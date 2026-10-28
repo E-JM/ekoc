@@ -68,14 +68,16 @@ module MUST NOT be named `std` (Clause 9.1.2).
 The final segment's stem is the module's name in code. Importing `csv/lex` opens module `lex` only, not module `csv`. A path that resolves to no
 file is an error.
 ### 7.2.3 Import Effects
-An import has exactly three effects: it adds the target module to the dependency graph, it opens the target module's types and constructors
-into unqualified scope, and, when the import carries a selective list — `import m.{f, g}` — it opens the listed free names of `m` into the
-importing file's top layer. An opened free name follows the import rules of Clause 7.4.6: a file top-level binding of the same name is
-E-name-conflict, a local binding shadows it legally, and two imports that open the same name are E-name-conflict at the declaration point.
+An import has exactly three effects: it adds the target module to the dependency graph, it opens the target module's types into
+unqualified scope and makes its constructors visible for anchoring, and, when the import carries a selective list — `import m.{f, g}` — it
+opens the listed free names of `m` into the importing file's top layer. An opened free name follows the import rules of Clause 7.4.6: a
+file top-level binding of the same name is E-name-conflict, a local binding shadows it legally, and two imports that open the same name
+are E-name-conflict at the declaration point.
 
 Functions outside a selective list stay module-qualified at the expression head, as in `person.parse(l)`, or use the receiver form with a
-module segment, as in `x.person.parse()` (Clause 7.4.4). Types and constructors are opened; the bare spelling is the normal form, and the
-qualified spelling is legal at every name position (Clause 7.4.4).
+module segment, as in `x.person.parse()` (Clause 7.4.4). Types are opened; constructors are visible for anchoring and form no name layer
+(Clause 7.4.6). The bare spelling is the normal form for types and constructors, and the qualified spelling is legal at every name position
+(Clause 7.4.4).
 
 There is no implicit visibility and no transitive re-export. An import is a read-only grant: it adds nothing to, removes nothing from, and
 overrides nothing in the imported interface or namespaces (Clause 7.4.5).
@@ -83,6 +85,10 @@ overrides nothing in the imported interface or namespaces (Clause 7.4.5).
 An unused import produces W-unused. An explicit `import std` is redundant and produces W-redundant-import (Clause 7.2.5; Annex B).
 ### 7.2.4 Dependency Graph
 The dependency graph has one vertex per module and one directed edge per import. It MUST be acyclic; a cycle is E-cycle-import (Annex B).
+
+The compilation root obeys the same stem rules as an import. The root's file is spelled by the host, so a same-stem import cannot be
+compared to the root by file path: the stem is the root's identity, the import denotes the root, and the resulting back edge is a cycle
+(Clause 7.2.1).
 
 Names within a module MAY reference each other freely, including recursive and mutually recursive functions. Cross-module recursion is not
 available; modules are merged, or function values are passed as parameters.
@@ -92,8 +98,8 @@ compilation checks an importing module against interfaces (Clause 7.3.2); acycli
 11.6).
 ### 7.2.5 Standard Library Import
 The standard library is the module `std`, delivered as source and versioned with the compiler; the capability module is compiler-embedded
-(Clause 9.1.1). Every compilation unit is checked as if it began with `import std`; the injection is unconditional (Clause 9.1.2). An explicit
-`import std` is redundant and reports W-redundant-import (Annex B).
+(Clause 9.1.1). Every compilation unit is checked as if it began with `import std.{assert, assert_eq, assert_ne}`; the injection is unconditional
+(Clause 9.1.2). An explicit `import std`, or a list confined to the injected names, is redundant and reports W-redundant-import (Annex B).
 
 The implicit import opens the public types of `std` into unqualified scope: `Bool`, `Char`, `String`, `Bytes`, the numeric
 types, `Option`, `Result`, `Range`, the error types, and the time types. `Never` resolves in every file too, but as vocabulary of the
@@ -151,8 +157,8 @@ Generic bodies travel with the interface, so a downstream instantiation expands 
 Test bindings do not enter the interface (Clause 9.14.1). Derived services are namespace members, not interface declarations (Clause 9.8.7), and
 tooling marks them as derived (Clause 11.3). Separate compilation proceeds against the interface; an import does not change it (Clause 7.4.5).
 ### 7.3.3 Visibility of Types in Signatures
-A public function's parameter and result types MUST be public. A private type MUST NOT occur in the signature of a public function; a private
-type lives only in private signatures.
+The parameter and result types of a public function, extern declaration, or namespace binding MUST be public. A private type MUST NOT occur
+in such a signature; a private type lives only in private signatures.
 
 The field and payload types of a public `type` or `ctype` declaration are exported surface and MUST be public. A value of a public type can flow
 to an importing module, so the name of every field and payload type MUST be spellable there; the rule is the same one that governs a public
@@ -214,7 +220,7 @@ merged.
 | 1. Record field | the field `f` of the record type of `x` | `x.f`; `x.f(args)` when the field is a function value |
 | 2. Type namespace | the namespace of the static type of `x` | `x.f(args)` |
 | 3. Current module | top-level free functions of the current module whose first parameter type is the static type of `x` | `x.f(args)` |
-| 4. Module path | public free functions of the named module whose first parameter type is the static type of `x` | `x.Mod.f(args)` |
+| 4. Module path | public free functions of the named module, or the namespace of a named type in it, whose first parameter type is the static type of `x` | `x.Mod.f(args)`, `x.Mod.Type.f(args)` |
 
 The namespace of a type is named after the type's head: `[]t` maps to `List`, `[k]v` to `Dict`, `Option t` to `Option`, and `Result t e` to
 `Result`. A declared type uses its own name; an anonymous tuple or record type has no namespace.
@@ -237,13 +243,16 @@ fully qualified call (Clause 7.4.4).
 A bare `x.f` that is not a call is a field access. A function member requires a call. Resolution depends only on the static type of the receiver;
 there is no dynamic dispatch. The receiver is the member's first parameter, and the call is typed as Clause 7.8.2.
 ### 7.4.4 Qualified Names
-A qualified name has the form `Mod.f` at the expression head, `x.Mod.f(args)` at a receiver link, `Mod.Type` in type position, or `Mod.Ctor` at
-constructor value or pattern position. The prefix is the declaring module's name, not an import path.
+A qualified name has the form `Mod.f` or `Mod.Type.f` at the expression head, `x.Mod.f(args)` or `x.Mod.Type.f(args)` at a receiver link,
+`Mod.Type` in type position, or `Mod.Ctor` at constructor value or pattern position. The module prefix is exactly one segment, not an import
+path; a qualified name reference with more than one head segment is E-unbound-name (Annex B).
 
 | Position | Form | Denotes |
 |---|---|---|
 | Expression head | `Mod.f(args)` | free function `f` of module `Mod` |
+| Expression head | `Mod.Type.f(args)` | namespace member `f` of type `Type` in `Mod` |
 | Receiver link | `x.Mod.f(args)` | `Mod.f(x, args)` (Clause 6.5.2) |
+| Receiver link | `x.Mod.Type.f(args)` | `Mod.Type.f(x, args)` |
 | Type position | `Mod.Type` | type `Type` declared in `Mod` |
 | Constructor | `Mod.Ctor` | constructor `Ctor` declared in `Mod` |
 
@@ -296,7 +305,7 @@ A name conflict is a collision within one layer. The following are conflicts:
 - two imported modules with the same stem, judged over the compilation unit's import closure and not over one file's import list (Clause 7.2.1);
 - a type variable with the same name as an imported module;
 - two parameters of `main` with the same capability type (Clause 7.1.3);
-- a repeated binding name within one pattern (Clause 7.7.1).
+- a repeated binding name within one pattern, including a name repeated across the patterns of one arm (Clauses 6.8.6, 7.7.1).
 
 Every such conflict is E-name-conflict (Annex B).
 
@@ -310,11 +319,13 @@ visibility: same-named constructors of different types coexist, and a reference 
 (Clauses 7.5.2, 7.7.1). An unanchored reference is legal only when exactly one constructor of that name is visible and it is non-generic
 (self-anchoring, Clause 7.6); otherwise it is an error, and an annotation anchors it. A qualified constructor selects one.
 
+A constructor name that resolves to no visible constructor is E-unbound-name in value and pattern heads alike (Annex B).
+
 Signature overloading does not exist. One name denotes one binding in its layer, with one signature; the same name with different signatures is
 not admitted (Clause 6.10).
 
-A conflict is reported even when the conflicting name is never used, except for same-named types and constructors, whose unqualified use is the
-point of rejection.
+A conflict is reported even when the conflicting name is never used, except for same-named types, whose unqualified use is the point of
+rejection.
 ## 7.5 Types
 A type is a compile-time identity that classifies values (Clause 4.4). Types exist only at compile time; no expression denotes a type and no test
 inspects one (Clause 8.11).
@@ -342,8 +353,9 @@ tuple type (Clause 6.9.5). A composite type expression such as `[]Int` is not a 
 A variant list declares an algebraic data type. A variant name is a PascalCase constructor; a payload follows by juxtaposition, and a
 multi-component payload is a tuple type. A variant list has at least one variant: a type with no values is not a declaration form, and the
 bottom type is vocabulary of the language (Clause 7.5.4). A constructor applied by juxtaposition is check-only: it requires an
-expected type; its instantiation is taken from that type (Clause 7.6.4). A constructor is never written with parentheses (Clause 6.3.5).
-Its visibility follows the type (Clause 7.3.3), and its name MAY equal the type name.
+expected type; its instantiation is taken from that type (Clause 7.6.4). A bare constructor is never written with parentheses; a
+module-qualified constructor is applied as a call on its dotted head (Clauses 6.5.2, 6.8.1). Its visibility follows the type (Clause
+7.3.3), and its name MAY equal the type name.
 
 A bracketed right-hand side declares a record or a tuple-shaped nominal type. Field access does not apply to a tuple-shaped nominal type; its
 values are taken apart by patterns (Clause 7.7.1).
@@ -670,7 +682,7 @@ Coverage is judged by constructors at every depth, not by inhabitance. A wildcar
 
 For an algebraic scrutinee, every constructor MUST be covered. An arm covers a constructor when the pattern's head is that constructor and its
 payload pattern covers the payload type. A variable or `_` payload covers the whole payload; a constructor payload is covered recursively; tuple,
-record, and list payloads follow the rules below. A final `_` arm makes the `case` exhaustive.
+record, and list payloads follow the rules below. A final all-`_` arm makes the `case` exhaustive.
 
 For a tuple scrutinee, a tuple pattern of the scrutinee's arity covers it when each component pattern covers its component type.
 
@@ -681,14 +693,18 @@ For a list scrutinee, `{}` covers the empty list. A suffix-rest pattern `{h, ..t
 pattern covers lists of its arity when its element patterns cover the element type. A prefix-rest pattern covers non-empty lists when its
 last-element pattern covers the element type. The empty list and the non-empty lists MUST both be covered.
 
-For every other scrutinee type, the `case` MUST end with a `_` arm; a literal pattern alone does not cover the type.
+For a scalar scrutinee — one without case structure — a literal pattern alone does not cover the type; coverage comes from a variable or
+`_` pattern. In a single-scrutinee `case` this means the case MUST end with a `_` or variable arm.
 
 An or-pattern covers what its alternatives cover; each alternative is considered. Exhaustiveness is checked against the instantiated union:
 `Result t Never` still requires an `Err` arm; inhabitance is not analyzed. Coverage belongs to patterns alone: a diverging body neither adds
 nor removes what an arm's pattern covers (Clause 7.7.4).
 
-Tuple, record, and list scrutinees are judged by shape; every other non-ADT scrutinee requires a final `_` arm. This is the rule that the
-pattern forms of Clause 6.8 and the conformance suite exercise.
+Tuple, record, and list scrutinees are judged by shape. A `case` over several scrutinees is judged column by column: a constructor column
+owes coverage of its payload over exactly the arms that survive every further split of the other columns; a scalar column splits the
+literals its arms name from the catch-all that answers the remaining values; a scrutinee without case structure is covered only by a
+variable or `_` in its column. A final all-`_` arm covers the whole product but is not required when the columns already cover it. This is
+the rule that the pattern forms of Clause 6.8 and the conformance suite exercise.
 ### 7.7.3 Guards and Exhaustiveness
 An arm MAY carry a guard: a pattern, `if`, a `Bool` expression, `->`, and a result (Clause 6.7.3). The pattern binds before the guard is checked.
 The guard MUST have type `Bool` and MAY use the pattern's bindings. If the pattern matches and the guard is false, matching continues with the

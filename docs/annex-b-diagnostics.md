@@ -109,11 +109,13 @@ collide with a code in the table.
 | Code | Condition | Clause |
 |---|---|---|
 | `E-tab` | a tab character occurs as whitespace | Clause 5.2.3 |
+| `E-empty-slot` | an interpolation slot is empty | Clause 5.9.3 |
 | `E-name-case` | an identifier violates the case class of its name space | Clause 5.5.2 |
 | `E-literal-overflow` | a numeric literal lies outside the range of its target type, or a floating literal overflows the finite range | Clause 5.7.1, Clause 5.7.2 |
 | `E-cycle-import` | the module dependency graph contains a cycle | Clause 7.2.4 |
 | `E-namespace-owner` | a type-namespace member is declared outside the module that owns the type | Clause 7.4.5 |
-| `E-name-conflict` | two names conflict at one level, two constructors clash, two imported module stems collide, or a declaration names the language's `Never` | Clause 7.4.6, Clause 7.5.4 |
+| `E-name-conflict` | two names conflict at one level, two imported module stems collide, or a declaration names the language's `Never` | Clause 7.4.6, Clause 7.5.4 |
+| `E-unbound-name` | a name resolves to no declaration in any visible scope, including a constructor name with no visible constructor | Clause 7.4.2, Clause 7.4.6, Clause 9.1.2 |
 | `E-nominal-mismatch` | a nominal type does not flow into a different nominal type | Clause 7.5.2 |
 | `E-shape-mismatch` | a nominal type does not have the same shape as the anonymous target | Clause 7.5.5 |
 | `E-phantom` | a type variable is phantom or occurs only in the result | Clause 7.6.2, Clause 7.6.5 |

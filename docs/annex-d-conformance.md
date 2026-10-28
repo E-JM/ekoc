@@ -171,7 +171,7 @@ number of test bindings. `geolib.eko` is a fixture and has none.
 | `derived_services.eko` | yes | 7 | 5.9.3, 7.5.6, 8.5.3, 9.8.1, 9.8.2, 9.8.3, 9.8.4, 9.8.5, 9.8.6, 9.8.7, 9.10.1 | `show` and `inspect`; override through interpolation; deep equality; declaration order; immutable `with`; stable `sort_by`; capability display |
 | `generics.eko` | yes | 6 | 6.3.5, 6.9.4, 7.5.6, 7.6.1, 7.6.2, 7.6.3, 7.6.4, 7.7.2, 8.7.1, 8.8.2, 8.8.3, 9.2.2, 9.10.1 | implicit type variables; mutual recursion; recursive generic tree; self tail recursion; explicit comparator; instantiation by unification |
 | `geolib.eko` | no | 0 | 6.3.5, 6.4.2, 7.2.1, 7.3.1, 7.3.2, 7.5.2, 7.7.2, 9.8.6 | module surface; public and private functions; nominal record and variant types |
-| `geolib_use.eko` | yes | 3 | 6.5.2, 6.7.4, 6.8.1, 7.2.1, 7.2.2, 7.2.3, 7.4.4, 7.8.2, 8.3.2 | import opens types and constructors; qualified calls; UFCS extension; `if` |
+| `geolib_use.eko` | yes | 3 | 6.5.2, 6.7.4, 6.8.1, 7.2.1, 7.2.2, 7.2.3, 7.4.4, 7.8.2, 8.3.2 | import opens types; constructors are anchored; qualified calls; UFCS extension; `if` |
 | `lambdas_capture.eko` | yes | 4 | 6.4.1, 6.4.2, 7.9.2, 7.9.4, 7.9.5, 7.9.6, 8.2.1, 8.2.3, 9.10.1, 9.14.5 | lambdas without annotations; snapshot capture; pure factory returning a `!` closure; dispatcher bit |
 | `result_chains.eko` | yes | 4 | 6.3.4, 6.8.1, 7.5.4, 8.2.4, 9.2.1, 9.2.2, 9.6.3, 9.10.1, 9.11.1, 9.14.4 | `<-` unwrapping; `to_result` and `map_err`; wildcard links over `Result _ e`; table-driven test |
 | `types_composites.eko` | yes | 7 | 6.3.5, 6.6.1, 6.6.2, 6.6.3, 6.8.1, 6.9.2, 6.9.5, 7.5.2, 7.5.3, 7.5.5, 9.8.6, 9.10.2 | variants; records with nested partial update; newtype; tuples; dictionaries; shape adaptation |

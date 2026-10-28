@@ -49,7 +49,11 @@ an anonymous form is a view.** The same philosophy as capabilities
 (`Clause 6.6`). A composite literal never stands alone — the expected
 type resolves list-vs-tuple and dictionary-vs-record, the same machinery
 that types lambda parameters. The single localized exception is `with`'s
-partial literal (`Clause 9.8.6`).
+partial literal (`Clause 9.8.6`). `with` is construction from a base, not
+a function: its second parameter type is unspellable, and the partial
+literal is legal only in its argument position. The partial literal
+descends through record field values only; list, dictionary, and tuple
+elements are complete values (`Clauses 6.6.3, 9.8.6`).
 
 - Value-position tuples do not use `(...)`: parentheses are already taken
   by parameter groups, call syntax, and parenthesized expressions.
@@ -133,6 +137,16 @@ spirit as `Never` and `[]Never`. Derived services terminate on recursive
 structure by the acyclicity theorem (`Clause 8.6.1`).
 
 ## 7. Constructors and equality anchoring
+
+Constructors are anchored, not layered: same-named constructors of
+different types coexist; the expected type in value position or the
+scrutinee type in pattern position anchors the reference, and an
+unanchored reference is legal only when exactly one visible constructor of
+that name is non-generic (`Clause 7.4.6`). The rejected reading was a
+visibility layer with std beneath user constructors: a user
+`MyBool: type = True | False` would then occlude std's `True` everywhere
+and reject a correct `x: Bool = True`. A name layer forces a winner where
+the anchor should decide.
 
 Constructor application is check-only — it needs an expected type, because
 the instantiation comes from that type. A bare generic constructor has no

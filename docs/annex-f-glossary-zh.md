@@ -175,11 +175,12 @@
 |---|---|---|
 | `E-ctype-field` | `ctype` 字段不是机器字或嵌套 `ctype` | Clause 10.3.3 |
 | `E-cycle-import` | 循环导入 | Clause 7.2.4 |
+| `E-empty-slot` | 插值槽为空 | Clause 5.9.3 |
 | `E-exhaust` | 穷尽性匹配缺少分支 | Clause 7.7.2 |
 | `E-extern-type` | extern 签名中的类型不在编组白名单内，或含类型变量/可变参数 | Clause 10.2.3, Clause 10.3.5 |
 | `E-instantiation-depth` | 泛型实例化不终止 | Clause 8.7.3 |
 | `E-json-shape` | 类型没有默认 JSON 同构形式 | Clause 9.9.3 |
-| `E-literal-overflow` | 数值字面量超出目标类型范围 | Clause 5.7.1 |
+| `E-literal-overflow` | 数值字面量超出目标类型范围，或浮点字面量超出有限范围 | Clause 5.7.1, Clause 5.7.2 |
 | `E-name-case` | 命名大小写违规 | Clause 5.5.2 |
 | `E-name-conflict` | 同层名称冲突 | Clause 7.4.6 |
 | `E-namespace-owner` | 在类型所属模块之外声明其命名空间成员 | Clause 7.4.5 |
@@ -192,6 +193,7 @@
 | `E-reserved-symbol` | extern 声明引用保留符号 | Clause 10.6 |
 | `E-shape-mismatch` | 形状不同，无法适配 | Clause 7.5.5 |
 | `E-tab` | 以制表符作为空白 | Clause 5.2.3 |
+| `E-unbound-name` | 名称在任何可见作用域中都没有声明 | Clause 7.4.2, Clause 7.4.6, Clause 9.1.2 |
 | `E-world-bit` | 世界位不一致，多写或少写 `!` | Clause 7.9.2 |
 
 ### F.4.2 Warning Codes

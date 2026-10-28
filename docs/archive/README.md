@@ -25,7 +25,7 @@ and a normative clause disagree, the clause prevails.
 | [builtins.md](builtins.md) | Clauses 9.3–9.9 | text, conversions, derived services, JSON, bytes, time |
 | [library.md](library.md) | Clauses 9.10–9.15, Annex B | standard library surface, testing, diagnostics |
 | [ffi.md](ffi.md) | Clause 10 | extern, `Pure`, `C.*`, `ctype`, embedding ABI, the capability channel |
-| [audit-2026-10.md](audit-2026-10.md) | Clauses 5–7, 9, 10 | the 2026-10 audit rulings (items 4, 6, 10, 14–17): `:=` layout, qualified names, cross-pattern duplicates, float finiteness, anchored constructors, `with` construction, selective import |
+| [audit-2026-10.md](audit-2026-10.md) | Clauses 5–7, 9, 10, Annexes A, B | the 2026-10 audit rulings: `:=` layout, qualified names, cross-pattern duplicates, float finiteness, anchored constructors, `with` construction, selective import, plus the corpus and front-end rulings and the deferred deviations |
 | [stdlib.md](stdlib.md) | Clauses 9.1, 9.8, 11, Annex C | library name and delivery, implicit import, operators and equality, derived services, toolchain |
 | [toolchain.md](toolchain.md) | Clauses 11, Annex D | implementation language (C base), backend legs (cc + libtcc), pipeline architecture, self-hosting roadmap |
 

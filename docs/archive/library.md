@@ -31,9 +31,12 @@ library (`Clause 9` intro).
 
 ## 2. Testing: the rejected framework surface
 
-Testing adds one annotation-slot word (`test`), prelude assertion
-functions, and pure capability constructors — and refuses everything else.
-Each refusal with its reason (`Clause 9.14`):
+Testing adds one annotation-slot word (`test`), the three assertion
+functions opened by the injected selective import, and pure capability
+constructors — and refuses everything else. The assertion family is std
+source, opened by `import std.{assert, assert_eq, assert_ne}`; a failure is
+`P-panic` (`Clause 9.14.3`), not a dedicated panic code. Each refusal with
+its reason (`Clause 9.14`):
 
 | Rejected | Reason |
 |---|---|

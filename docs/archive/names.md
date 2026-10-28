@@ -65,12 +65,13 @@ the name layer).
 
 ### What an import does, and does not, do
 
-An import declares the dependency edge and opens **types and constructors**
-into unqualified scope — because patterns write bare constructors
-(`Ok v ->`) and annotations write bare names (`p: Person`), spellings that
-cannot carry a prefix. Functions are always module-qualified so provenance
-is visible at every call site. The UFCS extension `x.Mod.f(args)` fills the
-one position otherwise unreachable natively, keeping the pipeline linear.
+An import declares the dependency edge and opens **types** into unqualified
+scope; constructors are visible for anchoring and form no name layer
+(`Clause 7.4.6`) — patterns write bare constructors (`Ok v ->`) and
+annotations write bare names (`p: Person`), spellings that cannot carry a
+prefix. Functions are always module-qualified so provenance is visible at
+every call site. The UFCS extension `x.Mod.f(args)` fills the one position
+otherwise unreachable natively, keeping the pipeline linear.
 
 The symmetry with capabilities is deliberate: `main`'s parameter list is
 the capability authorization manifest; the import list is the *name*
@@ -107,12 +108,14 @@ exhaustiveness depends on the complete constructor set.
 
 ## 6. The prelude opening
 
-The prelude is the only implicit module, and the implicitly opened free
-functions (`show`, `inspect`, `panic`, `assert`, `assert_eq`, `assert_ne`)
-are brought into unqualified scope with it (`Clause 9.1`). The opened
-name spans all type namespaces at once — each namespace carries only its
-own type's member — so no single namespace can supply the free spelling;
-without the opening, every call would read `prelude.show(n)` and the
-spelling floor of the language would collapse. The opened set is closed and
-versioned with the compiler, so its collision surface is bounded, and
-conflict rules are the same as for user modules.
+The prelude is the only implicit module. The injected selective import
+opens three free names — `assert`, `assert_eq`, and `assert_ne`
+(`Clause 9.1.2`). `show`, `inspect`, and `panic` are compiler-generated
+services attached to type namespaces; their free-call forms are the
+identity of Clause 6.5.2, not opened names. The free spelling spans all
+type namespaces at once — each namespace carries only its own type's
+member — so no single namespace can supply it; without the identity,
+every call would read `x.show()` and the spelling floor of the language
+would collapse. The opened set is closed and versioned with the compiler,
+so its collision surface is bounded, and conflict rules are the same as
+for user modules.

@@ -45,10 +45,13 @@ All-at-once injection of a per-type module tree opens the union of all
 std type names ambiently and burns every common module stem (`string`,
 `list`, `io`, …), because module names are flat file stems (Clause 7.2.1) and
 directories are not nameable. The adopted rule injects one constant line,
-`import std`; companions stay explicit; a companion's stem enters scope
-only on import, so nothing is reserved beyond the path prefix. A manual
-`import std` warns (`W-redundant-import`) rather than erroring: it is
-harmless and almost always a misunderstanding.
+`import std.{assert, assert_eq, assert_ne}`; companions stay explicit; a
+companion's stem enters scope only on import, so nothing is reserved beyond
+the path prefix. The injected list is a language constant: adding or
+removing a name is a language revision, not a library update. A manual
+`import std`, or a list confined to the injected names, warns
+(`W-redundant-import`) rather than erroring: it is harmless and almost
+always a misunderstanding.
 
 ## 4. One vocabulary module, not per-type modules
 
@@ -78,19 +81,23 @@ capability as first parameter makes the function a namespace member. The
 free-function spelling was a transcription error; the generic-namespace
 precedent (`Option.get`) shows members with type variables are ordinary.
 
-## 6. The free-name set is closed
+## 6. The opened set is closed
 
-Six names: `show`, `inspect`, `panic` (compiler-generated) and `assert`,
-`assert_eq`, `assert_ne` (std source). They cannot be namespace members:
+Three names are opened by the injected import: `assert`, `assert_eq`, and
+`assert_ne`, all std source. `show`, `inspect`, and `panic` are
+compiler-generated services attached to type namespaces; their free-call
+forms are the identity of Clause 6.5.2 (`show(t)` is `t.show()`), not
+opened names. The free spellings do not come from one namespace layer:
 `show` and `inspect` dispatch over every type and no single namespace can
 supply the free spelling — first-class use (`.map(show)`) needs the name
-of the dispatcher itself; the assert family is generic over `t` with no
-anchor type. Moving the assert family into the compiler was rejected: it
-is writable Eko source, and what is writable belongs in the library, not
-the compiler. The set is closed permanently — the ambient name surface is
-six functions plus the type vocabulary, in every future version. New std
-functions require an anchor type; anchor-less utilities belong in
-companions.
+of the dispatcher itself; `panic` is String's service; the assert family
+is generic over `t` with no anchor type, and it is ordinary std source.
+Moving the assert family into the compiler was rejected: it is writable
+Eko source, and what is writable belongs in the library, not the compiler. The opened set is
+closed permanently — the ambient name surface is the assert family plus
+the opened type vocabulary, in every future version; adding a name to the
+injected list is a language revision. New std functions require an anchor
+type; anchor-less utilities belong in companions.
 
 ## 7. Operators: the value layer, only
 

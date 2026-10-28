@@ -15,6 +15,10 @@ the arrow markers (`!->`/`?->`), and the binding operators (`=`, `:=`,
 - `<-` inverted binding, whose type comes from the trailing callback's
   parameter.
 
+`:=` and `<-` end in a continuation, not a block opener: only `:`, `=`, and
+a `case` arm's `->` open a block (`Clause 6.2.3`); a multi-line rebinding
+right-hand side is a continued expression (`Clause 6.2.4`).
+
 `<-` desugars to a trailing callback: `p <- f(a...) rest` is
 `f(a..., (p): rest)`. The trailing-callback contract is the prelude's
 existing shape (`with_file`, `List.each`, `Result.try`), so `<-` adds zero
@@ -77,7 +81,7 @@ cannot silently under-bind.
 |---|---|
 | Dictionary patterns | A key is a value, not structure; `Dict.get -> Option` is already the natural branch — a pattern would hide a domain check inside syntax |
 | As-patterns `x as p` | Wanting the whole and a part is two bindings; nest a `case` or take the field |
-| Repeated binder names in one pattern (`(x, x)`) | Compile error; `_` is the exception (binds nothing, repeats freely) |
+| Repeated binder names in one pattern or across the patterns of one arm (`(x, x)`, `case a, b: x, x -> ...`) | Compile error; one arm's patterns bind together; `_` is the exception (binds nothing, repeats freely) |
 | Record/constructor/list patterns in parameter position | The parameter group is identifiers and tuple groups; `(p, i):` is a two-parameter group *shaped like* a tuple, not destructuring — splitting a tuple value is always explicit (binding line or `case`) |
 
 ## 5. Never: exhaustiveness belongs to patterns

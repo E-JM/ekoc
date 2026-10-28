@@ -43,7 +43,8 @@ the path prefix `std/` are reserved; a user module MUST NOT be named `std` (Clau
 The names declared by the capability module resolve in every source file without import: the capability
 namespaces through the type namespaces, as `List.map` does, and their types (`File`, `OpenMode`,
 `FileInfo`, `IoError`, `Scope`, `Task t`, and the capability types) as bare names. No import path names
-the capability module (Clause 9.1.1).
+the capability module (Clause 9.1.1). The capability type names have no `std.` spelling: `std.File` is
+E-unbound-name, because the standard library carries no capability content (Clause 9.1.1).
 The names opened by the injected list are exactly `assert`, `assert_eq`, and `assert_ne`; all three
 are std source, ordinary Eko source like any other std free function. `show`, `inspect`, and `panic`
 are not opened names: `show` and `inspect` are compiler-generated services attached to every type

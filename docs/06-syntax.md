@@ -109,7 +109,7 @@ blocks one level deeper.
 
 ### 6.2.3 Headers
 
-A header introduces a block and ends in one of two ways:
+A header introduces a block and ends in one of three ways:
 
 | Header | Terminator | Introduces |
 |---|---|---|
@@ -208,7 +208,7 @@ ValueBinding := Pattern [':' TypeExpression] '=' RHS
               | '<-' Call
               | NamespaceBinding
 
-NamespaceBinding := PascalName '.' snake_case Identifier ':' TypeExpression '=' RHS
+NamespaceBinding := QualifiedPascalName '.' snake_case Identifier ':' TypeExpression '=' RHS
 
 RHS          := Expression | NEWLINE INDENT {Member} DEDENT
 ```
@@ -554,7 +554,8 @@ An expression is one of the following forms:
 
 A `case` or `if` used as an operand MUST be parenthesized unless it is the
 whole right-hand side or the whole argument in a position where a block is
-expected.
+expected. A juxtaposed constructor argument is an operand, and no block is
+expected there.
 
 ### 6.5.2 Calls and UFCS
 
@@ -583,11 +584,13 @@ the identity does not apply (Clause 7.4.3).
 In every resolution, the first parameter is the receiver. There is no other
 method-call form.
 
-A constructor is applied by juxtaposition. The argument, when present, is a
-postfix expression, and juxtaposition binds tighter than every operator:
-`Ok inner`, `Duration 500`, `Succ (Succ Zero)`, and `Ok x || y` reads
-`(Ok x) || y`. A nullary constructor is the bare `PascalName`. A qualified
-constructor `Mod.Name` selects among same-named constructors (Clause 7.4.6).
+A bare constructor is applied by juxtaposition. The argument, when present,
+is a postfix expression, and juxtaposition binds tighter than every
+operator: `Ok inner`, `Duration 500`, `Succ (Succ Zero)`, and `Ok x || y`
+reads `(Ok x) || y`. A nullary constructor is the bare `PascalName`. A
+module-qualified constructor `Mod.Name` selects among same-named
+constructors (Clause 7.4.6) and is applied as a call on its dotted head,
+`geolib.Circle(r)`; the juxtaposition form belongs to the bare spelling.
 
 Operator notation is sugar for the same calls: `a + b` is `Int.add(a, b)`,
 and therefore `a.add(b)` (Clause 7.8.3).
@@ -604,9 +607,9 @@ content.split("\n")
 ```
 
 Each link's receiver is the value of the previous link. A chain MAY attach a
-module at a link with `.Mod.f()` (Clause 7.4.4). A fully qualified name MAY be
-passed as an argument, as in `.map(String.trim)`; that is a name reference,
-not a call.
+module at a link with `.Mod.f()` or a module-qualified type namespace with
+`.Mod.Type.f()` (Clause 7.4.4). A fully qualified name MAY be passed as an
+argument, as in `.map(String.trim)`; that is a name reference, not a call.
 
 ### 6.5.4 Operator Expressions
 
@@ -902,8 +905,9 @@ A pattern is one of:
 | or | `P \| Q` | `Key Up \| Key Down` |
 
 A constructor pattern is a constructor name, optionally followed by a payload
-pattern. Constructors are written without parentheses. A variable pattern
-binds the matched value to the name. `_` matches anything and binds nothing.
+pattern. The constructor MAY be module-qualified (Clause 7.4.4). Constructors
+are written without parentheses. A variable pattern binds the matched value
+to the name. `_` matches anything and binds nothing.
 
 Tuple, record, and list patterns share braces; the expected type decides
 between them, as it does for composite literals. The same pattern grammar is

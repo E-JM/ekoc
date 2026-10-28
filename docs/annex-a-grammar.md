@@ -376,13 +376,16 @@ QualifiedPascalName := { Identifier '.' } PascalName
 
 A dotted name in expression position is resolved by Clause 7.4.4 and may
 carry a call's arguments (Clause 6.5.2). A `QualifiedPascalName` is a
-dotted name whose last segment is PascalCase and whose head segments form
-a module path of any case class (Clause 5.5.2): in type position
-`geolib.Shape` is a module-qualified type (Clause 7.4.5); in pattern
-position `geolib.Circle` is a module-qualified constructor (Clause 7.4.6).
-As the head of a `NamespaceBinding` it names the owner type. A
-module-qualified constructor application in value position is spelled as a
-call, `geolib.Circle(r)` (Clause 6.5.2).
+dotted name whose last segment is PascalCase and whose head is a module
+name of any case class (Clause 5.5.2): in type position `geolib.Shape` is
+a module-qualified type (Clause 7.4.5); in pattern position
+`geolib.Circle` is a module-qualified constructor (Clause 7.4.6). As the
+head of a `NamespaceBinding` it names the owner type. The production
+admits any number of head segments; a module-qualified
+`QualifiedPascalName` carries exactly one module segment (Clause 7.4.4),
+and a reference with a longer prefix is E-unbound-name. A module-qualified constructor
+application in value position is spelled as a call, `geolib.Circle(r)`
+(Clause 6.5.2).
 
 ## A.4 Layout Algorithm
 

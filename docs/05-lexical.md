@@ -108,7 +108,10 @@ group is free formatting.
 ### 5.4.1 Line Comments
 
 The characters `//` begin a line comment. The comment extends to the end of
-the line and is ignored. Block comments do not exist.
+the line and is ignored. A comment form is recognized only outside a string
+literal. Inside a string's interpolation slot, `/` is an operator token and
+`//` and `/*` are not comment forms (Clause 5.9.3); in the literal segments
+they are ordinary characters. Block comments do not exist.
 
 ### 5.4.2 Documentation Comments
 
@@ -340,10 +343,12 @@ evaluated, and its value is rendered with `show` (Clause 9.8.1).
 - Braces inside a slot MUST balance.
 - A `}` that does not close an open slot is an ordinary character.
 - A slot MAY contain a nested string literal with its own slots.
-- An empty slot `{}` is an error.
+- An empty slot `{}` is an error with code `E-empty-slot` (Annex B).
 
 The slot expression is an arbitrary expression. Its type MUST have a `show`
 service; every type does (Clause 9.8.1). A capability renders as `<cap>`.
+The slot is an expression region, not source text: comment forms do not
+occur inside it (Clause 5.4.1), and `//` and `/*` lex as operator tokens.
 
 ```eko
 name:  String = "ada"
@@ -426,7 +431,7 @@ The following lexical forms do not exist. Their occurrence is an error.
 | Form | Rule |
 |---|---|
 | Tab as whitespace | `E-tab`; indentation is spaces (Clause 5.2.3) |
-| Block comments `/* ... */` | no such form; use `//` (Clause 5.4.1) |
+| Block comments `/* ... */` | no such form outside a string literal; use `//` (Clause 5.4.1); inside a slot it is two operator tokens |
 | Multiline string literals | strings are single-line (Clause 5.9.1) |
 | Numeric type suffixes (`1u8`, `1.0f`) | no suffixes; placement is by expected type (Clause 5.7.4) |
 | Character literals with more than one scalar | one scalar per `Char` (Clause 5.8) |
