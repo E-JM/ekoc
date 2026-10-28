@@ -72,6 +72,16 @@ static void qualified(r_ctx *c, r_file *f, const ek_node *t)
         r_add_ref(c, t, EK_SYM_EXTERNAL, EK_ST_TYPE, NULL);
         return;
     }
+    if (m->surf == c->std && r_std_cap_name(tname)) {
+        /* The capability types are not std content; the placeholder
+           rows open the names unqualified and carry no qualified
+           spelling. */
+        r_error(c, file, t->line, t->col, "E-unbound-name",
+                "the capability type `%s` has no `std.` spelling; it "
+                "opens unqualified (Clause 9.1.1)", tname);
+        r_add_ref(c, t, EK_SYM_EXTERNAL, EK_ST_TYPE, NULL);
+        return;
+    }
     {
         size_t i;
 

@@ -365,6 +365,17 @@ static void qualified_std_types(void)
     EK_CHECK(r->kind == EK_SYM_EXTERNAL);
     EK_CHECK(r->station == EK_ST_TYPE);
     rfx_end(&f);
+
+    /* The capability names are no std content; the qualified spelling
+       is refused while the unqualified opening stays. */
+    rfx_begin(&f, "z: std.Out = 1\n");
+    EK_CHECK_U64(rfx_errors(&f), 1);
+    EK_CHECK(rfx_code_at_line(&f, "E-unbound-name", 1));
+    rfx_end(&f);
+
+    rfx_begin(&f, "z: Out = 1\n");
+    EK_CHECK_U64(rfx_errors(&f), 0);
+    rfx_end(&f);
 }
 
 /* Local shadowing of an opened free name is legal; only a top-level

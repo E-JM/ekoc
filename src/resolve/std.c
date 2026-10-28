@@ -28,6 +28,25 @@ static const char *type_names[] = {
 
 #define TYPE_ROWS (sizeof type_names / sizeof *type_names - 1)
 
+/* The nine capability type names: std carries no capability content,
+   so the names open unqualified and have no std-qualified spelling. */
+int r_std_cap_name(const char *name)
+{
+    static const char caps[] = "OutInFsEnvArgsClockRandProcConc";
+    static const unsigned char off[] = {0, 3, 5, 7, 10, 14, 19, 23, 27};
+    size_t i;
+
+    for (i = 0; i < sizeof off; i++) {
+        const char *cand = caps + off[i];
+        size_t len = (i + 1 < sizeof off ? off[i + 1] : 31) - off[i];
+
+        if (strlen(name) == len && strncmp(name, cand, len) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 int r_std_opened_name(const char *name)
 {
     /* The sentinel NULL is not an entry. */
