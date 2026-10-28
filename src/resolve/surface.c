@@ -352,6 +352,121 @@ static void collect_member(r_surf *s, const ek_node *item)
     emit(s, sym);
 }
 
+/* A private type declared in this module, by name. */
+static int private_type_here(const r_surf *s, const char *name)
+{
+    size_t i;
+
+    for (i = 0; i < s->n; i++) {
+        if (s->syms[i].kind == EK_SYM_TYPE
+            && !s->syms[i].public && strcmp(s->syms[i].name, name) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* Every nominal spelling a type expression mentions must be public
+   where the expression is exported surface. */
+static void private_in_type(r_surf *s, const ek_node *t, const char *what)
+{
+    size_t i;
+
+    if (!t || s->c->oom) {
+        return;
+    }
+    switch (t->kind) {
+    case EK_N_T_NAME: {
+        const char *n = t->u.path.data[t->u.path.count - 1];
+
+        if (private_type_here(s, n)) {
+            r_error(s->c, s->m->file, t->line, t->col, "E-private-name",
+                    "the %s names the private type `%s` (Clause 7.3.3)",
+                    what, n);
+        }
+        return;
+    }
+    case EK_N_T_FIELD:
+    case EK_N_T_PARAM:
+        private_in_type(s, t->u.t_field.type, what);
+        return;
+    case EK_N_T_FN:
+        for (i = 0; i < t->u.t_fn.params.count; i++) {
+            private_in_type(s, t->u.t_fn.params.data[i], what);
+        }
+        private_in_type(s, t->u.t_fn.result, what);
+        return;
+    case EK_N_T_TUPLE:
+    case EK_N_T_RECORD:
+        for (i = 0; i < t->u.kids.count; i++) {
+            private_in_type(s, t->u.kids.data[i], what);
+        }
+        return;
+    case EK_N_T_LIST:
+    case EK_N_T_PAREN:
+        private_in_type(s, t->u.wrap.inner, what);
+        return;
+    case EK_N_T_DICT:
+        private_in_type(s, t->u.pair.a, what);
+        private_in_type(s, t->u.pair.b, what);
+        return;
+    case EK_N_T_APPLY:
+        private_in_type(s, t->u.t_apply.head, what);
+        for (i = 0; i < t->u.t_apply.args.count; i++) {
+            private_in_type(s, t->u.t_apply.args.data[i], what);
+        }
+        return;
+    default:
+        return;
+    }
+}
+
+/* The exported surface spells only public types: a public binding's
+   annotation, and the payload and field types of a public type or
+   ctype. A value of a public type flows to importers, so every name
+   its surface mentions must be spellable there. */
+static void signature_visibility(r_surf *s)
+{
+    const ek_node *mod = s->m->ast;
+    size_t i, k;
+
+    for (i = 0; i < mod->u.kids.count; i++) {
+        const ek_node *d = mod->u.kids.data[i];
+
+        if (d->kind == EK_N_TYPE_DECL) {
+            if (d->u.type_decl.name[0] == '_') {
+                continue;
+            }
+            for (k = 0; k < d->u.type_decl.variants.count; k++) {
+                private_in_type(s, d->u.type_decl.variants.data[k]
+                                   ->u.variant.payload,
+                                "surface of a public type");
+            }
+            private_in_type(s, d->u.type_decl.type,
+                            "surface of a public type");
+        } else if (d->kind == EK_N_CTYPE_DECL) {
+            if (d->u.decl.name[0] == '_') {
+                continue;
+            }
+            private_in_type(s, d->u.decl.body, "surface of a public ctype");
+        } else if (d->kind == EK_N_LET && d->u.bind.type
+                   && d->u.bind.pattern
+                   && d->u.bind.pattern->kind == EK_N_P_VAR
+                   && d->u.bind.pattern->u.path.count == 1
+                   && d->u.bind.pattern->u.path.data[0][0] != '_') {
+            private_in_type(s, d->u.bind.type, "public binding signature");
+        } else if (d->kind == EK_N_EXTERN_DECL
+                   && d->u.extern_decl.name[0] != '_') {
+            private_in_type(s, d->u.extern_decl.type,
+                            "public extern signature");
+        } else if (d->kind == EK_N_NAMESPACE
+                   && d->u.namespace.name[0] != '_') {
+            private_in_type(s, d->u.namespace.type,
+                            "public member signature");
+        }
+    }
+}
+
 /* N12: an import and a file top-level binding share a name; the
    implicit std import counts as the import. */
 static void binding_vs_import(r_surf *s, const char *stem)
@@ -423,6 +538,7 @@ void r_surface_build(r_ctx *c, r_mod *m)
             collect_member(&s, d);
         }
     }
+    signature_visibility(&s);
     import_conflicts(&s);
     m->surf->syms = s.syms;
     m->surf->count = s.n;

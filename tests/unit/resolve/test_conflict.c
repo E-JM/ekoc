@@ -161,6 +161,50 @@ static void tvar_vs_module(void)
     EK_CHECK_U64(rfx_errors(&f), 1);
     EK_CHECK(rfx_code_at_line(&f, "E-name-conflict", 3));
     rfx_end(&f);
+
+    /* The file's own stem sits in the module layer too, but it is no
+       import: a type variable may share its spelling. */
+    run_in(&f, "f: (v: util) -> Int = 0\n", "util.eko");
+    EK_CHECK_U64(rfx_errors(&f), 0);
+    rfx_end(&f);
+}
+
+/* A public surface spells only public types. */
+static void signature_visibility(void)
+{
+    rfx f;
+
+    rfx_begin(&f,
+        "_Key: type = [raw: Int]\n"
+        "parse: (k: _Key) -> Int = k.raw\n");
+    EK_CHECK_U64(rfx_errors(&f), 1);
+    EK_CHECK(rfx_code_at_line(&f, "E-private-name", 2));
+    rfx_end(&f);
+
+    /* The payload of a public type is exported surface alike. */
+    rfx_begin(&f,
+        "_Inner: type = [x: Int]\n"
+        "Ring: type = Hold _Inner | Empty\n");
+    EK_CHECK_U64(rfx_errors(&f), 1);
+    EK_CHECK(rfx_code_at_line(&f, "E-private-name", 2));
+    rfx_end(&f);
+
+    /* A private signature may name private types freely. */
+    rfx_begin(&f,
+        "_Key: type = [raw: Int]\n"
+        "_parse: (k: _Key) -> Int = k.raw\n"
+        "_Box: type = Hold _Key | Empty\n");
+    EK_CHECK_U64(rfx_errors(&f), 0);
+    rfx_end(&f);
+
+    /* A public namespace member's signature is public surface. */
+    rfx_begin(&f,
+        "_Key: type = [raw: Int]\n"
+        "Key: type = [raw: Int]\n"
+        "Key.mk: (raw: Int) -> _Key = {raw: raw}\n");
+    EK_CHECK_U64(rfx_errors(&f), 1);
+    EK_CHECK(rfx_code_at_line(&f, "E-private-name", 3));
+    rfx_end(&f);
 }
 
 static void constructor_candidates(void)
@@ -369,5 +413,6 @@ int main(void)
     fixed_services();
     never_owned_by_language();
     name_case();
+    signature_visibility();
     return ek_test_report("resolve/conflict");
 }

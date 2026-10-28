@@ -11,12 +11,17 @@
 
 static void tvar(r_ctx *c, r_file *f, const ek_node *t, const char *name)
 {
+    const ek_symbol *msym;
+
     if (strcmp(name, "_") == 0) {
         /* `_` at type position is the unit type, never a variable;
            check owns it. */
         return;
     }
-    if (r_lookup_mod(f, name)) {
+    msym = r_lookup_mod(f, name);
+    if (msym && strcmp(msym->name, f->mod->stem) != 0) {
+        /* The module layer holds the file's own stem beside its
+           imports; only an imported module conflicts. */
         r_error(c, f->mod->file, t->line, t->col, "E-name-conflict",
                 "type variable `%s` collides with an imported module "
                 "(Clause 7.4.6)", name);

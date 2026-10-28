@@ -332,6 +332,22 @@ static void std_stem_import(void)
     rfx_end(&f);
 }
 
+/* A std companion stem obeys the stem rules like any module name. */
+static void companion_stem_rules(void)
+{
+    rfx f;
+
+    run_in(&f, "import std/Math\n\nv: Int = 1\n", "cstems.eko");
+    EK_CHECK_U64(rfx_errors(&f), 1);
+    EK_CHECK(rfx_code_at_line(&f, "E-name-case", 1));
+    rfx_end(&f);
+
+    run_in(&f, "import std/_x\n\nv: Int = 1\n", "cstems.eko");
+    EK_CHECK_U64(rfx_errors(&f), 1);
+    EK_CHECK(rfx_code_at_line(&f, "E-module-name", 1));
+    rfx_end(&f);
+}
+
 /* The compilation root obeys the same stem rules as an import. */
 static void root_name_rules(void)
 {
@@ -454,6 +470,7 @@ int main(void)
     deep_chain_cycle();
     std_companion_collision();
     std_stem_import();
+    companion_stem_rules();
     root_name_rules();
     qualified_ctor_shared_spelling();
     diamond_share();

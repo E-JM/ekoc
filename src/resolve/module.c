@@ -347,7 +347,11 @@ static void load_import(r_ctx *c, r_mod *from, const ek_node *imp)
                     "module stem `%s` is already imported from `%s` "
                     "(Clauses 7.2.2, 7.4.6)", stem, held->file);
         } else if (!held) {
-            r_module_companion(c, stem);
+            /* A companion stem obeys the stem rules like any module
+               name. */
+            if (stem_legal(c, file, imp, stem)) {
+                r_module_companion(c, stem);
+            }
         }
         return;
     }
