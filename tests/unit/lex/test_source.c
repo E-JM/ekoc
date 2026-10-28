@@ -54,6 +54,9 @@ static void test_line_terminators(void)
     fx_end(&f);
 }
 
+/* Invalid UTF-8 anywhere in the source is the encoding fault. The code
+   spells in kebab-case, so the exact-string match also pins that the
+   code carries no digits. */
 static void test_utf8_faults(void)
 {
     static const char *const bad[] = {
@@ -66,7 +69,7 @@ static void test_utf8_faults(void)
         lex_fixture f;
 
         fx_begin(&f, bad[i]);
-        EK_CHECK(fx_has_error(&f, "E-utf8"));
+        EK_CHECK(fx_has_error(&f, "E-encoding"));
         fx_end(&f);
     }
 }
@@ -191,7 +194,7 @@ static void test_comment_content_faults(void)
     fx_end(&f);
 
     fx_begin(&f, "// \xFF\nx");
-    EK_CHECK(fx_has_error(&f, "E-utf8"));
+    EK_CHECK(fx_has_error(&f, "E-encoding"));
     fx_end(&f);
 
     fx_begin(&f, "/*\n");

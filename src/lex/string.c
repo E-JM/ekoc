@@ -174,7 +174,7 @@ static int cook_scalar(lex_ctx *c, gbuf *seg)
         return 0;
     }
     if (d.status != EK_UTF8_OK) {
-        ctx_error(c, "E-utf8", c->line, c->col, "source is not valid UTF-8");
+        ctx_error(c, "E-encoding", c->line, c->col, "source is not valid UTF-8");
     } else if (d.cp == 0xFEFF) {
         ctx_error(c, "E-stray-bom", c->line, c->col,
                   "byte order mark outside the start of the file");

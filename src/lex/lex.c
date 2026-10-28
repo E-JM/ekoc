@@ -101,7 +101,7 @@ static int ctx_skip_checked(lex_ctx *c)
         return 0;
     }
     if (d.status != EK_UTF8_OK) {
-        ctx_error(c, "E-utf8", c->line, c->col, "source is not valid UTF-8");
+        ctx_error(c, "E-encoding", c->line, c->col, "source is not valid UTF-8");
     } else if (d.cp == 0xFEFF && c->pos != 0) {
         ctx_error(c, "E-stray-bom", c->line, c->col,
                   "byte order mark outside the start of the file");
@@ -219,7 +219,7 @@ static int lex_unicode(lex_ctx *c, gbuf *out)
         return 1; /* unreachable: callers check for end of input */
     }
     if (d.status != EK_UTF8_OK) {
-        ctx_error(c, "E-utf8", c->line, c->col, "source is not valid UTF-8");
+        ctx_error(c, "E-encoding", c->line, c->col, "source is not valid UTF-8");
         c->pos += d.len;
         c->col++;
         return 1;
