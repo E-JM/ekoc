@@ -53,8 +53,9 @@ static const ek_token *sig_last(const line_run *l)
 }
 
 /* A document attaches to a binding line, so the run is handed over only
-   when the line can begin one. A document before any other construct is
-   dropped silently. */
+   when the line can begin one — a name, a group, a brace, or the
+   literal heads a pattern binding may carry. A document before any
+   other construct is dropped silently. */
 static int binding_line(const line_run *l)
 {
     const ek_token *t = sig_first(l);
@@ -67,6 +68,11 @@ static int binding_line(const line_run *l)
     case EK_TOK_LPAREN:
     case EK_TOK_LBRACE:
     case EK_TOK_LARROW:
+    case EK_TOK_INT:
+    case EK_TOK_FLOAT:
+    case EK_TOK_CHAR:
+    case EK_TOK_STRING:
+    case EK_TOK_MINUS:
         return 1;
     default:
         return 0;

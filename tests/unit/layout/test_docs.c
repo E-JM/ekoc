@@ -49,6 +49,22 @@ static void test_top_level_document(void)
     EK_CHECK_STR(got, "S S S N S S S S S N E");
     free(got);
     fx_end(&f);
+
+    /* A literal-headed pattern binding line attaches its document. */
+    fx_begin(&f, "/// which arm\n\"timeout\" = s\n");
+    EK_CHECK_U64(fx_errors(&f), 0);
+    EK_CHECK_U64(doc_count(&f), 1);
+    doc = first_doc(&f);
+    EK_CHECK(doc != NULL);
+    if (doc) {
+        EK_CHECK_STR(doc->tok.text, "which arm");
+    }
+    fx_end(&f);
+
+    fx_begin(&f, "/// the negative one\n-1 = n\n");
+    EK_CHECK_U64(fx_errors(&f), 0);
+    EK_CHECK_U64(doc_count(&f), 1);
+    fx_end(&f);
 }
 
 static void test_block_document(void)
