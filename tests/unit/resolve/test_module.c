@@ -291,6 +291,18 @@ static void self_import_module(void)
     rfx_end(&f);
 }
 
+/* The root importing its own stem closes a cycle: the root's file is
+   host-spelled, so the stem is the identity. */
+static void self_import_root(void)
+{
+    rfx f;
+
+    run_in(&f, "import selfroot\n\nv: Int = 1\n", "selfroot.eko");
+    EK_CHECK_U64(rfx_errors(&f), 1);
+    EK_CHECK(rfx_code_at_line(&f, "E-cycle-import", 1));
+    rfx_end(&f);
+}
+
 /* A cycle reached through five imports is reported once. */
 static void deep_chain_cycle(void)
 {
@@ -467,6 +479,7 @@ int main(void)
     duplicate_import();
     same_stem_import_pair();
     self_import_module();
+    self_import_root();
     deep_chain_cycle();
     std_companion_collision();
     std_stem_import();
