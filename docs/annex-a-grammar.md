@@ -165,7 +165,7 @@ NamespaceBinding := QualifiedPascalName '.' snake_case Identifier
                     ':' Type '=' BindingRHS
 
 BindingRHS      := Expression
-                 | NEWLINE INDENT { Member } DEDENT
+                 | NEWLINE INDENT Member { Member } DEDENT
 
 TypeDecl        := PascalName ':' 'type' { TypeVar } '=' TypeRhs
 TypeVar         := snake_case Identifier
@@ -174,7 +174,6 @@ TypeRhs         := VariantList
                  | NEWLINE INDENT VariantLine { VariantLine } DEDENT
                  | RecordType
                  | TupleType
-                 | ε
 VariantList     := [ '|' ] Variant { '|' Variant }
 VariantLine     := '|' Variant NEWLINE
 Variant         := PascalName [ TypeAtom ]
@@ -182,7 +181,7 @@ Variant         := PascalName [ TypeAtom ]
 CTypeDecl       := PascalName ':' 'ctype' '=' RecordType
 
 TestDecl        := snake_case Identifier ':' 'test' '='
-                   ( Expression | NEWLINE INDENT { Member } DEDENT )
+                   ( Expression | NEWLINE INDENT Member { Member } DEDENT )
 
 ExternDecl      := snake_case Identifier ':' FunctionType '='
                    'extern' StringLiteral [ 'Pure' ]
@@ -200,7 +199,7 @@ Statement       := ValueBinding
                  | Expression
 
 Suite           := ':' InlineSuite
-                 | ':' NEWLINE INDENT { Member } DEDENT
+                 | ':' NEWLINE INDENT Member { Member } DEDENT
 
 InlineSuite     := Expression { ';' Expression }
 ```
@@ -214,7 +213,7 @@ A `case` block and a `case` arm block use `Arm` rather than `Statement`:
 CaseBlock       := ':' NEWLINE INDENT Arm { Arm } DEDENT
 Arm             := Pattern [ 'if' Expression ] '->' ArmBody
 ArmBody         := InlineSuite
-                 | NEWLINE INDENT { Member } DEDENT
+                 | NEWLINE INDENT Member { Member } DEDENT
 
 InlineCase      := ':' InlineArm { ';' InlineArm }
 InlineArm       := Pattern [ 'if' Expression ] '->' Expression
@@ -231,7 +230,7 @@ The layout algorithm of Annex A.4 supplies `NEWLINE`, `INDENT`, and `DEDENT`.
 ```ebnf
 Lambda          := LambdaParameterGroup ':' LambdaBody
 LambdaBody      := InlineSuite
-                 | NEWLINE INDENT { Member } DEDENT
+                 | NEWLINE INDENT Member { Member } DEDENT
 
 LambdaParameterGroup := '(' [ LambdaParameter { ',' LambdaParameter } ] ')'
 LambdaParameter := Identifier
@@ -445,17 +444,20 @@ break ends a member.
    opens is the arm body, whose last member is the arm's value. A deeper line after a line that
    opens no block is a continuation: it emits no token, and its indentation
    is ignored. Continuation is licensed by Clause 6.2.4; a deeper line in
-   any other position is diagnosed at parse, not by this algorithm.
+   any other position is an error.
 7. **Chain continuation.** A line whose first token is `.` and whose column
    equals the column of the first `.` of the chain continues the expression.
    No `NEWLINE` is emitted at the end of the previous line.
 8. **else.** An `else` line at the same column as the `if` it matches
    continues that `if`; it does not begin a new member. The algorithm emits
    the `DEDENT`s required by the stack, and the parser reattaches `else`.
-   The rule holds whether the branches are inline or block form.
+   The rule holds whether the branches are inline or block form. An `else`
+   line whose column matches no open `if` header matches nothing and is an
+   error.
 9. **Semicolons.** `;` terminates the current inline item (Clause 5.3.2). It
-   emits no token, does not change the indentation stack, and does not open
-   or close a block.
+   emits no layout marker — the source token passes through to the parser —
+   does not change the indentation stack, and does not open or close a
+   block.
 10. **End of file.** Emit one `DEDENT` for every open level, then `EOF`.
 
 ## A.5 Precedence and Associativity

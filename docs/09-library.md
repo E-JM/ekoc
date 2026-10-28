@@ -430,7 +430,7 @@ vocabulary.
 ### 9.7.3 Frozen Clocks
 
 `Clock.frozen(t)` is pure and constructs a clock with constant readings: `now` always yields `t`, `mono`
-always yields one fixed reading, and `sleep` returns immediately. The world bit is unchanged: `now` and
+always yields the monotonic epoch `Mono 0`, a fixed reading independent of `t`, and `sleep` returns immediately. The world bit is unchanged: `now` and
 `mono` on a frozen clock still set the bit (Clause 7.9.4). Frozen clocks are the deterministic clock
 used by tests (Clause 9.14.5). No `Clock.frozen_mono` exists; a clock has one wall-clock reading and one
 monotonic reading.
@@ -931,7 +931,9 @@ assert_ne: (a: t, b: t) -> _
 
 `assert` panics when its argument is `False`. `assert_eq` panics when the arguments are not equal;
 `assert_ne` panics when they are equal. All three are std source, opened by the injected selective
-import of Clause 9.1.2. They are pure, always enabled, and require no configuration.
+import of Clause 9.1.2. They are pure, always enabled, and require no configuration. A failure is an
+ordinary `panic` (`P-panic`, Annex B.5); the message text is std source, and no dedicated panic code
+exists for the family.
 `assert_eq` and `assert_ne` lock both arguments to the same type. `==`, `inspect`, and the structural
 derivation are compile-time generic dispatch (Clause 9.8.7). Capabilities and functions have no `==`, so
 an assertion over them is a compile error (`E-no-eq`, Annex B).

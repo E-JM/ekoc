@@ -146,6 +146,10 @@ continuation is licensed.
    line (Clause 6.2.5).
 4. **A continued scrutinee.** The scrutinee of a `case` MAY continue on the
    following lines when it is indented deeper than `case` (Clause 6.7.1).
+5. **A trailing operator or separator.** A line whose final significant
+   token is a binary operator or one of `,`, `:=`, `.`, and `|` licenses the
+   following deeper line as its continuation; the tokens continue the
+   member begun on the earlier line.
 
 No other position licenses continuation. In particular, the markers `!` and
 `?` never license continuation. A line ending in a lone marker is a complete
@@ -218,7 +222,8 @@ expression. The binding operators are infix; they are never written at the
 start of a line, except for the pattern-less `<-` form.
 
 A namespace binding declares a member of a type namespace: its head is
-`TypeName.name`, the annotation is mandatory, and the form is legal only in
+`TypeName.name`, or a module-qualified owner path whose last segment is the
+type name (Annex A.3.8), the annotation is mandatory, and the form is legal only in
 the module that declares `TypeName` (Clause 7.4.5). The tail carries the
 privacy prefix: a member named `_name` is private to its module. `:=` and
 `<-` are not admitted for a namespace binding; the annotation is the
@@ -421,7 +426,9 @@ _qsort: (base: C.Ptr.Void, n: C.Size, size: C.Size,
 ```
 
 An extern declaration is top-level. Its signature MUST satisfy the
-marshalling whitelist (Clause 10.3.5).
+marshalling whitelist (Clause 10.3.5). The word `extern` begins the
+declaration only when a string literal follows it; in every other position
+`extern` is an ordinary name (Clause 5.6.2).
 
 ## 6.4 Functions and Lambdas
 

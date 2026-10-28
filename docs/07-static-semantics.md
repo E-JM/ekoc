@@ -602,7 +602,7 @@ empty: () -> []t = {}                 // error: `t` occurs only in the result
 read: (n: Int) -> Option t = None     // error: `t` occurs only in the result
 ```
 The rule is symmetric with the phantom binder ban (Clause 7.6.2): both reject a variable that no value can determine at the declaration line. The
-result-only prohibition for open bits is the same rule (Clause 7.9.6). The replacement is an empty list with an expected type, `ys: []Int = {}`.
+result-only prohibition for open bits is the same rule (Clause 7.9.6). The remedy is the annotation discipline itself: bind the variable through a parameter, or give the composite its concrete type at the binding — `ys: []Int = {}`.
 ### 7.6.6 Operations on Type Variables
 A value whose type is a type variable supports exactly the following operations.
 
@@ -634,7 +634,7 @@ A pattern is checked against the type of the scrutinee. The pattern grammar is C
 | constructor with payload | nominal ADT; payload type | payload pattern at the payload type |
 | tuple `{P, Q, ...}` | tuple of matching arity | component types |
 | record `{f}` or `{f: P}` | record with field `f` | field type |
-| list `{}`, `{h, ..t}`, `{.., P}`, `{_, ..}` | list type | element and list types |
+| list `{}`, `{h, ..t}`, `{.., P}`, `{_, ..}`, fixed-length `{P, Q, ...}` | list type | element and list types |
 | or `P \| Q` | same `T` | same names at the same types |
 
 A constructor pattern's constructor MUST belong to the scrutinee's nominal ADT and MUST be visible at the pattern position; a module-qualified
@@ -805,7 +805,7 @@ Arithmetic comprises the binary operators `+`, `-`, `*`, `/`, `%` and unary `-` 
 Unary `-` follows the operand type's namespace. No implicit numeric conversion is applied; `1 / 2.0` is an error. A numeric literal is placed by
 the expected type (Clause 5.7.4), and a value outside the target range is E-literal-overflow (Clause 5.7.1).
 
-`/` and `%` truncate toward zero and are paired: `-7 / 2` is `-3`, and `-7 % 2` is `-1`. The floor family is `Int.div` and `Int.mod` (Annex C). `UInt` values are non-negative, so the distinction vanishes. `Float` `%` uses the same truncation basis.
+`/` and `%` truncate toward zero and are paired: `-7 / 2` is `-3`, and `-7 % 2` is `-1`. The floor family is `Int.div` and `Int.mod` (Annex C.8). `UInt` values are non-negative, so the distinction vanishes. `Float` `%` uses the same truncation basis.
 
 Overflow and division by zero panic at run time (Clause 8.4.2); `Int.min / -1` overflows. This is not a static error, and a panic sets no world
 bit (Clause 7.9.2). Wrapping arithmetic is the explicit `Int.wrapping_*` and `UInt.wrapping_*` family (Clause 9.6.6). Bitwise operations are
@@ -978,7 +978,9 @@ with E-open-bit-unfed, bit reconciliation of that declaration (Clause 7.9.2) is 
 
 When a parameter type contains `?`, the corresponding argument supplies the instantiation: a `->` argument instantiates the bit pure, and a `!->`
 argument instantiates it world-touching. With several such parameters, their bits are ORed. Lambda arguments are checked last, so the callback's
-bit is known when the open bit is instantiated (Clause 7.6.4). A `?` in the result is rejected by the position rule, whether or not a parameter
+bit is known when the open bit is instantiated (Clause 7.6.4). Inside the body of a declaration whose own arrow is open,
+every call through a `?` arrow instantiates from its feeder arguments and, when they are pure, from the enclosing
+declaration's open bit: one open body may feed another. A `?` in the result is rejected by the position rule, whether or not a parameter
 feeds another open bit; this mirrors the result-only variable rule (Clause 7.6.5). A type variable under a `?` arrow counts as a use
 (Clause 7.6.2), and an open arrow MUST NOT appear on an extern declaration (Clause 10.2.1).
 A dispatcher signature has the form `List.map: ([]t, (t) ?-> u) ?-> []u`.

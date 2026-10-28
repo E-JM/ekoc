@@ -248,8 +248,9 @@ conversion would deliver as infinity — is an error with code
 
 ### 5.7.3 Digit Grouping
 
-An underscore MAY separate digits within an integer or floating literal, as
-in `1_000_000`. An underscore MUST NOT be the first or last character of the
+An underscore MAY separate digits of the integer or fraction part of an
+integer or floating literal, as in `1_000_000`; the exponent part of a
+floating literal carries no grouping. An underscore MUST NOT be the first or last character of the
 digit sequence, and two underscores MUST NOT be adjacent. Grouping is
 available in decimal, hexadecimal, and binary literals.
 
@@ -373,7 +374,8 @@ The token `|` separates variants in a type declaration and alternatives in an
 or-pattern. It is not an operator.
 
 The token `_` is an identifier-like token, not punctuation. Its meanings by
-position are specified in Clause 7.5.4.
+position are specified in Clause 6.4.1 (a lambda parameter), Clause 7.5.4
+(the unit type and the unit value), and Clause 7.7.1 (the wildcard).
 
 ### 5.10.2 Punctuation Tokens
 
@@ -381,7 +383,7 @@ The punctuation tokens are:
 
 ```text
 (   )   [   ]   {   }
-,   :   ;   .   =   |
+,   :   .   =   |
 :=  
 ```
 
@@ -444,7 +446,9 @@ token shapes the grammar admits:
   hexadecimal digit emits the integer `0` followed by the identifier `x`
   (Clause 5.10.3).
 - Every other malformed span is consumed to the recovery boundary — the next
-  line terminator or the next bracket — with one diagnostic. A character
+  line terminator or the next bracket — as one unit, with one diagnostic. A
+  block comment spelling is such a span: it is consumed through its closing
+  `*/` or to the line terminator, whichever comes first. A character
   literal that holds more than one scalar value is consumed to its closing
   quote and emits no character token; a string that holds an invalid escape
   emits its string token with the invalid escape dropped.

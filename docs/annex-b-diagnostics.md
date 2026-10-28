@@ -122,7 +122,7 @@ collide with a code in the table.
 | `E-open-bit-unfed` | an open bit in a signature has no parameter to feed it | Clause 7.9.6 |
 | `E-open-bit-position` | `?` occurs in a position where no binding is generalized: a result type, a container element, or a record field | Clause 7.9.6 |
 | `E-instantiation-depth` | generic instantiation does not terminate | Clause 8.7.3 |
-| `E-no-eq` | equality, keying, or assertion over a type whose `eq` derivation halts at a capability, a handle, or a function | Clause 9.8.4 |
+| `E-no-eq` | equality, ordering, keying, or assertion over a type whose derivation halts at a capability, a handle, or a function | Clauses 9.8.4, 9.8.5 |
 | `E-json-shape` | a type has no default JSON isomorphic form, for example a dictionary with a non-string key | Clause 9.9.3 |
 | `E-ctype-field` | a `ctype` field is neither a machine word nor a `ctype` record | Clause 10.3.3 |
 | `E-service-fixed` | a namespace declaration names a service whose derivation is fixed: `inspect`, `to_json`, `from_json`, or `with` | Clause 9.8.1, Clause 9.8.6, Clause 9.9.5 |
@@ -191,18 +191,15 @@ a panic call sets no world bit (Clause 9.2.3).
 
 | Code | Origin | Message |
 |---|---|---|
-| `P-panic` | `panic(msg)`, and a standard-library invariant violation without a dedicated code | the argument, verbatim; for a standard-library invariant, the message of the violated invariant |
+| `P-panic` | `panic(msg)`, an assert failure, and a standard-library invariant violation without a dedicated code | the argument, verbatim; for an assert or a standard-library invariant, the message of the failing call |
 | `P-unwrap` | `Option.unwrap` on `None`; `Result.unwrap` on `Err` | `Option.unwrap on None` or `Result.unwrap on Err` |
 | `P-expect` | `Option.expect`; `Result.expect` | the argument, verbatim |
-| `P-assert` | `assert` on `False` | `assertion failed` |
-| `P-assert-eq` | `assert_eq` mismatch; `assert_ne` mismatch | `assertion failed`, followed by `left:` and `right:` lines |
 | `P-div` | division by zero | `division by zero` |
 | `P-overflow` | arithmetic overflow | `arithmetic overflow` |
 
 The message column gives the fixed text of the message. A message supplied by
-the program is printed verbatim (Annex B.6). A `P-assert-eq` message carries two
-detail lines, `left:` and `right:`, each holding the `inspect` form of one
-operand (Clause 9.8.3). `P-overflow` covers `Int.abs(Int.min)` (Clause 9.6.1)
+the program is printed verbatim (Annex B.6). An assert failure's message is
+std source; its operands appear in their `inspect` forms (Clause 9.8.3). `P-overflow` covers `Int.abs(Int.min)` (Clause 9.6.1)
 and time arithmetic outside the nanosecond domain (Clause 9.7.5).
 
 A panic raised by a standard-library invariant violation for which the table
@@ -245,11 +242,9 @@ implementation-defined; the frame format is normative, and the textual form of
 the backtrace beyond that format is unspecified (Clause 2.5).
 
 ```text
-panic [P-assert-eq]: assertion failed
-  left:  Person {name: "ada", age: 36}
-  right: Person {name: "grace", age: 41}
+panic [P-panic]: assert_eq failed: Person {name: "ada", age: 36} != Person {name: "grace", age: 41}
   at person.make_person (person.eko:14:9)
-  at std.assert_eq (std/assert.eko:3:5)
+  at std.assert_eq (std.eko:155:5)
 ```
 
 **Termination.** Under the CLI host, a panic terminates the process with exit

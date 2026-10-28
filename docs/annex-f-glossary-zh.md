@@ -208,8 +208,6 @@
 | `P-panic` | `panic(msg)` 或标准库不变量违例 | Clause 8.4.2 |
 | `P-unwrap` | 对 `None` 或 `Err` 调用 `unwrap` | Clause 9.2.3 |
 | `P-expect` | 对 `None` 或 `Err` 调用 `expect` | Clause 9.2.3 |
-| `P-assert` | `assert` 失败 | Clause 9.14.3 |
-| `P-assert-eq` | `assert_eq` 或 `assert_ne` 失败 | Clause 9.14.3 |
 | `P-div` | 除以零 | Clause 7.8.4 |
 | `P-overflow` | 算术溢出 | Clause 7.8.4 |
 
