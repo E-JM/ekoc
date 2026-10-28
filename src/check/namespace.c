@@ -393,7 +393,8 @@ static const ns_row rows[] = {
     {"Int", "wrapping_neg", SIG_FN(EK_ARROW_PURE, SIG_STD("Int"),
                                   SIG_STD("Int"))},
 
-    /* The machine-word sizes, total in both directions. */
+    /* The machine-word sizes: the to_ family checks the range, and
+       from_ covers only the machine domains the word includes. */
     {"Int", "to_i8", SIG_FN(EK_ARROW_PURE, SIG_OPTION(SIG_STD("I8")),
                             SIG_STD("Int"))},
     {"Int", "to_i16", SIG_FN(EK_ARROW_PURE, SIG_OPTION(SIG_STD("I16")),
@@ -428,8 +429,6 @@ static const ns_row rows[] = {
                                SIG_STD("U16"))},
     {"Int", "from_u32", SIG_FN(EK_ARROW_PURE, SIG_STD("Int"),
                                SIG_STD("U32"))},
-    {"Int", "from_u64", SIG_FN(EK_ARROW_PURE, SIG_STD("Int"),
-                               SIG_STD("U64"))},
 
     /* The List namespace over the structural list. The open arrows are
        the dispatchers. */

@@ -198,6 +198,25 @@ static void ints_rows(void)
     EK_CHECK_U64(cfx_errors(&f), 1);
     EK_CHECK(cfx_code_at_line(&f, "E-unbound-member", 1));
     cfx_end(&f);
+
+    /* A from_ conversion exists only where the machine domain fits:
+       U64 does not fit Int, so the member is absent. */
+    cfx_begin(&f,
+              "u: U64 = 1\n"
+              "v: Int = Int.from_u64(u)\n");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-unbound-member", 2));
+    cfx_end(&f);
+
+    /* The unsigned word keeps the total widening, and the included
+       signed domains still widen into Int. */
+    cfx_begin(&f,
+              "u: U64 = 1\n"
+              "w: U32 = 1\n"
+              "v: UInt = UInt.from_u64(u)\n"
+              "n: Int = Int.from_u32(w)\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
 }
 
 static void scalar_completion(void)
