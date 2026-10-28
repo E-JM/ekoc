@@ -115,6 +115,24 @@ static void test_unterminated(void)
     fx_end(&f);
 }
 
+/* An escape that runs into the line terminator is the whole defect:
+   the E-escape span ends the literal, so no unterminated-char fault
+   follows it. */
+static void test_unterminated_escape_is_one_defect(void)
+{
+    lex_fixture f;
+
+    fx_begin(&f, "'\\u{12\n");
+    EK_CHECK_U64(fx_errors(&f), 1);
+    EK_CHECK(fx_has_error(&f, "E-escape"));
+    fx_end(&f);
+
+    fx_begin(&f, "'\\u{12");
+    EK_CHECK_U64(fx_errors(&f), 1);
+    EK_CHECK(fx_has_error(&f, "E-escape"));
+    fx_end(&f);
+}
+
 static void test_context(void)
 {
     lex_fixture f;
@@ -138,6 +156,7 @@ int main(void)
     test_invalid_escapes();
     test_one_scalar_rule();
     test_unterminated();
+    test_unterminated_escape_is_one_defect();
     test_context();
     return ek_test_report("lex/chars");
 }

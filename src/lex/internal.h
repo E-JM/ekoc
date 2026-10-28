@@ -53,9 +53,11 @@ int lex_step(lex_ctx *c, gbuf *out, ek_scan_fn scan);
 int emit_token(lex_ctx *c, gbuf *out, const ek_token *t);
 
 /* escape.c */
-typedef enum { ESC_OK = 0, ESC_ERROR, ESC_END } esc_result;
+typedef enum { ESC_OK = 0, ESC_ERROR, ESC_END, ESC_STOP } esc_result;
 /* ESC_END means the backslash sits at end of line or end of file; the
-   caller reports its own unterminated-literal error. */
+   caller reports its own unterminated-literal error. ESC_STOP means an
+   escape ran into the line terminator or end of input and is already
+   diagnosed, so the literal ends there owing no further diagnostic. */
 esc_result scan_escape(lex_ctx *c, int in_char, uint32_t *out);
 
 /* ident.c */

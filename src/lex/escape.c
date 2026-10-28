@@ -54,7 +54,7 @@ static esc_result scan_unicode_braces(lex_ctx *c, int line, int col,
         if (b < 0 || b == '\n' || b == '\r') {
             ctx_error(c, "E-escape", line, col,
                       "escape \\u is not terminated");
-            return ESC_ERROR; /* the terminator belongs to the caller */
+            return ESC_STOP; /* the terminator belongs to the caller */
         }
         ctx_error(c, "E-escape", line, col,
                   "escape \\u has a non-hexadecimal digit");
@@ -68,14 +68,16 @@ static esc_result scan_unicode(lex_ctx *c, int line, int col, uint32_t *out)
 {
     uint32_t value = 0;
     int digits = 0;
+    esc_result r;
 
     if (ctx_byte(c, 0) != '{') {
         ctx_error(c, "E-escape", line, col,
                   "escape \\u expects a braced scalar value");
         return ESC_ERROR;
     }
-    if (scan_unicode_braces(c, line, col, &value, &digits) != ESC_OK) {
-        return ESC_ERROR;
+    r = scan_unicode_braces(c, line, col, &value, &digits);
+    if (r != ESC_OK) {
+        return r; /* ESC_STOP keeps the unterminated span distinct */
     }
     if (digits == 0) {
         ctx_error(c, "E-escape", line, col, "escape \\u has no digits");

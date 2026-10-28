@@ -188,7 +188,10 @@ static int cook_scalar(lex_ctx *c, gbuf *seg)
 }
 
 /* '\\' at the current position. Returns 1 to continue, 0 on arena
-   exhaustion, -1 when the literal ends here unconsumed. */
+   exhaustion, -1 when the literal ends here unconsumed and the caller
+   owes the unterminated diagnostic, -2 when the escape ran into the
+   line terminator or end of input and is diagnosed, so the literal
+   ends here with nothing further to report. */
 static int string_escape(lex_ctx *c, gbuf *seg)
 {
     uint32_t cp;
@@ -198,6 +201,9 @@ static int string_escape(lex_ctx *c, gbuf *seg)
 
     if (r == ESC_END) {
         return -1;
+    }
+    if (r == ESC_STOP) {
+        return -2;
     }
     if (r == ESC_OK) {
         n = ek_utf8_encode(cp, buf);
@@ -276,8 +282,10 @@ int lex_string_literal(lex_ctx *c, gbuf *out)
             r = cook_scalar(c, &seg) ? 1 : 0;
         }
         if (r < 0) {
-            unterminated(c, sline, scol);
-            return 1;
+            if (r == -1) {
+                unterminated(c, sline, scol);
+            }
+            return 1; /* -2: the escape already diagnosed the span */
         }
         if (r == 0) {
             return 0;

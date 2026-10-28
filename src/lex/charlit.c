@@ -90,6 +90,9 @@ int lex_char_literal(lex_ctx *c, gbuf *out)
             if (r == ESC_END) {
                 return unterminated(c, sline, scol);
             }
+            if (r == ESC_STOP) {
+                return 1; /* the escape already diagnosed the span */
+            }
             if (r == ESC_OK) {
                 value = cp;
                 count++;
