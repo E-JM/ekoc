@@ -19,34 +19,48 @@
      (derived services).
 */
 
-#define R_MAX_LINKS 32
+/* One link of a chain: the field node and the name it spells. */
+typedef struct {
+    const ek_node *node;
+    const char *name;
+} r_link;
 
 typedef struct {
     const ek_node *head;
-    const ek_node *links[R_MAX_LINKS]; /* head-first */
-    const char *names[R_MAX_LINKS];
-    int n;
+    r_link *links; /* head-first */
+    size_t n, cap;
 } r_links;
 
-static void flatten(const ek_node *top, r_links *l)
+static void reverse_links(r_link *links, size_t n)
 {
-    const ek_node *nodes[R_MAX_LINKS];
-    const char *names[R_MAX_LINKS];
-    const ek_node *p = top;
-    int n = 0, i;
+    size_t i;
 
-    while (p && p->kind == EK_N_FIELD && n < R_MAX_LINKS) {
-        nodes[n] = p;
-        names[n] = p->u.field.name;
-        n++;
+    for (i = 0; i < n / 2; i++) {
+        r_link tmp = links[i];
+
+        links[i] = links[n - 1 - i];
+        links[n - 1 - i] = tmp;
+    }
+}
+
+static void flatten(r_ctx *c, const ek_node *top, r_links *l)
+{
+    const ek_node *p = top;
+
+    memset(l, 0, sizeof *l);
+    while (p && p->kind == EK_N_FIELD) {
+        l->links = r_grow(c, l->links, l->n, &l->cap,
+                          sizeof *l->links);
+        if (c->oom) {
+            break;
+        }
+        l->links[l->n].node = p;
+        l->links[l->n].name = p->u.field.name;
+        l->n++;
         p = p->u.field.recv;
     }
     l->head = p;
-    l->n = n;
-    for (i = 0; i < n; i++) {
-        l->links[i] = nodes[n - 1 - i];
-        l->names[i] = names[n - 1 - i];
-    }
+    reverse_links(l->links, l->n);
 }
 
 const ek_symbol *r_module_member(const r_mod *m, const char *name)
@@ -297,10 +311,10 @@ static void walk_links(r_ctx *c, r_file *f, const r_links *l, int is_call,
 {
     size_t i;
 
-    for (i = 0; i < (size_t)l->n && !c->oom; i++) {
-        const ek_node *link = l->links[i];
-        const char *name = l->names[i];
-        int last = (int)(i + 1) == l->n;
+    for (i = 0; i < l->n && !c->oom; i++) {
+        const ek_node *link = l->links[i].node;
+        const char *name = l->links[i].name;
+        int last = i + 1 == l->n;
         const ek_symbol *msym;
 
         if (*state == 1) {
@@ -356,9 +370,9 @@ void r_chain(r_ctx *c, r_file *f, const ek_node *node, int is_call,
             r_add_ref(c, node, EK_SYM_MEMBER, EK_ST_RECEIVER, NULL);
             return;
         }
-        flatten(callee, &l);
+        flatten(c, callee, &l);
     } else {
-        flatten(node, &l);
+        flatten(c, node, &l);
     }
     memset(&cur, 0, sizeof cur);
     chain_head(c, f, l.head, &cur, &state, &walk_mod, &walk_type);

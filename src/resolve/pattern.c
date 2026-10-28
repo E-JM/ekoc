@@ -6,7 +6,12 @@
    within one alternative, and the constructor references (unqualified
    or module-qualified). */
 
-#define R_PAT_MAX 64
+/* The binding names already seen in one pattern alternative, grown in
+   the arena as the walk proceeds. */
+typedef struct {
+    const char **names;
+    size_t n, cap;
+} r_seen;
 
 /* Records one local binding site for the unused-binding warning. */
 static void note_local(r_ctx *c, const ek_symbol *sym)
@@ -221,27 +226,32 @@ void r_pattern_binds(r_ctx *c, r_file *f, const ek_node *pat)
 /* One binding occurrence within one alternative: the second of the
    same name is the conflict. */
 static void mark_seen(r_ctx *c, const r_file *f, const char *name,
-                      int line, int col, const char **seen, size_t *n)
+                      int line, int col, r_seen *seen)
 {
     size_t i;
 
-    for (i = 0; i < *n; i++) {
-        if (strcmp(seen[i], name) == 0) {
+    for (i = 0; i < seen->n; i++) {
+        if (strcmp(seen->names[i], name) == 0) {
             r_error(c, f->mod->file, line, col, "E-name-conflict",
                     "`%s` is bound twice in one pattern (Clauses "
                     "7.4.6, 7.7.1)", name);
             return;
         }
     }
-    if (*n < R_PAT_MAX) {
-        seen[(*n)++] = name;
+    if (seen->n == seen->cap) {
+        seen->names = r_grow(c, seen->names, seen->n, &seen->cap,
+                             sizeof *seen->names);
+        if (c->oom) {
+            return;
+        }
     }
+    seen->names[seen->n++] = name;
 }
 
 /* Duplicates within one alternative of one pattern, diagnosed at the
    second occurrence. */
 static void dup_walk(r_ctx *c, const r_file *f, const ek_node *pat,
-                     const char **seen, size_t *n)
+                     r_seen *seen)
 {
     size_t i;
 
@@ -253,26 +263,26 @@ static void dup_walk(r_ctx *c, const r_file *f, const ek_node *pat,
         if (strcmp(pat->u.path.data[0], "_") == 0) {
             return;
         }
-        mark_seen(c, f, pat->u.path.data[0], pat->line, pat->col, seen, n);
+        mark_seen(c, f, pat->u.path.data[0], pat->line, pat->col, seen);
         return;
     case EK_N_P_BRACE:
         for (i = 0; i < pat->u.p_brace.items.count; i++) {
-            dup_walk(c, f, pat->u.p_brace.items.data[i], seen, n);
+            dup_walk(c, f, pat->u.p_brace.items.data[i], seen);
         }
         if (pat->u.p_brace.rest_name) {
             mark_seen(c, f, pat->u.p_brace.rest_name, pat->line,
-                      pat->col, seen, n);
+                      pat->col, seen);
         }
         return;
     case EK_N_P_FIELD:
-        dup_walk(c, f, pat->u.p_field.pattern, seen, n);
+        dup_walk(c, f, pat->u.p_field.pattern, seen);
         return;
     case EK_N_P_CONS:
-        dup_walk(c, f, pat->u.cons.payload, seen, n);
+        dup_walk(c, f, pat->u.cons.payload, seen);
         return;
     case EK_N_P_PAREN:
         for (i = 0; i < pat->u.kids.count; i++) {
-            dup_walk(c, f, pat->u.kids.data[i], seen, n);
+            dup_walk(c, f, pat->u.kids.data[i], seen);
         }
         return;
     default:
@@ -287,20 +297,16 @@ void r_pattern_dup(r_ctx *c, r_file *f, const ek_node *pat)
     if (!pat || c->oom) {
         return;
     }
-    if (pat->kind == EK_N_P_OR) {
-        /* The rule applies separately to each or-alternative. */
-        for (i = 0; i < pat->u.kids.count; i++) {
-            const char *alt[R_PAT_MAX];
-            size_t an = 0;
+    if (pat->kind != EK_N_P_OR) {
+        r_seen seen = {NULL, 0, 0};
 
-            dup_walk(c, f, pat->u.kids.data[i], alt, &an);
-        }
+        dup_walk(c, f, pat, &seen);
         return;
     }
-    {
-        const char *seen[R_PAT_MAX];
-        size_t n = 0;
+    /* The rule applies separately to each or-alternative. */
+    for (i = 0; i < pat->u.kids.count; i++) {
+        r_seen seen = {NULL, 0, 0};
 
-        dup_walk(c, f, pat, seen, &n);
+        dup_walk(c, f, pat->u.kids.data[i], &seen);
     }
 }
