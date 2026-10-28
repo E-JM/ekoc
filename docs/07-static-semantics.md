@@ -689,9 +689,11 @@ For a tuple scrutinee, a tuple pattern of the scrutinee's arity covers it when e
 For a record scrutinee, a record pattern covers it when every field it names is covered; unwritten fields are unconstrained. A record pattern
 alone can therefore cover a record type.
 
-For a list scrutinee, `{}` covers the empty list. A suffix-rest pattern `{h, ..t}` or `{_, ..}` covers every non-empty list. A fixed-length
-pattern covers lists of its arity when its element patterns cover the element type. A prefix-rest pattern covers non-empty lists when its
-last-element pattern covers the element type. The empty list and the non-empty lists MUST both be covered.
+For a list scrutinee, `{}` covers the empty list. A suffix-rest pattern `{h, ..t}` matches the non-empty lists whose head matches `h`; it
+covers every non-empty list only when `h` covers the element type, which `{_, ..}` does. A fixed-length pattern covers lists of its arity
+when each of its component patterns covers the element type, and covers no other length. A prefix-rest pattern `{.., p}` matches the
+non-empty lists whose last element matches `p`; it covers every non-empty list only when `p` covers the element type. The empty list and the
+non-empty lists MUST both be covered.
 
 For a scalar scrutinee — one without case structure — a literal pattern alone does not cover the type; coverage comes from a variable or
 `_` pattern. In a single-scrutinee `case` this means the case MUST end with a `_` or variable arm.

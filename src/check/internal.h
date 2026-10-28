@@ -297,8 +297,6 @@ size_t ck_pat_flatten(ck_ctx *c, const ek_node *p, const ek_node **out,
                       size_t n, size_t cap);
 const ek_symbol *ck_pat_head(ck_ctx *c, const ek_node *p);
 int ck_pat_catchall(const ek_node *p);
-int ck_covers_ctor(ck_ctx *c, const ck_ctor *ct, const ek_type *scrut,
-                   const ek_node *const *rows, size_t nr);
 void ck_exhaust(ck_ctx *c, const ek_node *cs, const ek_type **scrut,
                 size_t nscrut, const ek_node *const *arms, const int *contrib,
                 size_t narms);

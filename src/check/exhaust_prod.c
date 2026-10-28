@@ -2,251 +2,196 @@
 
 #include "check/internal.h"
 
-/* Multi-scrutinee exhaustiveness and the ck_exhaust entry. The
-   product of the scrutinee types: an arm covers a combination when
-   each column covers its scrutinee, and the arms must cover every
-   combination. An ADT column splits over its constructors; each split
-   owes a payload obligation, judged over the rows that survive every
-   further split, so a constructor's payload is covered exactly where
-   the combination that reaches it is covered. A scalar column splits
-   over the literals its rows name plus everything else, which only a
-   catch-all row answers. A column of any other kind — a shape column,
-   or one whose type is still open — ends the split: the obligations
-   collected so far are judged and the rest suspends. The (column,
-   surviving rows, obligations) states are memoized, so a wide case
-   over small ADTs costs work proportional to its arms, not to their
-   product. */
+/* Exhaustiveness by column specialization. The scrutinee types are
+   columns and the arms are rows of contributed patterns; the rows
+   must cover every value combination. Each walk step consumes one
+   column: an algebraic column splits over its constructors and takes
+   the instantiated payload as the column's replacement, a tuple or
+   record column expands into its component columns, a list column
+   splits into the empty list and the head-and-tail columns of a
+   non-empty one, and a scalar column splits over the literals its
+   rows name plus everything else, which only a catch-all row
+   answers. An or-pattern splices its alternatives into rows. A
+   column every surviving row answers with a catch-all carries no
+   constraint and is skipped, and so does a column whose type is
+   still open. Visited states are memoized on the remaining columns
+   and the surviving rows' remaining contributions. */
 
-/* The live rows of one judgment as a bitmap (at most 128 arms). */
+/* A soft walk-depth guard: pattern structure is finite, and a state
+   this deep is pathological input. */
+#define EXH_MAX_DEPTH 512
+
 typedef struct {
-    unsigned long long lo, hi;
-} row_set;
+    const ek_type **cols;
+    size_t ncols;
+    const ek_node ***rows; /* one contribution vector per row */
+    size_t nrows;
+} ex_state;
 
-/* One constructor payload owed by the path: the constructor chosen at
-   `col`, over the scrutinee type of that column. */
 typedef struct {
-    const ck_ctor *ct;
-    const ek_type *scrut;
-    size_t col;
-} prod_pend;
+    ex_state snap; /* the copied pointer arrays; vectors are shared */
+    int covered;
+} ex_entry;
 
-#define PROD_MAX_PEND 16
+typedef struct {
+    ex_entry *entries;
+    size_t count, cap;
+} ex_memo;
 
-static row_set set_add(row_set s, size_t i)
+/* A scratch buffer of flattened alternatives, grown to fit. */
+typedef struct {
+    const ek_node **v;
+    size_t cap;
+} ex_buf;
+
+static int covers_walk(ck_ctx *c, ex_state *st, size_t pos, ex_memo *memo,
+                       int depth);
+
+/* All alternatives a pattern contributes at one depth. */
+static size_t flat_into(ck_ctx *c, const ek_node *p, ex_buf *b)
 {
-    if (i < 64) {
-        s.lo |= 1ull << i;
-    } else {
-        s.hi |= 1ull << (i - 64);
+    size_t n = ck_pat_flatten(c, p, b->v, 0, b->cap);
+
+    while (n == b->cap && !c->oom) {
+        b->v = ck_grow(c, b->v, b->cap + 1, &b->cap, sizeof *b->v);
+        n = ck_pat_flatten(c, p, b->v, 0, b->cap);
     }
-    return s;
+    return n;
 }
 
-/* One memoized judgment: the column, the surviving rows, and the
-   payload obligations on the path. */
-typedef struct {
-    size_t col;
-    row_set rows;
-    unsigned long long sig;
-    int covered;
-    unsigned used;
-} prod_memo;
-
-typedef struct {
-    prod_memo *entries;
-    size_t cap, count;
-} prod_table;
-
-static unsigned long long pend_sig(const prod_pend *pd, size_t np)
+/* A state's identity past `pos`: the remaining columns and every
+   row's remaining contributions, by pointer. */
+static int state_same(const ex_state *a, const ex_state *b, size_t pos)
 {
-    unsigned long long h = 0x9e3779b97f4a7c15ull;
+    size_t i, j;
+
+    if (a->ncols != b->ncols || a->nrows != b->nrows) {
+        return 0;
+    }
+    for (j = pos; j < a->ncols; j++) {
+        if (a->cols[j] != b->cols[j]) {
+            return 0;
+        }
+    }
+    for (i = 0; i < a->nrows; i++) {
+        for (j = pos; j < a->ncols; j++) {
+            if (a->rows[i][j] != b->rows[i][j]) {
+                return 0;
+            }
+        }
+    }
+    return 1;
+}
+
+static int memo_get(const ex_memo *m, const ex_state *s, size_t pos)
+{
     size_t i;
 
-    for (i = 0; i < np; i++) {
-        h ^= ((unsigned long long)(uintptr_t)pd[i].ct->sym + pd[i].col)
-             * 0xff51afd7ed558ccdull;
-        h = (h << 31) | (h >> 33);
-    }
-    return h;
-}
-
-static size_t memo_hash(size_t col, row_set s, unsigned long long sig)
-{
-    unsigned long long h = s.lo;
-
-    h = (h ^ (s.hi * 0x9e3779b97f4a7c15ull)) * 0xff51afd7ed558ccdull;
-    h = (h ^ sig) * 0xc4ceb9fe1a85ec53ull;
-    h = (h ^ ((unsigned long long)col + 0x165667b19e3779f9ull))
-        * 0x94d049bb133111ebull;
-    return (size_t)(h ^ (h >> 33));
-}
-
-static int memo_get(const prod_table *t, size_t col, row_set s,
-                    unsigned long long sig)
-{
-    size_t j;
-
-    if (!t->cap) {
-        return -1;
-    }
-    for (j = memo_hash(col, s, sig) & (t->cap - 1); t->entries[j].used;
-         j = (j + 1) & (t->cap - 1)) {
-        if (t->entries[j].col == col && t->entries[j].rows.lo == s.lo
-            && t->entries[j].rows.hi == s.hi && t->entries[j].sig == sig) {
-            return t->entries[j].covered;
+    for (i = 0; i < m->count; i++) {
+        if (state_same(&m->entries[i].snap, s, pos)) {
+            return m->entries[i].covered;
         }
     }
     return -1;
 }
 
-static void memo_put(ck_ctx *c, prod_table *t, size_t col, row_set s,
-                     unsigned long long sig, int covered)
+/* The snapshot copies the two pointer arrays; the contribution
+   vectors live in the arena and are shared by pointer. */
+static void memo_put(ck_ctx *c, ex_memo *m, const ex_state *s, int covered)
 {
+    ex_entry *e;
     size_t j;
 
-    if (t->count * 2 >= t->cap) {
-        size_t ncap = t->cap ? t->cap * 4 : 64;
-        prod_memo *ne = ek_arena_alloc(c->arena, ncap * sizeof *ne);
-        size_t i;
-
-        if (!ne) {
-            c->oom = 1;
-            return;
-        }
-        memset(ne, 0, ncap * sizeof *ne);
-        for (i = 0; i < t->cap; i++) {
-            if (t->entries[i].used) {
-                size_t k = memo_hash(t->entries[i].col, t->entries[i].rows,
-                                     t->entries[i].sig)
-                           & (ncap - 1);
-
-                while (ne[k].used) {
-                    k = (k + 1) & (ncap - 1);
-                }
-                ne[k] = t->entries[i];
-            }
-        }
-        t->entries = ne;
-        t->cap = ncap;
+    if (c->oom) {
+        return;
     }
-    for (j = memo_hash(col, s, sig) & (t->cap - 1); t->entries[j].used;
-         j = (j + 1) & (t->cap - 1)) {
-        if (t->entries[j].col == col && t->entries[j].rows.lo == s.lo
-            && t->entries[j].rows.hi == s.hi && t->entries[j].sig == sig) {
+    if (m->count == m->cap) {
+        m->entries = ck_grow(c, m->entries, m->count + 1, &m->cap,
+                             sizeof *m->entries);
+        if (c->oom) {
             return;
         }
     }
-    t->entries[j].col = col;
-    t->entries[j].rows = s;
-    t->entries[j].sig = sig;
-    t->entries[j].covered = covered;
-    t->entries[j].used = 1;
-    t->count++;
-}
-
-/* The arms of rows whose column pattern matches one constructor of
-   column `col`, or is a catch-all there: their nodes and their
-   bitmap. */
-static size_t rows_for(ck_ctx *c, const ek_node *const *rows, size_t nr,
-                       size_t col, const ck_ctor *ct, const ek_node **out,
-                       row_set *keep)
-{
-    size_t i, nout = 0;
-
-    for (i = 0; i < nr; i++) {
-        const ek_node *pat = col < rows[i]->u.arm.patterns.count
-                                 ? rows[i]->u.arm.patterns.data[col] : NULL;
-        const ek_node *flat[32];
-        size_t nf, q;
-        int hit = 0;
-
-        if (ck_pat_catchall(pat)) {
-            hit = 1;
-        } else {
-            nf = ck_pat_flatten(c, pat, flat, 0, 32);
-            for (q = 0; q < nf && q < 32; q++) {
-                if (ck_pat_head(c, flat[q]) == ct->sym) {
-                    hit = 1;
-                }
-            }
-        }
-        if (hit) {
-            out[nout++] = rows[i];
-            *keep = set_add(*keep, i);
-        }
+    e = &m->entries[m->count++];
+    e->covered = covered;
+    e->snap.ncols = s->ncols;
+    e->snap.nrows = s->nrows;
+    e->snap.cols = ek_arena_alloc(c->arena, (s->ncols ? s->ncols : 1)
+                                          * sizeof *e->snap.cols);
+    e->snap.rows = ek_arena_alloc(c->arena, (s->nrows ? s->nrows : 1)
+                                          * sizeof *e->snap.rows);
+    if (!e->snap.cols || !e->snap.rows) {
+        c->oom = 1;
+        return;
     }
-    return nout;
+    for (j = 0; j < s->ncols; j++) {
+        e->snap.cols[j] = s->cols[j];
+    }
+    for (j = 0; j < s->nrows; j++) {
+        e->snap.rows[j] = s->rows[j];
+    }
 }
 
-/* The payload pattern one row contributes to a constructor split at
-   `col`: a catch-all column answers the whole payload, a constructor
-   alternative answers its own payload pattern. NULL covers. */
-static const ek_node *payload_at(ck_ctx *c, const ek_node *row, size_t col,
-                                 const ck_ctor *ct)
+/* One row vector with the column at `pos` replaced by `nins`
+   entries; nins 0 removes the column. */
+static const ek_node **vec_at(ck_ctx *c, const ek_node **v, size_t ncols,
+                              size_t pos, const ek_node *const *ins,
+                              size_t nins)
 {
-    const ek_node *pat = col < row->u.arm.patterns.count
-                             ? row->u.arm.patterns.data[col] : NULL;
-    const ek_node *flat[32];
-    size_t nf, q;
+    size_t n = ncols - 1 + nins;
+    const ek_node **out = ek_arena_alloc(c->arena, (n ? n : 1)
+                                                * sizeof *out);
 
-    if (ck_pat_catchall(pat)) {
+    if (!out) {
+        c->oom = 1;
         return NULL;
     }
-    nf = ck_pat_flatten(c, pat, flat, 0, 32);
-    for (q = 0; q < nf && q < 32; q++) {
-        if (flat[q]->kind == EK_N_P_CONS
-            && ck_pat_head(c, flat[q]) == ct->sym) {
-            return flat[q]->u.cons.payload;
-        }
+    memcpy(out, v, pos * sizeof *out);
+    if (nins) {
+        memcpy(out + pos, ins, nins * sizeof *out);
     }
-    return NULL;
+    memcpy(out + pos + nins, v + pos + 1, (ncols - pos - 1) * sizeof *out);
+    return out;
 }
 
-/* One owed payload, over the rows that reached this point. NULL in a
-   row's slot is a catch-all payload; the payload type is the
-   constructor's, at the scrutinee's instantiation. */
-static int pend_one(ck_ctx *c, const prod_pend *p, const ek_node *const *live,
-                    size_t nr)
+static const ek_type **cols_at(ck_ctx *c, const ek_type **cols, size_t ncols,
+                               size_t pos, const ek_type *const *ins,
+                               size_t nins)
 {
-    const ek_node *pays[128];
-    const ck_decl *d = ck_decl_of(c, p->ct->owner);
-    const ek_type **repl = NULL;
-    const ek_type *pt;
-    size_t nb = d ? d->nbinders : 0;
-    size_t m;
+    size_t n = ncols - 1 + nins;
+    const ek_type **out = ek_arena_alloc(c->arena, (n ? n : 1)
+                                               * sizeof *out);
 
-    if (!p->ct->payload) {
-        return 1;
+    if (!out) {
+        c->oom = 1;
+        return NULL;
     }
-    if (nb) {
-        repl = ek_arena_alloc(c->arena, nb * sizeof *repl);
-        if (!repl) {
-            c->oom = 1;
-            return 1;
-        }
-        for (m = 0; m < nb; m++) {
-            repl[m] = p->scrut->u.nominal.args[m];
-        }
+    memcpy(out, cols, pos * sizeof *out);
+    if (nins) {
+        memcpy(out + pos, ins, nins * sizeof *out);
     }
-    pt = ck_apply_binders(c, p->ct->payload, d->binders, repl, nb);
-    for (m = 0; m < nr && m < 128; m++) {
-        pays[m] = payload_at(c, live[m], p->col, p->ct);
-    }
-    return ck_covers(c, pt, pays, m);
+    memcpy(out + pos + nins, cols + pos + 1, (ncols - pos - 1) * sizeof *out);
+    return out;
 }
 
-/* Judge the owed payloads over the rows that reached this point. */
-static int pend_ok(ck_ctx *c, const prod_pend *pd, size_t np,
-                   const ek_node *const *live, size_t nr)
-{
-    size_t i;
+/* The derived rows of one branch. */
+typedef struct {
+    const ek_node ***v;
+    size_t n, cap;
+} ex_rows;
 
-    for (i = 0; i < np; i++) {
-        if (!pend_one(c, &pd[i], live, nr)) {
-            return 0;
+static void rows_add(ck_ctx *c, ex_rows *r, const ek_node **vec)
+{
+    if (c->oom) {
+        return;
+    }
+    if (r->n == r->cap) {
+        r->v = ck_grow(c, r->v, r->n + 1, &r->cap, sizeof *r->v);
+        if (c->oom) {
+            return;
         }
     }
-    return 1;
+    r->v[r->n++] = vec;
 }
 
 /* Whether two literal patterns name the same value. Two spellings of
@@ -287,198 +232,621 @@ static int lit_same(const ek_node *a, const ek_node *b)
     }
 }
 
-/* The rows of one literal split: a catch-all or the same literal at
-   the column keeps the row. */
-static size_t rows_for_lit(ck_ctx *c, const ek_node *const *rows, size_t nr,
-                           size_t col, const ek_node *lit,
-                           const ek_node **out, row_set *keep)
+/* Does one of pats cover every value of t? The engine over one
+   column. This is the prefix-rest gate and the public judgment the
+   rest of the checker reaches for. */
+int ck_covers(ck_ctx *c, const ek_type *t, const ek_node *const *pats,
+              size_t n)
 {
-    size_t i, nout = 0;
+    const ek_type *cols[1];
+    const ek_node **rows;
+    ex_state st;
+    ex_memo memo;
+    size_t i;
 
-    for (i = 0; i < nr; i++) {
-        const ek_node *pat = col < rows[i]->u.arm.patterns.count
-                                 ? rows[i]->u.arm.patterns.data[col] : NULL;
-        const ek_node *flat[32];
-        size_t nf, q;
-        int hit = 0;
-
-        if (ck_pat_catchall(pat)) {
-            hit = 1;
-        } else {
-            nf = ck_pat_flatten(c, pat, flat, 0, 32);
-            for (q = 0; q < nf && q < 32; q++) {
-                if (ck_pat_catchall(flat[q]) || lit_same(flat[q], lit)) {
-                    hit = 1;
-                }
-            }
-        }
-        if (hit) {
-            out[nout++] = rows[i];
-            *keep = set_add(*keep, i);
-        }
+    rows = ek_arena_alloc(c->arena, (n ? n : 1) * sizeof *rows);
+    if (!rows) {
+        c->oom = 1;
+        return 1;
     }
-    return nout;
+    for (i = 0; i < n; i++) {
+        rows[i] = pats[i];
+    }
+    cols[0] = t;
+    st.cols = cols;
+    st.ncols = 1;
+    st.rows = &rows;
+    st.nrows = n;
+    memset(&memo, 0, sizeof memo);
+    return covers_walk(c, &st, 0, &memo, 0);
 }
 
-/* The rows of the everything-else split: only a catch-all at the
-   column answers a value no literal names. */
-static size_t rows_for_rest(ck_ctx *c, const ek_node *const *rows, size_t nr,
-                            size_t col, const ek_node **out, row_set *keep)
+/* True when every surviving row answers the column with a
+   catch-all — no contribution, or a variable or wildcard pattern: the
+   column constrains nothing. */
+static int all_catchall_at(const ex_state *st, size_t pos)
 {
-    size_t i, nout = 0;
+    size_t i;
 
-    for (i = 0; i < nr; i++) {
-        const ek_node *pat = col < rows[i]->u.arm.patterns.count
-                                 ? rows[i]->u.arm.patterns.data[col] : NULL;
-        const ek_node *flat[32];
-        size_t nf, q;
-        int hit = 0;
-
-        if (ck_pat_catchall(pat)) {
-            hit = 1;
-        } else {
-            nf = ck_pat_flatten(c, pat, flat, 0, 32);
-            for (q = 0; q < nf && q < 32; q++) {
-                if (ck_pat_catchall(flat[q])) {
-                    hit = 1;
-                }
-            }
-        }
-        if (hit) {
-            out[nout++] = rows[i];
-            *keep = set_add(*keep, i);
+    for (i = 0; i < st->nrows; i++) {
+        if (st->rows[i][pos] && !ck_pat_catchall(st->rows[i][pos])) {
+            return 0;
         }
     }
-    return nout;
+    return 1;
 }
 
-static int covers_prod(ck_ctx *c, prod_table *memo,
-                       const ek_node *const *live, size_t nr,
-                       const ek_type **scrut, size_t ns, row_set rows,
-                       size_t col, prod_pend *pd, size_t np);
-
-/* A scalar column: the literals its rows name are each one value,
-   everything else needs a catch-all row, and the remaining columns
-   must be covered under every split. */
-static int literal_column(ck_ctx *c, prod_table *memo,
-                          const ek_node *const *live, size_t nr,
-                          const ek_type **scrut, size_t ns, size_t col,
-                          prod_pend *pd, size_t np)
+/* The constructor branch of an algebraic column: each surviving row
+   contributes the constructor's payload pattern, and the instantiated
+   payload type replaces the column. */
+static int ctor_branch(ck_ctx *c, ex_state *st, size_t pos, ex_memo *memo,
+                       int depth, const ck_ctor *ct)
 {
-    const ek_node *lits[32];
-    const ek_node *sub[128];
-    size_t nlits = 0, i, k, m, nsub;
-    row_set keep;
+    const ck_decl *d = ck_decl_of(c, ct->owner);
+    const ek_type *payload = NULL;
+    const ek_type *ins[1];
+    ex_rows out;
+    ex_buf buf;
+    size_t i, nb = d ? d->nbinders : 0;
 
-    for (i = 0; i < nr; i++) {
-        const ek_node *pat = col < live[i]->u.arm.patterns.count
-                                 ? live[i]->u.arm.patterns.data[col] : NULL;
-        const ek_node *flat[32];
-        size_t nf = ck_pat_flatten(c, pat, flat, 0, 32);
+    memset(&out, 0, sizeof out);
+    memset(&buf, 0, sizeof buf);
+    if (ct->payload) {
+        if (nb && st->cols[pos]->kind == EK_T_NOMINAL
+            && st->cols[pos]->u.nominal.argc == nb) {
+            payload = ck_apply_binders(c, ct->payload, d->binders,
+                                       st->cols[pos]->u.nominal.args, nb);
+        } else {
+            payload = ct->payload;
+        }
+        ins[0] = payload;
+    }
+    for (i = 0; i < st->nrows && !c->oom; i++) {
+        const ek_node *p = st->rows[i][pos];
+        size_t nalt, na;
+        int all = 0;
 
-        for (k = 0; k < nf && k < 32 && nlits < 32; k++) {
-            int seen = 0;
+        if (!p) {
+            const ek_node *any[1];
 
-            if (flat[k]->kind != EK_N_P_LIT) {
+            any[0] = NULL;
+            rows_add(c, &out, vec_at(c, st->rows[i], st->ncols, pos,
+                                     ct->payload ? any : NULL,
+                                     ct->payload ? 1 : 0));
+            continue;
+        }
+        nalt = flat_into(c, p, &buf);
+        for (na = 0; na < nalt; na++) {
+            if (ck_pat_catchall(buf.v[na])) {
+                all = 1;
+            }
+        }
+        if (all) {
+            const ek_node *any[1];
+
+            any[0] = NULL;
+            rows_add(c, &out, vec_at(c, st->rows[i], st->ncols, pos,
+                                     ct->payload ? any : NULL,
+                                     ct->payload ? 1 : 0));
+            continue;
+        }
+        for (na = 0; na < nalt && !c->oom; na++) {
+            const ek_node *alt = buf.v[na];
+            const ek_node *one[1];
+
+            /* A bare arm over a payload-carrying constructor matches
+               nothing. */
+            if (alt->kind != EK_N_P_CONS || ck_pat_head(c, alt) != ct->sym
+                || (!alt->u.cons.payload && ct->payload)) {
                 continue;
             }
-            for (m = 0; m < nlits; m++) {
-                if (lit_same(lits[m], flat[k])) {
-                    seen = 1;
-                }
-            }
-            if (!seen) {
-                lits[nlits++] = flat[k];
-            }
+            one[0] = alt->u.cons.payload;
+            rows_add(c, &out, vec_at(c, st->rows[i], st->ncols, pos,
+                                     ct->payload ? one : NULL,
+                                     ct->payload ? 1 : 0));
         }
     }
-    for (i = 0; i < nlits; i++) {
-        keep.lo = keep.hi = 0;
-        nsub = rows_for_lit(c, live, nr, col, lits[i], sub, &keep);
-        if (nsub == 0) {
-            return 0;
-        }
-        if (!covers_prod(c, memo, sub, nsub, scrut, ns, keep, col + 1, pd,
-                         np)) {
-            return 0;
-        }
+    if (c->oom) {
+        return 1;
     }
-    keep.lo = keep.hi = 0;
-    nsub = rows_for_rest(c, live, nr, col, sub, &keep);
-    if (nsub == 0) {
+    if (!out.n) {
         return 0;
     }
-    return covers_prod(c, memo, sub, nsub, scrut, ns, keep, col + 1, pd, np);
+    {
+        ex_state next;
+
+        next.cols = cols_at(c, st->cols, st->ncols, pos,
+                            ct->payload ? ins : NULL, ct->payload ? 1 : 0);
+        next.ncols = st->ncols - 1 + (ct->payload ? 1 : 0);
+        next.rows = out.v;
+        next.nrows = out.n;
+        if (c->oom) {
+            return 1;
+        }
+        return covers_walk(c, &next, pos, memo, depth + 1);
+    }
 }
 
-static int covers_prod(ck_ctx *c, prod_table *memo,
-                       const ek_node *const *live, size_t nr,
-                       const ek_type **scrut, size_t ns, row_set rows,
-                       size_t col, prod_pend *pd, size_t np)
+/* The component contributions of one alternative at a shape column:
+   a catch-all and a matching brace answer every component; anything
+   else cannot match the shape. */
+static int shape_contrib(const ek_node *a, const ek_type *t,
+                         const ek_node **out, size_t k)
 {
-    const ek_type *s;
-    const ck_decl *d;
-    const ek_node *sub[128];
-    unsigned long long sig = pend_sig(pd, np);
-    size_t k;
-    int all = 1;
-    int hit = memo_get(memo, col, rows, sig);
+    size_t i, j;
 
+    if (ck_pat_catchall(a)) {
+        for (i = 0; i < k; i++) {
+            out[i] = NULL;
+        }
+        return 1;
+    }
+    if (a->kind != EK_N_P_BRACE || a->u.p_brace.rest != EK_REST_NONE) {
+        return 0;
+    }
+    if (t->kind == EK_T_RECORD) {
+        for (i = 0; i < k; i++) {
+            const char *field = t->u.record.fields[i].name;
+            const ek_node *sub = NULL;
+
+            for (j = 0; j < a->u.p_brace.items.count; j++) {
+                const ek_node *item = a->u.p_brace.items.data[j];
+
+                if (item->kind == EK_N_P_FIELD
+                    && strcmp(item->u.p_field.name, field) == 0) {
+                    sub = item->u.p_field.pattern;
+                } else if (item->kind == EK_N_P_VAR
+                           && item->u.path.count == 1
+                           && strcmp(item->u.path.data[0], field) == 0) {
+                    sub = item;
+                }
+            }
+            out[i] = sub;
+        }
+        return 1;
+    }
+    if (t->kind == EK_T_TUPLE && a->u.p_brace.items.count == k) {
+        for (i = 0; i < k; i++) {
+            out[i] = a->u.p_brace.items.data[i];
+        }
+        return 1;
+    }
+    return 0;
+}
+
+/* A tuple or record column: the components replace the column. */
+static int shape_branch(ck_ctx *c, ex_state *st, size_t pos, ex_memo *memo,
+                        int depth, const ek_type *shape)
+{
+    size_t k = shape->kind == EK_T_RECORD ? shape->u.record.count
+                                          : shape->u.tuple.count;
+    const ek_type **ins = ek_arena_alloc(c->arena, (k ? k : 1)
+                                                * sizeof *ins);
+    const ek_node **contrib = ek_arena_alloc(c->arena, (k ? k : 1)
+                                                    * sizeof *contrib);
+    ex_rows out;
+    ex_buf buf;
+    size_t i, j;
+
+    memset(&out, 0, sizeof out);
+    memset(&buf, 0, sizeof buf);
+    if (!ins || !contrib) {
+        c->oom = 1;
+        return 1;
+    }
+    for (j = 0; j < k; j++) {
+        ins[j] = shape->kind == EK_T_RECORD ? shape->u.record.fields[j].type
+                                            : shape->u.tuple.items[j];
+    }
+    for (i = 0; i < st->nrows && !c->oom; i++) {
+        const ek_node *p = st->rows[i][pos];
+        size_t nalt, na;
+        int all = 0;
+
+        if (!p) {
+            for (j = 0; j < k; j++) {
+                contrib[j] = NULL;
+            }
+            rows_add(c, &out, vec_at(c, st->rows[i], st->ncols, pos, contrib,
+                                     k));
+            continue;
+        }
+        nalt = flat_into(c, p, &buf);
+        for (na = 0; na < nalt; na++) {
+            if (ck_pat_catchall(buf.v[na])) {
+                all = 1;
+            }
+        }
+        if (all) {
+            for (j = 0; j < k; j++) {
+                contrib[j] = NULL;
+            }
+            rows_add(c, &out, vec_at(c, st->rows[i], st->ncols, pos, contrib,
+                                     k));
+            continue;
+        }
+        for (na = 0; na < nalt && !c->oom; na++) {
+            if (shape_contrib(buf.v[na], shape, contrib, k)) {
+                rows_add(c, &out, vec_at(c, st->rows[i], st->ncols, pos,
+                                         contrib, k));
+            }
+        }
+    }
+    if (c->oom) {
+        return 1;
+    }
+    if (!out.n) {
+        return 0;
+    }
+    {
+        ex_state next;
+
+        next.cols = cols_at(c, st->cols, st->ncols, pos, ins, k);
+        next.ncols = st->ncols - 1 + k;
+        next.rows = out.v;
+        next.nrows = out.n;
+        if (c->oom) {
+            return 1;
+        }
+        return covers_walk(c, &next, pos, memo, depth + 1);
+    }
+}
+
+/* One list-pattern alternative's contributions to the head and tail
+   columns of the non-empty branch. Returns 0 when the alternative
+   cannot match a non-empty list. */
+static int cons_contrib(ck_ctx *c, const ek_node *a, const ek_type *elem,
+                        const ek_node **out)
+{
+    size_t k;
+
+    out[0] = NULL;
+    out[1] = NULL;
+    if (ck_pat_catchall(a)) {
+        return 1;
+    }
+    if (a->kind != EK_N_P_BRACE) {
+        return 0;
+    }
+    if (a->u.p_brace.rest == EK_REST_SUFFIX) {
+        /* The head owes its own coverage; the rest always matches. */
+        out[0] = a->u.p_brace.items.count ? a->u.p_brace.items.data[0]
+                                          : NULL;
+        return 1;
+    }
+    if (a->u.p_brace.rest == EK_REST_PREFIX) {
+        const ek_node *one;
+
+        k = a->u.p_brace.items.count;
+        if (!k) {
+            return 0;
+        }
+        one = a->u.p_brace.items.data[k - 1];
+        if (!ck_covers(c, elem, &one, 1)) {
+            return 0;
+        }
+        return 1;
+    }
+    if (a->u.p_brace.rest == EK_REST_NONE && a->u.p_brace.items.count) {
+        /* A fixed length covers the head and leaves the shorter
+           fixed pattern for the tail. */
+        ek_node *kept = ek_arena_alloc(c->arena, sizeof *kept);
+
+        if (!kept) {
+            c->oom = 1;
+            return 1;
+        }
+        memset(kept, 0, sizeof *kept);
+        kept->kind = EK_N_P_BRACE;
+        kept->u.p_brace.rest = EK_REST_NONE;
+        kept->u.p_brace.items.count = a->u.p_brace.items.count - 1;
+        kept->u.p_brace.items.data = a->u.p_brace.items.data + 1;
+        kept->line = a->line;
+        kept->col = a->col;
+        out[0] = a->u.p_brace.items.data[0];
+        out[1] = kept;
+        return 1;
+    }
+    return 0; /* the exact empty list matches no non-empty value */
+}
+
+/* A list column: the empty branch drops the column, the non-empty
+   branch takes the element and the tail as two columns. */
+static int list_branch(ck_ctx *c, ex_state *st, size_t pos, ex_memo *memo,
+                       int depth)
+{
+    const ek_type *elem = st->cols[pos]->u.list.elem;
+    const ek_type *ins[2];
+    const ek_node **contrib = ek_arena_alloc(c->arena, 2 * sizeof *contrib);
+    ex_rows empty, cons;
+    ex_buf buf;
+    size_t i;
+    int covered;
+
+    memset(&empty, 0, sizeof empty);
+    memset(&cons, 0, sizeof cons);
+    memset(&buf, 0, sizeof buf);
+    if (!contrib) {
+        c->oom = 1;
+        return 1;
+    }
+    ins[0] = elem;
+    ins[1] = st->cols[pos];
+    for (i = 0; i < st->nrows && !c->oom; i++) {
+        const ek_node *p = st->rows[i][pos];
+        const ek_node *any[2];
+        size_t nalt, na;
+        int hit_empty = 0, all = 0;
+
+        if (!p) {
+            any[0] = NULL;
+            any[1] = NULL;
+            rows_add(c, &empty, vec_at(c, st->rows[i], st->ncols, pos, NULL,
+                                       0));
+            rows_add(c, &cons, vec_at(c, st->rows[i], st->ncols, pos, any,
+                                      2));
+            continue;
+        }
+        nalt = flat_into(c, p, &buf);
+        for (na = 0; na < nalt; na++) {
+            if (ck_pat_catchall(buf.v[na])) {
+                all = 1;
+            }
+        }
+        if (all) {
+            any[0] = NULL;
+            any[1] = NULL;
+            rows_add(c, &empty, vec_at(c, st->rows[i], st->ncols, pos, NULL,
+                                       0));
+            rows_add(c, &cons, vec_at(c, st->rows[i], st->ncols, pos, any,
+                                      2));
+            continue;
+        }
+        /* Every alternative that can match a branch contributes its
+           own row: alternatives of one cell are independent of the
+           other cells. */
+        for (na = 0; na < nalt; na++) {
+            const ek_node *a = buf.v[na];
+
+            if (a->kind == EK_N_P_BRACE
+                && a->u.p_brace.rest == EK_REST_NONE
+                && a->u.p_brace.items.count == 0) {
+                hit_empty = 1;
+            }
+        }
+        if (hit_empty) {
+            rows_add(c, &empty, vec_at(c, st->rows[i], st->ncols, pos, NULL,
+                                       0));
+        }
+        for (na = 0; na < nalt && !c->oom; na++) {
+            if (cons_contrib(c, buf.v[na], elem, contrib)) {
+                rows_add(c, &cons, vec_at(c, st->rows[i], st->ncols, pos,
+                                          contrib, 2));
+            }
+        }
+    }
+    if (c->oom) {
+        return 1;
+    }
+    if (!empty.n || !cons.n) {
+        return 0;
+    }
+    {
+        ex_state next;
+
+        next.cols = cols_at(c, st->cols, st->ncols, pos, NULL, 0);
+        next.ncols = st->ncols - 1;
+        next.rows = empty.v;
+        next.nrows = empty.n;
+        covered = covers_walk(c, &next, pos, memo, depth + 1);
+    }
+    if (covered) {
+        ex_state next;
+
+        next.cols = cols_at(c, st->cols, st->ncols, pos, ins, 2);
+        next.ncols = st->ncols + 1;
+        next.rows = cons.v;
+        next.nrows = cons.n;
+        if (c->oom) {
+            return 1;
+        }
+        covered = covers_walk(c, &next, pos, memo, depth + 1);
+    }
+    return covered;
+}
+
+/* A scalar column: each named literal is one value, everything else
+   wants a catch-all row. */
+static int scalar_branch(ck_ctx *c, ex_state *st, size_t pos, ex_memo *memo,
+                         int depth)
+{
+    ex_rows rest, lit;
+    ex_buf buf;
+    const ek_node **lits = NULL;
+    size_t nlits = 0, litcap = 0, i, k, q;
+    int covered = 1;
+
+    memset(&rest, 0, sizeof rest);
+    memset(&buf, 0, sizeof buf);
+    for (i = 0; i < st->nrows && !c->oom; i++) {
+        const ek_node *p = st->rows[i][pos];
+
+        if (!p) {
+            rows_add(c, &rest, vec_at(c, st->rows[i], st->ncols, pos, NULL,
+                                      0));
+            continue;
+        }
+        {
+            size_t nalt = flat_into(c, p, &buf);
+
+            for (k = 0; k < nalt; k++) {
+                if (ck_pat_catchall(buf.v[k])) {
+                    rows_add(c, &rest, vec_at(c, st->rows[i], st->ncols, pos,
+                                              NULL, 0));
+                } else if (buf.v[k]->kind == EK_N_P_LIT) {
+                    int seen = 0;
+
+                    for (q = 0; q < nlits; q++) {
+                        if (lit_same(lits[q], buf.v[k])) {
+                            seen = 1;
+                        }
+                    }
+                    if (!seen) {
+                        lits = ck_grow(c, lits, nlits + 1, &litcap,
+                                       sizeof *lits);
+                        if (c->oom) {
+                            return 1;
+                        }
+                        lits[nlits++] = buf.v[k];
+                    }
+                }
+            }
+        }
+    }
+    if (c->oom) {
+        return 1;
+    }
+    for (i = 0; i < nlits && covered; i++) {
+        memset(&lit, 0, sizeof lit);
+        for (k = 0; k < st->nrows && !c->oom; k++) {
+            const ek_node *p = st->rows[k][pos];
+            int hit = 0;
+
+            if (!p) {
+                hit = 1;
+            } else {
+                size_t nalt = flat_into(c, p, &buf);
+
+                for (q = 0; q < nalt; q++) {
+                    if (ck_pat_catchall(buf.v[q])
+                        || lit_same(buf.v[q], lits[i])) {
+                        hit = 1;
+                    }
+                }
+            }
+            if (hit) {
+                rows_add(c, &lit, vec_at(c, st->rows[k], st->ncols, pos, NULL,
+                                         0));
+            }
+        }
+        if (c->oom) {
+            return 1;
+        }
+        if (!lit.n) {
+            return 0;
+        }
+        {
+            ex_state next;
+
+            next.cols = cols_at(c, st->cols, st->ncols, pos, NULL, 0);
+            next.ncols = st->ncols - 1;
+            next.rows = lit.v;
+            next.nrows = lit.n;
+            covered = covers_walk(c, &next, pos, memo, depth + 1);
+        }
+    }
+    if (covered) {
+        if (!rest.n) {
+            return 0;
+        }
+        {
+            ex_state next;
+
+            next.cols = cols_at(c, st->cols, st->ncols, pos, NULL, 0);
+            next.ncols = st->ncols - 1;
+            next.rows = rest.v;
+            next.nrows = rest.n;
+            covered = covers_walk(c, &next, pos, memo, depth + 1);
+        }
+    }
+    return covered;
+}
+
+/* One walk step at column `pos`. */
+static int covers_walk(ck_ctx *c, ex_state *st, size_t pos, ex_memo *memo,
+                       int depth)
+{
+    const ek_type *t;
+    const ck_decl *d;
+    int hit, covered = 1;
+
+    if (c->oom) {
+        return 1;
+    }
+    if (!st->nrows) {
+        return 0;
+    }
+    while (pos < st->ncols && all_catchall_at(st, pos)) {
+        pos++;
+    }
+    if (pos >= st->ncols) {
+        return 1;
+    }
+    if (depth > EXH_MAX_DEPTH) {
+        return 0;
+    }
+    hit = memo_get(memo, st, pos);
     if (hit >= 0) {
         return hit;
     }
-    if (col >= ns) {
-        /* The rows that survive every split answer the combination;
-           the owed payloads are judged over exactly these rows. */
-        all = pend_ok(c, pd, np, live, nr);
-        memo_put(c, memo, col, rows, sig, all);
-        return all;
+    t = ck_prune(st->cols[pos]);
+    if (!t || t->kind == EK_T_IVAR || t->kind == EK_T_TVAR) {
+        return 1; /* the bridge or a rigid variable owes the column */
     }
-    s = ck_prune(scrut[col]);
-    if (!s || s->kind == EK_T_IVAR || s->kind == EK_T_TVAR
-        || s->kind != EK_T_NOMINAL || !s->u.nominal.sym) {
-        /* The column's type is open or a shape: judge what the path
-           owes and suspend the rest. */
-        all = pend_ok(c, pd, np, live, nr);
-        memo_put(c, memo, col, rows, sig, all);
-        return all;
-    }
-    d = ck_decl_of(c, s->u.nominal.sym);
-    if (d && d->rhs == EK_TYPE_RHS_VARIANTS && d->nctors) {
-        for (k = 0; k < d->nctors && all; k++) {
-            row_set keep = {0, 0};
-            size_t nsub = rows_for(c, live, nr, col, d->ctors[k], sub,
-                                   &keep);
-
-            if (nsub == 0) {
-                all = 0;
-                break;
-            }
-            if (np < PROD_MAX_PEND) {
-                pd[np].ct = d->ctors[k];
-                pd[np].scrut = s;
-                pd[np].col = col;
-                all = covers_prod(c, memo, sub, nsub, scrut, ns, keep,
-                                  col + 1, pd, np + 1);
-            } else {
-                all = covers_prod(c, memo, sub, nsub, scrut, ns, keep,
-                                  col + 1, pd, np);
-            }
+    switch (t->kind) {
+    case EK_T_FN:
+    case EK_T_DICT:
+    case EK_T_UNIT:
+    case EK_T_NEVER:
+        /* No pattern form but a catch-all matches these. */
+        if (!all_catchall_at(st, pos)) {
+            covered = 0;
+            break;
         }
-        memo_put(c, memo, col, rows, sig, all);
-        return all;
+        covered = covers_walk(c, st, pos + 1, memo, depth + 1);
+        break;
+    case EK_T_LIST:
+        covered = list_branch(c, st, pos, memo, depth);
+        break;
+    case EK_T_TUPLE:
+    case EK_T_RECORD:
+        covered = shape_branch(c, st, pos, memo, depth, t);
+        break;
+    case EK_T_NOMINAL: {
+        const ek_type *repr;
+
+        if (!t->u.nominal.sym) {
+            covered = scalar_branch(c, st, pos, memo, depth);
+            break;
+        }
+        d = ck_decl_of(c, t->u.nominal.sym);
+        if (d && d->rhs == EK_TYPE_RHS_VARIANTS && d->nctors) {
+            size_t k;
+
+            for (k = 0; k < d->nctors && covered; k++) {
+                covered = ctor_branch(c, st, pos, memo, depth, d->ctors[k]);
+            }
+        } else if (d && (d->rhs == EK_TYPE_RHS_RECORD
+                         || d->rhs == EK_TYPE_RHS_TUPLE)
+                   && (repr = ck_decl_repr(c, t)) && repr != t) {
+            st->cols[pos] = repr;
+            covered = covers_walk(c, st, pos, memo, depth + 1);
+        } else {
+            covered = scalar_branch(c, st, pos, memo, depth);
+        }
+        break;
     }
-    /* A scalar column: no constructors to split, so the literals name
-       single values and everything else wants a catch-all row. */
-    all = literal_column(c, memo, live, nr, scrut, ns, col, pd, np);
-    memo_put(c, memo, col, rows, sig, all);
-    return all;
+    default:
+        covered = scalar_branch(c, st, pos, memo, depth);
+        break;
+    }
+    memo_put(c, memo, st, covered);
+    return covered;
 }
 
 /* The contributing arms. A guarded arm contributes no coverage — its
    pattern may match and its guard still fall through — so it never
-   joins the live rows; the flag only drives the final-arm rule.
-   Returns the live count and sets guarded. */
+   joins the rows; the flag only drives the final-arm rule. */
 static size_t live_arms(const ek_node *const *arms, const int *contrib,
                         size_t narms, const ek_node **live, int *guarded)
 {
@@ -489,7 +857,7 @@ static size_t live_arms(const ek_node *const *arms, const int *contrib,
             *guarded = 1;
             continue;
         }
-        if (contrib[i] && nlive < 128) {
+        if (contrib[i]) {
             live[nlive++] = arms[i];
         }
     }
@@ -500,17 +868,23 @@ void ck_exhaust(ck_ctx *c, const ek_node *cs, const ek_type **scrut,
                 size_t nscrut, const ek_node *const *arms, const int *contrib,
                 size_t narms)
 {
-    const ek_node *live[128];
-    const ek_node *pats[128];
-    prod_pend pd[PROD_MAX_PEND];
+    const ek_node **live;
+    const ek_node ***rows;
+    ex_state st;
+    ex_memo memo;
     int guarded = 0, covered;
-    size_t i, nlive;
+    size_t i, j, nlive;
 
     if (c->oom) {
         return;
     }
     if (narms == 0) {
         ck_error(c, cs, "E-exhaust", "the case has no arm (Clause 7.7.2)");
+        return;
+    }
+    live = ek_arena_alloc(c->arena, narms * sizeof *live);
+    if (!live) {
+        c->oom = 1;
         return;
     }
     nlive = live_arms(arms, contrib, narms, live, &guarded);
@@ -520,29 +894,32 @@ void ck_exhaust(ck_ctx *c, const ek_node *cs, const ek_type **scrut,
                  "(Clause 7.7.3)");
         return;
     }
-    if (nlive == 0) {
-        /* Unreachable beyond allocation failure: every arm carries a
-           pattern, so the arms answer below. */
+    if (!nlive) {
         return;
     }
-    if (nscrut == 1) {
-        for (i = 0; i < nlive; i++) {
-            pats[i] = live[i]->u.arm.patterns.count
-                          ? live[i]->u.arm.patterns.data[0] : NULL;
-        }
-        covered = ck_covers(c, scrut[0], pats, nlive);
-    } else {
-        prod_table memo;
-        row_set full = {0, 0};
-
-        memset(&memo, 0, sizeof memo);
-        memset(pd, 0, sizeof pd);
-        for (i = 0; i < nlive; i++) {
-            full = set_add(full, i);
-        }
-        covered = covers_prod(c, &memo, live, nlive, scrut, nscrut, full, 0,
-                              pd, 0);
+    rows = ek_arena_alloc(c->arena, nlive * sizeof *rows);
+    if (!rows) {
+        c->oom = 1;
+        return;
     }
+    for (i = 0; i < nlive && !c->oom; i++) {
+        const ek_nlist *pats = &live[i]->u.arm.patterns;
+
+        rows[i] = ek_arena_alloc(c->arena, nscrut * sizeof **rows);
+        if (!rows[i]) {
+            c->oom = 1;
+            return;
+        }
+        for (j = 0; j < nscrut; j++) {
+            rows[i][j] = j < pats->count ? pats->data[j] : NULL;
+        }
+    }
+    memset(&memo, 0, sizeof memo);
+    st.cols = (const ek_type **)scrut;
+    st.ncols = nscrut;
+    st.rows = rows;
+    st.nrows = nlive;
+    covered = covers_walk(c, &st, 0, &memo, 0);
     if (!covered) {
         ck_error(c, cs, "E-exhaust",
                  "the case is not exhaustive (Clause 7.7.2)");
