@@ -165,12 +165,20 @@ static const ek_type *adt_cons(ck_ctx *c, const ek_node *p,
                  ck_type_name(c, scrut));
         return opaque_cons(c, p, scrut);
     }
-    if (ct->payload) {
+    if (ct->payload && p->u.cons.payload) {
         const ck_decl *d = ck_decl_of(c, ct->owner);
 
         if (d) {
             cons_payload(c, p, slots, ct, d, n);
         }
+    } else if (ct->payload) {
+        ck_error(c, p, "E-type-mismatch",
+                 "the constructor `%s` carries a payload, the pattern "
+                 "supplies none (Clause 7.7.1)", name->name);
+    } else if (p->u.cons.payload) {
+        ck_error(c, p->u.cons.payload, "E-type-mismatch",
+                 "the constructor `%s` takes no payload (Clause 7.7.1)",
+                 name->name);
     }
     return scrut;
 }

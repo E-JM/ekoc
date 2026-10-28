@@ -222,7 +222,8 @@ int ck_covers_ctor(ck_ctx *c, const ck_ctor *ct, const ek_type *scrut,
             if (pat_catchall(p)) {
                 payloads[np++] = NULL; /* a variable covers the payload */
             } else if (p->kind == EK_N_P_CONS
-                       && ck_pat_head(c, p) == ct->sym) {
+                       && ck_pat_head(c, p) == ct->sym
+                       && (p->u.cons.payload || !ct->payload)) {
                 payloads[np++] = p->u.cons.payload;
             }
         }

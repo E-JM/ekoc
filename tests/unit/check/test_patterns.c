@@ -521,13 +521,15 @@ static void rejected_alternative(void)
     EK_CHECK(!cfx_has_code(&f, "E-type-mismatch"));
     cfx_end(&f);
 
-    /* A different name set is a second, independent defect. */
+    /* A different name set is a second, independent defect, and the
+       payload-less alternative also misses the constructor's
+       payload. */
     cfx_begin(&f,
               "A: type = Both Int\n"
               "f: (b: A) -> Int =\n"
               "    case b:\n"
               "        Both n | Both -> 1\n");
-    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK_U64(cfx_errors(&f), 2);
     EK_CHECK(cfx_code_at_line(&f, "E-type-mismatch", 4));
     cfx_end(&f);
 }
@@ -710,6 +712,55 @@ static void literal_scrutinee(void)
     cfx_end(&f);
 }
 
+/* A constructor pattern carries a payload pattern exactly when the
+   constructor has one: a payload written for a zero-payload
+   constructor and a missing payload for a payload-carrying one are
+   mismatches, and a bare arm does not cover its constructor. */
+static void payload_arity(void)
+{
+    cfx f;
+
+    cfx_begin(&f,
+              "O: type = None | Some Int\n"
+              "f: (o: O) -> Int =\n"
+              "    case o:\n"
+              "        None x -> 0\n"
+              "        Some n -> n\n");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-type-mismatch", 4));
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "O: type = None | Some Int\n"
+              "f: (o: O) -> Int =\n"
+              "    case o:\n"
+              "        None -> 0\n"
+              "        Some -> 1\n");
+    EK_CHECK(cfx_code_at_line(&f, "E-type-mismatch", 5));
+    cfx_end(&f);
+
+    /* A bare arm over a payload-carrying constructor covers nothing:
+       the case stays non-exhaustive. */
+    cfx_begin(&f,
+              "O: type = None | Some Int\n"
+              "f: (o: O) -> Int =\n"
+              "    case o:\n"
+              "        Some -> 1\n"
+              "        None -> 0\n");
+    EK_CHECK(cfx_code_at_line(&f, "E-exhaust", 3));
+    cfx_end(&f);
+
+    /* The zero-payload form stays legal and complete. */
+    cfx_begin(&f,
+              "O: type = None | Some Int\n"
+              "f: (o: O) -> Int =\n"
+              "    case o:\n"
+              "        None -> 0\n"
+              "        Some n -> n\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+}
+
 int main(void)
 {
     variants();
@@ -724,5 +775,6 @@ int main(void)
     rejected_alternative();
     depth_and_scalar_coverage();
     literal_scrutinee();
+    payload_arity();
     return ek_test_report("check/patterns");
 }
