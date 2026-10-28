@@ -1,12 +1,12 @@
 #include "common.h"
 
-/* The compiler-provided rows of the namespace table: the List
-   signatures over the structural list, the dictionary and set
-   containers, the string and byte families, the Option and Result
-   combinators, ranges, the time and duration types, JSON, paths, the
-   scalar conversion, formatting, and machine-word rows, and the Out
-   capability rows, both spellings, and the closed namespaces — a name
-   no row carries is absent, not bridged. */
+/* The compiler-provided rows of the namespace table: the boolean
+   negation, the List signatures over the structural list, the
+   dictionary and set containers, the string and byte families, the
+   Option and Result combinators, ranges, the time and duration types,
+   JSON, paths, the scalar conversion, formatting, and machine-word
+   rows, and the Out capability rows, both spellings, and the closed
+   namespaces — a name no row carries is absent, not bridged. */
 
 static void list_rows(void)
 {
@@ -108,6 +108,50 @@ static void list_namespace_closed(void)
               "v: Int = ys.inspect()\n");
     EK_CHECK_U64(cfx_errors(&f), 1);
     EK_CHECK(cfx_code_at_line(&f, "E-nominal-mismatch", 4));
+    cfx_end(&f);
+}
+
+static void bool_rows(void)
+{
+    cfx f;
+
+    /* The one non-derived member, in both spellings. */
+    cfx_begin(&f,
+              "b: Bool = True\n"
+              "v: Bool = b.not()\n"
+              "w: Bool = Bool.not(b)\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    EK_CHECK(cfx_reading_at(&f, 2, EK_RD_NAMESPACE));
+    cfx_end(&f);
+
+    /* The row types the result: the binding rejects a non-Bool. */
+    cfx_begin(&f,
+              "b: Bool = True\n"
+              "n: Int = b.not()\n");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-nominal-mismatch", 2));
+    cfx_end(&f);
+
+    /* The row checks the argument. */
+    cfx_begin(&f,
+              "b: Bool = True\n"
+              "v: Bool = b.not(1)\n");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "b: Bool = True\n"
+              "v: Bool = b.not(\"x\")\n");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    cfx_end(&f);
+
+    /* The namespace is complete: a name no row carries is absent, not
+       bridged. */
+    cfx_begin(&f,
+              "b: Bool = True\n"
+              "v: Bool = b.bogus()\n");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-unbound-member", 2));
     cfx_end(&f);
 }
 
@@ -682,6 +726,7 @@ int main(void)
     list_rows();
     list_rows_types();
     list_namespace_closed();
+    bool_rows();
     ints_rows();
     scalar_completion();
     out_rows();

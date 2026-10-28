@@ -239,6 +239,11 @@ static const char *namespace_of(const ek_type *t)
 /* The members the compiler supplies when no declaration owns the
    name. */
 static const ns_row rows[] = {
+    /* The boolean namespace: negation is the one non-derived member;
+       the logical operators are sugar for `if`. */
+    {"Bool", "not", SIG_FN(EK_ARROW_PURE, SIG_STD("Bool"),
+                           SIG_STD("Bool"))},
+
     {"Float", "add", SIG_FN(EK_ARROW_PURE, SIG_STD("Float"),
                             SIG_STD("Float"), SIG_STD("Float"))},
     {"Float", "div", SIG_FN(EK_ARROW_PURE, SIG_STD("Float"),
@@ -963,6 +968,7 @@ static const ns_row rows[] = {
        rows above carry every member of Annex C.9 (Clauses 7.9.1,
        10.8). */
     {"Args", NULL, NULL},
+    {"Bool", NULL, NULL},
     {"Bytes", NULL, NULL},
     {"Char", NULL, NULL},
     {"Clock", NULL, NULL},
