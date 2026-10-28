@@ -192,15 +192,15 @@ const ek_type *ck_ctor_type(ck_ctx *c, const ek_node *n,
                      "instantiation; an expected type determines it "
                      "(Clause 7.6.4)", ref->symbol->name);
         }
-        return ck_ivar(c);
+        return ck_opaque(c);
     }
     sel = ck_ctor_select(c, n, ref, expected);
     if (!sel.sym) {
-        return ck_ivar(c);
+        return ck_opaque(c);
     }
     if (sel.sym->decl == NULL) {
         /* A std placeholder: opaque, conforming into an anchor. */
-        const ek_type *iv = ck_ivar(c);
+        const ek_type *iv = ck_opaque(c);
 
         if (expected) {
             ck_conforms(c, iv, expected, 1);
@@ -212,7 +212,7 @@ const ek_type *ck_ctor_type(ck_ctx *c, const ek_node *n,
     }
     ct = ck_ctor_of(c, sel.sym);
     if (!ct || !ct->owner) {
-        return ck_ivar(c);
+        return ck_opaque(c);
     }
     if (exp && exp->kind == EK_T_IVAR) {
         /* An undetermined expectation: the reference supplies fresh

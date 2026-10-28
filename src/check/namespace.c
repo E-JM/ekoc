@@ -127,7 +127,7 @@ static const ek_type *build(ck_ctx *c, const ns_sig *s, const ek_type **slots,
     case NS_VAR:
         return s->slot < (int)nslots && slots[s->slot]
                    ? slots[s->slot]
-                   : (slots[s->slot] = ck_ivar(c));
+                   : (slots[s->slot] = ck_opaque(c));
     case NS_STD:
         if (strcmp(s->std, "Never") == 0) {
             return ck_never(c); /* the bottom type is no lookup */
@@ -135,7 +135,7 @@ static const ek_type *build(ck_ctx *c, const ns_sig *s, const ek_type **slots,
         return ck_std_type(c, s->std);
     case NS_CAP:
         sym = cap_sym(c, s->std);
-        return sym ? ck_nominal(c, sym, NULL, 0) : ck_ivar(c);
+        return sym ? ck_nominal(c, sym, NULL, 0) : ck_opaque(c);
     case NS_CAP1:
         sym = cap_sym(c, s->std);
         {
@@ -146,7 +146,7 @@ static const ek_type *build(ck_ctx *c, const ns_sig *s, const ek_type **slots,
                 return ck_ivar(c);
             }
             args[0] = build(c, s->arg, slots, nslots);
-            return sym ? ck_nominal(c, sym, args, 1) : ck_ivar(c);
+            return sym ? ck_nominal(c, sym, args, 1) : ck_opaque(c);
         }
     case NS_UNIT:
         return ck_unit(c);
@@ -165,7 +165,7 @@ static const ek_type *build(ck_ctx *c, const ns_sig *s, const ek_type **slots,
                 return ck_ivar(c);
             }
             args[0] = a;
-            return sym ? ck_nominal(c, sym, args, 1) : ck_ivar(c);
+            return sym ? ck_nominal(c, sym, args, 1) : ck_opaque(c);
         }
     case NS_RESULT:
         sym = ck_std_symbol(c, "Result");
@@ -178,8 +178,8 @@ static const ek_type *build(ck_ctx *c, const ns_sig *s, const ek_type **slots,
                 return ck_ivar(c);
             }
             args[0] = build(c, s->arg, slots, nslots);
-            args[1] = perr ? ck_nominal(c, perr, NULL, 0) : ck_ivar(c);
-            return sym ? ck_nominal(c, sym, args, 2) : ck_ivar(c);
+            args[1] = perr ? ck_nominal(c, perr, NULL, 0) : ck_opaque(c);
+            return sym ? ck_nominal(c, sym, args, 2) : ck_opaque(c);
         }
     case NS_APP1:
         sym = ck_std_symbol(c, s->std);
@@ -191,7 +191,7 @@ static const ek_type *build(ck_ctx *c, const ns_sig *s, const ek_type **slots,
                 return ck_ivar(c);
             }
             args[0] = build(c, s->arg, slots, nslots);
-            return sym ? ck_nominal(c, sym, args, 1) : ck_ivar(c);
+            return sym ? ck_nominal(c, sym, args, 1) : ck_opaque(c);
         }
     case NS_APP2:
         sym = ck_std_symbol(c, s->std);
@@ -204,13 +204,13 @@ static const ek_type *build(ck_ctx *c, const ns_sig *s, const ek_type **slots,
             }
             args[0] = build(c, s->arg, slots, nslots);
             args[1] = build(c, s->arg2, slots, nslots);
-            return sym ? ck_nominal(c, sym, args, 2) : ck_ivar(c);
+            return sym ? ck_nominal(c, sym, args, 2) : ck_opaque(c);
         }
     case NS_DICT:
         return ck_dict(c, build(c, s->arg, slots, nslots),
                        build(c, s->arg2, slots, nslots));
     default:
-        return ck_ivar(c);
+        return ck_opaque(c);
     }
 }
 
@@ -1136,6 +1136,7 @@ void ck_cap_schemes(ck_ctx *c)
                     held = ck_mono(c, t);
                     if (held) {
                         *held = ck_generalize(c, t);
+                        held->bridge = 1;
                     }
                     ck_map_put(c, &c->schemes, sym, held);
                 }

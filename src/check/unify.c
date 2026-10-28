@@ -58,12 +58,21 @@ int ck_occurs(const ek_type *v, const ek_type *t)
 
 int ck_bind(ck_ctx *c, const ek_type *v, const ek_type *t)
 {
-    (void)c;
     if (!v || !t) {
         return 1;
     }
     if (v == t || ck_occurs(v, t)) {
         return 0;
+    }
+    /* A merge keeps the bridge mark: the surviving slot answers for
+       both readings, and opacity never washes out. */
+    if (v->kind == EK_T_IVAR && t->kind == EK_T_IVAR) {
+        int vo = ck_ivar_opaque(c, v);
+        int to = ck_ivar_opaque(c, t);
+
+        if (vo != to) {
+            ck_map_put(c, &c->opaque, vo ? t : v, (const void *)1);
+        }
     }
     ((ek_type *)v)->u.ivar.bound = t;
     return 1;

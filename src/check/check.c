@@ -156,6 +156,91 @@ static void check_module(ck_ctx *c, const ek_node *mod)
     }
 }
 
+/* The first plain inference variable of a type. A rigid variable and
+   a bridge-marked one are legal residents; a plain one that survived
+   the module's checking was never determined. */
+static const ek_type *undetermined_in(ck_ctx *c, const ek_type *t)
+{
+    size_t i;
+
+    t = ck_prune(t);
+    if (!t) {
+        return NULL;
+    }
+    if (t->kind == EK_T_IVAR) {
+        return ck_ivar_opaque(c, t) ? NULL : t;
+    }
+    switch (t->kind) {
+    case EK_T_NOMINAL:
+        for (i = 0; i < t->u.nominal.argc; i++) {
+            const ek_type *v = undetermined_in(c, t->u.nominal.args[i]);
+
+            if (v) {
+                return v;
+            }
+        }
+        return NULL;
+    case EK_T_LIST:
+        return undetermined_in(c, t->u.list.elem);
+    case EK_T_DICT: {
+        const ek_type *v = undetermined_in(c, t->u.dict.key);
+
+        return v ? v : undetermined_in(c, t->u.dict.val);
+    }
+    case EK_T_TUPLE:
+        for (i = 0; i < t->u.tuple.count; i++) {
+            const ek_type *v = undetermined_in(c, t->u.tuple.items[i]);
+
+            if (v) {
+                return v;
+            }
+        }
+        return NULL;
+    case EK_T_RECORD:
+        for (i = 0; i < t->u.record.count; i++) {
+            const ek_type *v =
+                undetermined_in(c, t->u.record.fields[i].type);
+
+            if (v) {
+                return v;
+            }
+        }
+        return NULL;
+    case EK_T_FN:
+        for (i = 0; i < t->u.fn.count; i++) {
+            const ek_type *v = undetermined_in(c, t->u.fn.params[i]);
+
+            if (v) {
+                return v;
+            }
+        }
+        return undetermined_in(c, t->u.fn.result);
+    default:
+        return NULL;
+    }
+}
+
+/* One diagnostic per surviving plain inference variable, at the
+   first row of the module's slice that shows it. */
+static void ck_undetermined(ck_ctx *c, size_t from)
+{
+    ck_map seen;
+    size_t i;
+
+    memset(&seen, 0, sizeof seen);
+    for (i = from; i < c->nrows && !c->oom; i++) {
+        const ek_type *v = undetermined_in(c, c->rows[i].type);
+
+        if (v && !ck_map_get(&seen, v)) {
+            ck_map_put(c, &seen, v, (const void *)1);
+            ck_error(c, c->rows[i].node, "E-undetermined",
+                     "the type %s keeps a variable the arguments and "
+                     "the expected type never determine (Clause 7.6.4)",
+                     ck_type_name(c, c->rows[i].type));
+        }
+    }
+}
+
 ek_check_result ek_check(ek_resolve_result in, ek_arena *arena,
                          ek_diag *diag)
 {
@@ -198,6 +283,7 @@ ek_check_result ek_check(ek_resolve_result in, ek_arena *arena,
     c.locals = NULL;
     for (i = 0; i < in.module_count && !c.oom; i++) {
         const ek_node *mod = in.modules[i].ast;
+        size_t from = c.nrows;
 
         if (!mod || mod->kind != EK_N_MODULE) {
             continue;
@@ -205,6 +291,7 @@ ek_check_result ek_check(ek_resolve_result in, ek_arena *arena,
         c.cur = &in.modules[i];
         check_module(&c, mod);
         ck_externs(&c);
+        ck_undetermined(&c, from);
         c.locals = NULL;
     }
     if (c.nrows) {

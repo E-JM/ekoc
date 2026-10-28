@@ -128,7 +128,7 @@ const ek_type *ck_case(ck_ctx *c, const ek_node *e, const ek_type *expected)
         return expected;
     }
     if (!nsc) {
-        scrut[0] = ck_ivar(c); /* malformed case; patterns bind loosely */
+        scrut[0] = ck_opaque(c); /* malformed case; patterns bind loosely */
     }
     for (i = 0; i < nsc; i++) {
         scrut[i] = ck_expr(c, e->u.caseexpr.scrutinees.data[i], NULL);

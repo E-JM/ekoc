@@ -212,6 +212,24 @@ const ek_type *ck_ivar(ck_ctx *c)
     return t;
 }
 
+/* A bridge variable: it stands for a type the compiler cannot see,
+   and staying undetermined is its legal resting state. */
+const ek_type *ck_opaque(ck_ctx *c)
+{
+    const ek_type *t = ck_ivar(c);
+
+    if (t && !c->oom) {
+        ck_map_put(c, &c->opaque, t, (const void *)1);
+    }
+    return t;
+}
+
+int ck_ivar_opaque(const ck_ctx *c, const ek_type *t)
+{
+    return t && t->kind == EK_T_IVAR && c->opaque.cap
+        && ck_map_get(&c->opaque, t) != NULL;
+}
+
 /* The kind-valued leaves: `_` and `Never`, the unit and bottom types
    of the language. */
 static const ek_type *ck_leaf(ck_ctx *c, ek_type_kind kind)

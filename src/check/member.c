@@ -368,7 +368,7 @@ static const ek_type *derive_json(ck_ctx *c, const ek_node *at,
     perr = ck_std_type(c, "ParseError");
     result = ck_std_symbol(c, "Result");
     if (!result || !perr) {
-        return ck_ivar(c);
+        return ck_opaque(c);
     }
     {
         const ek_type **args = ek_arena_alloc(c->arena, 2 * sizeof *args);
@@ -465,14 +465,14 @@ static const ek_type *no_member(ck_ctx *c, const ek_node *at,
                                 const ek_type *r, const char *name)
 {
     if (ck_service_name(name)) {
-        return ck_ivar(c);
+        return ck_opaque(c);
     }
     /* A namespace the compiler rows complete has no opaque names
        left; every other std namespace keeps the bridge. */
     if (!std_namespace(r) || ck_ns_owned(r)) {
         absent(c, at, r, name);
     }
-    return ck_ivar(c);
+    return ck_opaque(c);
 }
 
 /* The readings over a declared receiver: its representation's fields,
@@ -642,7 +642,7 @@ static const ek_type *link_type(ck_ctx *c, const ek_node *at,
     if (!r || r->kind == EK_T_IVAR || r->kind == EK_T_TVAR) {
         *rd = EK_RD_UNKNOWN;
     }
-    return ck_ivar(c);
+    return ck_opaque(c);
 }
 
 /* A bare x.f is a field access. */

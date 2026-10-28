@@ -189,8 +189,8 @@ static const ek_type *opaque_cons(ck_ctx *c, const ek_node *p,
                                   const ek_type *scrut)
 {
     if (p->u.cons.payload) {
-        const ek_type *whole = ck_ivar(c);
-        const ek_type *pl = ck_ivar(c);
+        const ek_type *whole = ck_opaque(c);
+        const ek_type *pl = ck_opaque(c);
 
         ck_conforms(c, scrut, whole, 0);
         ck_pattern(c, p->u.cons.payload, pl);
@@ -316,17 +316,17 @@ static const ek_type *opaque_pattern(ck_ctx *c, const ek_node *p)
         const char *field = pat_field(item, &sub);
 
         if (field && sub && sub != item) {
-            ck_pattern(c, sub, ck_ivar(c));
+            ck_pattern(c, sub, ck_opaque(c));
         } else if (item->kind == EK_N_P_VAR && item->u.path.count == 1) {
-            ck_scope_bind(c, item->u.path.data[0], ck_ivar(c));
+            ck_scope_bind(c, item->u.path.data[0], ck_opaque(c));
         } else if (item->kind != EK_N_P_FIELD) {
-            ck_pattern(c, item, ck_ivar(c));
+            ck_pattern(c, item, ck_opaque(c));
         }
     }
     if (p->u.p_brace.rest_name) {
-        ck_scope_bind(c, p->u.p_brace.rest_name, ck_ivar(c));
+        ck_scope_bind(c, p->u.p_brace.rest_name, ck_opaque(c));
     }
-    return ck_ivar(c);
+    return ck_opaque(c);
 }
 
 static const ek_type *brace_pattern(ck_ctx *c, const ek_node *p,

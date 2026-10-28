@@ -23,7 +23,7 @@ static const ek_type *call_opaque(ck_ctx *c, const ek_node *e,
     const ek_type **ps = NULL;
     /* A bottom callee does not return: the call is `Never`; anything
        else synthesizes opaquely. */
-    const ek_type *ret = ck_is_bottom(f) ? ck_never(c) : ck_ivar(c);
+    const ek_type *ret = ck_is_bottom(f) ? ck_never(c) : ck_opaque(c);
     const ek_type *built;
     size_t i;
 
@@ -40,14 +40,14 @@ static const ek_type *call_opaque(ck_ctx *c, const ek_node *e,
             /* A fresh expectation per argument: literals and
                composites stay opaque under it (the opacity rule). */
             nodes[off + i] = args->data[i];
-            ps[off + i] = ck_expr(c, args->data[i], ck_ivar(c));
+            ps[off + i] = ck_expr(c, args->data[i], ck_opaque(c));
             types[off + i] = ps[off + i];
         }
         if (implicit) {
             size_t slot = nargs - 1;
 
             nodes[slot] = NULL;
-            ps[slot] = ck_ivar(c);
+            ps[slot] = ck_opaque(c);
             types[slot] = ps[slot];
         }
     }
@@ -368,7 +368,7 @@ const ek_type *ck_call(ck_ctx *c, const ek_node *e, const ek_type *expected)
     c->invert_call = 0;
     if (implicit) {
         c->invert_fn = NULL;
-        c->invert_cb = ck_ivar(c);
+        c->invert_cb = ck_opaque(c);
     }
     if (callee && callee->kind == EK_N_NAME) {
         /* A head the resolver classified; a compiler service carries a
@@ -458,7 +458,7 @@ static void lambda_params(ck_ctx *c, const ek_node *params,
         names[i] = p->kind == EK_N_NAME && p->u.path.count == 1
                        && strcmp(p->u.path.data[0], "_") != 0
                    ? p->u.path.data[0] : NULL;
-        ps[i] = pe && i < pe->u.fn.count ? pe->u.fn.params[i] : ck_ivar(c);
+        ps[i] = pe && i < pe->u.fn.count ? pe->u.fn.params[i] : ck_opaque(c);
     }
 }
 
@@ -534,9 +534,9 @@ const ek_type *ck_lambda(ck_ctx *c, const ek_node *e, const ek_type *expected)
 static const ek_type *apply_opaque(ck_ctx *c, const ek_node *e,
                                    const ek_type *expected)
 {
-    const ek_type *iv = ck_ivar(c);
+    const ek_type *iv = ck_opaque(c);
 
-    ck_expr(c, e->u.pair.b, ck_ivar(c));
+    ck_expr(c, e->u.pair.b, ck_opaque(c));
     if (expected) {
         ck_conforms(c, iv, expected, 1);
     }
@@ -586,7 +586,7 @@ static const ek_type *ctor_apply(ck_ctx *c, const ek_node *e,
         for (i = 0; i < nargs; i++) {
             ck_expr(c, args[i], NULL);
         }
-        return ck_ivar(c);
+        return ck_opaque(c);
     }
     if (nargs != want) {
         ck_error(c, e, "E-call-arity",
@@ -628,7 +628,7 @@ static const ek_type *apply_candidates(ck_ctx *c, const ek_node *e,
     const ek_type *t;
 
     if (!sel.sym) {
-        const ek_type *iv = ck_ivar(c);
+        const ek_type *iv = ck_opaque(c);
 
         ck_expr(c, e->u.pair.b, NULL);
         ck_row(c, e, iv, EK_RD_NONE);

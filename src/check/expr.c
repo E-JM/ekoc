@@ -126,11 +126,11 @@ const ek_type *ck_type_of(ck_ctx *c, const ek_symbol *sym)
     ck_scheme *s;
 
     if (!sym) {
-        return ck_ivar(c);
+        return ck_opaque(c);
     }
     s = scheme_of(c, sym);
     if (!s || !s->type) {
-        return ck_ivar(c); /* unannotated interface rows: opacity */
+        return ck_opaque(c); /* unannotated interface rows: opacity */
     }
     return ck_instantiate(c, s);
 }
@@ -157,7 +157,7 @@ static const ek_type *name_type(ck_ctx *c, const ek_node *n,
                     return ck_instantiate(c, s);
                 }
             }
-            return ck_ivar(c);
+            return ck_opaque(c);
         case EK_SYM_FUNC:
         case EK_SYM_EXTERN:
         case EK_SYM_NAMESPACE:
@@ -167,7 +167,7 @@ static const ek_type *name_type(ck_ctx *c, const ek_node *n,
             /* A Pascal head in a chain: the std placeholder types
                carry their symbol, user types always do. */
             return ref->symbol ? ck_nominal(c, ref->symbol, NULL, 0)
-                               : ck_ivar(c);
+                               : ck_opaque(c);
         case EK_SYM_EXTERNAL:
             if (ref->symbol && ref->symbol->kind == EK_SYM_TYPE) {
                 return ck_nominal(c, ref->symbol, NULL, 0);
@@ -175,17 +175,17 @@ static const ek_type *name_type(ck_ctx *c, const ek_node *n,
             if (ref->ncands) {
                 return ck_ctor_type(c, n, ref, expected);
             }
-            return ck_ivar(c);
+            return ck_opaque(c);
         case EK_SYM_CONSTRUCTOR:
             return ck_ctor_type(c, n, ref, expected);
         default:
-            return ck_ivar(c); /* modules, externals, members: opacity */
+            return ck_opaque(c); /* modules, externals, members: opacity */
         }
     }
     {
         const ek_type *t = name ? ck_scope_get(c, name) : NULL;
 
-        return t ? t : ck_ivar(c);
+        return t ? t : ck_opaque(c);
     }
 }
 

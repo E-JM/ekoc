@@ -75,9 +75,9 @@ static void bind_brace(ck_ctx *c, const ek_node *pat, const ek_type *t)
         }
         if (item->kind == EK_N_P_FIELD) {
             bind_pattern(c, item->u.p_field.pattern,
-                         ft ? ft : ck_ivar(c), NULL);
+                         ft ? ft : ck_opaque(c), NULL);
         } else {
-            ck_scope_bind(c, field, ft ? ft : ck_ivar(c));
+            ck_scope_bind(c, field, ft ? ft : ck_opaque(c));
         }
     }
 }
@@ -108,7 +108,7 @@ static void bind_pattern(ck_ctx *c, const ek_node *pat, const ek_type *t,
         for (i = 0; i < pat->u.kids.count; i++) {
             const ek_type *ct = p && p->kind == EK_T_TUPLE
                                     && i < p->u.tuple.count
-                                ? p->u.tuple.items[i] : ck_ivar(c);
+                                ? p->u.tuple.items[i] : ck_opaque(c);
 
             bind_pattern(c, pat->u.kids.data[i], ct, NULL);
         }
@@ -207,7 +207,7 @@ static void bind_invert(ck_ctx *c, const ek_node *pat, const ek_type *cb,
     }
     bind_pattern(c, pat,
                  f && f->kind == EK_T_FN && *idx < f->u.fn.count
-                     ? f->u.fn.params[*idx] : ck_ivar(c),
+                     ? f->u.fn.params[*idx] : ck_opaque(c),
                  NULL);
     (*idx)++;
 }
@@ -478,7 +478,7 @@ static const ek_type *ck_annotated_decl(ck_ctx *c, const ek_node *m,
             if (p->u.t_field.name && strcmp(p->u.t_field.name, "_") != 0) {
                 ck_scope_bind(c, p->u.t_field.name,
                               t && t->kind == EK_T_FN && i < t->u.fn.count
-                                  ? t->u.fn.params[i] : ck_ivar(c));
+                                  ? t->u.fn.params[i] : ck_opaque(c));
             }
         }
         ck_expr(c, body, t && t->kind == EK_T_FN ? t->u.fn.result : t);

@@ -17,7 +17,7 @@ void ck_prebind(ck_ctx *c)
 
         if ((sym->kind == EK_SYM_FUNC || sym->kind == EK_SYM_EXTERN)
             && !sym->type && !ck_map_get(&c->schemes, sym)) {
-            ck_map_put(c, &c->schemes, sym, ck_mono(c, ck_ivar(c)));
+            ck_map_put(c, &c->schemes, sym, ck_mono(c, ck_opaque(c)));
         }
     }
 }

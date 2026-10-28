@@ -83,7 +83,7 @@ static const ek_type *type_name(ck_ctx *c, const ek_node *t,
     if (is_word_name(n0)) {
         return ck_std_type(c, n0);
     }
-    return ck_ivar(c); /* the placeholder std bridge */
+    return ck_opaque(c); /* the placeholder std bridge */
 }
 
 /* A type-position name of one or two path segments. */
@@ -113,7 +113,7 @@ static const ek_type *elab_name(ck_ctx *c, const ek_node *t, ck_tvars *tv)
             ck_error(c, t, "E-name-case",
                      "the type name `%s` is not PascalCase "
                      "(Clause 5.5.2)", n1);
-            out = ck_ivar(c);
+            out = ck_opaque(c);
         } else if (ck_ref_at(c, t, EK_SYM_TYPE, &ref)) {
             if (ref->symbol && type_arity(c, ref->symbol)) {
                 ck_error(c, t, "E-type-arity",
@@ -122,9 +122,9 @@ static const ek_type *elab_name(ck_ctx *c, const ek_node *t, ck_tvars *tv)
                          type_arity(c, ref->symbol));
             }
             out = ref->symbol ? ck_nominal(c, ref->symbol, NULL, 0)
-                              : ck_ivar(c);
+                              : ck_opaque(c);
         } else {
-            out = ck_ivar(c);
+            out = ck_opaque(c);
         }
     }
     if (!out && c->oom) {
@@ -173,7 +173,7 @@ static const ek_type *elab_apply(ck_ctx *c, const ek_node *t, ck_tvars *tv)
             args[i] = ck_elaborate(c, t->u.t_apply.args.data[i], tv);
         }
     }
-    return sym ? ck_nominal(c, sym, args, n) : ck_ivar(c);
+    return sym ? ck_nominal(c, sym, args, n) : ck_opaque(c);
 }
 
 /* The parameter types and the result of a function type; an elided
@@ -294,7 +294,7 @@ const ek_type *ck_elaborate(ck_ctx *c, const ek_node *t, ck_tvars *tv)
         out = ck_elaborate(c, t->u.t_field.type, tv);
         break;
     default:
-        out = ck_ivar(c);
+        out = ck_opaque(c);
         break;
     }
     if (!out && c->oom) {

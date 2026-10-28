@@ -20,11 +20,13 @@ typedef struct {
 } ck_map;
 
 /* A generalized binding type: the annotation plus its rigid
-   variables. */
+   variables. A bridge scheme is compiler-injected machinery: its
+   variables' undetermined resting state is opacity, not an error. */
 typedef struct {
     const ek_type *type;
     const ek_type **vars; /* EK_T_TVAR nodes */
     size_t nvars;
+    int bridge;
 } ck_scheme;
 
 /* A constructor's payload in its declaration's binders. */
@@ -63,6 +65,8 @@ typedef struct {
     const ek_surface *root; /* in->modules[0], the entry module */
     const ek_surface *cur;  /* the module whose members are checked */
     unsigned next_ivar;
+    ck_map opaque;   /* bridge-marked inference variables */
+    int inst_bridge; /* the scheme being instantiated is injected */
     ck_map types;    /* intern table: candidate node -> canonical */
     ck_map schemes;  /* ek_symbol -> ck_scheme */
     ck_map decls;    /* TYPE symbol -> ck_decl */
@@ -121,6 +125,8 @@ const void *ck_map_get(const ck_map *m, const void *key);
 ek_type *ck_fresh(ck_ctx *c, ek_type_kind kind); /* uninterned */
 const ek_type *ck_intern(ck_ctx *c, const ek_type *t); /* canonical */
 const ek_type *ck_ivar(ck_ctx *c);
+const ek_type *ck_opaque(ck_ctx *c); /* a bridge-marked inference variable */
+int ck_ivar_opaque(const ck_ctx *c, const ek_type *t);
 const ek_type *ck_unit(ck_ctx *c);
 const ek_type *ck_never(ck_ctx *c);
 int ck_is_bottom(const ek_type *t); /* the `Never` leaf */

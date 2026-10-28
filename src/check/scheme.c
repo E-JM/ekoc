@@ -97,7 +97,10 @@ ck_scheme ck_generalize(ck_ctx *c, const ek_type *t)
 }
 
 /* One variable becomes ONE inference variable, memoized per
-   instantiation, so a param and its result stay linked. */
+   instantiation, so a param and its result stay linked. A bridge
+   scheme's slots are opaque: the implementation the signature stands
+   for is not written, and staying undetermined is their resting
+   state. */
 static const ek_type *inst_leaf(ck_ctx *c, const ek_type *t,
                                 const ek_type **vars, size_t nvars,
                                 ck_map *memo)
@@ -111,7 +114,7 @@ static const ek_type *inst_leaf(ck_ctx *c, const ek_type *t,
             if (got) {
                 return got;
             }
-            got = ck_ivar(c);
+            got = c->inst_bridge ? ck_opaque(c) : ck_ivar(c);
             ck_map_put(c, memo, t, got);
             return got;
         }
@@ -352,6 +355,7 @@ const ek_type *ck_instantiate(ck_ctx *c, const ck_scheme *s)
         return s->type;
     }
     memset(&memo, 0, sizeof memo);
+    c->inst_bridge = s->bridge;
     return inst(c, s->type, s->vars, s->nvars, &memo);
 }
 

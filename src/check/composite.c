@@ -160,16 +160,16 @@ static const ek_type *composite_opaque(ck_ctx *c, const ek_node *e,
 
         if (item->kind == EK_N_COMPOSITE_ITEM) {
             if (item->u.pair.a && item->u.pair.a->kind != EK_N_NAME) {
-                ck_expr(c, item->u.pair.a, ck_ivar(c));
+                ck_expr(c, item->u.pair.a, ck_opaque(c));
             }
-            ck_expr(c, item->u.pair.b, ck_ivar(c));
+            ck_expr(c, item->u.pair.b, ck_opaque(c));
         }
     }
     if (!exp) {
         ck_error(c, e, "E-literal-expected",
                  "a composite literal never stands alone; it requires "
                  "an expected type or an annotation (Clause 7.5.3)");
-        return ck_ivar(c);
+        return ck_opaque(c);
     }
     return exp;
 }
