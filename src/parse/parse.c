@@ -428,10 +428,6 @@ void p_check_invert_pattern(p_ctx *c, const ek_node *pat)
     case EK_N_P_WILDCARD:
         return;
     case EK_N_P_VAR:
-        if (!p_is_snake(pat->u.path.data[0])) {
-            p_error(c, "E-invert-pattern", pat->line, pat->col,
-                    "`<-` binds only a snake_case name (Clause 6.3.4)");
-        }
         return;
     case EK_N_P_PAREN:
         for (i = 0; i < pat->u.kids.count; i++) {

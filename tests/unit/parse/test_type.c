@@ -101,6 +101,13 @@ static void brackets(void)
     EK_CHECK_STR(t->u.kids.data[0]->u.t_field.name, "name");
     pfx_end(&f);
 
+    /* A field name is snake_case. */
+    t = ann_of(&f, "[Name: String]");
+    EK_CHECK(pfx_errors(&f) > 0);
+    pfx_collect(&f);
+    EK_CHECK(pfx_has_code(&f, "E-name-case"));
+    pfx_end(&f);
+
     /* A one-element bracket is not a valid type. */
     t = ann_of(&f, "[Int]");
     EK_CHECK(pfx_errors(&f) > 0);

@@ -361,6 +361,11 @@ static ek_node *record_type(p_ctx *c, const ek_layout_token *open)
         }
         p_take(c); /* the field name */
         p_take(c); /* ':' */
+        if (!p_is_snake(name->tok.text)) {
+            p_error_tok(c, "E-name-case", name,
+                        "record field `%s` is not snake_case "
+                        "(Clause 5.5.2)", name->tok.text);
+        }
         field = p_node(c, EK_N_T_FIELD, name->line, name->col);
         if (!field) {
             return NULL;

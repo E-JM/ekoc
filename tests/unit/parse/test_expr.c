@@ -327,12 +327,19 @@ static void precedence_corners(void)
     EK_CHECK_U64(e->u.pair.b->u.wrap.inner->kind, EK_N_APPLY);
     pfx_end(&f);
 
-    /* A `case`/`if` is admitted as the whole juxtaposed argument;
-       only an operator operand must be parenthesized. */
+    /* The juxtaposed argument is an operand position: a `case` or
+       `if` there must be parenthesized. */
     e = expr_of(&f, "Ok if c: 1 else: 2");
+    EK_CHECK(pfx_errors(&f) > 0);
+    pfx_collect(&f);
+    EK_CHECK(pfx_msg_has(&f, "6.5.1"));
+    EK_CHECK_U64(e->kind, EK_N_APPLY);
+    pfx_end(&f);
+
+    e = expr_of(&f, "Ok (if c: 1 else: 2)");
     EK_CHECK_U64(pfx_errors(&f), 0);
     EK_CHECK_U64(e->kind, EK_N_APPLY);
-    EK_CHECK_U64(e->u.pair.b->kind, EK_N_IF);
+    EK_CHECK_U64(e->u.pair.b->kind, EK_N_PAREN);
     pfx_end(&f);
 }
 

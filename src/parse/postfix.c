@@ -97,6 +97,14 @@ ek_node *p_postfix(p_ctx *c)
                 continue;
             }
             if (p_apply_start(p_src_kind(t)) && cons_head(e)) {
+                if (p_src_kind(t) == EK_TOK_KW_IF
+                    || p_src_kind(t) == EK_TOK_KW_CASE) {
+                    /* The juxtaposition argument is an operand, and a
+                       block is not expected there. */
+                    p_error_tok(c, "E-syntax", t,
+                                "a `case` or `if` argument is "
+                                "parenthesized (Clause 6.5.1)");
+                }
                 e = apply_ctor(c, e);
                 continue;
             }
