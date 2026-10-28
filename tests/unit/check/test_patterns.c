@@ -657,6 +657,59 @@ static void depth_and_scalar_coverage(void)
     cfx_end(&f);
 }
 
+/* A string or character literal pattern sits at the scrutinee type:
+   against a scrutinee of any other visible type it is a mismatch at
+   the literal, while the matching std type and the numeric literals
+   stay as they were. */
+static void literal_scrutinee(void)
+{
+    cfx f;
+
+    cfx_begin(&f,
+              "f: (n: Int) -> Int =\n"
+              "    case n:\n"
+              "        \"a\" -> 0\n"
+              "        _ -> 1\n");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-type-mismatch", 3));
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "f: (c: Char) -> Int =\n"
+              "    case c:\n"
+              "        \"ab\" -> 0\n"
+              "        _ -> 1\n");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-type-mismatch", 3));
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "f: (n: Int) -> Int =\n"
+              "    case n:\n"
+              "        \'a\' -> 0\n"
+              "        _ -> 1\n");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-type-mismatch", 3));
+    cfx_end(&f);
+
+    /* A literal at its own type, in both directions, stays clean. */
+    cfx_begin(&f,
+              "f: (s: String) -> Int =\n"
+              "    case s:\n"
+              "        \"a\" -> 0\n"
+              "        _ -> 1\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "f: (c: Char) -> Int =\n"
+              "    case c:\n"
+              "        \'a\' -> 0\n"
+              "        _ -> 1\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+}
+
 int main(void)
 {
     variants();
@@ -670,5 +723,6 @@ int main(void)
     nested_payloads();
     rejected_alternative();
     depth_and_scalar_coverage();
+    literal_scrutinee();
     return ek_test_report("check/patterns");
 }

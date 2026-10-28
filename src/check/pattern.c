@@ -8,8 +8,16 @@
    payload. Or-patterns and the value binding shapes live in
    patbind.c. */
 
+/* The std type a string or character literal is placed at. */
+static const char *lit_std_name(const ek_node *lit)
+{
+    return lit->kind == EK_N_CHAR_LIT ? "Char" : "String";
+}
+
 /* A literal pattern is placed at the scrutinee type; against an
-   internally known composite it is a type error. */
+   internally known composite it is a type error, and a string or
+   character literal does not conform to a scrutinee of any other
+   visible type. */
 static const ek_type *lit_pattern(ck_ctx *c, const ek_node *p,
                                   const ek_type *scrut)
 {
@@ -22,6 +30,15 @@ static const ek_type *lit_pattern(ck_ctx *c, const ek_node *p,
     }
     if (lit) {
         ck_place(c, lit, scrut, neg);
+    }
+    if (lit && (lit->kind == EK_N_STRING_LIT || lit->kind == EK_N_CHAR_LIT)
+        && s && s->kind == EK_T_NOMINAL && s->u.nominal.sym
+        && !s->u.nominal.sym->decl
+        && !ck_is_std(s, lit_std_name(lit))) {
+        ck_error(c, lit, "E-type-mismatch",
+                 "a %s literal does not match %s (Clause 7.7.1)",
+                 lit->kind == EK_N_CHAR_LIT ? "character" : "string",
+                 ck_type_name(c, s));
     }
     if (s && (s->kind == EK_T_LIST || s->kind == EK_T_DICT
               || s->kind == EK_T_TUPLE || s->kind == EK_T_RECORD
