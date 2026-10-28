@@ -70,6 +70,7 @@ CHECK_SRC := \
 	src/check/exhaust_prod.c \
 	src/check/extern.c \
 	src/check/expr.c \
+	src/check/halt.c \
 	src/check/literal.c \
 	src/check/member.c \
 	src/check/namespace.c \
