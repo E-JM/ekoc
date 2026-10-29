@@ -23,6 +23,7 @@ This document applies to:
 - implementations of Eko hosts, including the command-line host and embedding
   hosts;
 - implementations of the Eko standard library;
+- implementations of Eko toolchains;
 - authors of Eko programs;
 - authors of Eko conformance tests.
 
@@ -81,9 +82,9 @@ Grammars in this document use the following EBNF notation:
 | `ε` | the empty production |
 | `(* ... *)` | a prose comment |
 
-The lexical grammar (Clause 5 and Annex A.1) consumes characters and produces
-tokens. The syntactic grammar (Clause 6 and Annex A.2) consumes tokens and
-produces syntax trees. The layout algorithm (Clause 6.2 and Annex A.3)
+The lexical grammar (Clause 5 and Annex A.2) consumes characters and produces
+tokens. The syntactic grammar (Clause 6 and Annex A.3) consumes tokens and
+produces syntax trees. The layout algorithm (Clause 6.2 and Annex A.4)
 inserts block boundaries between tokens.
 
 A grammar production defines the shape of a construct, not its indentation.

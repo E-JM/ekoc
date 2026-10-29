@@ -1,9 +1,13 @@
 # Annex F. Chinese Terminology
+
 ## F.1 Purpose
+
 本附录是信息性内容，不构成规范要求。它将 Clause 4 定义的术语、Clause 4.8 列出的符号，以及诊断与恐慌代码族整理为英中对照表，供中文读者查阅。英文术语具有权威性；中文译文只用于理解，术语的规范含义以 Clause 4 为准（Clause 1.4.5）。每行保留英文术语，以便全文检索。代码标识符、`ctype`、`Pure`、`C.In` 以及 E-/W-/P- 代码不翻译。第三列给出该术语的规范归属条款；代码的完整清单见 Annex B。各表按 Clause 4 的分组排列。
 
 ## F.2 Terms
+
 ### F.2.1 General and Lexical Terms
+
 | English term | 中文 | Clause |
 |---|---|---|
 | conforming implementation | 符合规范的实现 | Clause 2.1 |
@@ -36,6 +40,7 @@
 | arrow annotation | 箭头标注 | Clause 6.9.3 |
 
 ### F.2.2 Names and Modules
+
 | English term | 中文 | Clause |
 |---|---|---|
 | module | 模块 | Clause 7.2.1 |
@@ -54,6 +59,7 @@
 | resolution station | 解析站点 | Clause 7.4.3 |
 
 ### F.2.3 Types
+
 | English term | 中文 | Clause |
 |---|---|---|
 | type | 类型 | Clause 7.5.1 |
@@ -83,6 +89,7 @@
 | exhaustiveness | 穷尽性 | Clause 7.7.2 |
 
 ### F.2.4 Capabilities and Failure
+
 | English term | 中文 | Clause |
 |---|---|---|
 | world | 世界 | Clause 7.9.1 |
@@ -106,6 +113,7 @@
 | abort | 中止 | Clause 8.4.3 |
 
 ### F.2.5 Evaluation, Runtime, and Library
+
 | English term | 中文 | Clause |
 |---|---|---|
 | strict evaluation | 严格求值 | Clause 8.1.1 |
@@ -139,6 +147,7 @@
 | reserved symbol | 保留符号 | Clause 10.6 |
 
 ### F.2.6 Additional Technical Terms
+
 | English term | 中文 | Clause |
 |---|---|---|
 | layout / indentation level | 布局 / 缩进层级 | Clause 5.2, Clause 5.2.1 |
@@ -150,6 +159,7 @@
 | shim | C 垫片 | Clause 10.3.6 |
 
 ## F.3 Symbols
+
 | Symbol | 含义 | Clause |
 |---|---|---|
 | `_` | 单位类型、单位值、通配符、丢弃或私有名前缀，依位置而定 | Clause 7.5.4, Clause 7.3.1 |
@@ -168,15 +178,18 @@
 | `..=` | 范围构造，右端闭区间 | Clause 6.5.6 |
 
 ## F.4 Diagnostics
+
 诊断代码由 Annex B 统一规定；本表只给出中文释义，代码本身不翻译。E- 为编译期错误，W- 为警告，P- 为运行时恐慌代码。严重级别见 Clause 2.4；恐慌的中止语义见 Clause 8.4.2。代码一经发布即不复用、不重定义。
 
 ### F.4.1 Error Codes
+
 | Code | 含义 | Clause |
 |---|---|---|
 | `E-ctype-field` | `ctype` 字段不是机器字或嵌套 `ctype` | Clause 10.3.3 |
 | `E-cycle-import` | 循环导入 | Clause 7.2.4 |
 | `E-empty-slot` | 插值槽为空 | Clause 5.9.3 |
 | `E-exhaust` | 穷尽性匹配缺少分支 | Clause 7.7.2 |
+| `E-extern-arrow` | extern 签名出现开放箭头 `?`，无论是声明自身的箭头还是参数类型内部 | Clause 10.2.3 |
 | `E-extern-type` | extern 签名中的类型不在编组白名单内，或含类型变量/可变参数 | Clause 10.2.3, Clause 10.3.5 |
 | `E-instantiation-depth` | 泛型实例化不终止 | Clause 8.7.3 |
 | `E-json-shape` | 类型没有默认 JSON 同构形式 | Clause 9.9.3 |
@@ -191,12 +204,16 @@
 | `E-phantom` | 幻影参数或仅出现在结果中的变量 | Clause 7.6.2, Clause 7.6.5 |
 | `E-refutable-binding` | 值绑定位置出现可驳模式 | Clause 7.7.1 |
 | `E-reserved-symbol` | extern 声明引用保留符号 | Clause 10.6 |
+| `E-service-fixed` | 命名空间声明指向派生固定的服务：`inspect`、`to_json`、`from_json`、`with` | Clause 9.8.1, Clause 9.8.6, Clause 9.9.5 |
+| `E-service-signature` | 声明的 `show`、相等或排序服务没有采用其固定签名 | Clause 9.8.2, Clause 9.8.4, Clause 9.8.5 |
 | `E-shape-mismatch` | 形状不同，无法适配 | Clause 7.5.5 |
 | `E-tab` | 以制表符作为空白 | Clause 5.2.3 |
+| `E-undetermined` | 构造器引用没有唯一锚点：同名构造器有多个可见，且没有期望类型或 scrutinee 类型选定其一 | Clause 7.4.6 |
 | `E-unbound-name` | 名称在任何可见作用域中都没有声明 | Clause 7.4.2, Clause 7.4.6, Clause 9.1.2 |
 | `E-world-bit` | 世界位不一致，多写或少写 `!` | Clause 7.9.2 |
 
 ### F.4.2 Warning Codes
+
 | Code | 含义 | Clause |
 |---|---|---|
 | `W-deprecated` | 使用已弃用成员 | Clause 11.5 |
@@ -205,6 +222,7 @@
 | `W-unused` | 未使用的绑定或导入 | Clause 9.14.6 |
 
 ### F.4.3 Panic Codes
+
 | Code | 含义 | Clause |
 |---|---|---|
 | `P-panic` | `panic(msg)` 或标准库不变量违例 | Clause 8.4.2 |
@@ -214,6 +232,7 @@
 | `P-overflow` | 算术溢出 | Clause 7.8.4 |
 
 ## F.5 Translation Notes
+
 - 英文术语与条款正文具有权威性；中文译文是阅读辅助，不改变 Clause 4 的定义。`capability` 译“能力”，不译“权限”；`world` 译“世界”，`world bit` 译“世界位”，不译“效果位”。
 - `handle` 译“句柄”，`generation` 译“代次”而非“世代”，`dispatcher` 译“分派器”，`veneer` 译“嵌入薄层”，`scrutinee` 译“被匹配值”；`panic` 译“恐慌”但代码标识符保持原样，`abort` 译“中止”。
 - `nominal type` 采用“名义类型”（备选“标称类型”）；`constructor` 采用“构造子”（备选“构造器”）；`monomorphization` 采用“单态化”（备选“单形化”）；`token` 采用“词法单元”（备选“记号”）。`member` 在 Clause 4.2 与 Clause 4.3 中各有一个定义，本表以“成员（块内）”和“成员（类型命名空间）”区分。

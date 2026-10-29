@@ -1,7 +1,8 @@
 # 11. Implementation Requirements
 
-This clause states requirements on compilers, hosts, and toolchains. It is
-normative for implementations, not for the meaning of programs. No rule in this
+This clause states requirements on compilers, hosts, and toolchains
+(Clause 2.3). It is normative for implementations, not for the meaning of
+programs. No rule in this
 clause changes the meaning of a program, adds a requirement to a program, or
 alters the conformance of a program under Clause 2.2. The meaning of a program
 is fixed by Clauses 5 through 10; this clause fixes what an implementation MUST
@@ -16,7 +17,10 @@ A compiler release MUST contain:
 - the companion sources `lib/std/*.eko` (Clause 9.1.3).
 
 The capability module (Clause 9.1.1) is embedded in the compiler binary; it is
-not a release file.
+not a release file. Each companion source is both a release file and
+compiler-embedded source: `lib/std/time.eko` is the shipped companion, and
+`import std/time` answers even where the release directories are absent
+(Clause 9.1.3).
 
 The release MUST NOT contain derived artifacts: no interface files and no
 precompiled objects.
@@ -27,22 +31,26 @@ binary per host platform plus the library sources. Platform variance resides in
 the compiler and in the extern surface it provides (Clause 10.8); `std.eko` is
 target-independent.
 
-The compiler MUST embed the content hash of the `std.eko` with which it was
-released. If the `lib/std.eko` presented to the compiler has a different content
-hash, the compiler MUST refuse it with a diagnostic.
+The compiler MUST embed the content hash of the `std.eko` and of each companion
+source with which it was released. If a `lib/std.eko` or companion source
+presented to the compiler has a different content hash, the compiler MUST
+refuse it with a diagnostic.
 
-Neither surface has an override: the standard library and the capability
-module are fixed to the compiler release, and the content-hash refusal above
-is the whole rule.
+The standard library root and its companions have no override, and the
+content-hash refusal above is the whole rule for them. The capability module
+is inseparable from the compiler binary and has no distribution file to
+override.
 
 ## 11.2 Derived Cache
 
-The interface of `std` is derived from source on first use. It MUST be cached
-per machine and keyed by the compiler build identifier and the content hash of
-`std.eko`. The interface of the capability module is keyed by the compiler
-build identifier alone. The default cache directory is `~/.cache/eko/`. An implementation MAY choose
-another directory; the choice is implementation-defined and MUST be documented
-(Clause 2.5).
+The interface of `std` is derived from its source and the compiler-supplied
+rows on first use. It MUST be cached per machine and keyed by the compiler
+build identifier and the content hash of `std.eko`. Each companion's interface
+is derived and cached in the same way, keyed by the compiler build identifier
+and the content hash of its source. The interface of the capability module is
+keyed by the compiler build identifier alone. The default cache directory is
+`~/.cache/eko/`. An implementation MAY choose another directory; the choice is
+implementation-defined and MUST be documented (Clause 2.5).
 
 The cache is disposable. Deleting it MUST change nothing except the running
 time of the next build.
@@ -56,9 +64,9 @@ The derived interface MUST be target-independent. It MUST carry:
 - the bodies of generic functions, from which downstream monomorphization
   expands instances (Clause 8.7.1).
 
-Object code for standard-library functions MUST be generated lazily, per target,
-and only for the functions a program references. It MUST be cached by content
-hash and target.
+Object code for standard-library and companion functions MUST be generated
+lazily, per target, and only for the functions a program references. It MUST be
+cached by content hash and target.
 
 ## 11.3 Tooling Services
 
@@ -73,7 +81,11 @@ The toolchain MUST provide the following commands:
   comment, and the origin (Clause 5.4.2);
 - `eko doc -src <member>` prints the definition source of a member: the
   embedded source for a capability-module member, the file path and span for a
-  standard-library or companion member.
+  standard-library or companion member; a compiler-supplied row (Clause 9.1.1)
+  reports its compiler origin rather than a file path and span;
+- a test-runner entry point over the positive roots and the negative manifest
+  of Annex D (Clause D.6). Its command spelling is not specified, because
+  Annex D.6 fixes no command name.
 
 The compiler MUST be built as a library. Parsing, resolution, and checking MUST
 be one implementation, shared by the command line and by language tooling. A
@@ -99,11 +111,11 @@ rendering belong to the documentation toolchain.
 
 ## 11.4 Version Discipline
 
-The standard library and the capability module are versioned with the compiler
-(Clause 9.1.4).
+The standard library root, its companions, and the capability module are
+versioned with the compiler (Clause 9.1.4).
 
-The interface diff between two compiler versions, over both surfaces, is the
-library changelog and the compatibility verdict. The diff MUST report:
+The interface diff between two compiler versions, over all shipped surfaces, is
+the library changelog and the compatibility verdict. The diff MUST report:
 
 - members added;
 - members removed;
@@ -114,18 +126,21 @@ Because signature overloading does not exist (Clause 6.10), any signature
 change is breaking. Removing a member is breaking. Changing a world bit is
 breaking.
 
-Adding a member to a type namespace MUST be reported as breaking by default.
-Resolution station 2 precedes station 3 (Clause 7.4.3), so a new namespace
-member can capture receiver calls that previously resolved to a function of the
-calling module.
+Adding a member to a type namespace MUST be reported as breaking. Resolution
+station 2 precedes station 3 (Clause 7.4.3), so a new namespace member can
+capture receiver calls that previously resolved to a function of the calling
+module.
 
 ## 11.5 Documentation
 
-The signature inventory in Annex C MUST be generated: the standard-library
-parts from `std.eko` and the companion sources, and the capability surface
-(C.9) from the capability module's extracted interface, which the compiler MUST
-emit. It MUST be verified against this document in continuous integration.
-Annex C is normative; generation keeps it consistent with the shipped surface.
+The signature inventory in Annex C MUST be generated: the `std` root from
+`std.eko` and the compiler-supplied rows, the companion parts (C.13) from the
+companion sources such as `lib/std/time.eko` and their compiler-supplied rows
+(the two time parsers, `Time.parse` and `Duration.parse`), and the capability
+surface (C.9) from the capability module's extracted interface, which the
+compiler MUST emit.
+The toolchain MUST verify the generated inventory against this document. Annex
+C is normative; generation keeps it consistent with the shipped surface.
 
 Deprecation is a documentation-level convention: a `/// @deprecated` line on a
 binding plus the `W-deprecated` warning (Annex B.4). The compiler MUST issue the

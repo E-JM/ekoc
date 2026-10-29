@@ -46,18 +46,18 @@ condition that is neither an error nor a warning produces no diagnostic; the
 severity none denotes that case and is not the severity of an emitted
 diagnostic.
 
-A compiler MAY report additional warnings beyond the vocabulary of Annex B.4; such
-warnings are not part of this specification (Clause 2.4). A compiler MUST NOT
-report an additional diagnostic that rejects a conforming program
-(Clause 2.2).
+A compiler MAY report additional warnings beyond the vocabulary of Annex B.4;
+such warnings are not part of this specification (Clause 2.4). A compiler MUST
+NOT report an additional diagnostic that rejects a conforming program (Clause
+2.2).
 
 Bit diagnostics are always errors (Clause 7.9.2). A diagnostic that carries a
-code from Annex B.3 or Annex B.4 has the severity of its entry; every other diagnostic for
-a static violation has the severity error (Clause 2.4).
+code from Annex B.3 or Annex B.4 has the severity of its entry; every other
+diagnostic for a static violation has the severity error (Clause 2.4).
 
-A diagnostic is not a runtime report. A panic, an abort, and a native fault are
-reported by the mechanisms of Annex B.5 and Annex B.6, not by an `E-` or `W-` code
-(Clause 8.4.2, Clause 8.4.3).
+A diagnostic is not a runtime report. A panic, an abort, and a native fault
+are reported by the mechanisms of Annex B.5 and Annex B.6, not by an `E-` or
+`W-` code (Clause 8.4.2, Clause 8.4.3).
 
 ## B.2 Message Style
 
@@ -87,7 +87,8 @@ E-world-bit: body is world-touching but the declared arrow is pure
 
 The wording of an entry is fixed when the entry is published. A later revision
 of this document MAY reword a message, but it MUST NOT change the code or the
-meaning of the entry (Annex B.3). Documentation, issues, and tests cite the code.
+meaning of the entry (Annex B.3). Documentation, issues, and tests cite the
+code.
 
 ## B.3 Error Codes
 
@@ -101,10 +102,10 @@ freezes it. This annex is the authority for the specified codes.
 
 A conforming compiler MUST use the code in the table below for the condition
 described by the entry. It MUST NOT use a listed code for a different
-condition. A static violation for which this annex defines no code is reported
-with an error diagnostic that identifies the violated clause (Clause 2.7); the
-diagnostic carries an `E-` code chosen by the implementation that does not
-collide with a code in the table.
+condition. A violation, syntactic or static, for which this annex defines no
+code is reported with an error diagnostic that identifies the violated clause
+(Clauses 2.4, 2.7); the diagnostic carries an `E-` code chosen by the
+implementation that does not collide with a code in the table.
 
 | Code | Condition | Clause |
 |---|---|---|
@@ -116,6 +117,7 @@ collide with a code in the table.
 | `E-namespace-owner` | a type-namespace member is declared outside the module that owns the type | Clause 7.4.5 |
 | `E-name-conflict` | two names conflict at one level, two imported module stems collide, or a declaration names the language's `Never` | Clause 7.4.6, Clause 7.5.4 |
 | `E-unbound-name` | a name resolves to no declaration in any visible scope, including a constructor name with no visible constructor | Clause 7.4.2, Clause 7.4.6, Clause 9.1.2 |
+| `E-undetermined` | a constructor reference has no unique anchor: several constructors of that name are visible and no expected type or scrutinee type selects one | Clause 7.4.6 |
 | `E-nominal-mismatch` | a nominal type does not flow into a different nominal type | Clause 7.5.2 |
 | `E-shape-mismatch` | a nominal type does not have the same shape as the anonymous target | Clause 7.5.5 |
 | `E-phantom` | a type variable is phantom or occurs only in the result | Clause 7.6.2, Clause 7.6.5 |
@@ -201,8 +203,9 @@ a panic call sets no world bit (Clause 9.2.3).
 
 The message column gives the fixed text of the message. A message supplied by
 the program is printed verbatim (Annex B.6). An assert failure's message is
-std source; its operands appear in their `inspect` forms (Clause 9.8.3). `P-overflow` covers `Int.abs(Int.min)` (Clause 9.6.1)
-and time arithmetic outside the nanosecond domain (Clause 9.7.5).
+std source; its operands appear in their `inspect` forms (Clause 9.8.3).
+`P-overflow` covers `Int.abs(Int.min)` (Clause 9.6.1) and time arithmetic
+outside the nanosecond domain (Clause 9.7.5).
 
 A panic raised by a standard-library invariant violation for which the table
 defines no dedicated code reports `P-panic` with the message of the violated

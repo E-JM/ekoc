@@ -176,10 +176,10 @@ Several non-goals are consequences of one decision. The absence of mutation
 and a cycle collector follows from immutable values and strict evaluation
 (Clauses 8.1, 8.6). The absence of loop syntax follows from immutable values
 and the combinator vocabulary (Clause 8.8). The absence of label rows and
-user-defined capabilities follows from the capability model (Clause 7.9). The absence of a
-format DSL, JSON overrides, and a test framework follows from the library
-principle (Clauses 9.1, 9.15). The table lists the boundaries; the records
-state the arguments.
+user-defined capabilities follows from the capability model (Clause 7.9). The
+absence of a format DSL, JSON overrides, and a test framework follows from the
+library principle (Clauses 9.1, 9.15). The table lists the boundaries; the
+records state the arguments.
 
 ## E.6 Prior Art
 

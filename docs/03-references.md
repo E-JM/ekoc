@@ -23,5 +23,5 @@ The following documents are informative. They record prior art and the design
 space from which Eko's rules were selected; they do not form requirements.
 
 - The design record in [archive/](archive/), indexed in Annex E.
-- The conformance suite in [tests/](tests/), specified in Annex D.
+- The conformance suite in [../tests/](../tests/), specified in Annex D.
 - The works listed in Annex G.

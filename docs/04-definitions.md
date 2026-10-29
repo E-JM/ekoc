@@ -18,6 +18,7 @@ operative rules.
 | **undefined behavior** | behavior for which this document places no requirement on the implementation | 2.6 |
 | **source text** | the UTF-8 character sequence contained in one `.eko` file | 5.1 |
 | **compilation unit** | one source file together with the modules it imports, transitively | 7.1.1 |
+| **toolchain** | the implementation class that supplies the tooling services, panic output, and test runner of Clause 11.3 and Annexes B.6, D.6 | 2.3 |
 
 ## 4.2 Lexical and syntactic terms
 
@@ -103,6 +104,7 @@ operative rules.
 | **derived capability** | a pure combinator that constructs a restricted capability from an existing one | 7.9.1, 9.12.5 |
 | **host** | the environment that starts a program and constructs capabilities | 7.9.1 |
 | **capability module** | the compiler-embedded Eko module that declares the capability namespaces and the types of their signatures; part of the language definition, with no import path | 9.1.1, 10.8 |
+| **bit** | the effect marker on a function type: absent for a pure arrow, `!` for a world-touching arrow, `?` for an open arrow | 7.9.2, 7.9.3 |
 | **world bit** | the marker on an arrow recording whether calls through it may touch the world | 7.9.2 |
 | **world-touching** | an arrow or call that may touch the world; marked `!` | 7.9.2 |
 | **pure** | an arrow or call that does not touch the world; marked by the absence of `!` | 7.9.2 |
