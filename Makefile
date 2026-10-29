@@ -106,7 +106,7 @@ CHECK_OBJ := $(CHECK_SRC:src/%.c=$(BUILD)/%.o)
 
 # rt is the runtime library (ekort) linked into compiled Eko programs;
 # it is not a pipeline stage and stands outside the stage link order.
-RT_SRC := rt/value.c rt/rc.c rt/panic.c \
+RT_SRC := rt/value.c rt/rc.c rt/num.c rt/panic.c \
 	rt/string.c rt/bytes.c rt/list.c rt/dict.c rt/closure.c
 LIB_RT := $(BUILD)/libekort.a
 RT_OBJ := $(RT_SRC:rt/%.c=$(BUILD)/rt/%.o)
@@ -176,7 +176,7 @@ $(BUILD)/rt/%.o: rt/%.c
 
 $(BUILD)/tests/%: $(BUILD)/tests/%.o $(STAGE_LIBS) $(LIB_RT)
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -Isrc -Itests $< $(STAGE_LIBS) $(LIB_RT) -o $@
+	$(CC) $(CFLAGS) -Isrc -Itests $< $(STAGE_LIBS) $(LIB_RT) -lm -o $@
 
 $(BUILD)/tests/%.o: tests/unit/%.c
 	@mkdir -p $(dir $@)

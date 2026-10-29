@@ -116,6 +116,13 @@ static inline ek_val ek_val_ref(ek_obj *obj)
     return v;
 }
 
+/* Bool travels as an Int of 0 or 1: the constructor normalizes any
+   nonzero b to 1. */
+static inline ek_val ek_bool(int b)
+{
+    return ek_val_int(b != 0);
+}
+
 /* Nonzero when v carries the matching tag. */
 static inline int ek_val_is_unit(ek_val v)
 {
@@ -146,6 +153,37 @@ static inline int ek_val_is_ref(ek_val v)
 {
     return v.tag == EK_VAL_REF;
 }
+
+/* Arithmetic and comparison over the domain words. Static typing
+   guarantees both operands of an entry carry the same tag, and each
+   entry dispatches on that tag. Arithmetic yields the matching tag,
+   the comparisons yield Bool. */
+
+/* The arithmetic entries add, subtract, multiply, divide, and take the
+   remainder of a and b. The integer paths truncate toward zero and
+   check the result: division or modulo by zero panics with "P-div",
+   integer overflow with "P-overflow". The Float path is plain IEEE
+   arithmetic with no checks, and % is C fmod. */
+ek_val ek_num_add(ek_val a, ek_val b);
+ek_val ek_num_sub(ek_val a, ek_val b);
+ek_val ek_num_mul(ek_val a, ek_val b);
+ek_val ek_num_div(ek_val a, ek_val b);
+ek_val ek_num_mod(ek_val a, ek_val b);
+
+/* Negation over the matching tag; negating the Int minimum overflows
+   and panics like the arithmetic above. */
+ek_val ek_num_neg(ek_val a);
+
+/* The comparisons compare a and b in the tag's own order — Int
+   signed, UInt unsigned, Float the IEEE ordering — and return Bool.
+   NaN is unordered: every ordered comparison over it is false and
+   inequality is true. */
+ek_val ek_num_eq(ek_val a, ek_val b);
+ek_val ek_num_ne(ek_val a, ek_val b);
+ek_val ek_num_lt(ek_val a, ek_val b);
+ek_val ek_num_le(ek_val a, ek_val b);
+ek_val ek_num_gt(ek_val a, ek_val b);
+ek_val ek_num_ge(ek_val a, ek_val b);
 
 /* A string is an immutable UTF-8 byte sequence on the heap. The
    accessors take the object of a string value; passing an object of
@@ -276,6 +314,12 @@ void ek_release(ek_val v);
    exits with status 1. No release pass runs and nothing else is
    written. code and message are null-terminated strings. */
 void ek_panic(const char *code, const char *msg);
+
+/* The compiler-provided panic over a value: a String object is
+   reported with code "P-panic" and its bytes as the message; any other
+   value reports the same code with the message "panic of a non-string"
+   and never reads a payload. Exits with status 1 either way. */
+void ek_panic_value(ek_val msg);
 
 /* Writes "abort: reason" to standard error, best effort, and calls
    abort(), so the process ends with the platform abort status. This is
