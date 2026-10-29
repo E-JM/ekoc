@@ -38,7 +38,7 @@ CLI, FFI shims. Everything else is colonizable by Eko over time
     src/resolve/  AST               -> symbols and bindings  (Clause 7.2–7.4)
     src/check/    AST + symbols     -> types and world bits  (Clause 7.5–7.9)
     src/lower/    checked AST       -> C source text
-    src/emit/     C text            -> objects (cc) / in-memory (libtcc)
+    src/emit/     C text            -> objects (cc) / in-memory (MIR)
     src/cli/      commands: build, test, doc, where
     rt/           ekort: the runtime library
     cap/          the capability module (Eko source, embedded at build)

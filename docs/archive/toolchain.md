@@ -8,8 +8,9 @@ language, the backend legs, the pipeline, and the self-hosting roadmap.
 **C everywhere at the base.** The compiler (`ekoc`), the runtime (`ekort`),
 and the emitted target are C99, built by `make` with `cc` as the only
 toolchain dependency. Eko lowers to C source text: the AOT leg is the system C
-compiler at `-O2`, the in-process leg is libtcc (tests and development
-iteration). Self tail calls are satisfied by the lowering — a labeled retry
+compiler at `-O2`, the in-process leg is MIR through c2mir, its C99
+interpreter — the same lowered C text, so the single lowering holds (tests and
+development iteration). Self tail calls are satisfied by the lowering — a labeled retry
 loop, never the C compiler's own tail optimization (`Clause 8.8.3`). The
 runtime (reference counting, scheduler, veneer) is C and stays C.
 
@@ -46,6 +47,7 @@ boundary.
 | libgccjit | GPLv3 grey zone for an MIT toolchain; presumes a GCC install |
 | Cranelift | Rust-coupled; attractive only if the language decision is revisited |
 | QBE | ~70% of `-O2`, no in-process JIT; a fallback if the AOT leg sheds `cc` |
+| libtcc | the prior in-process leg; superseded by MIR — in practice x86-centric, while MIR is self-contained C99 (MIT) generating for x86-64, aarch64, riscv64, ppc64, s390x |
 
 ## 5. Self-hosting roadmap
 

@@ -27,7 +27,7 @@ and a normative clause disagree, the clause prevails.
 | [ffi.md](ffi.md) | Clause 10 | extern, `Pure`, `C.*`, `ctype`, embedding ABI, the capability channel |
 | [audit-2026-10.md](audit-2026-10.md) | Clauses 5–7, 9, 10, Annexes A, B | the 2026-10 audit rulings: `:=` layout, qualified names, cross-pattern duplicates, float finiteness, anchored constructors, `with` construction, selective import, plus the corpus and front-end rulings and the deferred deviations |
 | [stdlib.md](stdlib.md) | Clauses 9.1, 9.8, 11, Annex C | library name and delivery, implicit import, operators and equality, derived services, toolchain |
-| [toolchain.md](toolchain.md) | Clauses 11, Annex D | implementation language (C base), backend legs (cc + libtcc), pipeline architecture, self-hosting roadmap |
+| [toolchain.md](toolchain.md) | Clauses 11, Annex D | implementation language (C base), backend legs (cc + MIR), pipeline architecture, self-hosting roadmap |
 
 ## How to read a record
 

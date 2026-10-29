@@ -130,7 +130,7 @@ clause column is the normative owner; the record is evidence, not a rule.
 | `archive/ffi.md` | 10.1, 10.2, 10.3, 10.4, 10.5, 10.6, 10.7, 10.8, 10.9 | `extern`, `Pure`, `C.*`, `ctype`, veneer, the capability channel |
 | `archive/audit-2026-10.md` | 5, 6, 7, 9, 10, Annex A, Annex B | the 2026-10 audit rulings: `:=` layout, qualified names, cross-pattern duplicates, float finiteness, anchored constructors, `with`, selective import, corpus and front-end rulings |
 | `archive/stdlib.md` | 7.2.2, 7.4.5, 9.1, 9.8.4, 9.8.7, 9.15, 11.1, 11.2, 11.3, 11.4, 11.5, 11.6 | library name and delivery, implicit import, operators and equality, derived services, toolchain |
-| `archive/toolchain.md` | Clauses 11, Annex D | implementation language (C base), backend legs (cc + libtcc), pipeline architecture, self-hosting roadmap |
+| `archive/toolchain.md` | Clauses 11, Annex D | implementation language (C base), backend legs (cc + MIR), pipeline architecture, self-hosting roadmap |
 
 Each record has three kinds of content: rejected alternatives, prior art, and
 rationale. The rejected alternatives are the load-bearing content: the
