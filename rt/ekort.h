@@ -175,15 +175,110 @@ ek_val ek_num_mod(ek_val a, ek_val b);
 ek_val ek_num_neg(ek_val a);
 
 /* The comparisons compare a and b in the tag's own order — Int
-   signed, UInt unsigned, Float the IEEE ordering — and return Bool.
-   NaN is unordered: every ordered comparison over it is false and
-   inequality is true. */
+   signed, UInt unsigned, Float the IEEE ordering, Char by code
+   point — and return Bool. NaN is unordered: every ordered
+   comparison over it is false and inequality is true. */
 ek_val ek_num_eq(ek_val a, ek_val b);
 ek_val ek_num_ne(ek_val a, ek_val b);
 ek_val ek_num_lt(ek_val a, ek_val b);
 ek_val ek_num_le(ek_val a, ek_val b);
 ek_val ek_num_gt(ek_val a, ek_val b);
 ek_val ek_num_ge(ek_val a, ek_val b);
+
+/* The kinds the parse family reports: a value was read, the input
+   was missing, the input was malformed, or the value lies outside
+   the target's limits. The compiler wraps the kind into the parse
+   result; the runtime never builds that result type. */
+typedef enum {
+    EK_PARSE_OK,
+    EK_PARSE_EMPTY,
+    EK_PARSE_INVALID,
+    EK_PARSE_RANGE
+} ek_parse_status;
+
+/* The display channel: each entry renders one scalar as a fresh
+   String object in the form the standard pins. Int and UInt print the
+   full decimal value with a sign only when negative; Bool prints
+   True or False from the 0/1 Int it travels as; Char prints the
+   character bare as its UTF-8 encoding; Float prints the shortest
+   decimal form that reads back as the same double, always carrying a
+   fractional point in the fixed positions, and prints NaN, Inf, and
+   -Inf for the non-finite values. Passing a value of another tag is
+   undefined. The caller owns the returned object. */
+ek_obj *ek_show_int(ek_val v);
+ek_obj *ek_show_uint(ek_val v);
+ek_obj *ek_show_float(ek_val v);
+ek_obj *ek_show_char(ek_val v);
+ek_obj *ek_show_bool(ek_val v);
+
+/* The parse family reads one scalar out of a String object. Each
+   entry validates the whole input and reports one of four kinds:
+   EK_PARSE_OK writes the value to *out; EK_PARSE_EMPTY means the
+   input was the empty string; EK_PARSE_INVALID means malformed
+   input; EK_PARSE_RANGE means well-formed input whose value is
+   outside the target's limits. *out is written only on
+   EK_PARSE_OK. */
+
+/* Well-formed text is an optional sign followed by one or more
+   digits of the given radix (2, 8, or 16, case-insensitive, no
+   prefix). Int.parse and UInt.parse are radix 10. A minus sign on
+   the UInt entries is a range failure, not a malformed one. */
+ek_parse_status ek_parse_int(ek_obj *s, int64_t *out);
+ek_parse_status ek_parse_uint(ek_obj *s, uint64_t *out);
+ek_parse_status ek_parse_int_radix(ek_obj *s, int radix, int64_t *out);
+ek_parse_status ek_parse_uint_radix(ek_obj *s, int radix, uint64_t *out);
+
+/* Well-formed text is an optional sign, then either the spelling
+   NaN, Inf, -Inf, or +Inf, or one or more digits with an optional
+   fraction (a point followed by at least one digit) and an optional
+   e-notation exponent. A leading digit is required. Overflow and
+   underflow take the IEEE result they read as. */
+ek_parse_status ek_parse_float(ek_obj *s, double *out);
+
+/* The conversion family moves one domain word into another slot. The
+   ek_try_ entries are the narrowing rows: they return nonzero and
+   write *out when the value lies in the target's limits, and return
+   zero leaving *out untouched otherwise. Float truncates toward
+   zero, checks NaN, the infinities, and the range, and for unsigned
+   targets checks the sign before truncation, so -0.5 fails and -0.0
+   yields zero. A tag outside the Int/UInt/Float slots is undefined. */
+
+/* The domain rows: UInt.to_int and Float.to_int share the first,
+   Int.to_uint and Float.to_uint the second. An Int source is its own
+   identity. */
+int ek_try_to_int(ek_val v, int64_t *out);
+int ek_try_to_uint(ek_val v, uint64_t *out);
+
+/* The machine-word rows: the value must fit the named width, signed
+   or unsigned. The result travels in the Int or UInt slot. */
+int ek_try_to_i8(ek_val v, int64_t *out);
+int ek_try_to_i16(ek_val v, int64_t *out);
+int ek_try_to_i32(ek_val v, int64_t *out);
+int ek_try_to_i64(ek_val v, int64_t *out);
+int ek_try_to_u8(ek_val v, uint64_t *out);
+int ek_try_to_u16(ek_val v, uint64_t *out);
+int ek_try_to_u32(ek_val v, uint64_t *out);
+int ek_try_to_u64(ek_val v, uint64_t *out);
+
+/* The total rows: to_float is Int.to_float and UInt.to_float, to_f32
+   rounds through the binary32 width, to_f64 is exact. The result
+   travels in the Float slot; a value of another tag yields the
+   neutral unit value. */
+ek_val ek_to_float(ek_val v);
+ek_val ek_to_f32(ek_val v);
+ek_val ek_to_f64(ek_val v);
+
+/* Char's code-point bridge. The code is the Unicode scalar value; a
+   Char is one code point. */
+
+/* The code point as an Int. Total. */
+ek_val ek_char_to_code(ek_val c);
+
+/* The Char whose code point is the given Int: nonzero and the code
+   in *out when it lies in the scalar-value domain (below the
+   encoding maximum, outside the surrogate range), zero with *out
+   untouched otherwise. */
+int ek_try_char_from_code(ek_val n, uint32_t *out);
 
 /* A string is an immutable UTF-8 byte sequence on the heap. The
    accessors take the object of a string value; passing an object of
@@ -213,6 +308,42 @@ ek_obj *ek_str_concat(ek_obj *a, ek_obj *b);
    bytes. */
 int ek_str_eq(ek_obj *a, ek_obj *b);
 
+/* The string's scalar operations. A String is a sequence of Unicode
+   scalar values over the UTF-8 bytes; the length counts scalars, the
+   access is by scalar index, and the bridge members move between the
+   string and a list of Char values. The entries take the object of a
+   string value; passing an object of another family is undefined. */
+
+/* The number of Unicode scalar values, not bytes. */
+size_t ek_str_length(ek_obj *str);
+
+/* The code point at the given scalar index: nonzero and the code in
+   *code when the index lies in 0..length-1, zero with *code
+   untouched otherwise. O(n). */
+int ek_str_at(ek_obj *str, int64_t index, uint32_t *code);
+
+/* The scalars as a fresh list of Char values, in order. Aborts on
+   exhaustion. */
+ek_val ek_str_chars(ek_obj *str);
+
+/* A fresh string holding the single scalar. */
+ek_obj *ek_str_from_char(ek_val c);
+
+/* A fresh string holding the list's Char values in order. Aborts on
+   exhaustion. */
+ek_obj *ek_str_from_chars(ek_val chars);
+
+/* The lexicographic order over the scalar values: negative when a
+   orders before b, zero when equal, positive otherwise. For valid
+   UTF-8 this is the byte order. */
+int ek_str_cmp(ek_obj *a, ek_obj *b);
+
+/* The ordering family over the lexicographic order. */
+int ek_str_lt(ek_obj *a, ek_obj *b);
+int ek_str_le(ek_obj *a, ek_obj *b);
+int ek_str_gt(ek_obj *a, ek_obj *b);
+int ek_str_ge(ek_obj *a, ek_obj *b);
+
 /* Nonzero when s holds exactly len bytes of well-formed UTF-8: no
    overlong forms, no surrogate encodings, and no code point above the
    encoding maximum. */
@@ -231,6 +362,43 @@ size_t ek_bytes_len(ek_obj *bytes);
    long as its last reference. */
 const void *ek_bytes_data(ek_obj *bytes);
 
+/* The bytes operations. The element domain is Int in 0..255; the
+   bridges move between the block and lists. */
+
+/* The byte at the given index: nonzero and the element in *out when
+   the index lies in 0..len-1, zero with *out untouched otherwise. */
+int ek_bytes_get(ek_obj *bytes, int64_t index, int64_t *out);
+
+/* A fresh block holding the bytes of a followed by those of b; both
+   operands are untouched. Aborts on exhaustion. */
+ek_obj *ek_bytes_concat(ek_obj *a, ek_obj *b);
+
+/* The elements as a fresh list of Int values, in order. Aborts on
+   exhaustion. */
+ek_val ek_bytes_to_ints(ek_obj *bytes);
+
+/* A fresh block of the list's Int elements, or NULL when an element
+   falls outside 0..255. Aborts on exhaustion. */
+ek_obj *ek_bytes_from_ints(ek_val ints);
+
+/* The bytes encoded as lowercase hexadecimal with no separators. */
+ek_obj *ek_bytes_to_hex(ek_obj *bytes);
+
+/* Decodes hexadecimal text: nonzero and the block in *out when every
+   character is hexadecimal and the count is even (the empty text
+   yields the empty block); zero with the failure detail in *detail
+   otherwise. The caller owns both objects. */
+int ek_bytes_from_hex(ek_obj *hex, ek_obj **out, ek_obj **detail);
+
+/* The block as a fresh string, which is always valid UTF-8: nonzero
+   and the string in *out when the bytes are well-formed UTF-8; zero
+   with the first invalid offset and its surrounding bytes in *detail
+   otherwise. The caller owns both objects. */
+int ek_bytes_to_string(ek_obj *bytes, ek_obj **out, ek_obj **detail);
+
+/* A fresh block holding the string's UTF-8 bytes. Total. */
+ek_obj *ek_str_to_bytes(ek_obj *str);
+
 /* A list is a chain of immutable cons cells ending at the empty list.
    A cell owns the references it stores: they were retained at
    insertion and are released when the cell is reclaimed. */
@@ -244,6 +412,13 @@ static inline int ek_val_is_nil(ek_val v)
 {
     return v.tag == EK_VAL_REF && v.as.ref != NULL
         && v.as.ref->info->kind == EK_KIND_NIL;
+}
+
+/* Nonzero when v refers to a cons cell. */
+static inline int ek_val_is_cons(ek_val v)
+{
+    return v.tag == EK_VAL_REF && v.as.ref != NULL
+        && v.as.ref->info->kind == EK_KIND_CONS;
 }
 
 /* A fresh cell holding head and tail. Both are retained; the caller's
@@ -283,6 +458,23 @@ ek_val ek_dict_set(ek_val dict, ek_val key, ek_val val);
 
 /* The number of keys. */
 size_t ek_dict_len(ek_val dict);
+
+/* A fresh dictionary without key's mapping: every remaining entry
+   keeps its insertion order. Removing an absent key yields dict
+   unchanged. Aborts on exhaustion. */
+ek_val ek_dict_remove(ek_val dict, ek_val key);
+
+/* A fresh dictionary holding every mapping of a and then every
+   mapping of b, b winning on duplicate keys: a's keys keep their
+   order, and b's new keys append in b's order. Aborts on
+   exhaustion. */
+ek_val ek_dict_merge(ek_val a, ek_val b);
+
+/* Visits the mappings in insertion order: writes the next key and
+   value into *key and *val (borrowed) and returns nonzero while a
+   mapping remains. *cursor starts at zero and is owned by the walk;
+   the caller passes it back unchanged between calls. */
+int ek_dict_next(ek_val dict, size_t *cursor, ek_val *key, ek_val *val);
 
 /* The uniform call ABI: the closure receives the environment it
    captured and the argument array of argc values, or NULL when argc is

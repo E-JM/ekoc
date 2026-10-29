@@ -77,8 +77,9 @@ static int in_range(unsigned char b, unsigned char lo, unsigned char hi)
 /* Checks the sequence starting at p against the encoding: returns its
    length when the bytes form one code point, or 0 when they do not.
    Overlong forms, surrogate encodings, code points above the maximum,
-   and truncated tails are invalid. left is the bytes remaining. */
-static size_t utf8_seq(const unsigned char *p, size_t left)
+   and truncated tails are invalid. left is the bytes remaining. The
+   contract with the other decoders is in internal.h. */
+size_t ek_utf8_seq_len(const unsigned char *p, size_t left)
 {
     unsigned char b = p[0];
     unsigned char lo;
@@ -119,7 +120,7 @@ int ek_utf8_valid(const char *s, size_t len)
     size_t i = 0;
 
     while (i < len) {
-        size_t n = utf8_seq(p + i, len - i);
+        size_t n = ek_utf8_seq_len(p + i, len - i);
 
         if (n == 0)
             return 0;

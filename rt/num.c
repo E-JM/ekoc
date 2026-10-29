@@ -211,6 +211,7 @@ ek_val ek_num_eq(ek_val a, ek_val b)
     case EK_VAL_INT:   return ek_bool(a.as.i == b.as.i);
     case EK_VAL_UINT:  return ek_bool(a.as.u == b.as.u);
     case EK_VAL_FLOAT: return ek_bool(a.as.f == b.as.f);
+    case EK_VAL_CHAR:  return ek_bool(a.as.c == b.as.c);
     default:           return ek_bool(0);
     }
 }
@@ -221,6 +222,7 @@ ek_val ek_num_ne(ek_val a, ek_val b)
     case EK_VAL_INT:   return ek_bool(a.as.i != b.as.i);
     case EK_VAL_UINT:  return ek_bool(a.as.u != b.as.u);
     case EK_VAL_FLOAT: return ek_bool(a.as.f != b.as.f);
+    case EK_VAL_CHAR:  return ek_bool(a.as.c != b.as.c);
     default:           return ek_bool(0);
     }
 }
@@ -231,6 +233,7 @@ ek_val ek_num_lt(ek_val a, ek_val b)
     case EK_VAL_INT:   return ek_bool(a.as.i < b.as.i);
     case EK_VAL_UINT:  return ek_bool(a.as.u < b.as.u);
     case EK_VAL_FLOAT: return ek_bool(a.as.f < b.as.f);
+    case EK_VAL_CHAR:  return ek_bool(a.as.c < b.as.c);
     default:           return ek_bool(0);
     }
 }
@@ -241,6 +244,7 @@ ek_val ek_num_le(ek_val a, ek_val b)
     case EK_VAL_INT:   return ek_bool(a.as.i <= b.as.i);
     case EK_VAL_UINT:  return ek_bool(a.as.u <= b.as.u);
     case EK_VAL_FLOAT: return ek_bool(a.as.f <= b.as.f);
+    case EK_VAL_CHAR:  return ek_bool(a.as.c <= b.as.c);
     default:           return ek_bool(0);
     }
 }
@@ -251,6 +255,7 @@ ek_val ek_num_gt(ek_val a, ek_val b)
     case EK_VAL_INT:   return ek_bool(a.as.i > b.as.i);
     case EK_VAL_UINT:  return ek_bool(a.as.u > b.as.u);
     case EK_VAL_FLOAT: return ek_bool(a.as.f > b.as.f);
+    case EK_VAL_CHAR:  return ek_bool(a.as.c > b.as.c);
     default:           return ek_bool(0);
     }
 }
@@ -261,6 +266,7 @@ ek_val ek_num_ge(ek_val a, ek_val b)
     case EK_VAL_INT:   return ek_bool(a.as.i >= b.as.i);
     case EK_VAL_UINT:  return ek_bool(a.as.u >= b.as.u);
     case EK_VAL_FLOAT: return ek_bool(a.as.f >= b.as.f);
+    case EK_VAL_CHAR:  return ek_bool(a.as.c >= b.as.c);
     default:           return ek_bool(0);
     }
 }

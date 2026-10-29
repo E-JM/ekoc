@@ -34,6 +34,16 @@ void ek_closure_drop(ek_obj *obj);
    through ek_release. */
 unsigned long ek_rc_dec(ek_obj *obj);
 
+/* The length of the sequence starting at p, or 0 when the bytes do
+   not form one code point within left bytes: overlong forms,
+   surrogate encodings, code points above the maximum, and truncated
+   tails are invalid. Shared by the string and bytes decoders. */
+size_t ek_utf8_seq_len(const unsigned char *p, size_t left);
+
+/* Writes the UTF-8 encoding of code into out and returns its length.
+   The code must be a scalar value; the caller checks the domain. */
+size_t ek_utf8_encode(uint32_t code, char *out);
+
 /* Zeroed storage of the given size, or an abort: memory exhaustion
    ends the process, it is not a panic. */
 static inline void *ek_rt_alloc_zeroed(size_t size)

@@ -9,16 +9,22 @@
    Keys are inline scalars, hashed with FNV-1a over the tag byte and
    the payload bytes; the table is open addressing with linear probing
    that grows from eight slots and stays at or under seventy percent
-   full, so a probe always finds an empty slot. */
+   full, so a probe always finds an empty slot. The build order of
+   each table is kept in a chain of entry indices, so iteration walks
+   insertion order even after the keys rehash into new slots. */
 
 /* The load limit and the starting capacity of the table. */
 #define DICT_LOAD_NUM 10
 #define DICT_LOAD_DEN 7
 #define DICT_MIN_CAP 8
 
+/* The chain index that marks the end of the build order. */
+#define DICT_NO_ENTRY UINT32_MAX
+
 typedef struct {
     ek_val key;
     ek_val val;
+    uint32_t next;
     uint8_t used;
 } ek_dict_entry;
 
@@ -26,6 +32,8 @@ typedef struct {
     ek_obj obj;
     size_t count;
     size_t capacity;
+    uint32_t head;
+    uint32_t tail;
     ek_dict_entry *entries;
 } ek_dict;
 
@@ -82,13 +90,16 @@ static const ek_dict_entry *find_entry(const ek_dict *dict, ek_val key)
     return dict->entries[i].used ? &dict->entries[i] : NULL;
 }
 
-/* A dictionary object with no table: the empty dictionary. */
+/* A dictionary object with no table: the empty dictionary. The chain
+   of none starts and ends at the no-entry mark. */
 static ek_dict *dict_new(void)
 {
     ek_dict *dict = ek_rt_alloc_zeroed(sizeof *dict);
 
     dict->obj.info = &ek_typeinfo_dict;
     dict->obj.rc = 1;
+    dict->head = DICT_NO_ENTRY;
+    dict->tail = DICT_NO_ENTRY;
     return dict;
 }
 
@@ -106,17 +117,25 @@ static ek_dict *dict_sized_for(size_t count)
     return dict;
 }
 
-/* Retains both values and stores them in the slot key belongs to. */
+/* Retains both values, stores them in the slot key belongs to, and
+   appends the slot to the build-order chain. */
 static void entry_store(ek_dict *dict, ek_val key, ek_val val)
 {
-    ek_dict_entry *slot =
-        &dict->entries[probe(dict->entries, dict->capacity, key)];
+    size_t i = probe(dict->entries, dict->capacity, key);
+    ek_dict_entry *slot = &dict->entries[i];
 
     ek_retain(key);
     ek_retain(val);
     slot->key = key;
     slot->val = val;
+    slot->next = DICT_NO_ENTRY;
     slot->used = 1;
+    if (dict->tail == DICT_NO_ENTRY)
+        dict->head = (uint32_t)i;
+    else
+        dict->entries[dict->tail].next = (uint32_t)i;
+    dict->tail = (uint32_t)i;
+    dict->count++;
 }
 
 ek_val ek_dict_new(void)
@@ -135,33 +154,100 @@ int ek_dict_get(ek_val d, ek_val key, ek_val *out)
     return 1;
 }
 
+/* Copies the mappings of a and b into fresh in that order; when
+   overwrite is nonzero the mappings of b win on duplicate keys. */
+static ek_dict *dict_joined(const ek_dict *a, const ek_dict *b)
+{
+    ek_dict *fresh = dict_sized_for(a->count + b->count);
+    const ek_dict *srcs[2];
+    uint32_t idx;
+    int side;
+
+    srcs[0] = a;
+    srcs[1] = b;
+    for (side = 0; side < 2; side++) {
+        const ek_dict *src = srcs[side];
+
+        for (idx = src->head; idx != DICT_NO_ENTRY;
+             idx = src->entries[idx].next) {
+            const ek_dict_entry *e = &src->entries[idx];
+            ek_dict_entry *slot =
+                &fresh->entries[probe(fresh->entries, fresh->capacity,
+                                      e->key)];
+
+            if (slot->used && side == 1) {
+                ek_retain(e->val); /* b wins; the slot keeps its place */
+                ek_release(slot->val);
+                slot->val = e->val;
+            } else if (!slot->used) {
+                entry_store(fresh, e->key, e->val);
+            }
+        }
+    }
+    return fresh;
+}
+
 ek_val ek_dict_set(ek_val d, ek_val key, ek_val val)
 {
     const ek_dict *old = (const ek_dict *)d.as.ref;
     const ek_dict_entry *existing = find_entry(old, key);
-    size_t total = old->count + (existing == NULL ? 1 : 0);
-    ek_dict *fresh = dict_sized_for(total);
-    size_t i;
+    ek_dict *fresh = dict_sized_for(old->count + (existing == NULL ? 1 : 0));
+    uint32_t idx;
 
-    for (i = 0; i < old->capacity; i++) {
-        const ek_dict_entry *e = &old->entries[i];
+    for (idx = old->head; idx != DICT_NO_ENTRY; idx = old->entries[idx].next) {
+        const ek_dict_entry *e = &old->entries[idx];
 
-        if (!e->used)
-            continue;
-        if (e == existing)
-            entry_store(fresh, e->key, val); /* the mapping is replaced */
-        else
-            entry_store(fresh, e->key, e->val);
+        entry_store(fresh, e->key, e == existing ? val : e->val);
     }
     if (existing == NULL)
         entry_store(fresh, key, val);
-    fresh->count = total;
     return ek_val_ref(&fresh->obj);
+}
+
+ek_val ek_dict_remove(ek_val d, ek_val key)
+{
+    const ek_dict *old = (const ek_dict *)d.as.ref;
+    ek_dict *fresh;
+    uint32_t idx;
+
+    if (find_entry(old, key) == NULL)
+        return d;
+    fresh = dict_sized_for(old->count - 1);
+    for (idx = old->head; idx != DICT_NO_ENTRY; idx = old->entries[idx].next) {
+        const ek_dict_entry *e = &old->entries[idx];
+
+        if (!key_eq(e->key, key))
+            entry_store(fresh, e->key, e->val);
+    }
+    return ek_val_ref(&fresh->obj);
+}
+
+ek_val ek_dict_merge(ek_val a, ek_val b)
+{
+    return ek_val_ref(&dict_joined((const ek_dict *)a.as.ref,
+                                   (const ek_dict *)b.as.ref)->obj);
 }
 
 size_t ek_dict_len(ek_val d)
 {
     return ((const ek_dict *)d.as.ref)->count;
+}
+
+int ek_dict_next(ek_val d, size_t *cursor, ek_val *key, ek_val *val)
+{
+    const ek_dict *dict = (const ek_dict *)d.as.ref;
+    uint32_t idx;
+
+    if (*cursor == 0)
+        idx = dict->head;
+    else
+        idx = dict->entries[*cursor - 1].next;
+    if (idx == DICT_NO_ENTRY)
+        return 0;
+    *key = dict->entries[idx].key;
+    *val = dict->entries[idx].val;
+    *cursor = (size_t)idx + 1;
+    return 1;
 }
 
 /* Releases every used entry's key and value, walking the table in
