@@ -1,0 +1,163 @@
+#include <stdio.h>
+#include <string.h>
+
+#include "lower/internal.h"
+
+/* Naming for the emitted unit: the mangled function symbols, the C
+   spellings of locals and temps, and the C form of string bytes. */
+
+/* The C99 keywords: a written name spelled as one is emitted with a
+   trailing underscore. */
+static int is_c_keyword(const char *name)
+{
+    static const char *words[] = {
+        "auto", "break", "case", "char", "const", "continue", "default",
+        "do", "double", "else", "enum", "extern", "float", "for", "goto",
+        "if", "inline", "int", "long", "register", "restrict", "return",
+        "short", "signed", "sizeof", "static", "struct", "switch",
+        "typedef", "union", "unsigned", "void", "volatile", "while",
+        "_Bool", "_Complex", "_Imaginary"
+    };
+    size_t i;
+
+    for (i = 0; i < sizeof words / sizeof *words; i++) {
+        if (strcmp(name, words[i]) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* Runtime identifiers visible in every emitted body: the ek_ and EK_
+   namespaces of the runtime header, the helper included. A written
+   name in those shapes gains a u_ prefix, which appending cannot
+   achieve. */
+static int shadows_runtime(const char *name)
+{
+    return strncmp(name, "ek_", 3) == 0 || strncmp(name, "EK_", 3) == 0;
+}
+
+static int taken_here(const lower_scope *scope, const char *name)
+{
+    size_t i;
+
+    for (i = 0; i < scope->nloc; i++) {
+        if (strcmp(scope->locs[i].cname, name) == 0) {
+            return 1;
+        }
+    }
+    for (i = 0; i < scope->ntemp; i++) {
+        if (strcmp(scope->temps[i], name) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int taken_visible(const lower_scope *scope, const char *name)
+{
+    for (; scope; scope = scope->parent) {
+        if (taken_here(scope, name)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+const char *lower_mangled(lower_ctx *c, const ek_symbol *sym)
+{
+    return lower_str(c, "ekf_%s_%s", sym->module, sym->name);
+}
+
+/* A fresh temp name, unique against every binding and temp visible
+   here, so no temp ever shadows a name a later statement reads. */
+const char *lower_temp(lower_ctx *c, lower_scope *scope)
+{
+    char buf[24];
+    unsigned n = c->temp;
+    const char *out;
+
+    for (;;) {
+        snprintf(buf, sizeof buf, "t%u", n);
+        if (!taken_visible(scope, buf)) {
+            break;
+        }
+        n++;
+    }
+    c->temp = n + 1;
+    out = lower_str(c, "%s", buf);
+    if (out) {
+        const char **slot = lower_grow(c, scope->temps, &scope->ctemp,
+                                       scope->ntemp + 1, sizeof *slot);
+
+        if (slot) {
+            slot[scope->ntemp++] = out;
+            scope->temps = slot;
+        }
+    }
+    return out;
+}
+
+/* The C spelling of a new binding: names that would collide with the
+   runtime or repeat within the same block are adjusted until free.
+   Shadowing an outer block's binding is the language's own scoping. */
+const char *lower_c_name(lower_ctx *c, lower_scope *scope, const char *name)
+{
+    ek_buf b;
+    const char *out;
+
+    ek_buf_init(&b);
+    if (shadows_runtime(name) && !ek_buf_append_str(&b, "u_")) {
+        c->oom = 1;
+    }
+    if (!ek_buf_append_str(&b, name)) {
+        c->oom = 1;
+    }
+    while (!c->oom && (is_c_keyword(b.data) || taken_here(scope, b.data))) {
+        if (!ek_buf_append_char(&b, '_')) {
+            c->oom = 1;
+        }
+    }
+    out = lower_str(c, "%s", b.data);
+    ek_buf_destroy(&b);
+    return out;
+}
+
+/* Appends the C string literal for the bytes: printable ASCII stands,
+   the quote, backslash, and question mark gain a backslash, and every
+   other byte becomes a three-digit octal escape. */
+void lower_string_literal(lower_ctx *c, ek_buf *b, const char *bytes,
+                          size_t len)
+{
+    size_t i;
+
+    if (!ek_buf_append_char(b, '"')) {
+        c->oom = 1;
+    }
+    for (i = 0; i < len; i++) {
+        unsigned char ch = (unsigned char)bytes[i];
+
+        if (ch == '"') {
+            if (!ek_buf_append_str(b, "\\\"")) {
+                c->oom = 1;
+            }
+        } else if (ch == '\\') {
+            if (!ek_buf_append_str(b, "\\\\")) {
+                c->oom = 1;
+            }
+        } else if (ch == '?') {
+            if (!ek_buf_append_str(b, "\\?")) {
+                c->oom = 1;
+            }
+        } else if (ch >= 0x20 && ch <= 0x7E) {
+            if (!ek_buf_append_char(b, (char)ch)) {
+                c->oom = 1;
+            }
+        } else if (!ek_buf_printf(b, "\\%03o", (unsigned)ch)) {
+            c->oom = 1;
+        }
+    }
+    if (!ek_buf_append_char(b, '"')) {
+        c->oom = 1;
+    }
+}
