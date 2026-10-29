@@ -1,3 +1,3 @@
 # src/cli
 
-eko build/test/doc/where
+the ekoc program: `ekoc build <file.eko> [-o <out>]`

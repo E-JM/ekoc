@@ -115,6 +115,18 @@ LOWER_SRC := \
 LIB_LOWER := $(BUILD)/libek_lower.a
 LOWER_OBJ := $(LOWER_SRC:src/%.c=$(BUILD)/%.o)
 
+EMIT_SRC := \
+	src/emit/emit.c
+
+LIB_EMIT := $(BUILD)/libek_emit.a
+EMIT_OBJ := $(EMIT_SRC:src/%.c=$(BUILD)/%.o)
+
+CLI_SRC := \
+	src/cli/main.c \
+	src/cli/build.c
+
+CLI_OBJ := $(CLI_SRC:src/%.c=$(BUILD)/%.o)
+
 # rt is the runtime library (ekort) linked into compiled Eko programs;
 # it is not a pipeline stage and stands outside the stage link order.
 RT_SRC := rt/value.c rt/rc.c rt/num.c rt/panic.c \
@@ -123,8 +135,8 @@ LIB_RT := $(BUILD)/libekort.a
 RT_OBJ := $(RT_SRC:rt/%.c=$(BUILD)/rt/%.o)
 
 # link order: later stages first, dependencies last
-STAGE_LIBS := $(LIB_LOWER) $(LIB_CHECK) $(LIB_RESOLVE) $(LIB_PARSE) \
-	$(LIB_LAYOUT) $(LIB_LEX) $(LIB_SUPPORT)
+STAGE_LIBS := $(LIB_EMIT) $(LIB_LOWER) $(LIB_CHECK) $(LIB_RESOLVE) \
+	$(LIB_PARSE) $(LIB_LAYOUT) $(LIB_LEX) $(LIB_SUPPORT)
 
 UNIT_SRC := $(wildcard tests/unit/*/*.c)
 UNIT_BIN := $(UNIT_SRC:tests/unit/%.c=$(BUILD)/tests/%)
@@ -133,10 +145,11 @@ UNIT_BIN := $(UNIT_SRC:tests/unit/%.c=$(BUILD)/tests/%)
 
 # keep object files between runs; they are cheap to reuse, not intermediates
 .SECONDARY: $(SUPPORT_OBJ) $(LEX_OBJ) $(LAYOUT_OBJ) $(PARSE_OBJ) \
-	$(RESOLVE_OBJ) $(CHECK_OBJ) $(LOWER_OBJ) $(RT_OBJ) $(UNIT_BIN:%=%.o)
+	$(RESOLVE_OBJ) $(CHECK_OBJ) $(LOWER_OBJ) $(EMIT_OBJ) $(CLI_OBJ) \
+	$(RT_OBJ) $(UNIT_BIN:%=%.o)
 
 all: $(LIB_SUPPORT) $(LIB_LEX) $(LIB_LAYOUT) $(LIB_PARSE) $(LIB_RESOLVE) \
-	$(LIB_CHECK) $(LIB_LOWER) $(LIB_RT)
+	$(LIB_CHECK) $(LIB_LOWER) $(LIB_EMIT) $(LIB_RT) $(BUILD)/ekoc
 
 test: all $(UNIT_BIN)
 	@status=0; \
@@ -177,9 +190,17 @@ $(LIB_LOWER): $(LOWER_OBJ)
 	@mkdir -p $(dir $@)
 	$(AR) rcs $@ $^
 
+$(LIB_EMIT): $(EMIT_OBJ)
+	@mkdir -p $(dir $@)
+	$(AR) rcs $@ $^
+
 $(LIB_RT): $(RT_OBJ)
 	@mkdir -p $(dir $@)
 	$(AR) rcs $@ $^
+
+$(BUILD)/ekoc: $(CLI_OBJ) $(STAGE_LIBS)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -Isrc $(CLI_OBJ) $(STAGE_LIBS) -lm -o $@
 
 $(BUILD)/%.o: src/%.c
 	@mkdir -p $(dir $@)
@@ -199,4 +220,5 @@ $(BUILD)/tests/%.o: tests/unit/%.c
 
 -include $(SUPPORT_OBJ:.o=.d) $(LEX_OBJ:.o=.d) $(LAYOUT_OBJ:.o=.d) \
 	$(PARSE_OBJ:.o=.d) $(RESOLVE_OBJ:.o=.d) $(CHECK_OBJ:.o=.d) \
-	$(LOWER_OBJ:.o=.d) $(RT_OBJ:.o=.d) $(UNIT_BIN:%=%.d)
+	$(LOWER_OBJ:.o=.d) $(EMIT_OBJ:.o=.d) $(CLI_OBJ:.o=.d) \
+	$(RT_OBJ:.o=.d) $(UNIT_BIN:%=%.d)
