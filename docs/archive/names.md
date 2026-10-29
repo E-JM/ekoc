@@ -1,121 +1,87 @@
 # Design Record — Names, Calls, and Modules
 
-Non-normative. Rulings: Clauses 7.2, 7.3, 7.4. Rejected alternatives, prior art,
-and rationale.
+Non-normative. Ruling clauses: 7.2, 7.3, 7.4. Rejected alternatives, prior
+art, and rationale.
 
-## 1. UFCS: one identity, four stations
+## 1. UFCS
 
-`a.f(b, c) ≡ f(a, b, c)` always and everywhere; every function is a free
-function, and `.` is its receiver form (`Clause 7.4.3`). The prelude's
-signatures — capabilities, handles, data as first parameters — are the
-natural soil: `out.println(...)`, `fs.open(...)`, `xs.map(...)` share one
-shape, and there is no second dispatch mechanism to learn or to implement.
+`a.f(b, c) ≡ f(a, b, c)` always and everywhere: every function is a free
+function and `.` is its receiver form (`Clause 7.4.3`). No second dispatch
+mechanism exists to learn or implement. Resolution is an ordered search —
+record field, type namespace, current module, module path — first hit wins, and
+the receiver position never consults lexical bindings. Stations are never
+merged: a cross-station collision is resolved by spelling, and the diagnostic
+lists the readings.
 
-Resolution is an ordered search — record field, type namespace, current
-module, module path — first hit wins, and the receiver position never
-consults lexical bindings (`Clause 7.4.3`). This is *ordered resolution*, not name
-conflict: stations are never merged, and a collision across stations is
-resolved by spelling (field access or fully qualified call), with the
-diagnostic listing the readings.
+## 2. Structural access
 
-## 2. Structural access: index syntax and the prior-art map
-
-Index syntax `x[i]` is banned for every structure; each structure has
-exactly one entry point, and out-of-bounds is a domain check returning
-`Option` — the trust decision is made at the consumption site
-(`Clause 9.10`). The prior-art comparison, recorded for the decision:
+Index syntax `x[i]` is banned for every structure (`Clause 9.10`): each
+structure has one entry point, out-of-bounds is a domain check returning
+`Option`, and the trust decision is made where the value is consumed.
 
 | Family | Practice | Assessment |
 |---|---|---|
-| Rust, Swift, Go, C# | Dual track: `[]` panics, `.get` returns Option | Trust declaration hides in the *choice of syntax*; Swift's "dictionary safe, array crashes" is a sample of the internal tension |
-| Gleam, Elm | Function-only access; drilling via `use`/`and_then` | **Eko follows this family** — one vocabulary, branch at consumption |
-| JS, Kotlin | `?.[]` safe-navigation syntax | A postfix form the marker discipline already excludes, and both stand on null/undefined |
-| Ruby, Julia | Lenient defaults | Silent defaults conflict with honesty |
+| Rust, Swift, Go, C# | `[]` panics, `.get` returns `Option` | trust hides in the choice of syntax; Swift's "dictionary safe, array crashes" is the tension |
+| Gleam, Elm | function-only access | **Eko follows** — one vocabulary, branch at consumption |
+| JS, Kotlin | `?.[]` safe navigation | a postfix form the marker discipline excludes |
+| Ruby, Julia | lenient defaults | silent defaults contradict honesty |
 
-Consequences: out-of-bounds panic vanishes from the language entirely, and
-the panic surface shrinks to arithmetic, `unwrap`/`expect`, `panic`, and
-`assert`. The old corpus example — `data[1]` panicking on a short CSV row
-instead of returning an error — was the concrete failure mode that closed
-the case.
+Consequence: out-of-bounds panic vanishes, and the panic surface shrinks to
+arithmetic, `unwrap`/`expect`, `panic`, and `assert`. `Option.get` is an
+ordinary prelude function in the `Option` namespace, so `m.get(i).get(j)`
+resolves at station 2.
 
-`Option.get` (list drilling) is an ordinary prelude function, zero magic,
-living in the `Option` namespace so the chain `m.get(i).get(j)` resolves at
-station 2. Rejected: payload dispatch baked into `Option.get` (a second
-type-inexpressible built-in after `with`, and signature overloading is
-banned) and compound words like `get_or` (composition suffices; no word
-earns its place).
+## 3. Modules and imports
 
-## 3. Modules: file is module
+One file is one module, named by its file stem; directories organize files,
+are never modules, and are never named in code (`Clause 7.2.1`). Import paths
+locate files; call sites use the single-segment stem. `import` opens **types**
+into unqualified scope and declares the dependency edge; constructors are
+visible for anchoring without forming a name layer (`Clause 7.4.6`), so
+patterns write `Ok v ->` and annotations write `p: Person`. Functions stay
+module-qualified, so provenance is visible at every call site; `x.Mod.f(args)`
+fills the one position unreachable natively.
 
-One file is one module, named by its file stem; directories organize files
-and are never modules and never named in code (`Clause 7.2.1`). This
-structurally eliminates the two historical ambiguities of the family: the
-Rust module tree (is a directory a module or a container?) and Go's
-package-name-vs-directory mismatch. Import paths locate files; call sites
-use the single-segment stem.
+The symmetry with capabilities is deliberate: `main`'s parameter list is the
+capability authorization manifest, the import list the *name* authorization
+manifest. Ambient authority and ambient names are rejected alike.
 
-### The import keyword
-
-`import` was chosen on the Gleam precedent — import plus
-module-qualified function calls is the natural pair. Rejected: `use`
-(Rust's `use` *opens names into scope*, the reverse semantics — the
-collision would confuse exactly the readers it looks familiar to) and
-`dep` (package-management association; packages are tooling domain, below
-the name layer).
-
-### What an import does, and does not, do
-
-An import declares the dependency edge and opens **types** into unqualified
-scope; constructors are visible for anchoring and form no name layer
-(`Clause 7.4.6`) — patterns write bare constructors (`Ok v ->`) and
-annotations write bare names (`p: Person`), spellings that cannot carry a
-prefix. Functions are always module-qualified so provenance is visible at
-every call site. The UFCS extension `x.Mod.f(args)` fills the one position
-otherwise unreachable natively, keeping the pipeline linear.
-
-The symmetry with capabilities is deliberate: `main`'s parameter list is
-the capability authorization manifest; the import list is the *name*
-authorization manifest. Eko rejects ambient authority and ambient names
-alike.
-
-## 4. Visibility: the `_` prefix
+## 4. Visibility
 
 Public by default; a leading `_` makes a top-level binding module-private
-(`Clause 7.3.1`). The yield: zero keywords, zero manifest, zero
-double-writing — the interface is extracted from the implementation. The
-price, recorded: the export surface grows without a separate declaration,
-and changing visibility is a rename.
+(`Clause 7.3.1`): zero keywords, zero manifest, the interface extracted from
+the implementation. The recorded price: the export surface grows without a
+separate declaration, and changing visibility is a rename. `_` applies at
+module top level only (a local `_x` is legal and exempt from `W-unused`);
+exported signatures must reference visible types; variant visibility follows
+the type, because exhaustiveness depends on the complete constructor set.
 
-Companion rulings: `_` applies to module top level only (a local `_x` is
-legal, semantically neutral, and exempt from `W-unused`); exported
-signatures must reference visible types (otherwise a value flows while its
-type name cannot be spelled); variant visibility follows the type, because
-exhaustiveness depends on the complete constructor set.
+## 5. The prelude opening
 
-## 5. Rejected module-system alternatives
+The prelude is the only implicit module, injecting `assert`, `assert_eq`, and
+`assert_ne` (`Clause 9.1.2`). `show`, `inspect`, and `panic` are
+compiler-generated services attached to type namespaces; their free-call forms
+are the identity of `Clause 6.5.2`, not opened names. The free spelling spans
+all type namespaces at once — no single namespace could supply it — and
+without the identity every call would read `x.show()`. The opened set is
+closed and versioned with the compiler.
 
-| Rejected | Reason |
-|---|---|
-| Functors / module-level signatures | Generics already own parameterization; two vocabularies for one phenomenon are prohibited (`Clause 6.10`) |
-| Modules as values | A record of closures is the value form (`mk_logger`); modules never enter value position |
-| `open` — opening functions into scope | Does not fix the receiver position (the stations still exclude opened names, so yet another rule would be needed), loses call-site provenance, and adds a global collision surface |
-| Re-export | Forwarding is a function, and forwarding is not renaming; honest and greppable |
-| Cyclic dependencies | The DAG is the foundation of the build graph, caching, and incremental compilation; cross-module mutual recursion is resolved by merging modules or passing function values |
-| Conditional compilation | Multiple platforms are host and library business, not name-layer business |
-| Initialization blocks / module-level side effects | Top-level purity is free — module bodies are pure constants evaluable in any DAG order, the order unobservable |
-| Alias mechanisms for imports | Local shadowing of a module name is resolved by renaming the local; no `as` escape hatch |
-| Private modules (`_x.eko`) | Module visibility *is* the import edge; a finer layer would suggest a concept that does not exist |
+## 6. Rejected surface
 
-## 6. The prelude opening
-
-The prelude is the only implicit module. The injected selective import
-opens three free names — `assert`, `assert_eq`, and `assert_ne`
-(`Clause 9.1.2`). `show`, `inspect`, and `panic` are compiler-generated
-services attached to type namespaces; their free-call forms are the
-identity of Clause 6.5.2, not opened names. The free spelling spans all
-type namespaces at once — each namespace carries only its own type's
-member — so no single namespace can supply it; without the identity,
-every call would read `x.show()` and the spelling floor of the language
-would collapse. The opened set is closed and versioned with the compiler,
-so its collision surface is bounded, and conflict rules are the same as
-for user modules.
+| Area | Rejected | Reason (clause) |
+|---|---|---|
+| Access | index syntax `x[i]` | trust in syntax; two entry points per structure (`9.10`) |
+| Access | payload dispatch inside `Option.get` | a second type-inexpressible built-in after `with` |
+| Access | compound names like `get_or` | composition suffices |
+| Import | `use` | Rust's `use` opens names into scope — the reverse semantics |
+| Import | `dep` | package-management association; packages are tooling domain |
+| Module | functors, module-level signatures | generics already own parameterization (`6.10`) |
+| Module | modules as values | a record of closures is the value form |
+| Module | `open` | does not fix the receiver position; loses provenance; adds a global collision surface |
+| Module | re-export | forwarding is a function, not a renaming |
+| Module | cyclic dependencies | the DAG is the foundation of build, caching, and incrementality |
+| Module | conditional compilation | host and library business, not name-layer business |
+| Module | module-level side effects | top-level purity is free; order is unobservable |
+| Module | import aliases (`as`) | rename the local instead |
+| Module | private modules (`_x.eko`) | module visibility *is* the import edge |
+| Visibility | explicit export lists | double-writing; the interface is extracted, not declared (`7.3.1`) |

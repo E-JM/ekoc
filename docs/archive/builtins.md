@@ -1,147 +1,116 @@
 # Design Record — Built-in Data Types and Services
 
-Non-normative. Rulings: Clauses 9.3–9.9. Rejected alternatives, prior art,
-and rationale.
+Non-normative. Ruling clauses: 9.3–9.9. Rejected alternatives, prior art, and
+rationale.
 
-## 1. Char: the scalar layer of Unicode
+## 1. Char
 
-Unicode has three layers — bytes, scalar values, grapheme clusters. `Char`
-is one scalar value, because a scalar type needs a fixed domain; a grapheme
-cluster is a sequence property and belongs to `String` functions (library
-domain). Swift's variable-width `Character` and its indexing contortions
-are the recorded cautionary tale. `String.length` counts scalar values,
-not bytes — counting bytes hides a unit error (the Rust trap, not set);
-byte length goes through `s.to_bytes().length()`.
+Unicode has three layers — bytes, scalar values, grapheme clusters. `Char` is
+one scalar value, because a scalar type needs a fixed domain; a grapheme
+cluster is a sequence property and belongs to `String` functions. Swift's
+variable-width `Character` and its indexing contortions are the cautionary
+tale. `String.length` counts scalars: counting bytes hides a unit error; byte
+length is `s.to_bytes().length()`.
 
-## 2. Conversions: honesty against silent misrepresentation
+## 2. Conversions
 
-The three-way failure taxonomy (`Clause 9.2`) — input validation
-→ `Result`, domain check → `Option`, invariant violation → `panic`,
-conversions never panic — produces two anti-saturation rulings:
+The three-way taxonomy (`Clause 9.2`) — input validation → `Result`, domain
+check → `Option`, invariant violation → `panic` — means conversions never
+panic, and yields two rulings. **Not saturating**: Rust's `as` maps NaN→0 and
+infinity→MAX, silent misrepresentation; `Float.to_int`/`to_uint` return
+`None`. **Negative domain first**: `Float.to_uint` checks negativity before
+truncation (`-0.5 → None`), because truncating to 0 would discard the sign —
+a second lie. Round trips are acceptance surfaces: `parse(show(x)) == Ok x`,
+with Float NaN judged by NaN equivalence (identity preserved, payload bits not
+promised).
 
-- **Not saturating.** Rust's `as` maps NaN→0 and infinity→MAX: silent
-  misrepresentation. `Float.to_int`/`to_uint` return `None` instead.
-- **Negative-domain first.** `Float.to_uint` checks the negative domain
-  *before* truncation (`-0.5 → None`): truncating to 0 would discard the
-  sign, a second lie.
+## 3. Derived services
 
-Round trips are acceptance surfaces: `parse(show(x)) == Ok x`, with the
-Float NaN exception judged by NaN equivalence (identity preserved, payload
-bits not promised).
+One overridable channel loses structural truth — Java's `toString` pitfall,
+answered independently by Python's and Rust's second channels. Eko adopts both
+from the start: `show` (display, overridable by a namespace declaration in the
+owning module) and `inspect` (structural, always derived, never overridable,
+"what you see can be written"). The override is the one place interpolation
+requires non-local reasoning; the structural channel is the permanent
+fallback.
 
-## 3. Derived services: the dual channel
+`<` is derived **only for ADTs** — a declaration list is naturally an order.
+Records have no magnitude (sort with `sort_by`), and `Bool`'s variant order is
+enumeration convenience, so derivation is suppressed there. `Float` follows
+IEEE (`NaN != NaN`); a total-order function may exist someday, never the
+operator.
 
-A single overridable channel loses structural truth — Java's `toString`
-pitfall; Python and Rust each independently grew a second channel. Eko
-adopts both from the start: `show` (display, overridable by a namespace
-declaration in the owning module) and `inspect` (structural, always
-derived, never overridable — "what you see can be written", zero
-exceptions). The override is the one place interpolation requires
-non-local reasoning; the cost is recorded and the structural channel is
-always present as the fallback.
+The dispatch set is eleven names: `show`, `inspect`, `eq`, `ne`, `lt`, `le`,
+`gt`, `ge`, `with`, `to_json`, `from_json` (`Clause 9.8.7`). A declared
+namespace member wins over the derived default, so the discipline is enforced
+at the declaration, not at the call site.
 
-- `<` is derived **only for ADTs**: a declaration list is naturally an
-  order, so derivation is faithful. Records have no magnitude semantics
-  (sort with `sort_by`); `Bool`'s variant order is enumeration convenience,
-  not magnitude — derivation deliberately suppressed.
-- `Float` follows IEEE (`NaN != NaN`); a total-order function may exist
-  someday, never the operator.
-- `with`'s parameter type is **inexpressible** in Eko's type syntax — the
-  first compiler built-in service whose type cannot be written. The
-  exception is explicit, localized, and the reason no second one
-  (`Option.get` payload dispatch) was allowed (`Clause 6.10`).
+Four names admit no declaration at all: `inspect` (`Clause 9.8.1`), the JSON
+pair (`Clause 9.9.5`), and `with`, whose second parameter type is
+inexpressible (`Clause 9.8.6`). Declaring one is `E-service-fixed`. The other
+seven carry fixed signatures, pure arrows only — `show` is `(t) -> String`,
+the equality and ordering family `(t, t) -> Bool` — and a wrong arrow is
+`E-service-signature` at the declaration, because dispatch reads the member as
+the service and a wrong arrow would detonate far from its cause. `with`'s
+inexpressible signature is also why no second such built-in was allowed
+(`Clause 6.10`): `Option.get` payload dispatch was rejected.
 
-**Ruling.** The dispatch set is eleven names: `show`, `inspect`, `eq`,
-`ne`, `lt`, `le`, `gt`, `ge`, `with`, `to_json`, and `from_json`
-(`Clause 9.8.7`). A declared namespace member wins over the derived
-default, so the declaration is where the discipline is enforced, not the
-call site that reads it.
+## 4. JSON
 
-Four names are fixed and admit no declaration at all. `inspect` is
-structural truth with zero exceptions (`Clause 9.8.1`). `to_json` and
-`from_json` are the derived pair whose involution is the contract; a
-representation choice is a named codec pair in the protocol's module,
-never a declaration (`Clause 9.9.5`). `with` is a construction primitive
-whose second parameter type is inexpressible, so no correct declaration
-could be written (`Clause 9.8.6`). A declaration of one of the four is
-rejected at the name layer with `E-service-fixed` (Annex B).
+External tagging (serde-isomorphic): zero-payload variants map to strings,
+payload variants to single-key objects — the simplest form for CLI
+configuration. `Int` and `Float` stay separate variants, so `42` comes back as
+`Int`; round-trip fidelity beats JSON's single number type. `Obj` preserves
+insertion order, so text is reproducible and config diffs are stable.
+Non-finite floats render as `NaN`/`Inf`/`-Inf` and parse back — an Eko-side
+extension of strict JSON, honestly labeled; strict conversion is a library
+concern.
 
-The remaining seven carry fixed signatures, pure arrows only: `show` is
-`(t) -> String`, and the equality and ordering family — `eq`, `ne`, `lt`,
-`le`, `gt`, `ge` — is `(t, t) -> Bool`. A wrong signature is rejected at
-the declaration with `E-service-signature` (Annex B), because dispatch
-reads the member as the service: a wrong arrow would detonate far from
-its cause, at an interpolation, an `==`, or an ordering call.
+## 5. Bytes
 
-- **Rejected: a declaration for a fixed service.** Each of the four has
-  one truth no type owner can restate — `inspect`'s structural truth, the
-  JSON involution, `with`'s inexpressible signature — and a second truth
-  is exactly what a fixed service is fixed against. `E-service-fixed` is
-  the name-layer verdict, not a later check of the body.
-- **Rejected: a call-site signature check.** Reporting the wrong arrow
-  where it is used would report one declaration defect many times, at
-  positions that do not own it — an interpolation, an `==`, an ordering
-  call — and would leave a generic body unchecked until instantiation.
-  The declaration is where every call shares its type.
-
-Declared-over-derived precedence is unchanged.
-
-## 4. JSON: external tagging and round-trip fidelity
-
-- **External tagging** (serde-isomorphic): zero-payload variants map to
-  strings, payload variants to single-key objects — the simplest form for
-  CLI configuration, where zero-payload enums read and write directly.
-- **`Int` and `Float` are separate variants**: `42` goes in and comes out
-  as `Int`. Round-trip fidelity takes precedence over the surface
-  uniformity of JSON's single number type.
-- `Obj` preserves insertion order, so JSON text is reproducible and
-  configuration diffs are stable.
-- Non-finite floats render as `NaN`/`Inf`/`-Inf` and parse back — an
-  Eko-side extension of strict JSON, honestly labeled; converting for
-  strict external consumers is a library concern.
-
-Rejected: a format-string or query DSL, default pretty printing (`indent`
-is library domain), silent non-string-key dictionary isomorphism (compile
-error, explicit conversion), YAML/TOML in the prelude, and runtime
-reflection (derivation is compile-time expansion).
-
-## 5. Bytes: the identity decision
-
-`Bytes` is a contiguous immutable block, in the same family as `String`,
-with **no byte literal** — construction goes through functions. The full
-rejection table behind `Clause 9.5`:
+`Bytes` is a contiguous immutable block in the same family as `String`, with
+**no byte literal**: construction goes through functions (`Clause 9.5`).
 
 | Rejected | Reason |
 |---|---|
-| `[]Byte` (bytes as a list) | The list contract is structural sharing and inductive patterns (`{h, ..t}` O(1) tails); a byte block needs contiguity and offsets. Sharing one name for both means same-type-different-layout — the cost model splits *inside* one type. Per-byte nodes also multiply memory and counts (a 1 MB file is a million heap objects) and make pattern-rest O(n) per step (O(n²) protocol parsing). Haskell's `[Word8]` → packed `ByteString` is history's own answer to this experiment |
-| `Byte` element type | The safety it buys is already `from_ints`'s single `Option` check; it has no second identity like `Char` earned (no literal, no self-display), and bytes are *arithmetic* daily (checksums, varints) — an element type turns `b1 * 256 + b2` into a to_code/from_code round trip. A dedicated identity is available as a user single-variant declaration |
-| `String` as `[]Char` (for symmetry) | Direction reversed: `String ≠ []Char` is the established precedent (contiguous UTF-8 + `chars` bridge); `Bytes` is the same design act a second time, not a new exception |
-| Early `UInt8` element spelling | The machine-word family arrives as a whole with the FFI track; a single early member leaks the family boundary and drags in its overflow and conversion rulings. A byte is a natural number 0..255 — the same move as `Char.to_code` — and machine words hold and ferry, never compute |
+| `[]Byte` | the list contract is sharing and inductive patterns; a byte block needs contiguity and offsets. One name for two layouts splits the cost model inside one type; a 1 MB file becomes a million nodes and pattern-rest O(n²). Haskell's `[Word8]` → `ByteString` is the same verdict |
+| `Byte` element type | the safety is already `from_ints`' one `Option`; it has no second identity, and bytes are arithmetic daily (checksums, varints) — `b1 * 256 + b2` would become a code round trip. A dedicated identity is a user declaration |
+| `String` as `[]Char` for symmetry | direction reversed: `String ≠ []Char` is the precedent (contiguous UTF-8 + `chars` bridge); `Bytes` repeats the act |
+| early `UInt8` spelling | the machine-word family arrives whole with FFI; a byte is a natural number 0..255, the same move as `Char.to_code` |
 
-The two gates: `File.read` keeps the text gate (`Err InvalidData` for
-non-UTF-8) — with `read_bytes` as the raw-byte front door, the refusal is
-a guard, not a dead end — and `read_bytes` never reports `InvalidData`; a
-short read means EOF.
+Two gates: `File.read` keeps the text gate (`Err InvalidData` for non-UTF-8),
+with `read_bytes` as the raw front door; `read_bytes` never reports
+`InvalidData` — a short read is EOF.
 
-## 6. Time: three quantities, three types
+## 6. Time
 
-A timestamp (human calendar), a measurement (order and length), a duration
-(difference) have mutually exclusive semantics; a bare `Int` leaves the
-unit implicit, and the millisecond-versus-microsecond dispute is a real
-incident source — sealing the unit into a nominal type rules it out.
-A wall clock can jump (a correction may move it backwards); a monotonic
-clock cannot; the two "now"s are typed apart so misuse cannot meet
-(`measure with mono, timestamp with now`).
+A timestamp (calendar), a measurement (order and length), and a duration
+(difference) have mutually exclusive semantics; a bare `Int` leaves the unit
+implicit, and the millisecond-versus-microsecond dispute is a real incident
+source. A wall clock can jump backwards, a monotonic clock cannot, so the two
+"now"s are typed apart. There is no operator sugar on time arithmetic — single-
+variant payloads are not exposed, so every operation is named, which is the
+credential of unit safety. UTC is the only zone; formatting and localization
+are library domain. Leap seconds are not represented (a day is always 86400
+seconds). The Int64-nanosecond payload spans roughly ±292 years; arithmetic
+outside it panics. On a frozen clock `now()` still sets the world bit:
+determinism is a property of values, the bit a property of signatures.
 
-- **No operator sugar on time arithmetic**: single-variant payloads are
-  not exposed, so operators cannot reach them; every operation is named,
-  which is both the price and the credential of unit safety.
-- **UTC is the only zone** — a local timezone undermines determinism;
-  formatting and localization are library domain.
-- Leap seconds are not represented (POSIX epoch maps directly; a day is
-  always 86400 seconds); alignment policy is host domain.
-- The Int64-nanosecond payload spans roughly ±292 years; arithmetic outside
-  the domain panics under the existing rules.
-- On a frozen clock, `now()` **still sets the world bit**: determinism is a
-  property of the values; the bit is a property of the signature — each
-  pays its own bill.
+## 7. Rejected surface
+
+| Area | Rejected | Reason (clause) |
+|---|---|---|
+| Char | grapheme clusters as `Char` | a sequence property belongs to `String` functions |
+| Char | variable-width characters (Swift) | unfixed domain; indexing contortions |
+| Char | byte length as `String.length` | hides a unit error; `to_bytes()` states it |
+| Conversion | saturating conversion (Rust `as`) | NaN→0 and infinity→MAX are silent misrepresentation (`9.2`) |
+| Conversion | truncate before the sign check | `-0.5 → 0` discards the sign (`9.2`) |
+| JSON | format-string or query DSL | a second language for one tree; a `Json` value composes and greps |
+| JSON | default pretty printing | `indent` is library domain (`9.9`) |
+| JSON | silent non-string-key dictionary isomorphism | compile error; conversion is explicit |
+| JSON | YAML/TOML in the prelude | outside the JSON service; library domain |
+| JSON | runtime reflection for deriving | derivation is compile-time expansion |
+| Time | bare `Int` for all three quantities | unit left implicit; ms/µs incidents |
+| Time | operator sugar on time arithmetic | payloads are not exposed; named operations are the credential |
+| Time | local time zones | determinism; formatting is library domain |
+| Time | leap-second representation | a day is always 86400 seconds under POSIX epoch |

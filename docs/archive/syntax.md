@@ -1,114 +1,62 @@
 # Design Record — Syntax and Lexical Structure
 
-Non-normative. Rulings: Clauses 5 and 6. Rejected alternatives, prior art,
-and rationale for the surface rules.
+Non-normative. Ruling clauses: 5, 6. Rejected alternatives and rationale for
+the surface rules.
 
-## 1. Layout: indentation and the two flow shapes
+## 1. Layout
 
-Blocks are delimited by layout, never braces; `:` and `=` open a block,
-and a `case` arm's `->` opens its body block; the first member line
-establishes the column, nesting indents one level (`Clauses 6.2.2,
-6.2.3`). Four spaces per level is a fixed constant, not a style
-choice — a conforming parser accepts exactly one indentation width, which
-removes an entire configuration axis (tab vs space, width 2/4/8) from
-tooling forever. A raw tab is a compile error (`E-tab`), ignored only inside
-comments.
+`:`, `=` and a `case` arm's `->` open layout blocks; indentation is fixed at
+four spaces and nothing else, so tab (`E-tab` outside comments) and 2/8-space
+widths are not a configuration axis (`Clauses 6.2.2, 6.2.3`). `case` wraps a
+value flowing outward; `<-` flattens one flowing forward (`Clause 6.3.4`).
 
-The two flow shapes of the running example are semantically forced, not
-stylistic: `with_file`'s error value exists only *after* the callback
-finishes, so the `case` that consumes it must enclose the whole call — a
-value flowing *outward* is wrapped by `case`; a value flowing *forward* is
-flattened by `<-` (`Clause 6.3.4`). One layer each, no mixing.
+## 2. Operators
 
-## 2. Operators: symbols, not words
-
-`&&`/`||`/`not` symbols instead of the words `and`/`or`/`not`
-(`Clause 7.8.5`). Reasons, in order:
-
-1. Words would permanently retire three identifiers from every scope.
-2. Words would rule out `Bool.and` and `Bool.not` as namespace members.
-3. Words would break the rule that every keyword opens a block
-   (`if`, `case`, `else` all do).
-4. Symbols consume no identifiers; the single-character forms `&` and `|`
-   remain reserved — `|` for the or-pattern separator (`Clause 6.8`).
-
-### Rejected operator surface
-
-| Rejected | Reason (clause) |
-|---|---|
-| User-defined operators | The set is closed; overloading is namespace resolution, one mechanism (`Clause 6.5.4`) |
-| Bitwise `& \| ^ << >> ~` | Functions are the vocabulary (`UInt.band/...`, `Clause 9.6.5`); the closed set keeps the precedence ladder small and finite |
-| `**` exponentiation | `Int.pow` / `Float.pow` say the cost in a name; also removes the `-a ** b` precedence trap |
-| `++`/`--` increment statements | Values are immutable; `++` is concatenation only |
-| Ternary `?:` | `if` is already an expression (`Clause 6.7.4`); a second spelling for one construct |
-| Chained comparisons `a < b < c` | Parse error, the C classic; write `a < b && b < c` (`Clause 6.5.5`) |
-| Prefix `!x` | `!` belongs exclusively to the world-bit marker (`Clause 7.9`) |
-| Word operators `and`/`or`/`not` | See above |
-| Labels after `!`/`?` | Permanently closed — `Clause 7.9.3` |
+Symbols, not words: `and`/`or`/`not` would retire three identifiers, preclude
+`Bool.and`/`Bool.not`, and break "every keyword opens a block"; `&` and `|`
+stay reserved for the or-pattern separator (`Clauses 7.8.5, 6.8`).
 
 ## 3. Literals
 
-- **Decimal by default, `0x`/`0b` completed later.** The binary literals
-  arrived with the FFI wave: prefix lowercase, digits case-insensitive,
-  placed by expected type exactly as decimal (`Clause 5.7`). The
-  original decimal-only surface was a staging decision, not a philosophical
-  one; what was philosophical is the *refusal of type suffixes* — `255u`,
-  `10LL` and friends — because Eko places integer literals by expected
-  type, a single mechanism that suffixes would bypass and thereby fork.
-- **`_` digit grouping only.** No separators beyond `_`, no suffixes.
-- **A leading `-` is the unary operator**, never part of the literal — one
-  lexing rule, no negative-literal corner cases in patterns.
-- **A floating literal is finite.** `1e999` is `E-literal-overflow`, not
-  `inf`: a literal is a placement checked at compile time, while derived
-  operations may follow the hardware to infinity (`Clause 5.7.2`).
-- **`255.to_hex()` is a postfix call on `255`**, not an incomplete float;
-  an integer literal immediately followed by `..` does not begin a float.
-  Both are longest-match consequences, stated in Clause 5.10.3 so no lexer
-  invents its own reading.
+Decimal by default; `0x`/`0b` prefixes are lowercase, digits case-insensitive.
+`_` groups digits; no suffixes. A leading `-` is the unary operator, never
+literal text. `1e999` is `E-literal-overflow`, not `inf`. `255.to_hex()` is a
+postfix call, and `255` followed by `..` is not a float — both longest match
+(`Clauses 5.7, 5.7.2, 5.10.3`).
 
-### Rejected literal surface
+## 4. Domain vs machine words
 
-| Rejected | Reason |
-|---|---|
-| Numeric type suffixes | Placement is by expected type (`Clause 5.7`); suffixes fork the mechanism |
-| Octal `0o` | Never requested by any consumer surface; `Int.to_oct`/`parse_oct` are functions (`Clause 9.13.1`) |
-| Byte literals `b"…"`, `bytes"…"` | Construction goes through functions; `0x` literals are integers, not byte construction (`Clause 9.5.5`) |
-| Multiline string literals | YAGNI; `\n` is sufficient and explicit; multiline strings drag trailing-newline and indentation semantics behind them |
-| Block comments `/* ... */` | Nesting freedom is a pseudo-need; deletion is rewriting (`Clause 5.4`) |
+Full spellings (`Int`, `UInt`, `Float`) are the domain; abbreviations
+(`I8`…`F64`) are the machine boundary, where values hold, compare, show and
+ferry but never compute (`Clauses 9.6.1, 10.3.1`). `Int` is 64-bit on every
+host, not the platform word; overflow panics rather than widening, and bignum
+is library domain (`Clause 9.6.1`). `UInt` is the domain for natural numbers,
+so the truncation/floor split does not arise.
 
-`///` documentation comments carry zero semantics by design: they do not
-participate in compilation and do not suppress warnings, so extraction and
-rendering are purely toolchain domain (`Clause 11.3`).
+## 5. Comments
 
-## 4. Numeric vocabulary: domain words and machine words
+`//` comments; `///` documents the following binding, carrying no semantics
+and suppressing no warnings — markdown is toolchain business (`Clauses 6.3.5,
+11.3`). Comments are trivia outside string literals only: inside an
+interpolation slot `//` and `/*` are operator tokens (`Clauses 5.4.1, 5.9.3`).
 
-The two-family split — full spellings `Int`/`UInt`/`Float` for the domain,
-abbreviations `I8…F64` for the machine boundary (`Clause 9.6.1`) — is a
-lexical signal, not a typing distinction alone: *full spelling = domain,
-abbreviation = machine interface*. Machine words hold, compare, show, and
-ferry; they never compute (`Clause 10.3.1`).
+## 6. Rejected surface
 
-- **Fixed 64-bit domain types**, not platform word size: determinism across
-  hosts; `Int` means Int64 everywhere.
-- **bignum rejected by default** (`Clause 9.6.1`): a bignum type would conflict with
-  `UInt` as the primary numeric type, with FFI mapping, and with the
-  zero-cost erasure model. Overflow panics instead of silently widening —
-  the honest cheap option; bignum is library domain.
-- **`UInt` is the primary type for natural numbers** and the correct domain
-  for non-negative modular arithmetic; the truncation/floor distinction
-  vanishes there.
-
-## 5. Comments and documentation
-
-One comment syntax (`//`) plus one documentation marker (`///`). The
-documentation marker attaches to the *following* binding and aggregates
-consecutive lines; treating `type`, `test`, and `main` declarations alike
-costs nothing because the annotation slot already made declarations
-bindings (`Clause 6.3.5`). Rejected: any doc-syntax inside the comment
-(markdown is toolchain's business, not the language's).
-
-A comment form is source-level trivia, recognized only outside a string
-literal. Inside an interpolation slot the content is an expression: `//`
-and `/*` lex as operator tokens, not comments, and the old
-comment-to-end-of-line reading — which swallowed the string's remainder —
-is rejected (`Clauses 5.4.1, 5.9.3`).
+| Area | Rejected | Reason (clause) |
+|---|---|---|
+| Operator | user-defined operators | closed set; overloading is namespace resolution (`6.5.4`) |
+| | bitwise `& \| ^ << >> ~` | functions are the vocabulary (`9.6.5`) |
+| | `**` | `Int.pow`/`Float.pow` name the cost; no `-a ** b` trap |
+| | `++`/`--` | values are immutable; `++` is concatenation only |
+| | ternary `?:` | `if` is already an expression (`6.7.4`) |
+| | `a < b < c` | parse error; write `&&` (`6.5.5`) |
+| | prefix `!x` | `!` is the world-bit marker (`7.9`) |
+| | word `and`/`or`/`not` | §2 |
+| | labels after `!`/`?` | closed (`7.9.3`) |
+| Literal | type suffixes (`255u`) | placement by expected type (`5.7`) |
+| | octal `0o` | `Int.to_oct`/`parse_oct` (`9.13.1`) |
+| | byte literals | construction goes through functions (`9.5.5`) |
+| | multiline strings | YAGNI; `\n` is explicit |
+| | block comments | nesting is a pseudo-need (`5.4`) |
+| Number | bignum | conflicts with `UInt`, FFI mapping, zero-cost erasure (`9.6.1`) |
+| Toolchain | doc syntax inside comments | markdown is not the language's business (`11.3`) |

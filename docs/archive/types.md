@@ -1,251 +1,141 @@
 # Design Record — Types and Generics
 
-Non-normative. Rulings: Clauses 7.5, 7.6. Rejected alternatives, prior art,
-and rationale.
+Non-normative. Ruling clauses: 7.5, 7.6. Rejected alternatives, prior art, and
+rationale.
 
-## 1. Declarations: the annotation slot and no aliases
+## 1. Declarations
 
-`type` lives in the annotation slot, so a type declaration has the same
-grammatical shape as every other binding: the line starts with a name. The
-same design act puts `!->`/`?->` on arrows and `=`/`:=`/`<-` on bindings —
-markers land on slots, and the declaration head keeps the invariant
-`Name ':'` common to all declaration forms.
+`type` lives in the annotation slot, so a type declaration has the same head
+as every binding: the line starts with a name (`Name ':'`). The right-hand
+side is a **declaration form only** — variant list or bracketed
+record/tuple — which is the no-aliases ruling: naming never renames an
+existing identity, so `type` cannot smuggle in a synonym and nominal identity
+is never inherited by spelling.
 
-The right-hand side is a **declaration form only** (variant list or bracketed
-record/tuple). This is the no-aliases ruling: naming never renames an
-existing identity, so `type` cannot smuggle in a synonym, and nominal
-typicality stays honest — identity is bought explicitly, never inherited by
-spelling.
+## 2. Nominality
 
-## 2. Nominality and shape adaptation
+**Identity is bought explicitly; an anonymous form is a view.** Same-shaped
+declarations never interconvert (`Celsius` vs `Fahrenheit`), and a nominal
+value flows one-directionally into a same-shape anonymous form at exactly
+three positions — argument, operand, expected type — never back. Same-shape
+is exact, not a width relation: adding a field to `Person` breaks every
+same-shape anonymous signature, and it should.
 
-The axis: **identity is bought explicitly — a declaration is an identity,
-an anonymous form is a view.** The same philosophy as capabilities
-(permissions are explicit; identity is explicit). Consequences:
-
-- Same-shaped declarations never interconvert (`Celsius` vs `Fahrenheit`);
-  the temperature accident is structurally impossible, and a newtype is
-  airtight against every declared type.
-- A nominal value flows one-directionally into a *same-shape* anonymous
-  form at exactly three positions: argument, operand, expected type. The
-  reverse never happens — an anonymous form does not impersonate a nominal.
-- Same-shape is an exact match, not a width relation. Field-evolution
-  brittleness is the contract: adding a field to `Person` breaks every
-  same-shape anonymous signature, and it should.
-
-**Rejected alternatives:**
-
-| Rejected | Reason |
-|---|---|
-| Row polymorphism / width subtyping | Same-shape exactness is the contract; rows reintroduce silent structural drift (`Clause 7.5.5`) |
-| Automatic conjunction for mixed operands | Operand typing is fixed by the left operand; searching for a common anonymous supertype would reopen the temperature accident from the equality side (`Clause 7.5.5`) |
-| Shape adaptation inside containers and function types | Shapes carry identity, so they do not move freely; bit adaptation is exempt because bits are erased (`Clause 7.5.5`) |
-| Anonymous ADTs | No union form outside a right-hand side; adaptation stays records-and-tuples only |
-| `Name(x)` conversion functions and "type names in value position" | Explicit conversion is a literal at the expected position or a field-by-field rebuild (`Clause 7.5.2`) |
-
-## 3. The four composites and two bracket pairs
+## 3. Composites
 
 `[...]` at type position, `{...}` at value position, zero overlap
-(`Clause 6.6`). A composite literal never stands alone — the expected
-type resolves list-vs-tuple and dictionary-vs-record, the same machinery
-that types lambda parameters. The single localized exception is `with`'s
-partial literal (`Clause 9.8.6`). `with` is construction from a base, not
-a function: its second parameter type is unspellable, and the partial
-literal is legal only in its argument position. The partial literal
-descends through record field values only; list, dictionary, and tuple
-elements are complete values (`Clauses 6.6.3, 9.8.6`).
+(`Clause 6.6`). A composite literal never stands alone: the expected type
+resolves list-vs-tuple and dictionary-vs-record, the same machinery that types
+lambda parameters. The single localized exception is `with`'s partial literal,
+legal only in that argument position and descending through record field
+values only (`Clauses 6.6.3, 9.8.6`). `Set` is prelude `Set t` with no
+notation and no literal. A tuple has at least two elements; `(Int)` is a
+parenthesized type, `()` the zero-parameter function type, and the unit is
+`_`.
 
-- Value-position tuples do not use `(...)`: parentheses are already taken
-  by parameter groups, call syntax, and parenthesized expressions.
-- `Set` is in the prelude as `Set t` with **no notation and no literal**:
-  `{a, b}` is already given to lists and tuples, and a fifth composite form
-  would break the four-form closure.
-- A tuple has at least two elements; `(Int)` is a parenthesized type, `()`
-  the zero-parameter function type, and the unit is `_` — never a zero
-  element tuple.
+## 4. Generic application
 
-## 4. Generic application: the notation decision
+Juxtaposition without commas: `Value Int Float`, composite arguments
+parenthesized, the chain stopping at `,` and `->` (`Clause 7.6.4`). The
+governing convention is *application by adjacency, enumeration by commas* —
+`[k]v` has no comma, `[a, b]` does.
 
-Application is **juxtaposition without commas**: `Value Int Float`, composite
-arguments parenthesized, the chain stops at `,` and `->`
-(`Clause 7.6.4`). The full option space that was weighed:
+Type variables are lowercase. Case doctrine puts PascalCase on the identity
+layer and bindings in snake_case; `Tree T` vs `Tree t` is unreadable at one
+character's distance in unseparated adjacency; and the uppercase scheme had to
+confiscate single-letter uppercase type names. The recorded cost: in a
+right-hand side and in patterns, case no longer signals the domain — position
+settles the parse.
 
-| Candidate | Verdict |
-|---|---|
-| `Value<Int, Float>` | Rejected: operator ambiguity, `>>` nesting damage, and a surface break in a language whose other applications are by adjacency |
-| `Value[Int, Float]` | Rejected: fatal collision with the bracketed type forms of `Clause 6.6` |
-| `Value(Int, Float)` | Rejected: collides with call syntax |
-| `Value Int, Float` | Rejected — the decisive case: a function parameter list already separates parameters with commas, so `(Value Int, Float) -> Int` can only parse as two parameters; writing a single argument would need double parentheses in exactly the position where function types appear most often |
-| Prefix binders `Value u t: type` | Rejected: breaks the `Name ':'` declaration-head invariant |
-| Uppercase multi-letter implicit variables | Rejected: a misspelled type name silently becomes a variable (`Clause 7.6.4`) |
-| ML apostrophe `'a` | Rejected: a new lexical class; recorded as a fallback, never used |
+Binders are listed after `type` and filled positionally. Collecting variables
+by first occurrence fails silently: reordering variants would flip the meaning
+of positional arguments at distant use sites.
 
-The winning rationale is internal consistency: the language's existing
-convention is *application by adjacency, enumeration by commas* — `[k]v`
-has no comma, `[a, b]` does.
+## 5. Dangling variables
 
-### Type variables are lowercase
+A declaration binder must occur in the right-hand side (phantom ban), or
+`==`, `show`, and conversion semantics would depend on a position no value can
+distinguish. A function annotation's variable must occur in at least one
+parameter type (result-only ban) — `Set.empty: () -> Set t` is why no such
+word exists (`Clause 9.10.3`). The open-bit prohibition (`Clause 7.9.3`) is
+the same rule on the bit axis. Polymorphic recursion comes free: the type
+comes from the annotation, not from inference.
 
-Lowercase variables close three breaches of the earlier uppercase scheme
-(`Tree: type T`):
+## 6. Recursive types
 
-1. **Case doctrine.** PascalCase is the identity layer (declared types,
-   constructors, namespaces); a variable is a binding, and bindings are
-   snake_case everywhere else. The old scheme dressed a binding in the
-   identity layer's clothes.
-2. **Juxtaposition self-collision.** `Tree T` vs `Tree t` — one character
-   of case distinguishing type from variable in unseparated adjacency is
-   unreadable; lowercase separates at a glance.
-3. **Name confiscation.** The old scheme had to ban single-letter uppercase
-   type names to keep the lexical judgment working — confiscating a whole
-   class of names. Lowercase confiscates nothing.
+A right-hand side may self-refer, and **every recursive position is a
+pointer** (`Clause 8.5.5`): size is finite and opening recursion needed zero
+new well-formedness checks. A recursive type with no base case is legal and
+uninhabited. Derived services terminate by the acyclicity theorem
+(`Clause 8.6.1`).
 
-The cost is recorded: in a declaration's right-hand side and in patterns,
-case no longer signals the domain — `Ok t` as payload and `Ok t` as pattern
-look alike; position settles the parse, and human scanning pays.
+## 7. Constructors
 
-### Explicit ordered binders
+Constructors are anchored, not layered: same-named constructors of different
+types coexist, anchored by the expected type in value position or the
+scrutinee type in pattern position, and an unanchored reference is legal only
+when exactly one visible constructor of that name is non-generic
+(`Clause 7.4.6`). Application is check-only — the instantiation comes from the
+expected type.
 
-Binders are listed after `type` and filled positionally. The rejected
-alternative — collecting variables by first occurrence in the right-hand
-side — fails silently: reordering variants or fields would flip the meaning
-of positional arguments at distant use sites, and a union carries no
-positional skeleton of its own to prevent it.
+A bare generic constructor has no self-anchoring equality: `Leaf 1 == Leaf 2`
+is an error; with one side a variable the instance is determined (cross-
+seeding); single-variant unions self-anchor, so `Red == Green` stays legal.
+An unanchored generic constructor never instantiates bottom-up from its
+payload: `x := Some 1` is `E-undetermined` and wants an annotation
+(`Clause 7.6.4`).
 
-## 5. Dangling variables: the two symmetric bans
+## 8. `Never`
 
-- A declaration binder must occur in the right-hand side (phantom ban) —
-  otherwise `==`, `show`, and conversion semantics would be entangled with
-  a position no value can distinguish.
-- A function annotation's variable must occur in at least one parameter
-  type (result-only ban) — a type not determined by the parameters should
-  be determined, and `Set.empty: () -> Set t` is exactly why no such word
-  exists (`Clause 9.10.3`).
+`Never` is the dual of `_`: `_` is the unit type with one value, `Never` the
+bottom type with none. It resolves as vocabulary in every file, cannot be
+declared, has no namespace, and a member access on it types as `Never` with no
+evaluation. The empty right-hand side is removed from the grammar: a type
+declaration always carries a variant list, a record, or a tuple.
 
-The open-bit result-only prohibition (`Clause 7.9.3`) is the same
-rule on the bit axis: bits and types run on one machine. Polymorphic
-recursion comes free because the type comes from the annotation rather
-than inference, and a recursive call may use any instantiation.
+Two consequences. Exhaustiveness belongs to patterns, never to divergence
+(`control.md` §5): a `Never` arm's pattern covers like any other, and a case
+whose arms all diverge is exhaustive with type `Never`, like `Clause 7.7.4`. And
+`Never` has no services at all: every operation on a never-returning
+expression returns `Never`.
 
-## 6. Recursive types: open recursion, indirect positions
+## 9. Range
 
-A right-hand side may self-refer; **every recursive position is a pointer**
-(`Clause 8.5.5`), so size is always finite and opening recursion needed
-zero new well-formedness checks. A recursive type with no base case is
-legal and has zero inhabitants — inhabitance is not checked, the same
-spirit as `Never` and `[]Never`. Derived services terminate on recursive
-structure by the acyclicity theorem (`Clause 8.6.1`).
+`Range: type t = _Range [start: t, end: t, closed: Bool]` is a std ADT row
+(Annex C.2), not an intrinsic. `..` and `..=` are its only public
+construction (`Clause 6.5.6`); the `_`-prefixed constructor spelling is
+module-private under the one variant-visibility split (`Clause 7.3.3`). The
+endpoint domain — `Int`, `UInt`, or `Char`, both endpoints one type — is the
+operators' compile-time contract (`Clause 6.5.6`), so `Range Bool` is a
+writable type with no writable value. Inside, `Range` is a real ADT, so `eq`,
+ordering, and `show` come free; `inspect` is compiler-owned as `0..9` /
+`0..=9`, the writable operator spellings (`Clause 9.8.3`).
 
-## 7. Constructors and equality anchoring
+## 10. Rejected surface
 
-Constructors are anchored, not layered: same-named constructors of
-different types coexist; the expected type in value position or the
-scrutinee type in pattern position anchors the reference, and an
-unanchored reference is legal only when exactly one visible constructor of
-that name is non-generic (`Clause 7.4.6`). The rejected reading was a
-visibility layer with std beneath user constructors: a user
-`MyBool: type = True | False` would then occlude std's `True` everywhere
-and reject a correct `x: Bool = True`. A name layer forces a winner where
-the anchor should decide.
-
-Constructor application is check-only — it needs an expected type, because
-the instantiation comes from that type. A bare generic constructor has no
-self-anchoring equality: `Leaf 1 == Leaf 2` is an error (no unique union to
-anchor the instantiation); if one side is a variable the instance is
-determined and the equality is legal — cross-seeding. Constructors of
-single-variant unions self-anchor, so `Red == Green` stays legal.
-
-**Ruling.** An unanchored generic constructor does not instantiate
-bottom-up from its payload: `x := Some 1` stays `E-undetermined` and
-wants an annotation. Instantiation has exactly one source, the expected
-type — written as an annotation, supplied by an anchored position, or
-determined by unification — and the payload is never a second one
-(`Clause 7.6.4`). One source keeps the annotation discipline the generics
-rest on; the undetermined-expectation path already reaches every real
-inference context, composite elements and lambda results among them.
-**Rejected: Rust-style payload-driven inference.** It is a second,
-competing source of instantiation truth, and a `None`-style nullary
-constructor could never instantiate bottom-up anyway — the accommodation
-would cover half the constructors and split the rule.
-
-## 8. `Never`: vocabulary, not a declaration
-
-The bottom type needs two properties no declaration can express: it
-adapts to every value type, and it marks a call that does not return.
-An empty variant list can state *uninhabitedness*, but bottomness is a
-fact of the type lattice and of evaluation, not of a constructor
-enumeration. `std` carrying a `Never: type =` row therefore made the
-library definition decorative — the checker recognized the type by its
-`std` + `Never` name pair, the one declaration whose meaning lived in
-its spelling.
-
-**Ruling.** `Never` is a type of the language, the dual of `_`: as `_`
-is the unit type with exactly one value, `Never` is the bottom type
-with none. It resolves in every file as vocabulary, cannot be declared
-by any module, has no namespace, and a member access on a `Never`
-expression types as `Never` — the receiver never evaluates. The empty
-right-hand side is removed from the grammar: a type declaration always
-carries a variant list, a record, or a tuple.
-
-**Rejected: the Swift model** (keep the std row, grant bottomness by
-name). This was the standing design. It needs name magic in the
-checker, an import-layer anomaly (an opened name that is not a name),
-and an empty-RHS grammar production with exactly one legal customer.
-
-**Rejected: the Lean model** (every zero-variant declaration is
-bottom). Explosion from uninhabitedness is derivable and sound, but it
-buys a family of mutually incompatible bottoms (`[]Void` vs `[]Never`,
-`() -> Void` vs `() -> Never`) with no customer in an industrial
-language — the `Result t Never` idiom needs one bottom, not many.
-Rust `!`, Kotlin and Scala `Nothing`, and TypeScript `never` agree.
-
-Two load-bearing consequences. First, exhaustiveness belongs to
-patterns, never to divergence (record `control.md` §5): a `Never`
-arm's pattern covers like any other arm's, and a case whose arms all
-diverge is exhaustive with type `Never` — `Clause 7.7.4` says exactly
-this. Second, the vacuous derived ordering over the zero-variant
-declaration is gone with the declaration: `Never` has no services at
-all, because every operation on a never-returning expression returns
-`Never`.
-
-## 9. Range: one private constructor
-
-`Range t` is a std ADT whose declaration is a row in the standard
-library file, not a compiler intrinsic. The row is
-`Range: type t = _Range [start: t, end: t, closed: Bool]` (Annex C.2).
-The `..` and `..=` operators are its only public construction
-(`Clause 6.5.6`). The constructor spelling carries the privacy prefix,
-and `Clause 7.3.3` carries the one split in variant visibility:
-visibility follows the type; the one exception is a `_`-prefixed
-constructor spelling, which is private to the declaring module.
-`Range Int` is spellable everywhere; the one constructor spelling that
-would build a range directly is not.
-
-The endpoint domain — `Int`, `UInt`, or `Char`, both endpoints one type —
-is the operators' compile-time contract (`Clause 6.5.6`). The private
-constructor closes direct construction so the domain stays the operators'
-alone: `Range Bool` is writable as a type and has no writable value.
-Inside, `Range` is a real ADT, so `eq`, ordering, and `show` come free
-over it. `inspect` is compiler-owned as `0..9` and `0..=9`, the writable
-operator spellings, on the precedent of `NaN` and `Bytes.from_hex("4142")`
-(`Clause 9.8.3`). What is shown is what can be written back, and the
-private constructor leaves the operator as that form.
-
-**Rejected alternatives:**
-
-- **Placeholder opacity** — the `File` and machine-word route. It would
-  give `Range` an opaque representation and hand-write every service as
-  a compiler row. `Range` is a plain value type whose `eq`, ordering, and
-  `show` come free over a real ADT; opacity would trade inspectable
-  declaration data for a table the checker must special-case.
-- **A public constructor** — Rust's `Range` struct precedent. The
-  endpoint domain is a written contract of the type row in the inventory
-  (Annex C.2), not only of the operator; a public constructor would make
-  `Range Bool` a spelled, legal value and demote the operators from
-  gateway to convenience.
-- **Two variants, `Until` and `Through`.** The exclusive/inclusive flag
-  would leak into the surface as representation — two constructor names
-  for one boolean, a wider constructor set for one value — and buy
-  nothing. Rust and Swift split the type instead (`RangeInclusive`,
-  `ClosedRange`); the split is the same leak with a compiler-blessed
-  spelling.
+| Area | Rejected | Reason (clause) |
+|---|---|---|
+| Declaration | aliases (`Name: type = <expr>`) | naming never renames an identity (`6.9.5`) |
+| Nominality | row polymorphism, width subtyping | same-shape exactness is the contract (`7.5.5`) |
+| Nominality | automatic conjunction for mixed operands | operand type is fixed by the left operand; reopens the temperature accident (`7.5.5`) |
+| Nominality | shape adaptation in containers and function types | shapes carry identity; bit adaptation is exempt because bits are erased (`7.5.5`) |
+| Nominality | anonymous ADTs | no union form outside a right-hand side |
+| Nominality | `Name(x)` conversion functions | conversion is a literal at the expected position or a rebuild (`7.5.2`) |
+| Composite | value-position `(...)` tuples | parentheses are parameter groups, calls, grouping |
+| Composite | `Set` notation or literal | `{a, b}` is already lists and tuples; four-form closure |
+| Composite | zero-element tuple | `()` is the zero-parameter function type; the unit is `_` |
+| Generic | `Value<Int, Float>` | operator ambiguity, `>>` nesting, surface break |
+| Generic | `Value[Int, Float]` | collides with bracketed type forms (`6.6`) |
+| Generic | `Value(Int, Float)` | collides with call syntax |
+| Generic | `Value Int, Float` | `(Value Int, Float) -> Int` can only parse as two parameters |
+| Generic | prefix binder `Value u t: type` | breaks the `Name ':'` declaration head |
+| Generic | uppercase implicit variables | a misspelled type name silently becomes a variable (`7.6.4`) |
+| Generic | ML `'a` | a new lexical class; recorded as a fallback |
+| Generic | variables by first occurrence | reordering variants flips distant positional arguments |
+| Constructor | visibility layering (std beneath user) | forces a winner where the anchor should decide (`7.4.6`) |
+| Constructor | payload-driven inference | a second source of instantiation truth; nullary constructors never qualify |
+| `Never` | std row + name-granted bottomness (Swift) | name magic in the checker, an import-layer anomaly, a one-customer grammar production |
+| `Never` | every zero-variant type is bottom (Lean) | a family of incompatible bottoms with no customer |
+| Range | placeholder opacity (the `File` route) | trades free services for a checker table |
+| Range | public constructor | makes `Range Bool` a legal value; demotes operators from gateway |
+| Range | `Until`/`Through` variants | the flag leaks into the surface; Rust and Swift split the type instead |

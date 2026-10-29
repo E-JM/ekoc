@@ -1,148 +1,104 @@
 # Design Record — Bindings, Functions, and Control Flow
 
-Non-normative. Rulings: Clauses 6.3, 6.7, 6.8, 7.7, 8.2, 8.3, 8.8. Rejected alternatives, prior art,
-and rationale.
+Non-normative. Ruling clauses: 6.3, 6.7, 6.8, 7.7, 8.2, 8.3, 8.8. Rejected
+alternatives and rationale.
 
-## 1. Binding grammar: one grammar, three operators
+## 1. Binding grammar
 
-Every declaration line starts with a name or pattern — the **line-start
-invariant**. Markers land on slots: the annotation slot (`type`/`test`),
-the arrow markers (`!->`/`?->`), and the binding operators (`=`, `:=`,
-`<-`). One grammar, three operators:
+Every declaration line starts with a name or pattern; markers land on slots —
+the annotation slot (`type`/`test`), the arrow markers (`!->`/`?->`), and the
+binding operators (`Clause 6.3`). `=` binds initially and may carry an
+annotation; `:=` rebinds the same name and never does; `<-` binds from the
+trailing callback's parameter.
 
-- `=` initial binding, carries the optional annotation;
-- `:=` rebinding, reuses the existing name, never carries an annotation;
-- `<-` inverted binding, whose type comes from the trailing callback's
-  parameter.
+`:=` and `<-` end in a continuation: only `:`, `=`, and a `case` arm's `->`
+open a block (`Clause 6.2.3`), so a multi-line rebinding is a continued
+expression (`Clause 6.2.4`). `p <- f(a) rest` desugars to `f(a, (p): rest)` —
+the prelude's existing trailing-callback shape (`with_file`, `List.each`,
+`Result.try`), so `<-` adds no calling convention. The arrow follows the data:
+`pattern -> value`, `call <- pattern`. `.try()` at each link is the visible
+propagation point — the postfix operator would be a second, invisible channel.
 
-`:=` and `<-` end in a continuation, not a block opener: only `:`, `=`, and
-a `case` arm's `->` open a block (`Clause 6.2.3`); a multi-line rebinding
-right-hand side is a continued expression (`Clause 6.2.4`).
+## 2. Lambdas
 
-`<-` desugars to a trailing callback: `p <- f(a...) rest` is
-`f(a..., (p): rest)`. The trailing-callback contract is the prelude's
-existing shape (`with_file`, `List.each`, `Result.try`), so `<-` adds zero
-new calling conventions — it is pure layout sugar for the position that
-already exists. The arrow direction is the data direction: case arms write
-`pattern -> value` (value flows to the result), `<-` writes
-`call <- pattern` (value flows to the name). The explicit `.try()` at every
-link is the visible propagation point — the role `?` plays in Rust and `use`
-plays in Gleam — earned by the general callback-slot rule rather than a
-dedicated operator; no line propagates an error silently.
+A lambda is `(params): body`: no type annotations, no bit. Both are inferred
+from context and body; annotations live on named bindings' arrows, where the
+exact-match rule checks them (`Clause 7.9.2` rule 3). A lambda is check-only,
+hence `:=` never generalizes (`Clause 7.6.3`). Capture is a reference to a
+snapshot — O(1), no copy, no write-back (`Clause 8.2.3`). Holding is quiet,
+calling is loud: a factory building a `!->` closure without calling it is
+pure (`mk_logger`, `Clause 7.9.2` rule 1), and copying a capability is
+delegation.
 
-**Rejected:** a dedicated error-propagation operator (`?`). A postfix
-operator would be a second, invisible propagation channel; `.try()` says
-what happens on its line, and `map_err` is the single conversion point.
+## 3. Branching
 
-## 2. Lambdas: zero annotations, capture as delegation
+`case` is the only primitive; `if` is sugar over `case`-on-`Bool`
+(`Clauses 6.7.1–6.7.4`), earning its place as the two-arm Bool idiom. Guards
+are `PATTERN if GUARD ->` and close with an unguarded arm, which is where
+exhaustiveness closes.
 
-A lambda is `(params): body` with no annotations at all — neither types nor
-bits. Three rulings carry this:
+## 4. Patterns
 
-- Types and the bit are inferred from context and body; annotations live on
-  *named* bindings' arrows, where the exact-match rule can check them
-  (`Clause 7.9.2` rule 3). A lambda is always check-only — hence `:=`
-  never generalizes (`Clause 7.6.3`).
-- Capture is by reference to a snapshot: O(1), no copy, and a rebinding
-  never writes back into a captured environment (`Clause 8.2.3`).
-- Holding is quiet, calling is loud: a factory that constructs a `!->`
-  closure without calling it is itself pure — the `mk_logger` shape
-  (`Clause 7.9.2` rule 1). Copying a capability is delegation;
-  capture itself sets no bit.
+The grammar is compositional — variables, `_`, literals, constructors, tuples,
+records, lists, or-patterns, nested without depth limit (`Clause 6.8`). Record
+patterns match a subset, with field names **checked**: a misspelling is a
+compile error, so a subset cannot silently under-bind.
 
-**Rejected:** parameter annotations on lambdas (would duplicate the
-annotation slot); block-level self-reference (a name used before its value
-exists is a compile error; lifting to module top level is a mechanical
-transformation, `Clause 8.6.1`).
-
-## 3. Branching: one primitive, one sugar
-
-`case` is the only branching primitive; `if` is sugar over `case`-on-`Bool`
-(`Clause 6.7.1–4`). A separate `match`/`switch` vocabulary never exists:
-two spellings for one mechanism violates one-mechanism-per-problem, and
-`if` earns its existence only as the two-arm Bool idiom, which is sugar,
-not a second primitive. Guards are `PATTERN if GUARD ->` and close with an
-unguarded arm — exhaustiveness closes where the guard-free arm sits.
-
-**Rejected:** fallthrough (arms are `pattern -> expression`, nothing
-sequences into the next arm); truthiness coercion (conditions and guards
-are `Bool`, `True`/`False` the only constructors); multi-scrutinee as a
-primitive (`case a, b:` is sugar over a tuple case, `Clause 6.7.2`).
-
-## 4. Patterns: the compositional grammar and its two permanent bans
-
-The pattern grammar is compositional — variables, `_`, literals,
-constructors, tuples, records, lists, or-patterns, nested without depth
-limit (`Clause 6.8`). Record patterns are *subset* matches with
-**checked** field names: a misspelling is a compile error, so a subset
-cannot silently under-bind.
-
-| Banned forever | Reason |
-|---|---|
-| Dictionary patterns | A key is a value, not structure; `Dict.get -> Option` is already the natural branch — a pattern would hide a domain check inside syntax |
-| As-patterns `x as p` | Wanting the whole and a part is two bindings; nest a `case` or take the field |
-| Repeated binder names in one pattern or across the patterns of one arm (`(x, x)`, `case a, b: x, x -> ...`) | Compile error; one arm's patterns bind together; `_` is the exception (binds nothing, repeats freely) |
-| Record/constructor/list patterns in parameter position | The parameter group is identifiers and tuple groups; `(p, i):` is a two-parameter group *shaped like* a tuple, not destructuring — splitting a tuple value is always explicit (binding line or `case`) |
-
-## 5. Never: exhaustiveness belongs to patterns
+## 5. Never
 
 `Never <: t` adapts a diverging expression into any value position; Eko's
-entire subtyping is two relations — bit adaptation and the Never bottom
-type (`Clause 7.7.4`). The load-bearing ruling: **exhaustiveness is done
-by patterns, never by divergence**. An arm is always `PATTERN ->
-expression`; a bare `panic(...)` is not an arm. If divergence could stand
-in for a pattern, `Green` unhandled would still compile and the
-compile-time guarantee would be hollow — a runtime crash wearing a
-compile-time badge.
+subtyping is exactly that plus bit adaptation (`Clause 7.7.4`). Exhaustiveness
+is decided by patterns, never by divergence: an arm is always `PATTERN ->
+expression` and a bare `panic(...)` is not an arm, so an unhandled `Green`
+cannot compile. Unreachable code after a `Never` call is legal and warns
+(`Annex B.4`); only the bit domain is error-always. Adaptation applies at
+value positions only — `(a) -> Never` does not flow where `(a) -> Int` is
+expected.
 
-Unreachable code after a Never call is legal and *warns*: diagnostics have
-three severities, and the warning channel exists (`Annex B.4`);
-only the bit domain is error-always. Adaptation applies at value positions
-only — inside function types, a named `(a) -> Never` does not flow where
-`(a) -> Int` is expected; a lambda literal already reaches `u := Never` by
-inference, so no function-type subtyping is needed.
+## 6. Iteration
 
-## 6. Iteration: no loop syntax
+`while`, `for`, `do`, `break`, `continue`, `loop` are never part of Eko
+(`Clause 8.8`): values are immutable, so a loop variable has nowhere to take
+root, and `each`/`fold` give the body's two jobs ("for each" and "how to
+combine") separate names — greppable, bit-transparent, replaceable one at a
+time.
 
-`while`, `for`, `do`, `break`, `continue`, and `loop` are never part of
-Eko (`Clause 8.8`). The argument in one line: control flow is machine
-primitives (`case`/`if`/calls); iteration is library functions.
-
-- Values are immutable, so a loop variable is the ceremony of mutable
-  state — an increment has nowhere to take root, while an accumulator
-  carried as a parameter has the same shape with zero assignment.
-- A loop body does two jobs — "for each element" and "how to combine" —
-  and `each` and `fold` give each job a name: greppable, bit-transparent
-  (`?` dispatchers), replaceable one at a time. `while` is an implicit
-  `goto`; combinators compose (`xs.filter(f).map(g)`), syntactic loops do
-  not.
-
-### Stack guarantees: promise only what every backend can deliver
-
-| Idiom | Guarantee |
+| Idiom | Stack guarantee |
 |---|---|
 | Built-in combinators | native iteration, stack-safe at any length (normative) |
 | Self tail recursion | always compiled to a jump (normative) |
-| Everything else | no promise; stack depth follows data depth |
+| Everything else | none; stack depth follows data depth |
 
-Cross-function tail calls are optimized best-effort and explicitly not
-promised — backends differ in their tail-call guarantees, and a promise the
-specification cannot cash devalues the word. Stack overflow is an abort,
-not a catchable panic, same class as memory exhaustion.
+Cross-function tail calls are best-effort and explicitly not promised
+(`Clause 8.8.4`); a promise the specification cannot cash devalues the word.
+Stack overflow is an abort, not a catchable panic.
 
-### Loop habits and their replacements
-
-| Habit | Eko vocabulary |
+| Loop habit | Eko vocabulary |
 |---|---|
 | counting `for` | `(a..=b).each/map/fold` |
 | traversing `for` | `xs.each/map/...` |
 | `while` | self tail recursion + guarded `if`, accumulator as parameter |
-| `break` | `find_by`/`any`/`all` — first-hit termination is combinator semantics |
+| `break` | `find_by`/`any`/`all` |
 | `continue` | `filter` pre-selection or a guarded branch |
-| infinite loop | `-> Never` recursion — a typed form whose return type says it never returns |
+| infinite loop | `-> Never` recursion |
 
-**Also rejected:** generators/`yield` — lazy sequences would be their own
-ruling with their own semantics; they are not backfilled through loop's
-absence. Promising TCO beyond self tail calls — see above. `break`/`continue`
-as vocabulary — early termination is combinator semantics, not a control
-primitive.
+## 7. Rejected surface
+
+| Area | Rejected | Reason (clause) |
+|---|---|---|
+| Binding | dedicated `?` propagation | second, invisible channel; `.try()` names what happens on its line |
+| Lambda | parameter annotations | duplicate the annotation slot |
+| Lambda | block-level self-reference | use before value exists is an error; lifting to module top is mechanical (`8.6.1`) |
+| Branching | `match`/`switch` | two spellings for one mechanism |
+| Branching | fallthrough | arms are `pattern -> expression` |
+| Branching | truthiness | conditions are `Bool`; `True`/`False` are the only constructors |
+| Branching | multi-scrutinee primitive | `case a, b:` is sugar over a tuple case (`6.7.2`) |
+| Pattern | dictionary patterns | a key is a value, not structure; `Dict.get -> Option` is the branch |
+| Pattern | as-patterns `x as p` | whole and part is two bindings |
+| Pattern | repeated binders in one arm | `E-name-conflict`; `_` binds nothing and repeats freely |
+| Pattern | patterns in parameter position | splitting a tuple value is always explicit |
+| `Never` | divergence as an arm | hollow compile-time exhaustiveness |
+| `Never` | `Never` inside function types | not needed; lambda literals already infer it |
+| Iteration | generators / `yield` | its own ruling, not backfilled through loop's absence |
+| Iteration | promised inter-function TCO | backends differ (`8.8.4`) |
+| Iteration | `break`/`continue` vocabulary | early termination is combinator semantics |

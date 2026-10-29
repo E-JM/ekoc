@@ -36,10 +36,13 @@ Each record has three kinds of content:
 - **Rejected alternatives** — the option space that was weighed, with the
   reason each losing candidate lost. These are the load-bearing content: the
   specification states what *is*; the record preserves why the rest *is not*.
+  Every record keeps them in a single table at its end.
 - **Prior art** — how other languages answer the same question and where Eko
-  deliberately departs.
-- **Rationale** — arguments and invariants that justify a ruling but would
-  bloat the normative text.
+  deliberately departs. Recorded only where it decided something.
+- **Rationale** — the invariants that justify a ruling but would bloat the
+  normative text.
 
-Exclusion lists in the normative clauses state the exclusions themselves; the
-records here are their evidence base.
+Records are terse by policy: one paragraph of fact per ruling, and the clause
+citation as the route to detail. Timelines, staging history, and rhetorical
+framing are not kept. Exclusion lists in the normative clauses state the
+exclusions themselves; the records here are their evidence base.
