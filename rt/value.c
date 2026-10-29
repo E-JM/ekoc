@@ -3,14 +3,14 @@
 #include <stddef.h>
 
 /* The registry of the runtime's static typeinfos and the immortal nil
-   singleton. Family drops land with the family implementations; NULL
-   means the family holds no child references yet. */
+   singleton. Families that hold child references name the drop that
+   lands with their implementation; the others carry none. */
 
 const ek_typeinfo ek_typeinfo_str     = { EK_KIND_STR, NULL };
 const ek_typeinfo ek_typeinfo_bytes   = { EK_KIND_BYTES, NULL };
-const ek_typeinfo ek_typeinfo_cons    = { EK_KIND_CONS, NULL };
-const ek_typeinfo ek_typeinfo_dict    = { EK_KIND_DICT, NULL };
-const ek_typeinfo ek_typeinfo_closure = { EK_KIND_CLOSURE, NULL };
+const ek_typeinfo ek_typeinfo_cons    = { EK_KIND_CONS, ek_cons_drop };
+const ek_typeinfo ek_typeinfo_dict    = { EK_KIND_DICT, ek_dict_drop };
+const ek_typeinfo ek_typeinfo_closure = { EK_KIND_CLOSURE, ek_closure_drop };
 const ek_typeinfo ek_typeinfo_nil     = { EK_KIND_NIL, NULL };
 
 /* The empty-list singleton: static storage, so the release path never

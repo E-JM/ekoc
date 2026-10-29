@@ -34,6 +34,13 @@ static unsigned long count_dec(unsigned long *count)
 }
 #endif
 
+/* The count primitive of the iterative release cascade; the contract
+   with the families is in internal.h. */
+unsigned long ek_rc_dec(ek_obj *obj)
+{
+    return count_dec(&obj->rc) - 1;
+}
+
 void ek_retain(ek_val v)
 {
     if (v.tag != EK_VAL_REF || v.as.ref == NULL)

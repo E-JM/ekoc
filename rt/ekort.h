@@ -1,6 +1,7 @@
 #ifndef EK_RT_EKORT_H
 #define EK_RT_EKORT_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 /* A value is a tagged scalar or a reference to a heap object. Bool
@@ -145,6 +146,121 @@ static inline int ek_val_is_ref(ek_val v)
 {
     return v.tag == EK_VAL_REF;
 }
+
+/* A string is an immutable UTF-8 byte sequence on the heap. The
+   accessors take the object of a string value; passing an object of
+   another family is undefined. */
+
+/* Copies len bytes into a fresh string and stores a NUL terminator
+   behind them, so the C-string view needs no copy. The bytes are not
+   validated: compiler literals arrive pre-validated. Aborts on
+   exhaustion. */
+ek_obj *ek_str_new(const char *utf8, size_t len);
+
+/* ek_str_new over the bytes of the NUL-terminated s. */
+ek_obj *ek_str_from_cstr(const char *s);
+
+/* The byte length, excluding the stored terminator. */
+size_t ek_str_len(ek_obj *str);
+
+/* The stored bytes, NUL-terminated; the storage is shared with the
+   object and lives as long as its last reference. */
+const char *ek_str_cstr(ek_obj *str);
+
+/* A fresh string with the bytes of a followed by those of b; both
+   operands are untouched. Aborts on exhaustion. */
+ek_obj *ek_str_concat(ek_obj *a, ek_obj *b);
+
+/* Nonzero when the two strings have the same length and the same
+   bytes. */
+int ek_str_eq(ek_obj *a, ek_obj *b);
+
+/* Nonzero when s holds exactly len bytes of well-formed UTF-8: no
+   overlong forms, no surrogate encodings, and no code point above the
+   encoding maximum. */
+int ek_utf8_valid(const char *s, size_t len);
+
+/* A bytes value is an immutable byte sequence on the heap; there is no
+   mutation operation. The accessors take the object of a bytes value. */
+
+/* Copies len bytes into a fresh value. Aborts on exhaustion. */
+ek_obj *ek_bytes_new(const void *data, size_t len);
+
+/* The byte length. */
+size_t ek_bytes_len(ek_obj *bytes);
+
+/* The stored bytes; the storage is shared with the object and lives as
+   long as its last reference. */
+const void *ek_bytes_data(ek_obj *bytes);
+
+/* A list is a chain of immutable cons cells ending at the empty list.
+   A cell owns the references it stores: they were retained at
+   insertion and are released when the cell is reclaimed. */
+
+/* The empty list: a reference to the immortal singleton, whose count
+   may reach zero without ending it. */
+ek_val ek_nil_val(void);
+
+/* Nonzero when v is the empty-list value. */
+static inline int ek_val_is_nil(ek_val v)
+{
+    return v.tag == EK_VAL_REF && v.as.ref != NULL
+        && v.as.ref->info->kind == EK_KIND_NIL;
+}
+
+/* A fresh cell holding head and tail. Both are retained; the caller's
+   own references are untouched. Aborts on exhaustion. */
+ek_val ek_cons(ek_val head, ek_val tail);
+
+/* The stored head or tail, with no reference added: the value lives as
+   long as the cell does. */
+ek_val ek_cons_head(ek_obj *cell);
+ek_val ek_cons_tail(ek_obj *cell);
+
+/* A fresh spine holding the elements of a in order, with b as the tail
+   of its last cell: the spine retains each head and b, while a keeps
+   its own cells. Appending to the empty list yields b with one added
+   reference. Aborts on exhaustion. */
+ek_val ek_list_append(ek_val a, ek_val b);
+
+/* The number of cells; the empty list has none. */
+size_t ek_list_len(ek_val list);
+
+/* A dictionary maps inline scalar keys to values. Setting a key builds
+   a fresh dictionary; the old one is untouched and keeps its own
+   references. Keys compare on the tag and the exact payload bytes. The
+   accessors take a dictionary value. */
+
+/* The empty dictionary. Aborts on exhaustion. */
+ek_val ek_dict_new(void);
+
+/* Writes the stored value into *out and returns nonzero when key is
+   present; the value is borrowed. */
+int ek_dict_get(ek_val dict, ek_val key, ek_val *out);
+
+/* A fresh dictionary in which key maps to val: every reference it
+   stores is retained, an existing mapping for key is replaced, and
+   dict keeps its own references. Aborts on exhaustion. */
+ek_val ek_dict_set(ek_val dict, ek_val key, ek_val val);
+
+/* The number of keys. */
+size_t ek_dict_len(ek_val dict);
+
+/* The uniform call ABI: the closure receives the environment it
+   captured and the argument array of argc values, or NULL when argc is
+   zero. The callee retains whatever it stores. */
+typedef ek_val (*ek_closure_fn)(ek_val env, ek_val *args, size_t argc);
+
+/* A fresh closure holding call and env; the environment is retained.
+   Aborts on exhaustion. */
+ek_val ek_closure_new(ek_closure_fn call, ek_val env);
+
+/* Calls the closure with the arguments. A value that is not a closure
+   panics. */
+ek_val ek_closure_call(ek_val closure, ek_val *args, size_t argc);
+
+/* The captured environment, with no reference added. */
+ek_val ek_closure_env(ek_obj *closure);
 
 /* Adds one reference when v refers to a heap object; any other tag is
    left unchanged. */
