@@ -79,6 +79,39 @@ static const char *signature(lower_ctx *c, const char *mangled,
     }
     return lower_take(c, &b);
 }
+/* The capability name of one parameter's written type: the final name
+   of the type node, parens unwrapped. */
+static const char *param_cap_name(const ek_node *p)
+{
+    const ek_node *t;
+
+    if (!p || p->kind != EK_N_T_PARAM) {
+        return NULL;
+    }
+    t = p->u.t_field.type;
+    while (t && t->kind == EK_N_T_PAREN) {
+        t = t->u.wrap.inner;
+    }
+    if (!t || t->kind != EK_N_T_NAME || t->u.path.count == 0) {
+        return NULL;
+    }
+    return t->u.path.data[t->u.path.count - 1];
+}
+
+/* Whether the annotation is exactly one parameter of type Out: the
+   capability the entry shim can supply. */
+static int out_main_param(const ek_node *ann)
+{
+    const char *name;
+
+    if (!ann || ann->kind != EK_N_T_FN
+        || ann->u.t_fn.params.count != 1) {
+        return 0;
+    }
+    name = param_cap_name(ann->u.t_fn.params.data[0]);
+    return name && strcmp(name, "Out") == 0;
+}
+
 /* The declaration of one function: the signature check, the parameter
    scope, the entry bookkeeping, and the stored forward declaration.
    Returns the signature, or NULL when the function has no lowering. */
@@ -106,6 +139,11 @@ static const char *declare_function(lower_ctx *c, const ek_symbol *sym,
         c->entry_mangled = mangled;
         if (*nparams == 0) {
             c->has_main = 1;
+        } else if (out_main_param(ann)) {
+            /* the shim builds the standard output's Out bundle and
+               supplies it by position */
+            c->has_main = 1;
+            c->main_cap_out = 1;
         } else {
             lower_error(c, decl, "a `main` with parameters is not "
                                  "supported by this lowerer");

@@ -269,18 +269,31 @@ static void emit_decls(ek_buf *unit, lower_ctx *c)
     }
 }
 
-/* The collected bodies and, when the root module has a parameterless
-   `main`, the entry shim. */
+/* The collected bodies and, when the root module declares `main`, the
+   entry shim: a parameterless main is called bare, and a main over the
+   Out capability receives the standard output's bundle by position. */
 static void emit_bodies(ek_buf *unit, lower_ctx *c)
 {
     if (c->body.data
         && !ek_buf_append_bytes(unit, c->body.data, c->body.len)) {
         c->oom = 1;
     }
-    if (c->has_main
-        && !ek_buf_printf(unit, "int main(void) { ek_val t = %s(); "
-                                "ek_release(t); return 0; }\n",
+    if (!c->has_main) {
+        return;
+    }
+    if (c->main_cap_out) {
+        if (!ek_buf_printf(unit, "int main(void) { ek_val c0 = "
+                                "ek_cap_out_stdout(); ek_val t = %s(c0); "
+                                "ek_release(c0); ek_release(t); "
+                                "return 0; }\n",
                           c->entry_mangled)) {
+            c->oom = 1;
+        }
+        return;
+    }
+    if (!ek_buf_printf(unit, "int main(void) { ek_val t = %s(); "
+                            "ek_release(t); return 0; }\n",
+                       c->entry_mangled)) {
         c->oom = 1;
     }
 }

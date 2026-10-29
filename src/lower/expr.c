@@ -100,6 +100,20 @@ static const char *num_op(ek_binop op)
     }
 }
 
+/* The concatenation entry: `++` over String joins the runtime strings;
+   the operator's other domains are outside this lowerer. */
+static const char *concat_fn(lower_ctx *c, const ek_node *e)
+{
+    const ek_ck_row *row = lower_row(c, e);
+    const ek_type *t = row ? row->type : NULL;
+
+    if (t && t->kind == EK_T_NOMINAL && t->u.nominal.sym
+        && strcmp(t->u.nominal.sym->name, "String") == 0) {
+        return "ek_str_concat";
+    }
+    return NULL;
+}
+
 static const char *op_spelling(ek_binop op)
 {
     switch (op) {
@@ -189,7 +203,8 @@ static lower_val binary_expr(lower_ctx *c, lower_scope *scope,
         return bool_op(c, scope, e, 0);
     }
     {
-        const char *fn = num_op(e->u.binary.op);
+        const char *fn = e->u.binary.op == EK_BIN_CONCAT
+                             ? concat_fn(c, e) : num_op(e->u.binary.op);
         lower_val l = lower_sub(c, scope, e->u.binary.lhs);
         lower_val r = lower_sub(c, scope, e->u.binary.rhs);
         const char *lt = lower_as_temp(c, scope, &l);
@@ -207,7 +222,14 @@ static lower_val binary_expr(lower_ctx *c, lower_scope *scope,
         }
         t = lower_temp(c, scope);
         lower_pad(c);
-        lower_emitf(c, "ek_val %s = %s(%s, %s);\n", t, fn, lt, rt);
+        if (e->u.binary.op == EK_BIN_CONCAT) {
+            /* the string join works over the objects; the result is
+               born owned */
+            lower_emitf(c, "ek_val %s = ek_val_ref(%s(%s.as.ref, "
+                           "%s.as.ref));\n", t, fn, lt, rt);
+        } else {
+            lower_emitf(c, "ek_val %s = %s(%s, %s);\n", t, fn, lt, rt);
+        }
         lower_pad(c);
         lower_emitf(c, "ek_release(%s);\n", rt);
         lower_pad(c);

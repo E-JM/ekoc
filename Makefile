@@ -143,7 +143,8 @@ CLI_OBJ := $(CLI_SRC:src/%.c=$(BUILD)/%.o)
 # it is not a pipeline stage and stands outside the stage link order.
 RT_SRC := rt/value.c rt/rc.c rt/num.c rt/panic.c \
 	rt/string.c rt/bytes.c rt/list.c rt/dict.c rt/closure.c \
-	rt/fmt.c rt/parse.c rt/convert.c rt/strops.c rt/charops.c rt/bytesops.c
+	rt/fmt.c rt/parse.c rt/convert.c rt/strops.c rt/charops.c rt/bytesops.c \
+	rt/cap.c
 LIB_RT := $(BUILD)/libekort.a
 RT_OBJ := $(RT_SRC:rt/%.c=$(BUILD)/rt/%.o)
 

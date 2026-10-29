@@ -43,6 +43,63 @@ static lower_val panic_call(lower_ctx *c, lower_scope *scope,
     return lower_val_unit();
 }
 
+/* An injected binding: a function row of the capability module with no
+   declaration behind it. The compiler owns these rows -- the unwrap
+   and wrap of each session bundle -- and no source form declares
+   them. */
+static int is_injected(const ek_symbol *sym)
+{
+    return sym && sym->kind == EK_SYM_FUNC && sym->module
+        && strcmp(sym->module, "cap") == 0 && sym->decl == NULL;
+}
+
+/* The identity of one injected binding, defined once per row: the
+   tiny static function returns its argument unchanged. */
+static const char *identity_text(lower_ctx *c, const char *name)
+{
+    ek_buf b;
+
+    ek_buf_init(&b);
+    if (!ek_buf_printf(&b, "static ek_val %s(ek_val v)\n{\n"
+                           "    return v;\n}\n\n", name)) {
+        c->oom = 1;
+    }
+    return lower_take(c, &b);
+}
+
+static const char *injected_identity(lower_ctx *c, const ek_symbol *sym)
+{
+    const char *name;
+    lower_pending *p;
+    lower_tramp *slots;
+    size_t i;
+
+    for (i = 0; i < c->nident; i++) {
+        if (c->idents[i].sym == sym) {
+            return c->idents[i].name;
+        }
+    }
+    name = lower_str(c, "eki_%s", sym->name + 1);
+    lower_push_sig(c, lower_str(c, "static ek_val %s(ek_val v)", name));
+    p = ek_arena_alloc(c->arena, sizeof *p);
+    if (p) {
+        memset(p, 0, sizeof *p);
+        p->text = identity_text(c, name);
+        lower_pending_add(c, p);
+    } else {
+        c->oom = 1;
+    }
+    slots = lower_grow(c, c->idents, &c->cident, c->nident + 1,
+                       sizeof *slots);
+    if (slots) {
+        slots[c->nident].sym = sym;
+        slots[c->nident].name = name;
+        c->nident++;
+        c->idents = slots;
+    }
+    return name;
+}
+
 /* The shape of one call site: an optional receiver argument and one
    appended trailing argument (the callback of a `<-` chain). */
 typedef struct {
@@ -208,30 +265,17 @@ static lower_val value_call(lower_ctx *c, lower_scope *scope,
     return (lower_val){ r, 1 };
 }
 
-/* The namespace member a receiver-form link denotes, found in the
-   declaring module's surface the way check finds it. */
-static const ek_symbol *member_symbol(lower_ctx *c, const ek_type *recv,
-                                      const char *name)
+/* The scan behind the member lookup: the member of one namespace
+   owner, in the owning module's surface, with the capability module's
+   surface as the fallback beneath it -- the namespaces of the
+   capability types live there, while their type names stay std
+   placeholder rows. */
+static const ek_symbol *member_scan(lower_ctx *c, const char *owner,
+                                    const char *mod, const ek_symbol *tsym,
+                                    const char *name)
 {
-    const char *owner = NULL;
-    const char *mod = NULL;
-    const ek_symbol *tsym = NULL;
     int pass;
 
-    if (recv && recv->kind == EK_T_NOMINAL && recv->u.nominal.sym) {
-        tsym = recv->u.nominal.sym;
-        owner = tsym->name;
-        mod = tsym->module;
-    } else if (recv && recv->kind == EK_T_LIST) {
-        owner = "List";
-        mod = "std";
-    } else if (recv && recv->kind == EK_T_DICT) {
-        owner = "Dict";
-        mod = "std";
-    }
-    if (!owner) {
-        return NULL;
-    }
     for (pass = 0; pass < 2; pass++) {
         const char *want = pass == 0 ? mod : "cap";
         size_t k, i;
@@ -258,6 +302,32 @@ static const ek_symbol *member_symbol(lower_ctx *c, const ek_type *recv,
         }
     }
     return NULL;
+}
+
+/* The namespace member a receiver-form link denotes, found in the
+   declaring module's surface the way check finds it. */
+static const ek_symbol *member_symbol(lower_ctx *c, const ek_type *recv,
+                                      const char *name)
+{
+    const char *owner = NULL;
+    const char *mod = NULL;
+    const ek_symbol *tsym = NULL;
+
+    if (recv && recv->kind == EK_T_NOMINAL && recv->u.nominal.sym) {
+        tsym = recv->u.nominal.sym;
+        owner = tsym->name;
+        mod = tsym->module;
+    } else if (recv && recv->kind == EK_T_LIST) {
+        owner = "List";
+        mod = "std";
+    } else if (recv && recv->kind == EK_T_DICT) {
+        owner = "Dict";
+        mod = "std";
+    }
+    if (!owner) {
+        return NULL;
+    }
+    return member_scan(c, owner, mod, tsym, name);
 }
 
 /* The unsupported-call balance: the receiver and the arguments still
@@ -289,6 +359,31 @@ static lower_val discard_call(lower_ctx *c, lower_scope *scope,
     return lower_val_unit();
 }
 
+/* The call of an injected binding: the identity receives the argument
+   and the result carries the same value, so the argument temp's
+   reference moves into the result and no release runs on it. The
+   rows are leaves: reachability does not descend into them. */
+static lower_val identity_call(lower_ctx *c, lower_scope *scope,
+                               const ek_node *e, const ek_symbol *sym,
+                               const call_form *form)
+{
+    const ek_nlist *args = &e->u.call.args;
+    lower_val a;
+    const char *at, *t;
+
+    if (form->extra || args->count != 1) {
+        lower_error(c, e, "the call of `%s` is malformed", sym->name);
+        return discard_call(c, scope, e, form);
+    }
+    a = lower_sub(c, scope, args->data[0]);
+    at = lower_as_temp(c, scope, &a);
+    t = lower_temp(c, scope);
+    lower_pad(c);
+    lower_emitf(c, "ek_val %s = %s(%s);\n", t, injected_identity(c, sym),
+                at);
+    return (lower_val){ t, 1 };
+}
+
 /* A receiver-form member call: a function-valued field is the callee
    value, and any other link names a std or declared member found the
    way check finds it. A NULL result hands the decision back. */
@@ -304,17 +399,37 @@ static lower_val member_call(lower_ctx *c, lower_scope *scope,
         return value_call(c, scope, e, f, form->extra);
     }
     {
-        const ek_ck_row *rrow = callee->u.field.recv
-            ? lower_row(c, callee->u.field.recv) : NULL;
-        const ek_symbol *ms = member_symbol(c, rrow ? rrow->type : NULL,
-                                            callee->u.field.name);
+        const ek_node *recv = callee->u.field.recv;
+        const ek_ck_row *rrow = recv ? lower_row(c, recv) : NULL;
+        const ek_symbol *ms;
 
+        if (rrow && rrow->type) {
+            ms = member_symbol(c, rrow->type, callee->u.field.name);
+        } else {
+            /* a qualified head names its type: the receiver node
+               carries no value row, and the type ref names the
+               namespace owner */
+            const ek_ref *ref = recv ? lower_ref(c, recv) : NULL;
+
+            ms = ref && ref->kind == EK_SYM_TYPE && ref->symbol
+                     && ref->station == EK_ST_QUALIFIED
+                     ? member_scan(c, ref->symbol->name,
+                                   ref->symbol->module, ref->symbol,
+                                   callee->u.field.name)
+                     : NULL;
+        }
         if (ms) {
-            call_form member = *form;
+            if (rrow && rrow->type) {
+                call_form member = *form;
 
-            member.has_recv = 1;
-            member.recv = lower_sub(c, scope, callee->u.field.recv);
-            return direct_call(c, scope, e, ms, &member);
+                member.has_recv = 1;
+                member.recv = lower_sub(c, scope, recv);
+                return direct_call(c, scope, e, ms, &member);
+            }
+            /* the head supplies namespace context, not a receiver
+               value: the written arguments fill the signature's
+               slots, receiver first */
+            return direct_call(c, scope, e, ms, form);
         }
     }
     return (lower_val){ NULL, 0 };
@@ -332,6 +447,9 @@ static lower_val emit_call(lower_ctx *c, lower_scope *scope,
     }
     if (ref && ref->symbol
         && (ref->kind == EK_SYM_FUNC || ref->kind == EK_SYM_NAMESPACE)) {
+        if (ref->kind == EK_SYM_FUNC && is_injected(ref->symbol)) {
+            return identity_call(c, scope, e, ref->symbol, form);
+        }
         if (!form->has_recv && !form->extra && ref->kind == EK_SYM_FUNC
             && c->in_tail && c->tce_self && c->tce_label
             && ref->symbol == c->tce_self) {

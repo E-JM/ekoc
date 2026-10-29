@@ -492,6 +492,16 @@ ek_val ek_closure_call(ek_val closure, ek_val *args, size_t argc);
 /* The captured environment, with no reference added. */
 ek_val ek_closure_env(ek_obj *closure);
 
+/* The capability channel: a capability value is a bundle record of
+   world-touching closures, layout-compatible with the compiler's
+   one-field records, so generated code reads the closures through its
+   own layout and the release path reclaims the bundle's closures. */
+
+/* The Out bundle over the process's standard output: its write closure
+   writes the String argument's bytes to stdout without a terminator
+   and returns the unit value. The caller owns the returned bundle. */
+ek_val ek_cap_out_stdout(void);
+
 /* Adds one reference when v refers to a heap object; any other tag is
    left unchanged. */
 void ek_retain(ek_val v);

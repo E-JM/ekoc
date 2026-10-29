@@ -128,6 +128,22 @@ static int compile_unit(const char *name)
     return system(cmd) == 0;
 }
 
+/* Drains one pipe into the buffer, NUL-terminated and capped. */
+static void read_pipe(int fd, char *buf, size_t cap)
+{
+    size_t len = 0;
+    ssize_t got;
+
+    while (len + 1 < cap) {
+        got = read(fd, buf + len, cap - 1 - len);
+        if (got <= 0) {
+            break;
+        }
+        len += (size_t)got;
+    }
+    buf[len] = '\0';
+}
+
 /* Runs the binary in a child whose standard error is the pipe; returns
    the wait status with the captured text in err. stack_kib caps the
    child's stack when nonzero. */
@@ -137,8 +153,6 @@ static int run_binary(const char *path, char *err, size_t cap,
     int fds[2];
     pid_t pid;
     int status = -1;
-    size_t len = 0;
-    ssize_t got;
 
     err[0] = '\0';
     if (pipe(fds) != 0) {
@@ -169,15 +183,54 @@ static int run_binary(const char *path, char *err, size_t cap,
         _exit(127);
     }
     close(fds[1]);
-    while (len + 1 < cap) {
-        got = read(fds[0], err + len, cap - 1 - len);
-        if (got <= 0) {
-            break;
-        }
-        len += (size_t)got;
-    }
-    err[len] = '\0';
+    read_pipe(fds[0], err, cap);
     close(fds[0]);
+    waitpid(pid, &status, 0);
+    return status;
+}
+
+/* Runs the binary in a child whose standard output and standard error
+   are the two pipes; returns the wait status with the captured text.
+   The child of a printing gate writes a line or two, so reading the
+   pipes in turn cannot deadlock. */
+static int run_binary_capture(const char *path, char *out, size_t outcap,
+                              char *err, size_t errcap)
+{
+    int fds[2], efs[2];
+    pid_t pid;
+    int status = -1;
+
+    out[0] = '\0';
+    err[0] = '\0';
+    if (pipe(fds) != 0 || pipe(efs) != 0) {
+        return -1;
+    }
+    pid = fork();
+    if (pid < 0) {
+        close(fds[0]);
+        close(fds[1]);
+        close(efs[0]);
+        close(efs[1]);
+        return -1;
+    }
+    if (pid == 0) {
+        close(fds[0]);
+        close(efs[0]);
+        if (dup2(fds[1], STDOUT_FILENO) < 0
+            || dup2(efs[1], STDERR_FILENO) < 0) {
+            _exit(127);
+        }
+        close(fds[1]);
+        close(efs[1]);
+        execl(path, path, (char *)NULL);
+        _exit(127);
+    }
+    close(fds[1]);
+    close(efs[1]);
+    read_pipe(fds[0], out, outcap);
+    close(fds[0]);
+    read_pipe(efs[0], err, errcap);
+    close(efs[0]);
     waitpid(pid, &status, 0);
     return status;
 }
@@ -213,6 +266,30 @@ static int gate(const char *src, const char *name, size_t fns, char *err,
                 size_t cap)
 {
     return gate_stack(src, name, fns, err, cap, 0);
+}
+
+/* Lowers, writes, compiles, and runs one printing program; returns the
+   wait status with the captured standard output and error. */
+static int gate_print(const char *src, const char *name, size_t fns,
+                      char *out, size_t outcap, char *err, size_t errcap)
+{
+    lfx f;
+    char path[64];
+    int status;
+
+    lfx_begin(&f, src);
+    EK_CHECK(lfx_check_clean(&f));
+    EK_CHECK(lfx_lower_clean(&f));
+    EK_CHECK(f.low.text != NULL);
+    EK_CHECK_U64(f.low.fn_count, fns);
+    snprintf(path, sizeof path, "build/%s.c", name);
+    EK_CHECK(write_unit(path, f.low.text, f.low.len));
+    lfx_end(&f);
+    EK_CHECK(compile_unit(name));
+    snprintf(path, sizeof path, "build/%s", name);
+    status = run_binary_capture(path, out, outcap, err, errcap);
+    EK_CHECK(status >= 0 && WIFEXITED(status));
+    return status;
 }
 
 static void arithmetic_program(void)
@@ -556,6 +633,114 @@ static void tail_through_logic(void)
     }
 }
 
+/* The printing gate: `main` receives the Out capability by position,
+   and the printed bytes reach the redirected standard output. */
+static const char *prog_print =
+    "main: (out: Out) ! = out.println(\"hello\")\n";
+
+/* The `++` join feeding println: both operands evaluate to temps and
+   the joined string travels to the bundle's write closure. */
+static const char *prog_concat =
+    "main: (out: Out) ! = out.println(\"foo\" ++ \"bar\")\n";
+
+/* The zero-grant derivation: Out.null's own write lands nowhere, so
+   the redirected standard output stays empty while the program exits
+   cleanly. */
+static const char *prog_null =
+    "main: (out: Out) ! =\n"
+    "    quiet = Out.null()\n"
+    "    quiet.println(\"hush\")\n"
+    "    _\n";
+
+/* The observer derivation: the tee forwards every write through the
+   bundle's own closure and then hands the same string to the observer,
+   so the line lands twice. */
+static const char *prog_tee =
+    "main: (out: Out) ! =\n"
+    "    obs: (String) !-> _ = (s): out.print(s)\n"
+    "    q = out.tee(obs)\n"
+    "    q.println(\"both\")\n"
+    "    _\n";
+
+static void hello_world(void)
+{
+    char out[64], err[8];
+    int status = gate_print(prog_print, "lower_run_print", 2, out,
+                            sizeof out, err, sizeof err);
+
+    if (status >= 0 && WIFEXITED(status)) {
+        EK_CHECK_U64(WEXITSTATUS(status), 0);
+    }
+    EK_CHECK_STR(out, "hello\n");
+    EK_CHECK(err[0] == '\0');
+}
+
+static void concat_feeds_print(void)
+{
+    char out[64], err[8];
+    int status = gate_print(prog_concat, "lower_run_concat", 2, out,
+                            sizeof out, err, sizeof err);
+
+    if (status >= 0 && WIFEXITED(status)) {
+        EK_CHECK_U64(WEXITSTATUS(status), 0);
+    }
+    EK_CHECK_STR(out, "foobar\n");
+    EK_CHECK(err[0] == '\0');
+}
+
+static void null_prints_nothing(void)
+{
+    char out[64], err[8];
+    int status = gate_print(prog_null, "lower_run_null", 3, out,
+                            sizeof out, err, sizeof err);
+
+    if (status >= 0 && WIFEXITED(status)) {
+        EK_CHECK_U64(WEXITSTATUS(status), 0);
+    }
+    EK_CHECK_STR(out, "");
+    EK_CHECK(err[0] == '\0');
+}
+
+static void tee_prints_twice(void)
+{
+    char out[64], err[8];
+    int status = gate_print(prog_tee, "lower_run_tee", 4, out,
+                            sizeof out, err, sizeof err);
+
+    if (status >= 0 && WIFEXITED(status)) {
+        EK_CHECK_U64(WEXITSTATUS(status), 0);
+    }
+    EK_CHECK_STR(out, "both\nboth\n");
+    EK_CHECK(err[0] == '\0');
+}
+
+/* A `main` over a capability the shim cannot supply is diagnosed: only
+   the single Out parameter lowers in this slice. */
+static void unsupported_capabilities(void)
+{
+    lfx f;
+
+    lfx_begin(&f,
+              "main: (fs: Fs) ! =\n"
+              "    w = fs.exists(\"x\")\n"
+              "    _\n");
+    EK_CHECK(lfx_check_clean(&f));
+    EK_CHECK_U64(lfx_errors(&f), 1);
+    EK_CHECK(lfx_has_code(&f, "E-lower"));
+    EK_CHECK(lfx_lacks(&f, "int main(void)"));
+    lfx_end(&f);
+
+    lfx_begin(&f,
+              "main: (o: Out, c: Clock) ! =\n"
+              "    t = c.now()\n"
+              "    _\n");
+    EK_CHECK(lfx_check_clean(&f));
+    EK_CHECK_U64(lfx_errors(&f), 1);
+    EK_CHECK(lfx_has_code(&f, "E-lower"));
+    EK_CHECK(lfx_lacks(&f, "int main(void)"));
+    lfx_end(&f);
+}
+
 int main(void)
 {
     if (mkdir("build", 0777) != 0 && errno != EEXIST) {
@@ -578,5 +763,10 @@ int main(void)
     invert_chain();
     short_circuit();
     tail_through_logic();
+    hello_world();
+    concat_feeds_print();
+    null_prints_nothing();
+    tee_prints_twice();
+    unsupported_capabilities();
     return ek_test_report("lower/run");
 }

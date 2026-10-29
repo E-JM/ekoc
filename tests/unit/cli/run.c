@@ -20,6 +20,9 @@ static const char *prog_good =
     "    r = a * b + 1\n"
     "    _\n";
 
+static const char *prog_print =
+    "main: (out: Out) ! = out.println(\"greetings\")\n";
+
 static const char *prog_bad =
     "main: () -> _ =\n"
     "    q = nothing_here\n"
@@ -83,6 +86,38 @@ static int exited(int status, int code)
 static int run_prog(const char *path)
 {
     return system(path);
+}
+
+/* Runs one built program with its standard output in the file; returns
+   the wait status. */
+static int run_prog_out(const char *path, const char *out_path)
+{
+    char cmd[512];
+    int n;
+
+    n = snprintf(cmd, sizeof cmd, "%s > %s", path, out_path);
+    if (n < 0 || (size_t)n >= sizeof cmd) {
+        return -1;
+    }
+    return system(cmd);
+}
+
+/* The printing program: the manifest's Out reaches the executable, and
+   the printed line lands on the process's standard output. */
+static void prints_through_the_capability(void)
+{
+    char buf[256];
+    int status;
+
+    EK_CHECK(write_file("build/cli_print.eko", prog_print));
+    status = run_cli("build build/cli_print.eko -o build/cli_print",
+                     "build/cli_print.out", "build/cli_print.err");
+    EK_CHECK(exited(status, 0));
+    EK_CHECK(read_file("build/cli_print.err", buf, sizeof buf) == 0);
+    status = run_prog_out("./build/cli_print", "build/cli_print.run");
+    EK_CHECK(exited(status, 0));
+    EK_CHECK(read_file("build/cli_print.run", buf, sizeof buf) == 10);
+    EK_CHECK_STR(buf, "greetings\n");
 }
 
 static void good_build(void)
@@ -184,6 +219,7 @@ int main(void)
     }
     good_build();
     default_output_name();
+    prints_through_the_capability();
     compile_error();
     missing_file();
     bad_usage();

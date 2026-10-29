@@ -140,6 +140,9 @@ typedef struct {
     unsigned anon_env; /* environment struct families so far */
     lower_tramp *tramps; /* the trampolines, in creation order */
     size_t ntramp, ctramp;
+    lower_tramp *idents; /* the injected pair identities, in creation
+                            order */
+    size_t nident, cident;
     size_t fn_count;
     lower_gtype *gtypes; /* the generated struct families, in first-use
                             order */
@@ -147,6 +150,7 @@ typedef struct {
     unsigned anon_rec; /* the anonymous record families so far */
     int uses_list; /* some body folds a list literal */
     int has_main;
+    int main_cap_out; /* the entry shim builds the Out capability */
     int oom;
 } lower_ctx;
 
