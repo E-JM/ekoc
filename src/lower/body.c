@@ -161,7 +161,8 @@ static void emit_value_stmt(lower_ctx *c, lower_scope *scope, const ek_node *m)
 
 /* An initial binding: the right-hand side transfers into the local. A
    right-hand side that reads the name being bound goes through a temp,
-   because the C declarator would otherwise capture the new variable. */
+   because the C declarator would otherwise capture the new variable.
+   The discard form binds nothing: the value dies. */
 static void emit_let(lower_ctx *c, lower_scope *scope, const ek_node *m)
 {
     const ek_node *pat = m->u.bind.pattern;
@@ -169,6 +170,13 @@ static void emit_let(lower_ctx *c, lower_scope *scope, const ek_node *m)
     const char *cname;
     lower_val v;
 
+    if (pat && pat->kind == EK_N_P_WILDCARD) {
+        v = lower_expr(c, scope, m->u.bind.value);
+        cname = lower_as_temp(c, scope, &v);
+        lower_pad(c);
+        lower_emitf(c, "ek_release(%s);\n", cname);
+        return;
+    }
     if (!pat || pat->kind != EK_N_P_VAR || pat->u.path.count != 1) {
         lower_error(c, m, "the destructuring pattern is not supported by "
                           "this lowerer");
@@ -195,29 +203,42 @@ static void emit_let(lower_ctx *c, lower_scope *scope, const ek_node *m)
 
 /* A rebind: the right-hand side evaluates to a temp, the old value is
    released (unless the binding is a borrowed parameter), and the temp
-   moves in. */
+   moves in. The discard form releases the value and binds nothing. A
+   name no scope carries yet is bound fresh, exactly the first binding
+   check's own reading gives it. */
 static void emit_rebind(lower_ctx *c, lower_scope *scope, const ek_node *m)
 {
     const ek_node *pat = m->u.bind.pattern;
+    const char *name;
     const lower_local *loc;
     lower_val v;
     const char *t;
 
+    if (pat && pat->kind == EK_N_P_WILDCARD) {
+        v = lower_expr(c, scope, m->u.bind.value);
+        t = lower_as_temp(c, scope, &v);
+        lower_pad(c);
+        lower_emitf(c, "ek_release(%s);\n", t);
+        return;
+    }
     if (!pat || pat->kind != EK_N_P_VAR || pat->u.path.count != 1) {
         lower_error(c, m, "the destructuring pattern is not supported by "
                           "this lowerer");
         emit_value_stmt(c, scope, m->u.bind.value);
         return;
     }
-    loc = scope_find_local(scope, pat->u.path.data[0]);
-    if (!loc) {
-        lower_error(c, m, "the rebinding of `%s` has no lowering",
-                    pat->u.path.data[0]);
-        emit_value_stmt(c, scope, m->u.bind.value);
-        return;
-    }
+    name = pat->u.path.data[0];
     v = lower_expr(c, scope, m->u.bind.value);
     t = lower_as_temp(c, scope, &v);
+    loc = scope_find_local(scope, name);
+    if (!loc) {
+        const char *cname = lower_c_name(c, scope, name);
+
+        lower_pad(c);
+        lower_emitf(c, "ek_val %s = %s;\n", cname, t);
+        scope_add(c, scope, name, cname, 0);
+        return;
+    }
     if (!loc->is_param) {
         lower_pad(c);
         lower_emitf(c, "ek_release(%s);\n", loc->cname);

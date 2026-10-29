@@ -51,6 +51,54 @@ static const char *prog_string =
     "    s = greet(1)\n"
     "    _\n";
 
+/* A declared record is constructed and its fields are read: the sum
+   pins the layout, and a wrong offset reads garbage and panics at the
+   probe division instead of exiting cleanly. */
+static const char *prog_record =
+    "Point: type = [x: Int, y: Int]\n"
+    "main: () -> _ =\n"
+    "    p: Point = {x: 3, y: 4}\n"
+    "    r = p.x + p.y\n"
+    "    w = 0\n"
+    "    if r == 7:\n"
+    "        w := 1\n"
+    "        _\n"
+    "    q = 1 / w\n"
+    "    _ := q\n"
+    "    _\n";
+
+/* An algebraic type constructs through the std source bridge: both
+   constructors are born, travel through a call, and die owned; a
+   broken constructor or drop crashes instead of exiting cleanly. */
+static const char *prog_adt =
+    "sink: (o: Option Int) -> Int = 0\n"
+    "main: () -> _ =\n"
+    "    a = sink(Some 36)\n"
+    "    b = sink(None)\n"
+    "    c = sink(Some a)\n"
+    "    _ := a\n"
+    "    _ := b\n"
+    "    _ := c\n"
+    "    _\n";
+
+/* The discard binding, the fresh-name rebind, and the rebind whose
+   right-hand side is an if: the probe division pins the branch value. */
+static const char *prog_bind =
+    "main: () -> _ =\n"
+    "    _ := 1 + 2\n"
+    "    x = 5\n"
+    "    x := if x == 5: 6 else: 7\n"
+    "    y := 9\n"
+    "    _ := x\n"
+    "    _ := y\n"
+    "    w = 0\n"
+    "    if x == 6:\n"
+    "        w := 1\n"
+    "        _\n"
+    "    q = 1 / w\n"
+    "    _ := q\n"
+    "    _\n";
+
 static int write_unit(const char *path, const char *text, size_t len)
 {
     FILE *fp = fopen(path, "wb");
@@ -187,6 +235,72 @@ static void block_scoping(void)
     }
 }
 
+/* A declared record constructs, its fields read, and the probe
+   division pins the field layout. */
+static void record_field(void)
+{
+    char err[8];
+    int status = gate(prog_record, "lower_run_record", 1, err, sizeof err);
+
+    if (status >= 0 && WIFEXITED(status)) {
+        EK_CHECK_U64(WEXITSTATUS(status), 0);
+    }
+}
+
+/* Both constructors of the std Option type construct, travel, and die
+   owned; a broken constructor or drop crashes the child. */
+static void adt_construction(void)
+{
+    char err[8];
+    int status = gate(prog_adt, "lower_run_adt", 2, err, sizeof err);
+
+    if (status >= 0 && WIFEXITED(status)) {
+        EK_CHECK_U64(WEXITSTATUS(status), 0);
+    }
+}
+
+/* The discard binding, the fresh rebind, and the if-valued rebind: the
+   probe division pins the branch value the rebind produced. */
+static void bind_forms(void)
+{
+    char err[8];
+    int status = gate(prog_bind, "lower_run_bind", 1, err, sizeof err);
+
+    if (status >= 0 && WIFEXITED(status)) {
+        EK_CHECK_U64(WEXITSTATUS(status), 0);
+    }
+}
+
+/* A ten-thousand-element list literal: construction folds from the nil
+   end and the release consumes the spine, both in constant C stack. */
+static void deep_list(void)
+{
+    static char src[256 + 10000 * 7];
+    char err[8];
+    size_t used = 0;
+    int i;
+    int status;
+
+    used += (size_t)snprintf(src, sizeof src,
+        "sum: (xs: []Int) -> Int = 0\n"
+        "main: () -> _ =\n"
+        "    xs: []Int = {");
+    for (i = 1; i <= 10000; i++) {
+        used += (size_t)snprintf(src + used, sizeof src - used, "%s%d",
+                                 i > 1 ? ", " : "", i);
+    }
+    snprintf(src + used, sizeof src - used,
+             "}\n"
+             "    n = sum(xs)\n"
+             "    d = 1 / (n + 1)\n"
+             "    _ := d\n"
+             "    _\n");
+    status = gate(src, "lower_run_deep", 2, err, sizeof err);
+    if (status >= 0 && WIFEXITED(status)) {
+        EK_CHECK_U64(WEXITSTATUS(status), 0);
+    }
+}
+
 static void string_ownership(void)
 {
     char err[8];
@@ -207,5 +321,9 @@ int main(void)
     division_by_zero();
     block_scoping();
     string_ownership();
+    record_field();
+    adt_construction();
+    bind_forms();
+    deep_list();
     return ek_test_report("lower/run");
 }

@@ -3,7 +3,6 @@
 /* The E-lower diagnostics: constructs outside the lowerer's coverage
    come back as errors at the construct's position, and the parts that
    lowered still produce text. */
-
 static void case_expr(void)
 {
     lfx f;
@@ -36,18 +35,20 @@ static void lambda(void)
     lfx_end(&f);
 }
 
-static void list_literal(void)
+static void dict_string_key(void)
 {
     lfx f;
 
-    lfx_begin(&f, "main: () -> _ =\n"
-                  "    xs: []Int = {1, 2}\n"
+    lfx_begin(&f, "look: (d: [String]Int) -> Int = 0\n"
+                  "main: () -> _ =\n"
+                  "    d: [String]Int = {\"ada\": 36}\n"
+                  "    n = look(d)\n"
                   "    _\n");
     EK_CHECK(lfx_check_clean(&f));
-    EK_CHECK_U64(f.low.fn_count, 1);
+    EK_CHECK_U64(f.low.fn_count, 2);
     EK_CHECK_U64(lfx_errors(&f), 1);
     EK_CHECK(lfx_has_code(&f, "E-lower"));
-    EK_CHECK(lfx_code_at_line(&f, "E-lower", 2));
+    EK_CHECK(lfx_code_at_line(&f, "E-lower", 3));
     EK_CHECK(f.low.text != NULL);
     lfx_end(&f);
 }
@@ -71,7 +72,7 @@ int main(void)
 {
     case_expr();
     lambda();
-    list_literal();
+    dict_string_key();
     interpolated_string();
     return ek_test_report("lower/diag");
 }

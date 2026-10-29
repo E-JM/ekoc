@@ -8,7 +8,8 @@
    owned. Operands and arguments evaluate to temps in source order and
    are released once their use is emitted. */
 
-/* True and False are scalar-represented; the check row's Bool decides. */
+/* True and False are scalar-represented; the check row's Bool decides.
+   Every other constructor lands through the generated struct layer. */
 static lower_val ctor_expr(lower_ctx *c, const ek_node *e, const ek_ref *ref)
 {
     const ek_ck_row *row = lower_row(c, e);
@@ -25,9 +26,7 @@ static lower_val ctor_expr(lower_ctx *c, const ek_node *e, const ek_ref *ref)
             return (lower_val){ "ek_bool(0)", 0 };
         }
     }
-    lower_error(c, e, "the constructor `%s` is not supported by this "
-                      "lowerer", sym ? sym->name : "?");
-    return lower_val_unit();
+    return lower_ctor_value(c, e, ref);
 }
 
 static lower_val name_expr(lower_ctx *c, lower_scope *scope, const ek_node *e)
@@ -255,6 +254,39 @@ static lower_val call_expr(lower_ctx *c, lower_scope *scope, const ek_node *e)
     return lower_val_unit(); /* resolve diagnosed the callee */
 }
 
+/* A field access: the receiver lowers to a temp, the read is an owned
+   copy out of the generated struct, and the receiver temp dies. */
+static lower_val field_expr(lower_ctx *c, lower_scope *scope,
+                            const ek_node *e)
+{
+    const ek_ck_row *row = lower_row(c, e);
+    const ek_ck_row *rrow = e->u.field.recv
+                                ? lower_row(c, e->u.field.recv) : NULL;
+    const ek_type *rt = rrow ? rrow->type : NULL;
+    lower_val v;
+    const char *t, *r, *slot;
+
+    if (!row || row->reading != EK_RD_FIELD || !rt) {
+        lower_error(c, e, "the %s is not supported by this lowerer",
+                    lower_construct(e));
+        return lower_val_unit();
+    }
+    v = lower_expr(c, scope, e->u.field.recv);
+    t = lower_as_temp(c, scope, &v);
+    slot = lower_field_slot(c, e, rt, t, e->u.field.name);
+    if (!slot) {
+        lower_pad(c);
+        lower_emitf(c, "ek_release(%s);\n", t);
+        return lower_val_unit();
+    }
+    r = lower_temp(c, scope);
+    lower_pad(c);
+    lower_emitf(c, "ek_val %s = ek_keep(%s);\n", r, slot);
+    lower_pad(c);
+    lower_emitf(c, "ek_release(%s);\n", t);
+    return (lower_val){ r, 1 };
+}
+
 /* The written name of a construct, for the unsupported-construct
    diagnostics. */
 const char *lower_construct(const ek_node *n)
@@ -294,6 +326,12 @@ lower_val lower_expr(lower_ctx *c, lower_scope *scope, const ek_node *e)
         return binary_expr(c, scope, e);
     case EK_N_CALL:
         return call_expr(c, scope, e);
+    case EK_N_APPLY:
+        return lower_ctor_apply(c, scope, e);
+    case EK_N_COMPOSITE:
+        return lower_composite(c, scope, e);
+    case EK_N_FIELD:
+        return field_expr(c, scope, e);
     case EK_N_IF: {
         lower_val v;
 

@@ -13,13 +13,14 @@
  *
  * ek_lower is a pure entry point, (input, arena, diag) -> output; it
  * never aborts. The output is one NUL-terminated C99 translation unit
- * in the arena: the runtime include, the retention helper, a forward
- * declaration per emitted function, the function bodies, and the entry
- * shim when the root module declares `main`. Only top-level function
- * bindings transitively reachable from `main` are emitted; fn_count
- * counts them. A construct the lowerer does not cover is diagnosed
- * with code "E-lower" and skipped, so a failed run still yields the
- * text of the parts that lowered.
+ * in the arena: the runtime include, the retention helper, the
+ * generated struct layer of the constructed and read declared types,
+ * a forward declaration per emitted function, the function bodies,
+ * and the entry shim when the root module declares `main`. Only
+ * top-level function bindings transitively reachable from `main` are
+ * emitted; fn_count counts them. A construct the lowerer does not
+ * cover is diagnosed with code "E-lower" and skipped, so a failed run
+ * still yields the text of the parts that lowered.
  */
 typedef struct {
     char *text;      /* the translation unit, NUL-terminated, arena-owned */

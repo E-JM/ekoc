@@ -202,7 +202,8 @@ static int unit_puts(ek_buf *b, const char *s)
 
 static int unit_preamble(ek_buf *unit)
 {
-    return unit_puts(unit, "#include \"ekort.h\"\n\n")
+    return unit_puts(unit, "#include \"ekort.h\"\n")
+        && unit_puts(unit, "#include <stdlib.h>\n\n")
         && unit_puts(unit, "static ek_val ek_keep(ek_val v) "
                            "{ ek_retain(v); return v; }\n\n");
 }
@@ -285,6 +286,7 @@ ek_lower_result ek_lower(ek_resolve_result resolved, ek_check_result checked,
         lower_function(&c, c.work[c.head]);
         c.head++;
     }
+    lower_emit_types(&c, &unit);
     emit_decls(&unit, &c);
     emit_bodies(&unit, &c);
     unit_finish(&unit, &c, &out, arena);

@@ -38,6 +38,32 @@ typedef struct {
     int is_temp;
 } lower_val;
 
+/* The layout family of a generated struct: a named record layout, a
+   positional tuple layout, or a one-slot constructor payload. */
+typedef enum {
+    GT_REC, GT_TUP, GT_CTOR
+} lower_gshape;
+
+/* One generated struct family: a declared type's record or tuple
+   representation, one constructor of an algebraic type, or an
+   anonymous record or tuple shape. Fields are ek_val in every family;
+   the stem derives the struct, typeinfo, drop, and helper spellings
+   (ekS_, ekT_, drop_, ekn_). */
+typedef struct lower_gtype {
+    const char *stem;      /* the shared name stem */
+    const char *helper;    /* the construction helper's C name */
+    const char **fnames;   /* record field names in layout order */
+    size_t nf;
+    lower_gshape shape;
+    const ek_symbol *key_sym; /* registry identity: the type symbol of
+                                 a representation, the constructor
+                                 symbol of a constructor family */
+    const char *key_str;   /* registry identity of an anonymous shape */
+    int used;              /* an emitted body references the layout */
+    int constructed;       /* the unit constructs it: typeinfo, drop,
+                              and helper join the typedef */
+} lower_gtype;
+
 static inline lower_val lower_val_unit(void)
 {
     lower_val v;
@@ -69,6 +95,11 @@ typedef struct {
     unsigned depth;
     unsigned temp; /* per-function temp counter */
     size_t fn_count;
+    lower_gtype *gtypes; /* the generated struct families, in first-use
+                            order */
+    size_t ngt, cgt;
+    unsigned anon_rec; /* the anonymous record families so far */
+    int uses_list; /* some body folds a list literal */
     int has_main;
     int oom;
 } lower_ctx;
@@ -98,6 +129,27 @@ lower_val lower_int_lit(lower_ctx *c, const ek_node *e);
 lower_val lower_float_lit(lower_ctx *c, const ek_node *e);
 lower_val lower_char_lit(lower_ctx *c, const ek_node *e);
 lower_val lower_string_expr(lower_ctx *c, const ek_node *e);
+
+/* type.c: the generated struct layer. Registration happens while the
+   bodies lower; the families themselves are emitted into the unit
+   before the functions. */
+lower_gtype *lower_decl_repr(lower_ctx *c, const ek_symbol *tsym);
+lower_gtype *lower_anon_record(lower_ctx *c, const ek_type *rec);
+lower_gtype *lower_anon_tuple(lower_ctx *c, size_t n);
+lower_gtype *lower_ctor_family(lower_ctx *c, const ek_node *at,
+                               const ek_ref *ref, const ek_symbol *tsym);
+const char *lower_field_slot(lower_ctx *c, const ek_node *at,
+                             const ek_type *recv, const char *temp,
+                             const char *name);
+void lower_use_list(lower_ctx *c);
+void lower_emit_types(lower_ctx *c, ek_buf *unit);
+
+/* composite.c: constructors and composite literals. */
+lower_val lower_ctor_value(lower_ctx *c, const ek_node *e, const ek_ref *ref);
+lower_val lower_ctor_apply(lower_ctx *c, lower_scope *scope,
+                           const ek_node *e);
+lower_val lower_composite(lower_ctx *c, lower_scope *scope,
+                          const ek_node *e);
 
 /* expr.c: expressions and construct naming for diagnostics. */
 lower_val lower_expr(lower_ctx *c, lower_scope *scope, const ek_node *e);

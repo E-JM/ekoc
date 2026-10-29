@@ -106,11 +106,13 @@ CHECK_OBJ := $(CHECK_SRC:src/%.c=$(BUILD)/%.o)
 
 LOWER_SRC := \
 	src/lower/body.c \
+	src/lower/composite.c \
 	src/lower/ctl.c \
 	src/lower/expr.c \
 	src/lower/literal.c \
 	src/lower/lower.c \
-	src/lower/name.c
+	src/lower/name.c \
+	src/lower/type.c
 
 LIB_LOWER := $(BUILD)/libek_lower.a
 LOWER_OBJ := $(LOWER_SRC:src/%.c=$(BUILD)/%.o)
