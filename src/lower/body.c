@@ -4,9 +4,9 @@
 
 /* Function bodies: the scope bookkeeping, the statement members
    (initial bindings, rebinds, and expressions), the value of a block,
-   and the ownership discipline at block ends. A block's own bindings
-   are released in reverse declaration order when the block closes;
-   parameters are borrowed and never released. */
+   and the ownership discipline at block ends. Owned bindings release
+   at their scope's close in reverse order; borrowed scope entries
+   (reads through a closure environment) never release. */
 
 static void emit_stmt(lower_ctx *c, lower_scope *scope, const ek_node *m);
 static void emit_value_stmt(lower_ctx *c, lower_scope *s, const ek_node *m);
@@ -14,8 +14,8 @@ static void emit_let(lower_ctx *c, lower_scope *s, const ek_node *m);
 static void emit_rebind(lower_ctx *c, lower_scope *s, const ek_node *m);
 
 /* Appends one binding to a scope. */
-static void scope_add(lower_ctx *c, lower_scope *s, const char *eko,
-                      const char *cname, int is_param)
+void lower_scope_add(lower_ctx *c, lower_scope *s, const char *eko,
+                     const char *cname, int is_param, const char *abi)
 {
     lower_local *slots = lower_grow(c, s->locs, &s->cloc, s->nloc + 1,
                                     sizeof *slots);
@@ -25,6 +25,7 @@ static void scope_add(lower_ctx *c, lower_scope *s, const char *eko,
         s->locs[s->nloc].eko = eko;
         s->locs[s->nloc].cname = cname;
         s->locs[s->nloc].is_param = is_param;
+        s->locs[s->nloc].abi = abi;
         s->nloc++;
     }
 }
@@ -44,7 +45,7 @@ const lower_local *scope_find_local(lower_scope *scope, const char *name)
     return NULL;
 }
 
-/* Releases the block's own bindings, most recent first. */
+/* Releases the block's own owned bindings, most recent first. */
 void lower_release_scope(lower_ctx *c, lower_scope *s)
 {
     size_t i = s->nloc;
@@ -198,14 +199,14 @@ static void emit_let(lower_ctx *c, lower_scope *scope, const ek_node *m)
         lower_pad(c);
         lower_emitf(c, "ek_val %s = %s;\n", cname, t);
     }
-    scope_add(c, scope, name, cname, 0);
+    lower_scope_add(c, scope, name, cname, 0, NULL);
 }
 
 /* A rebind: the right-hand side evaluates to a temp, the old value is
-   released (unless the binding is a borrowed parameter), and the temp
-   moves in. The discard form releases the value and binds nothing. A
-   name no scope carries yet is bound fresh, exactly the first binding
-   check's own reading gives it. */
+   released, and the temp moves in. The discard form releases the value
+   and binds nothing. A name no scope carries yet is bound fresh,
+   exactly the first binding check's own reading gives it. A borrowed
+   binding (a capture) cannot rebind: the value dies instead. */
 static void emit_rebind(lower_ctx *c, lower_scope *scope, const ek_node *m)
 {
     const ek_node *pat = m->u.bind.pattern;
@@ -236,42 +237,56 @@ static void emit_rebind(lower_ctx *c, lower_scope *scope, const ek_node *m)
 
         lower_pad(c);
         lower_emitf(c, "ek_val %s = %s;\n", cname, t);
-        scope_add(c, scope, name, cname, 0);
+        lower_scope_add(c, scope, name, cname, 0, NULL);
         return;
     }
-    if (!loc->is_param) {
+    if (loc->is_param) {
+        lower_error(c, m, "the rebinding of the captured `%s` has no "
+                          "lowering", name);
         lower_pad(c);
-        lower_emitf(c, "ek_release(%s);\n", loc->cname);
+        lower_emitf(c, "ek_release(%s);\n", t);
+        return;
     }
+    lower_pad(c);
+    lower_emitf(c, "ek_release(%s);\n", loc->cname);
     lower_pad(c);
     lower_emitf(c, "%s = %s;\n", loc->cname, t);
 }
 
-/* The value of a body: a block is its statements followed by the value
-   of its final member, and a bare expression is the value itself. A
-   trailing binding's value is an owned copy of the local. */
-lower_val lower_block_value(lower_ctx *c, lower_scope *scope,
-                            const ek_node *body)
+/* The members of a body from one slice: the statements, then the value
+   of the final member. An inverted binding consumes the members after
+   it as its callback body, so the walk ends there. A final binding's
+   value is an owned copy of the local. The tail marker is inherited by
+   the final member and cleared for the statements; it is restored at
+   every exit. */
+lower_val lower_members(lower_ctx *c, lower_scope *scope,
+                        const ek_node **kids, size_t n)
 {
-    const ek_nlist *kids;
-    size_t n, i;
     const ek_node *m;
+    size_t i;
+    int saved = c->in_tail;
+    lower_val out;
 
-    if (!body) {
-        return lower_val_unit();
-    }
-    if (body->kind != EK_N_BLOCK) {
-        return lower_expr(c, scope, body);
-    }
-    kids = &body->u.kids;
-    n = kids->count;
+    c->in_tail = 0;
     for (i = 0; i + 1 < n; i++) {
-        emit_stmt(c, scope, kids->data[i]);
+        m = kids[i];
+        if (m->kind == EK_N_INVERT) {
+            out = lower_invert(c, scope, m, kids + i + 1, n - i - 1);
+            c->in_tail = saved;
+            return out;
+        }
+        emit_stmt(c, scope, m);
     }
     if (n == 0) {
+        c->in_tail = saved;
         return lower_val_unit();
     }
-    m = kids->data[n - 1];
+    m = kids[n - 1];
+    if (m->kind == EK_N_INVERT) {
+        out = lower_invert(c, scope, m, NULL, 0);
+        c->in_tail = saved;
+        return out;
+    }
     if (m->kind == EK_N_LET || m->kind == EK_N_REBIND) {
         const ek_node *pat = m->u.bind.pattern;
         const lower_local *loc = NULL;
@@ -280,142 +295,35 @@ lower_val lower_block_value(lower_ctx *c, lower_scope *scope,
         if (pat && pat->kind == EK_N_P_VAR && pat->u.path.count == 1) {
             loc = scope_find_local(scope, pat->u.path.data[0]);
         }
+        c->in_tail = saved;
         if (loc) {
             return (lower_val){ lower_str(c, "ek_keep(%s)", loc->cname), 0 };
         }
         return lower_val_unit();
     }
-    return lower_expr(c, scope, m);
+    c->in_tail = saved;
+    out = lower_expr(c, scope, m);
+    c->in_tail = saved;
+    return out;
 }
 
-/* The parameter scope of one signature: the written names, the
-   unnamed ones numbered. */
-static size_t add_params(lower_ctx *c, lower_scope *ps, const ek_node *ann)
+/* The value of a body: a block is its members, and a bare expression
+   is the value itself. */
+lower_val lower_block_value(lower_ctx *c, lower_scope *scope,
+                            const ek_node *body)
 {
-    const ek_nlist *params = &ann->u.t_fn.params;
-    size_t i;
-
-    for (i = 0; i < params->count; i++) {
-        const ek_node *p = params->data[i];
-        const char *name = NULL;
-        const char *cname;
-
-        if (p && p->kind == EK_N_T_PARAM && p->u.t_field.name
-            && strcmp(p->u.t_field.name, "_") != 0) {
-            name = p->u.t_field.name;
-        }
-        cname = name ? lower_c_name(c, ps, name) : lower_str(c, "a%zu", i);
-        scope_add(c, ps, name ? name : cname, cname, 1);
+    if (!body) {
+        return lower_val_unit();
     }
-    return params->count;
+    if (body->kind == EK_N_BLOCK) {
+        return lower_members(c, scope, (const ek_node **)body->u.kids.data,
+                             body->u.kids.count);
+    }
+    return lower_members(c, scope, &body, 1);
 }
 
-/* The C signature of one emitted function, shared by its forward
-   declaration and its definition. */
-static const char *signature(lower_ctx *c, const char *mangled,
-                             const lower_scope *ps)
-{
-    ek_buf b;
-    size_t i;
 
-    ek_buf_init(&b);
-    if (!ek_buf_append_str(&b, "static ek_val ")
-        || !ek_buf_append_str(&b, mangled) || !ek_buf_append_str(&b, "(")) {
-        c->oom = 1;
-    }
-    if (ps->nloc == 0) {
-        if (!ek_buf_append_str(&b, "void")) {
-            c->oom = 1;
-        }
-    }
-    for (i = 0; i < ps->nloc; i++) {
-        if (!ek_buf_printf(&b, "%sek_val %s", i ? ", " : "",
-                           ps->locs[i].cname)) {
-            c->oom = 1;
-        }
-    }
-    if (!ek_buf_append_char(&b, ')')) {
-        c->oom = 1;
-    }
-    return lower_take(c, &b);
-}
 
-/* The declaration of one function: the signature check, the parameter
-   scope, the entry bookkeeping, and the stored forward declaration.
-   Returns the signature, or NULL when the function has no lowering. */
-static const char *declare_function(lower_ctx *c, const ek_symbol *sym,
-                                    lower_scope *ps, size_t *nparams)
-{
-    const ek_node *ann = sym->type;
-    const ek_node *decl = sym->decl;
-    const char *mangled;
-    const char *sig;
-    const char **slot;
 
-    if (!decl || decl->kind != EK_N_LET || !ann || ann->kind != EK_N_T_FN) {
-        if (decl) {
-            lower_error(c, decl, "the signature of `%s` has no lowering",
-                        sym->name);
-        }
-        return NULL;
-    }
-    memset(ps, 0, sizeof *ps);
-    *nparams = add_params(c, ps, ann);
-    mangled = lower_mangled(c, sym);
-    if (sym == c->entry) {
-        c->entry_mangled = mangled;
-        if (*nparams == 0) {
-            c->has_main = 1;
-        } else {
-            lower_error(c, decl, "a `main` with parameters is not "
-                                 "supported by this lowerer");
-        }
-    }
-    sig = signature(c, mangled, ps);
-    slot = lower_grow(c, c->sigs, &c->csig, c->nsig + 1, sizeof *slot);
-    if (slot) {
-        slot[c->nsig++] = sig;
-        c->sigs = slot;
-    }
-    return sig;
-}
 
-/* One emitted function: signature, body, and the return discipline —
-   the body's value is held in a temp while the function's own bindings
-   release in reverse order. */
-void lower_function(lower_ctx *c, const ek_symbol *sym)
-{
-    lower_scope params;
-    lower_scope top;
-    const char *sig;
-    size_t nparams;
-    lower_val v;
-    const char *ret;
-    unsigned d;
 
-    c->temp = 0;
-    c->file = surface_file(c, sym->module);
-    sig = declare_function(c, sym, &params, &nparams);
-    if (!sig) {
-        return;
-    }
-    memset(&top, 0, sizeof top);
-    top.parent = &params;
-    lower_emitf(c, "%s\n{\n", sig);
-    d = c->depth;
-    c->depth = 1;
-    v = lower_block_value(c, &top, sym->decl->u.bind.value);
-    if (v.is_temp) {
-        ret = v.text;
-    } else {
-        ret = lower_temp(c, &top);
-        lower_pad(c);
-        lower_emitf(c, "ek_val %s = %s;\n", ret, v.text);
-    }
-    lower_release_scope(c, &top);
-    lower_pad(c);
-    lower_emitf(c, "return %s;\n", ret);
-    c->depth = d;
-    lower_emitf(c, "}\n\n");
-    c->fn_count++;
-}

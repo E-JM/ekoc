@@ -50,7 +50,7 @@ static lower_val opaque_literal(lower_ctx *c, lower_scope *scope,
     lower_error(c, e, "the composite literal is not supported by this "
                       "lowerer");
     for (i = 0; i < e->u.kids.count; i++) {
-        lower_val a = lower_expr(c, scope, item_expr(e->u.kids.data[i]));
+        lower_val a = lower_sub(c, scope, item_expr(e->u.kids.data[i]));
         const char *t = lower_as_temp(c, scope, &a);
 
         lower_pad(c);
@@ -79,7 +79,7 @@ static const char **item_temps(lower_ctx *c, lower_scope *scope,
             argv[i] = NULL;
             continue;
         }
-        a = lower_expr(c, scope, item_expr(item));
+        a = lower_sub(c, scope, item_expr(item));
         argv[i] = lower_as_temp(c, scope, &a);
     }
     return argv;
@@ -345,7 +345,7 @@ lower_val lower_ctor_apply(lower_ctx *c, lower_scope *scope,
     if (!ref || ref->kind != EK_SYM_CONSTRUCTOR) {
         return lower_val_unit(); /* resolve diagnosed the head */
     }
-    a = e->u.pair.b ? lower_expr(c, scope, e->u.pair.b) : lower_val_unit();
+    a = e->u.pair.b ? lower_sub(c, scope, e->u.pair.b) : lower_val_unit();
     at = lower_as_temp(c, scope, &a);
     if (!tsym) {
         lower_error(c, e, "the constructor application is not supported "

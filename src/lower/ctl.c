@@ -4,7 +4,9 @@
 
 /* The if form: the condition and the result are temps of the enclosing
    block, the branches are C blocks of their own, and the result temp
-   carries the taken branch's value. */
+   carries the taken branch's value. The branches are tail positions:
+   they inherit the enclosing tail marker, so a self call in a branch
+   tail reenters the function. */
 
 /* One if branch: its body lowers into a fresh block whose bindings
    release before the brace closes, and the branch value moves into the
@@ -18,6 +20,9 @@ static void emit_branch(lower_ctx *c, lower_scope *parent, const ek_node *body,
     memset(&s, 0, sizeof s);
     s.parent = parent;
     v = lower_block_value(c, &s, body);
+    if (!v.text) {
+        v = lower_val_unit(); /* the branch tail jumped to retry */
+    }
     lower_pad(c);
     lower_emitf(c, "%s = %s;\n", r, v.text);
     lower_release_scope(c, &s);
@@ -30,9 +35,16 @@ void lower_if(lower_ctx *c, lower_scope *scope, const ek_node *e,
               lower_val *out)
 {
     unsigned d = c->depth;
-    lower_val cond = lower_expr(c, scope, e->u.ifexpr.cond);
-    const char *ct = lower_as_temp(c, scope, &cond);
-    const char *r = lower_temp(c, scope);
+    int saved = c->in_tail;
+    lower_val cond;
+    const char *ct;
+    const char *r;
+
+    c->in_tail = 0;
+    cond = lower_expr(c, scope, e->u.ifexpr.cond);
+    c->in_tail = saved;
+    ct = lower_as_temp(c, scope, &cond);
+    r = lower_temp(c, scope);
 
     lower_pad(c);
     lower_emitf(c, "ek_val %s = ek_val_unit();\n", r);
@@ -53,4 +65,3 @@ void lower_if(lower_ctx *c, lower_scope *scope, const ek_node *e,
     out->text = r;
     out->is_temp = 1;
 }
-

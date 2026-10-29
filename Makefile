@@ -106,13 +106,23 @@ CHECK_OBJ := $(CHECK_SRC:src/%.c=$(BUILD)/%.o)
 
 LOWER_SRC := \
 	src/lower/body.c \
+	src/lower/call.c \
+	src/lower/capture.c \
+	src/lower/case.c \
 	src/lower/composite.c \
 	src/lower/ctl.c \
 	src/lower/expr.c \
+	src/lower/function.c \
+	src/lower/lambda.c \
 	src/lower/literal.c \
 	src/lower/lower.c \
+	src/lower/invert.c \
 	src/lower/name.c \
-	src/lower/type.c
+	src/lower/pattern.c \
+	src/lower/patlist.c \
+	src/lower/tce.c \
+	src/lower/type.c \
+	src/lower/typeemit.c
 
 LIB_LOWER := $(BUILD)/libek_lower.a
 LOWER_OBJ := $(LOWER_SRC:src/%.c=$(BUILD)/%.o)
@@ -131,8 +141,8 @@ CLI_OBJ := $(CLI_SRC:src/%.c=$(BUILD)/%.o)
 
 # rt is the runtime library (ekort) linked into compiled Eko programs;
 # it is not a pipeline stage and stands outside the stage link order.
-RT_SRC := rt/value.c rt/rc.c rt/num.c rt/panic.c \
-	rt/string.c rt/bytes.c rt/list.c rt/dict.c rt/closure.c
+RT_SRC := rt/value.c rt/rc.c rt/panic.c \
+	rt/string.c rt/bytes.c rt/list.c rt/dict.c rt/closure.c rt/num.c
 LIB_RT := $(BUILD)/libekort.a
 RT_OBJ := $(RT_SRC:rt/%.c=$(BUILD)/rt/%.o)
 

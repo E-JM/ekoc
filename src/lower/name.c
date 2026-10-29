@@ -64,8 +64,15 @@ static int taken_visible(const lower_scope *scope, const char *name)
     return 0;
 }
 
+/* The C name of one emitted function: a plain binding is the module
+   and its name; a namespace member carries its owner, so two members
+   of different types never collide. */
 const char *lower_mangled(lower_ctx *c, const ek_symbol *sym)
 {
+    if (sym->owner) {
+        return lower_str(c, "ekf_%s_%s_%s", sym->module, sym->owner,
+                         sym->name);
+    }
     return lower_str(c, "ekf_%s_%s", sym->module, sym->name);
 }
 

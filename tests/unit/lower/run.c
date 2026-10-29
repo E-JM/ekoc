@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/resource.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -128,8 +129,10 @@ static int compile_unit(const char *name)
 }
 
 /* Runs the binary in a child whose standard error is the pipe; returns
-   the wait status with the captured text in err. */
-static int run_binary(const char *path, char *err, size_t cap)
+   the wait status with the captured text in err. stack_kib caps the
+   child's stack when nonzero. */
+static int run_binary(const char *path, char *err, size_t cap,
+                      size_t stack_kib)
 {
     int fds[2];
     pid_t pid;
@@ -149,6 +152,15 @@ static int run_binary(const char *path, char *err, size_t cap)
     }
     if (pid == 0) {
         close(fds[0]);
+        if (stack_kib) {
+            struct rlimit rl;
+
+            rl.rlim_cur = stack_kib * 1024;
+            rl.rlim_max = stack_kib * 1024;
+            if (setrlimit(RLIMIT_STACK, &rl) != 0) {
+                _exit(126);
+            }
+        }
         if (dup2(fds[1], STDERR_FILENO) < 0) {
             _exit(127);
         }
@@ -170,10 +182,11 @@ static int run_binary(const char *path, char *err, size_t cap)
     return status;
 }
 
-/* Lowers, writes, compiles, and runs one program of fns functions;
-   returns the wait status and the captured standard error. */
-static int gate(const char *src, const char *name, size_t fns, char *err,
-                size_t cap)
+/* Lowers, writes, compiles, and runs one program of fns functions
+   with a capped child stack; returns the wait status and the captured
+   standard error. */
+static int gate_stack(const char *src, const char *name, size_t fns,
+                      char *err, size_t cap, size_t stack_kib)
 {
     lfx f;
     char path[64];
@@ -189,9 +202,17 @@ static int gate(const char *src, const char *name, size_t fns, char *err,
     lfx_end(&f);
     EK_CHECK(compile_unit(name));
     snprintf(path, sizeof path, "build/%s", name);
-    status = run_binary(path, err, cap);
+    status = run_binary(path, err, cap, stack_kib);
     EK_CHECK(status >= 0 && WIFEXITED(status));
     return status;
+}
+
+/* Lowers, writes, compiles, and runs one program of fns functions;
+   returns the wait status and the captured standard error. */
+static int gate(const char *src, const char *name, size_t fns, char *err,
+                size_t cap)
+{
+    return gate_stack(src, name, fns, err, cap, 0);
 }
 
 static void arithmetic_program(void)
@@ -271,8 +292,10 @@ static void bind_forms(void)
     }
 }
 
-/* A ten-thousand-element list literal: construction folds from the nil
-   end and the release consumes the spine, both in constant C stack. */
+/* A ten-thousand-element list folded by a recursive sum over the
+   {h, ..t} arm: the self tail call runs at constant stack, so the
+   recursion survives a child stack far smaller than ten thousand
+   frames would need. */
 static void deep_list(void)
 {
     static char src[256 + 10000 * 7];
@@ -282,7 +305,10 @@ static void deep_list(void)
     int status;
 
     used += (size_t)snprintf(src, sizeof src,
-        "sum: (xs: []Int) -> Int = 0\n"
+        "sum: (xs: []Int, acc: Int) -> Int =\n"
+        "    case xs:\n"
+        "        {} -> acc\n"
+        "        {h, ..t} -> sum(t, acc + h)\n"
         "main: () -> _ =\n"
         "    xs: []Int = {");
     for (i = 1; i <= 10000; i++) {
@@ -291,11 +317,36 @@ static void deep_list(void)
     }
     snprintf(src + used, sizeof src - used,
              "}\n"
-             "    n = sum(xs)\n"
-             "    d = 1 / (n + 1)\n"
+             "    r = sum(xs, 0)\n"
+             "    d = 1 / (r - 50004999)\n"
              "    _ := d\n"
              "    _\n");
-    status = gate(src, "lower_run_deep", 2, err, sizeof err);
+    status = gate_stack(src, "lower_run_deep", 2, err, sizeof err, 1024);
+    if (status >= 0 && WIFEXITED(status)) {
+        EK_CHECK_U64(WEXITSTATUS(status), 0);
+    }
+}
+
+/* A hundred-thousand-deep self tail call: constant stack is the
+   contract, so the recursion survives a child stack of a few hundred
+   kilobytes where the eliminated frames would not. */
+static void tail_recursion(void)
+{
+    static char src[256];
+    char err[8];
+    int status;
+
+    snprintf(src, sizeof src,
+        "count: (n: Int, acc: Int) -> Int =\n"
+        "    case n:\n"
+        "        0 -> acc\n"
+        "        _ -> count(n - 1, acc + 1)\n"
+        "main: () -> _ =\n"
+        "    r = count(100000, 0)\n"
+        "    d = 1 / (r - 99999)\n"
+        "    _ := d\n"
+        "    _\n");
+    status = gate_stack(src, "lower_run_tail", 2, err, sizeof err, 512);
     if (status >= 0 && WIFEXITED(status)) {
         EK_CHECK_U64(WEXITSTATUS(status), 0);
     }
@@ -305,6 +356,200 @@ static void string_ownership(void)
 {
     char err[8];
     int status = gate(prog_string, "lower_run_string", 2, err, sizeof err);
+
+    if (status >= 0 && WIFEXITED(status)) {
+        EK_CHECK_U64(WEXITSTATUS(status), 0);
+    }
+}
+
+/* A lambda capturing two bindings is called through a function-typed
+   parameter: the environment struct, the closure ABI, and the
+   snapshot-at-creation discipline all hold up at runtime. */
+static void lambda_capture(void)
+{
+    static const char *src =
+        "twice: (f: (Int) -> Int, x: Int) -> Int = f(f(x))\n"
+        "main: () -> _ =\n"
+        "    a = 10\n"
+        "    b = 3\n"
+        "    h: (Int) -> Int = (x): x * a + b\n"
+        "    r = twice(h, 2)\n"
+        "    d = 1 / (r - 232)\n"
+        "    _ := d\n"
+        "    _\n";
+    char err[8];
+    int status = gate(src, "lower_run_lambda", 2, err, sizeof err);
+
+    if (status >= 0 && WIFEXITED(status)) {
+        EK_CHECK_U64(WEXITSTATUS(status), 0);
+    }
+}
+
+/* A top-level function referenced as a value travels as a closure over
+   its trampoline and is called through a function-typed parameter. */
+static void function_value(void)
+{
+    static const char *src =
+        "double: (x: Int) -> Int = x * 2\n"
+        "apply: (f: (Int) -> Int, x: Int) -> Int = f(x)\n"
+        "main: () -> _ =\n"
+        "    r = apply(double, 21)\n"
+        "    d = 1 / (r - 41)\n"
+        "    _ := d\n"
+        "    _\n";
+    char err[8];
+    int status = gate(src, "lower_run_value", 3, err, sizeof err);
+
+    if (status >= 0 && WIFEXITED(status)) {
+        EK_CHECK_U64(WEXITSTATUS(status), 0);
+    }
+}
+
+/* A guarded arm and an or-pattern discriminate at runtime: the probes
+   panic unless every arm chose exactly. */
+static void guarded_and_or(void)
+{
+    static const char *src =
+        "Key: type = Up | Down | Left | Right\n"
+        "axis: (k: Key) -> Bool =\n"
+        "    case k:\n"
+        "        Up | Down -> True\n"
+        "        Left | Right -> False\n"
+        "sign: (n: Int) -> Bool =\n"
+        "    case n:\n"
+        "        n if n < 0 -> True\n"
+        "        n if n == 0 -> False\n"
+        "        _ -> True\n"
+        "pick: (k: Key, n: Int) -> Int =\n"
+        "    case axis(k), sign(n):\n"
+        "        True, True -> 1\n"
+        "        True, False -> 2\n"
+        "        False, True -> 3\n"
+        "        False, False -> 4\n"
+        "main: () -> _ =\n"
+        "    w = 0\n"
+        "    if pick(Up, 0 - 1) == 1:\n"
+        "        if pick(Down, 5) == 1:\n"
+        "            if pick(Left, 0) == 4:\n"
+        "                if pick(Right, 9) == 3:\n"
+        "                    w := 1\n"
+        "                    _\n"
+        "    d = 1 / w\n"
+        "    _ := d\n"
+        "    _\n";
+    char err[8];
+    int status = gate(src, "lower_run_guard", 4, err, sizeof err);
+
+    if (status >= 0 && WIFEXITED(status)) {
+        EK_CHECK_U64(WEXITSTATUS(status), 0);
+    }
+}
+
+/* A record brace pattern destructures through the generated struct:
+   the probe division pins the fields the arm bound. */
+static void record_pattern(void)
+{
+    static const char *src =
+        "Human: type = [name: String, age: Int, city: String]\n"
+        "Holder: type = Holder Human\n"
+        "age_of: (h: Holder) -> Int =\n"
+        "    case h:\n"
+        "        Holder {name, age: a} -> a\n"
+        "main: () -> _ =\n"
+        "    h: Holder = Holder {name: \"ada\", age: 36, city: \"x\"}\n"
+        "    d = 1 / (age_of(h) - 35)\n"
+        "    _ := d\n"
+        "    _\n";
+    char err[8];
+    int status = gate(src, "lower_run_record_pat", 2, err, sizeof err);
+
+    if (status >= 0 && WIFEXITED(status)) {
+        EK_CHECK_U64(WEXITSTATUS(status), 0);
+    }
+}
+
+/* The inverted-binding chain: each `<-` step feeds the std Result
+   combinators, the short-circuit paths return the error, and the
+   successful chain sums. */
+static void invert_chain(void)
+{
+    static const char *src =
+        "chain: (xs: []Int) -> Result Int String =\n"
+        "    a <- xs.get(0).to_result(\"missing a\").try()\n"
+        "    b <- xs.get(1).to_result(\"missing b\").try()\n"
+        "    Ok (a + b)\n"
+        "probe: (xs: []Int) -> Int =\n"
+        "    case chain(xs):\n"
+        "        Ok n -> n\n"
+        "        Err e -> 0 - 1\n"
+        "main: () -> _ =\n"
+        "    w = 0\n"
+        "    if probe({7, 8}) == 15:\n"
+        "        if probe({}) == 0 - 1:\n"
+        "            if probe({7}) == 0 - 1:\n"
+        "                w := 1\n"
+        "                _\n"
+        "    d = 1 / w\n"
+        "    _ := d\n"
+        "    _\n";
+    char err[8];
+    int status = gate(src, "lower_run_invert", 6, err, sizeof err);
+
+    if (status >= 0 && WIFEXITED(status)) {
+        EK_CHECK_U64(WEXITSTATUS(status), 0);
+    }
+}
+
+/* The logical operators are lazy: a right operand whose evaluation
+   would panic never runs when the left operand decides the result. */
+static void short_circuit(void)
+{
+    static const char *src =
+        "main: () -> _ =\n"
+        "    x = 1\n"
+        "    r = x == 1 || 1 / (1 - x) == 0\n"
+        "    q = x == 2 && 1 / (x - 2) == 0\n"
+        "    w = 0\n"
+        "    if r:\n"
+        "        if q == False:\n"
+        "            w := 1\n"
+        "            _\n"
+        "    d = 1 / w\n"
+        "    _ := d\n"
+        "    _\n";
+    char err[256];
+    int status = gate(src, "lower_run_shortcut", 1, err, sizeof err);
+
+    if (status >= 0 && WIFEXITED(status)) {
+        EK_CHECK_U64(WEXITSTATUS(status), 0);
+    }
+}
+
+/* A self tail call in the right operand of `&&` and of `||` is a tail
+   position of the function: both recursions run at constant stack. */
+static void tail_through_logic(void)
+{
+    static const char *src =
+        "down: (n: Int) -> Bool =\n"
+        "    case n:\n"
+        "        0 -> True\n"
+        "        _ -> n > 0 && down(n - 1)\n"
+        "up: (n: Int) -> Bool =\n"
+        "    case n:\n"
+        "        0 -> True\n"
+        "        _ -> n == 100000 || up(n + 1)\n"
+        "main: () -> _ =\n"
+        "    w = 0\n"
+        "    if down(100000):\n"
+        "        if up(0):\n"
+        "            w := 1\n"
+        "            _\n"
+        "    d = 1 / w\n"
+        "    _ := d\n"
+        "    _\n";
+    char err[8];
+    int status = gate_stack(src, "lower_run_logic_tail", 3, err, sizeof err,
+                            512);
 
     if (status >= 0 && WIFEXITED(status)) {
         EK_CHECK_U64(WEXITSTATUS(status), 0);
@@ -325,5 +570,13 @@ int main(void)
     adt_construction();
     bind_forms();
     deep_list();
+    tail_recursion();
+    lambda_capture();
+    function_value();
+    guarded_and_or();
+    record_pattern();
+    invert_chain();
+    short_circuit();
+    tail_through_logic();
     return ek_test_report("lower/run");
 }

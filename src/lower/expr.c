@@ -2,11 +2,25 @@
 
 #include "lower/internal.h"
 
-/* Expressions other than literals: names, operators, and calls. Every
-   result is an owned value: operator results are born owned, a name
-   read is an owned copy through the helper, and a call result is
-   owned. Operands and arguments evaluate to temps in source order and
-   are released once their use is emitted. */
+/* Expressions other than literals and calls: names, operators, and
+   fields. Every result is an owned value: operator results are born
+   owned, a name read is an owned copy through the helper, and a name
+   holding a function is a fresh closure over its static trampoline.
+   Operands evaluate to temps in source order and are released once
+   their use is emitted. */
+
+/* A descent that is not a tail position of the function being
+   emitted. */
+lower_val lower_sub(lower_ctx *c, lower_scope *scope, const ek_node *e)
+{
+    int saved = c->in_tail;
+    lower_val v;
+
+    c->in_tail = 0;
+    v = lower_expr(c, scope, e);
+    c->in_tail = saved;
+    return v;
+}
 
 /* True and False are scalar-represented; the check row's Bool decides.
    Every other constructor lands through the generated struct layer. */
@@ -57,9 +71,10 @@ static lower_val name_expr(lower_ctx *c, lower_scope *scope, const ek_node *e)
         return ctor_expr(c, e, ref);
     }
     if (ref->kind == EK_SYM_FUNC && ref->symbol) {
-        lower_error(c, e, "the function value `%s` is not supported by "
-                          "this lowerer", ref->symbol->name);
-        return lower_val_unit();
+        const char *ekt = lower_trampoline(c, ref->symbol);
+
+        return (lower_val){ lower_str(c, "ek_closure_new(%s, "
+                                          "ek_val_unit())", ekt), 0 };
     }
     lower_error(c, e, "the reference to `%s` is not supported by this "
                       "lowerer",
@@ -108,39 +123,103 @@ static const char *op_spelling(ek_binop op)
     return "?";
 }
 
+/* One right operand: a tail position whose value moves into the
+   result temp. The tail marker here is the one the enclosing context
+   set, so a self call in the operand reenters the function. */
+static void emit_bool_branch(lower_ctx *c, lower_scope *scope,
+                             const ek_node *b, const char *r)
+{
+    lower_val v = lower_expr(c, scope, b);
+
+    if (!v.text) {
+        v = lower_val_unit(); /* the tail jumped to retry */
+    }
+    lower_pad(c);
+    lower_emitf(c, "%s = %s;\n", r, v.text);
+}
+
+/* The logical operators lower by their defining expansion: `a && b`
+   is `if a: b else: False` and `a || b` is `if a: True else: b`. The
+   right operand evaluates only when the left operand leaves the
+   result undecided, and it inherits the tail position. */
+static lower_val bool_op(lower_ctx *c, lower_scope *scope,
+                         const ek_node *e, int is_and)
+{
+    unsigned d = c->depth;
+    lower_val l = lower_sub(c, scope, e->u.binary.lhs);
+    const char *lt = lower_as_temp(c, scope, &l);
+    const char *r = lower_temp(c, scope);
+
+    lower_pad(c);
+    lower_emitf(c, "ek_val %s = ek_val_unit();\n", r);
+    lower_pad(c);
+    lower_emitf(c, "if (%s.as.i) {\n", lt);
+    c->depth = d + 1;
+    if (is_and) {
+        emit_bool_branch(c, scope, e->u.binary.rhs, r);
+    } else {
+        lower_pad(c);
+        lower_emitf(c, "%s = ek_bool(1);\n", r);
+    }
+    c->depth = d;
+    lower_pad(c);
+    lower_emitf(c, "} else {\n");
+    c->depth = d + 1;
+    if (is_and) {
+        lower_pad(c);
+        lower_emitf(c, "%s = ek_bool(0);\n", r);
+    } else {
+        emit_bool_branch(c, scope, e->u.binary.rhs, r);
+    }
+    c->depth = d;
+    lower_pad(c);
+    lower_emitf(c, "}\n");
+    lower_pad(c);
+    lower_emitf(c, "ek_release(%s);\n", lt);
+    return (lower_val){ r, 1 };
+}
+
 static lower_val binary_expr(lower_ctx *c, lower_scope *scope,
                              const ek_node *e)
 {
-    const char *fn = num_op(e->u.binary.op);
-    lower_val l = lower_expr(c, scope, e->u.binary.lhs);
-    lower_val r = lower_expr(c, scope, e->u.binary.rhs);
-    const char *lt = lower_as_temp(c, scope, &l);
-    const char *rt = lower_as_temp(c, scope, &r);
-    const char *t;
+    if (e->u.binary.op == EK_BIN_AND) {
+        return bool_op(c, scope, e, 1);
+    }
+    if (e->u.binary.op == EK_BIN_OR) {
+        return bool_op(c, scope, e, 0);
+    }
+    {
+        const char *fn = num_op(e->u.binary.op);
+        lower_val l = lower_sub(c, scope, e->u.binary.lhs);
+        lower_val r = lower_sub(c, scope, e->u.binary.rhs);
+        const char *lt = lower_as_temp(c, scope, &l);
+        const char *rt = lower_as_temp(c, scope, &r);
+        const char *t;
 
-    if (!fn) {
-        lower_error(c, e, "the %s operator is not supported by this "
-                          "lowerer", op_spelling(e->u.binary.op));
+        if (!fn) {
+            lower_error(c, e, "the %s operator is not supported by this "
+                              "lowerer", op_spelling(e->u.binary.op));
+            lower_pad(c);
+            lower_emitf(c, "ek_release(%s);\n", rt);
+            lower_pad(c);
+            lower_emitf(c, "ek_release(%s);\n", lt);
+            return lower_val_unit();
+        }
+        t = lower_temp(c, scope);
+        lower_pad(c);
+        lower_emitf(c, "ek_val %s = %s(%s, %s);\n", t, fn, lt, rt);
         lower_pad(c);
         lower_emitf(c, "ek_release(%s);\n", rt);
         lower_pad(c);
         lower_emitf(c, "ek_release(%s);\n", lt);
-        return lower_val_unit();
+        return (lower_val){ t, 1 };
     }
-    t = lower_temp(c, scope);
-    lower_pad(c);
-    lower_emitf(c, "ek_val %s = %s(%s, %s);\n", t, fn, lt, rt);
-    lower_pad(c);
-    lower_emitf(c, "ek_release(%s);\n", rt);
-    lower_pad(c);
-    lower_emitf(c, "ek_release(%s);\n", lt);
-    return (lower_val){ t, 1 };
 }
 
 static lower_val unary_expr(lower_ctx *c, lower_scope *scope,
                             const ek_node *e)
 {
-    lower_val v = lower_expr(c, scope, e->u.wrap.inner);
+    lower_val v = lower_sub(c, scope, e->u.wrap.inner);
     const char *t = lower_as_temp(c, scope, &v);
     const char *r = lower_temp(c, scope);
 
@@ -149,109 +228,6 @@ static lower_val unary_expr(lower_ctx *c, lower_scope *scope,
     lower_pad(c);
     lower_emitf(c, "ek_release(%s);\n", t);
     return (lower_val){ r, 1 };
-}
-
-/* The panic service: the free-call form of the String member, its
-   reading selected by check. */
-static int is_panic_call(lower_ctx *c, const ek_node *e)
-{
-    const ek_node *callee = e->u.call.callee;
-    const ek_ck_row *row;
-
-    if (!callee || callee->kind != EK_N_NAME || callee->u.path.count != 1
-        || strcmp(callee->u.path.data[0], "panic") != 0) {
-        return 0;
-    }
-    row = lower_row(c, callee);
-    return row && row->reading == EK_RD_DERIVED;
-}
-
-static lower_val panic_call(lower_ctx *c, lower_scope *scope,
-                            const ek_node *e)
-{
-    const ek_nlist *args = &e->u.call.args;
-    lower_val a;
-    const char *at;
-
-    if (args->count != 1) {
-        lower_error(c, e, "the call of `panic` is malformed");
-        return lower_val_unit();
-    }
-    a = lower_expr(c, scope, args->data[0]);
-    at = lower_as_temp(c, scope, &a);
-    lower_pad(c);
-    lower_emitf(c, "ek_panic_value(%s);\n", at);
-    lower_pad(c);
-    lower_emitf(c, "ek_release(%s);\n", at);
-    return lower_val_unit();
-}
-
-static lower_val direct_call(lower_ctx *c, lower_scope *scope,
-                             const ek_node *e, const ek_ref *ref)
-{
-    const ek_symbol *sym = ref->symbol;
-    const ek_nlist *args = &e->u.call.args;
-    const ek_node *ann = sym->type;
-    const char **argv;
-    const char *t;
-    size_t n, cap, i;
-
-    if (!ann || ann->kind != EK_N_T_FN) {
-        lower_error(c, e, "the signature of `%s` has no lowering",
-                    sym->name);
-        return lower_val_unit();
-    }
-    n = ann->u.t_fn.params.count;
-    cap = 0;
-    argv = lower_grow(c, NULL, &cap, n, sizeof *argv);
-    if (!argv && n) {
-        c->oom = 1;
-        return lower_val_unit();
-    }
-    for (i = 0; i < n && i < args->count; i++) {
-        lower_val a = lower_expr(c, scope, args->data[i]);
-
-        argv[i] = lower_as_temp(c, scope, &a);
-    }
-    for (; i < n; i++) {
-        lower_val a = lower_val_unit();
-
-        argv[i] = lower_as_temp(c, scope, &a); /* a malformed call */
-    }
-    lower_enqueue(c, sym);
-    t = lower_temp(c, scope);
-    lower_pad(c);
-    lower_emitf(c, "ek_val %s = %s(", t, lower_mangled(c, sym));
-    for (i = 0; i < n; i++) {
-        lower_emitf(c, "%s%s", i ? ", " : "", argv[i]);
-    }
-    lower_emitf(c, ");\n");
-    for (i = n; i-- > 0;) {
-        lower_pad(c);
-        lower_emitf(c, "ek_release(%s);\n", argv[i]);
-    }
-    return (lower_val){ t, 1 };
-}
-
-static lower_val call_expr(lower_ctx *c, lower_scope *scope, const ek_node *e)
-{
-    const ek_ref *ref;
-
-    if (is_panic_call(c, e)) {
-        return panic_call(c, scope, e);
-    }
-    ref = lower_ref(c, e);
-    if (!ref && e->u.call.callee) {
-        ref = lower_ref(c, e->u.call.callee);
-    }
-    if (ref && ref->kind == EK_SYM_FUNC && ref->symbol) {
-        return direct_call(c, scope, e, ref);
-    }
-    if (ref) {
-        lower_error(c, e, "the call is not supported by this lowerer");
-        return lower_val_unit();
-    }
-    return lower_val_unit(); /* resolve diagnosed the callee */
 }
 
 /* A field access: the receiver lowers to a temp, the read is an owned
@@ -271,7 +247,7 @@ static lower_val field_expr(lower_ctx *c, lower_scope *scope,
                     lower_construct(e));
         return lower_val_unit();
     }
-    v = lower_expr(c, scope, e->u.field.recv);
+    v = lower_sub(c, scope, e->u.field.recv);
     t = lower_as_temp(c, scope, &v);
     slot = lower_field_slot(c, e, rt, t, e->u.field.name);
     if (!slot) {
@@ -302,6 +278,22 @@ const char *lower_construct(const ek_node *n)
     }
 }
 
+static lower_val lower_block_expr(lower_ctx *c, lower_scope *scope,
+                                  const ek_node *e)
+{
+    lower_scope s;
+    lower_val v;
+    unsigned d = c->depth;
+
+    memset(&s, 0, sizeof s);
+    s.parent = scope;
+    c->depth = d + 1;
+    v = lower_block_value(c, &s, e);
+    c->depth = d;
+    lower_release_scope(c, &s);
+    return v;
+}
+
 lower_val lower_expr(lower_ctx *c, lower_scope *scope, const ek_node *e)
 {
     if (!e) {
@@ -325,7 +317,7 @@ lower_val lower_expr(lower_ctx *c, lower_scope *scope, const ek_node *e)
     case EK_N_BINARY:
         return binary_expr(c, scope, e);
     case EK_N_CALL:
-        return call_expr(c, scope, e);
+        return lower_call_expr(c, scope, e);
     case EK_N_APPLY:
         return lower_ctor_apply(c, scope, e);
     case EK_N_COMPOSITE:
@@ -338,19 +330,14 @@ lower_val lower_expr(lower_ctx *c, lower_scope *scope, const ek_node *e)
         lower_if(c, scope, e, &v);
         return v;
     }
-    case EK_N_BLOCK: {
-        lower_scope s;
-        lower_val v;
-        unsigned d = c->depth;
-
-        memset(&s, 0, sizeof s);
-        s.parent = scope;
-        c->depth = d + 1;
-        v = lower_block_value(c, &s, e);
-        c->depth = d;
-        lower_release_scope(c, &s);
-        return v;
-    }
+    case EK_N_CASE:
+        return lower_case(c, scope, e);
+    case EK_N_LAMBDA:
+        return lower_lambda(c, scope, e);
+    case EK_N_INVERT:
+        return lower_invert(c, scope, e, NULL, 0);
+    case EK_N_BLOCK:
+        return lower_block_expr(c, scope, e);
     default:
         lower_error(c, e, "the %s is not supported by this lowerer",
                     lower_construct(e));

@@ -23,11 +23,12 @@ static void reachability(void)
     EK_CHECK(lfx_has(&f, "#include \"ekort.h\""));
     EK_CHECK(lfx_has(&f, "static ek_val ek_keep(ek_val v) "
                          "{ ek_retain(v); return v; }"));
-    /* every emitted function is declared first */
+    /* every emitted function is declared first; the parameters are
+       the borrowed ABI slots */
     EK_CHECK(lfx_has(&f, "static ek_val ekf_test_main(void);"));
-    EK_CHECK(lfx_has(&f, "static ek_val ekf_test_add2(ek_val a, "
-                         "ek_val b);"));
-    EK_CHECK(lfx_has(&f, "static ek_val ekf_test__helper(ek_val x);"));
+    EK_CHECK(lfx_has(&f, "static ek_val ekf_test_add2(ek_val ek_p0, "
+                         "ek_val ek_p1);"));
+    EK_CHECK(lfx_has(&f, "static ek_val ekf_test__helper(ek_val ek_p0);"));
     /* the untouched std surface and the unreferenced binding are
        absent */
     EK_CHECK(lfx_lacks(&f, "ekf_test_unused"));
@@ -46,10 +47,14 @@ static void ownership(void)
     EK_CHECK(lfx_has(&f, "ek_val t0 = ek_keep(a);"));
     EK_CHECK(lfx_has(&f, "ek_val t1 = ekf_test__helper(t0);"));
     EK_CHECK(lfx_has(&f, "ek_release(t0);"));
-    /* the callee never releases its borrowed parameters */
-    EK_CHECK(lfx_lacks(&f, "ek_release(x)"));
-    EK_CHECK(lfx_lacks(&f, "ek_release(a)"));
-    EK_CHECK(lfx_lacks(&f, "ek_release(b)"));
+    /* parameters are owned at entry: the prologue keeps the borrowed
+       ABI slots into locals of the written names */
+    EK_CHECK(lfx_has(&f, "ek_val a = ek_keep(ek_p0);\n"
+                         "    ek_val b = ek_keep(ek_p1);"));
+    /* the return path releases the owned locals, parameters included,
+       in reverse order */
+    EK_CHECK(lfx_has(&f, "ek_release(b);\n    ek_release(a);\n"
+                         "    return t4;"));
     /* a binding transfers; the function's own bindings release in
        reverse order before the return */
     EK_CHECK(lfx_has(&f, "ek_val v = t2;"));
@@ -204,8 +209,10 @@ static void param_naming(void)
     EK_CHECK(lfx_check_clean(&f));
     EK_CHECK(lfx_lower_clean(&f));
     /* the written name stands; the unnamed parameter is numbered */
-    EK_CHECK(lfx_has(&f, "static ek_val ekf_test__mix(ek_val x, "
-                         "ek_val a1);"));
+    EK_CHECK(lfx_has(&f, "static ek_val ekf_test__mix(ek_val ek_p0, "
+                         "ek_val ek_p1);"));
+    EK_CHECK(lfx_has(&f, "ek_val x = ek_keep(ek_p0);\n"
+                         "    ek_val a1 = ek_keep(ek_p1);"));
     lfx_end(&f);
 }
 

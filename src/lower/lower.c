@@ -167,6 +167,52 @@ void lower_enqueue(lower_ctx *c, const ek_symbol *sym)
     }
 }
 
+/* Records one live reference temp a retry jump would abandon. */
+void lower_clean_push(lower_ctx *c, const char *temp)
+{
+    const char **slots = lower_grow(c, c->clean, &c->cclean, c->nclean + 1,
+                                    sizeof *slots);
+
+    if (slots) {
+        slots[c->nclean++] = temp;
+        c->clean = slots;
+    }
+}
+
+/* Drops the newest entry once its normal release is emitted. */
+void lower_clean_pop(lower_ctx *c)
+{
+    if (c->nclean) {
+        c->nclean--;
+    }
+}
+
+/* Emits the releases of the entries pushed after base, newest first,
+   without dropping them: a retry jump abandons the whole live set. */
+void lower_clean_release(lower_ctx *c, size_t base)
+{
+    size_t i = c->nclean;
+
+    while (i > base) {
+        i--;
+        lower_pad(c);
+        lower_emitf(c, "ek_release(%s);\n", c->clean[i]);
+    }
+}
+
+/* Queues one deferred definition; the queue drains after the function
+   that created it. */
+void lower_pending_add(lower_ctx *c, lower_pending *p)
+{
+    p->next = NULL;
+    if (c->pend_tail) {
+        c->pend_tail->next = p;
+    } else {
+        c->pend = p;
+    }
+    c->pend_tail = p;
+}
+
 /* The file of the module a symbol was declared in. */
 const char *surface_file(lower_ctx *c, const char *stem)
 {
