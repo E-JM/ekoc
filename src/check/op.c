@@ -117,7 +117,6 @@ static const ek_type *binary_range(ck_ctx *c, const ek_node *e,
     const ek_type *re = ck_prune(expected);
     const ek_type *end = NULL;
     const ek_type *elem;
-    const ek_type *arg1;
     const ek_symbol *rsym;
     ek_binop op = e->u.binary.op;
     const ek_type *lt, *rt, *same;
@@ -143,8 +142,20 @@ static const ek_type *binary_range(ck_ctx *c, const ek_node *e,
                  ck_type_name(c, elem));
     }
     rsym = ck_std_symbol(c, "Range");
-    arg1 = elem;
-    return rsym ? ck_nominal(c, rsym, &arg1, 1) : NULL;
+    if (rsym) {
+        /* ck_nominal keeps the argument array by reference, so it
+           lives in the arena like every other argument array; a stack
+           local would dangle in the interned type. */
+        const ek_type **args = ek_arena_alloc(c->arena, sizeof *args);
+
+        if (!args) {
+            c->oom = 1;
+            return NULL;
+        }
+        args[0] = elem;
+        return ck_nominal(c, rsym, args, 1);
+    }
+    return NULL;
 }
 
 /* A composite literal under parentheses. */

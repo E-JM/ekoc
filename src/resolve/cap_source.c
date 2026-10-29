@@ -11,6 +11,10 @@ const char *const ek_cap_source_parts[] = {
     "// each capability (Clause 10.8); the fifteen compiler-provided\n",
     "// declarations arrive as compiler rows, not source.\n",
     "\n",
+    "// The time vocabulary of the signatures below (FileInfo.mtime, the\n",
+    "// Clock bundle) is the std/time companion's (Clause 9.1.3).\n",
+    "import std/time\n",
+    "\n",
     "// The file-open modes (Clause 9.12.1).\n",
     "OpenMode: type = Read | Write | Append | New | Update\n",
     "\n",
@@ -244,8 +248,8 @@ const char *const ek_cap_source_parts[] = {
     "Rand.int: (r: Rand, bound: UInt) !-> UInt = _rand_unwrap(r).int(bound)\n",
 };
 
-const size_t ek_cap_source_nparts = 237;
-const size_t ek_cap_source_len = 10334;
+const size_t ek_cap_source_nparts = 241;
+const size_t ek_cap_source_len = 10480;
 
 char *ek_cap_source_join(ek_arena *arena)
 {

@@ -101,7 +101,10 @@ void r_cap_boot(r_ctx *c)
     if (c->oom) {
         return;
     }
-    m->state = 2; /* parsed, and it imports nothing */
+    /* The capability source carries one ordinary import, std/time
+       (Clause 10.8); the shared walk registers the companion in the
+       closure before any file's bodies resolve. */
+    r_closure_walk(c, m);
     c->cap = m->surf;
 }
 

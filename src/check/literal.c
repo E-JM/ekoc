@@ -74,6 +74,25 @@ static const ek_symbol *std_sym(ck_ctx *c, const char *name)
             }
         }
     }
+    /* The shipped companions carry their types under their own module
+       names (Clause 9.1.3); the stem list mirrors r_companion_stem
+       (resolve/module.c). The scan precedes synthesis so a companion
+       nominal keeps the resolve-stage symbol, and one identity, when
+       the rows table builds its signatures. */
+    for (k = 0; k < c->in->module_count; k++) {
+        const ek_surface *s = &c->in->modules[k];
+
+        if (strcmp(s->module, "time") != 0) {
+            continue;
+        }
+        for (i = 0; i < s->count; i++) {
+            const ek_symbol *sym = &s->syms[i];
+
+            if (sym->kind == EK_SYM_TYPE && strcmp(sym->name, name) == 0) {
+                return sym;
+            }
+        }
+    }
     fresh = ek_arena_alloc(c->arena, sizeof *fresh);
     if (!fresh) {
         c->oom = 1;

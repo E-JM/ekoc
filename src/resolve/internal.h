@@ -154,6 +154,7 @@ r_mod *r_module_find(r_ctx *c, const char *stem);
 r_mod *r_module_add(r_ctx *c, const char *stem, const char *file,
                     const ek_node *ast);
 r_mod *r_module_companion(r_ctx *c, const char *stem);
+int r_companion_stem(const char *stem);
 ek_node *r_parse_source(r_ctx *c, const char *src, size_t len,
                         const char *path);
 void r_closure_walk(r_ctx *c, r_mod *m);

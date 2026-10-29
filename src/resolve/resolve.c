@@ -150,6 +150,12 @@ static void check_root_name(r_ctx *c, const char *file, const char *stem)
                 "no import path names the capability module (Clauses "
                 "9.1.1, 9.1.2)");
     }
+    if (r_companion_stem(stem)) {
+        r_error(c, file, 1, 1, "E-module-name",
+                "a user module MUST NOT be named `%s`; the stem belongs "
+                "to the std/%s companion (Clauses 7.2.2, 9.1.3)",
+                stem, stem);
+    }
 }
 
 /* The root occupies slot 0 of the closure. */

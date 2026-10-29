@@ -53,6 +53,7 @@ RESOLVE_SRC := \
 	src/resolve/std.c \
 	src/resolve/std_source.c \
 	src/resolve/surface.c \
+	src/resolve/time_source.c \
 	src/resolve/type.c \
 	src/resolve/warn.c
 

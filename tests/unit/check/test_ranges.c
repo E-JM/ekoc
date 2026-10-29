@@ -39,7 +39,7 @@ static void invalid_endpoint_type(void)
 {
     cfx f;
 
-    cfx_begin(&f, "bad: Range Bool = True..False\n");
+    cfx_begin(&f, "bad := True..False\n");
     EK_CHECK_U64(cfx_errors(&f), 1);
     EK_CHECK(cfx_code_at_line(&f, "E-no-operator", 1));
     cfx_end(&f);

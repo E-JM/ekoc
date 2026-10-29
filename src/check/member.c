@@ -224,13 +224,14 @@ static const ek_type *derive_eq(ck_ctx *c, const ek_node *at,
 }
 
 /* The value layer: the types whose equality and ordering the compiler
-   owns. `Bool` is not among them; it has no ordering. */
+   owns. `Bool` is not among them; it has no ordering. `Range` orders
+   over its endpoints. */
 static int value_layer(const ek_type *r)
 {
     static const char *names[] = {
-        "Int",  "UInt", "Float", "Char", "String", "Bytes",
-        "I8",   "I16",  "I32",   "I64",  "U8",     "U16",
-        "U32",  "U64",  "F32",   "F64"
+        "Int",   "UInt", "Float", "Char", "String", "Bytes",
+        "Range", "I8",   "I16",  "I32",  "I64",  "U8",
+        "U16",   "U32",  "U64",  "F32",   "F64"
     };
     size_t i;
 
@@ -469,8 +470,9 @@ static const ek_type *derive_with(ck_ctx *c, const ek_node *at,
 }
 
 /* True when the receiver's namespace is one the compiler still supplies
-   members for: the std surface and the two container namespaces. A
-   declared module's own namespace is complete and never bridged. */
+   members for: the std surface, the shipped companions, and the two
+   container namespaces. A declared module's own namespace is complete
+   and never bridged. */
 static int std_namespace(const ek_type *r)
 {
     switch (r->kind) {
@@ -479,7 +481,8 @@ static int std_namespace(const ek_type *r)
         return 1;
     case EK_T_NOMINAL:
         return r->u.nominal.sym && r->u.nominal.sym->module
-            && strcmp(r->u.nominal.sym->module, "std") == 0;
+            && (strcmp(r->u.nominal.sym->module, "std") == 0
+                || strcmp(r->u.nominal.sym->module, "time") == 0);
     default:
         return 0;
     }

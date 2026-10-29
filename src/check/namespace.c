@@ -229,7 +229,8 @@ static const char *namespace_of(const ek_type *t)
     if (t->kind == EK_T_NOMINAL && t->u.nominal.sym
         && t->u.nominal.sym->module
         && (strcmp(t->u.nominal.sym->module, "std") == 0
-            || strcmp(t->u.nominal.sym->module, "cap") == 0)) {
+            || strcmp(t->u.nominal.sym->module, "cap") == 0
+            || strcmp(t->u.nominal.sym->module, "time") == 0)) {
         return t->u.nominal.sym->name;
     }
     return NULL;
@@ -241,7 +242,8 @@ static const char *namespace_of(const ek_type *t)
    String scalar access and the Bytes operations; the Dict, Set, Range,
    and Path operations; the time parsers; Json.parse; List.append; the
    panic-coded unwrap/expect pair; and the compiler-provided capability
-   rows. Every other inventory member is std or cap source. */
+   rows. Every other inventory member is std, cap, or companion
+   source. */
 static const ns_row rows[] = {
     /* Bool.not is std source; the logical operators are sugar. */
 
@@ -588,11 +590,11 @@ static const ns_row rows[] = {
                                     SIG_VAR(0)))},
 
     /* The wall-clock namespace: the printed form's parser alone; the
-       arithmetic and the payload are std source. */
+       arithmetic and the payload are companion source (std/time). */
     {"Time", "parse", SIG_FN(EK_ARROW_PURE, SIG_RESULT(SIG_STD("Time")),
                               SIG_STD("String"))},
 
-    /* The monotonic namespace is std source. */
+    /* The monotonic namespace is companion source. */
 
     /* The duration namespace: the printed form's parser alone. */
     {"Duration", "parse", SIG_FN(EK_ARROW_PURE,

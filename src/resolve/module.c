@@ -5,11 +5,38 @@
 #include "layout/layout.h"
 #include "parse/parse.h"
 #include "resolve/internal.h"
+#include "resolve/time_source.h"
 #include "support/buf.h"
 
 /* Loading modules and walking the import closure. Paths resolve
    against the module path directories in order; the dependency graph
    is walked depth first, first import first, and must be acyclic. */
+
+/* The file spelling of a compiler-embedded module: no release
+   directory is consulted, and diagnostics name the module, not a
+   host path. */
+#define EMBEDDED_FILE "(std)"
+
+/* The stems of the shipped companions: compiler-embedded release
+   sources under the reserved std/ path (Clause 9.1.3). A stem here is
+   reserved for the companion, so a user module MUST NOT claim it; a
+   future companion adds its stem, its source table, and its boot. */
+static const char *const companion_stems[] = {
+    "time",
+    NULL
+};
+
+int r_companion_stem(const char *stem)
+{
+    size_t i;
+
+    for (i = 0; companion_stems[i]; i++) {
+        if (strcmp(stem, companion_stems[i]) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
 
 static char *r_stem_of(r_ctx *c, const char *file)
 {
@@ -117,7 +144,44 @@ r_mod *r_module_add(r_ctx *c, const char *stem, const char *file,
    file behind it. */
 r_mod *r_module_companion(r_ctx *c, const char *stem)
 {
-    return register_mod(c, stem, "(std)", NULL, 1);
+    return register_mod(c, stem, EMBEDDED_FILE, NULL, 1);
+}
+
+/* True for a module registered as a shipped companion: a real,
+   compiler-embedded source, spelled with the embedded file name. */
+static int shipped_companion(const r_mod *m)
+{
+    return m && !m->external && strcmp(m->file, EMBEDDED_FILE) == 0;
+}
+
+/* Boots the shipped companion of `stem`: parses the embedded source
+   and registers the module like an imported file, so its surface and
+   bodies follow the ordinary machinery. Called from the import walk
+   and from the capability module's boot; idempotence is the caller's
+   stem check. */
+static void load_companion(r_ctx *c, const char *stem)
+{
+    char *source;
+    ek_node *ast;
+    r_mod *m;
+
+    if (strcmp(stem, "time") != 0) {
+        return; /* unreachable: companion_stems gates the call */
+    }
+    source = ek_time_source_join(c->arena);
+    if (!source) {
+        c->oom = 1;
+        return;
+    }
+    ast = r_parse_source(c, source, ek_time_source_len, EMBEDDED_FILE);
+    if (!ast) {
+        return;
+    }
+    m = r_module_add(c, stem, EMBEDDED_FILE, ast);
+    if (!m || !m->surf) {
+        return;
+    }
+    r_closure_walk(c, m);
 }
 
 /* Two imported modules with the same stem collide over the closure.
@@ -339,6 +403,21 @@ static void load_import(r_ctx *c, r_mod *from, const ek_node *imp)
             return;
         }
         held = r_module_find(c, stem);
+        if (shipped_companion(held)) {
+            /* The shipped companion is already in the closure — the
+               capability module imports it at boot — so this line is a
+               legal diamond share, and the stem opens in the importing
+               file's own scope pass. */
+            return;
+        }
+        if (held == c->mods && r_companion_stem(stem)) {
+            /* A root illegally named as a shipped companion claims the
+               stem; the root is already rejected (E-module-name), and
+               the companion stays out of the closure rather than
+               compounding the rejection with a conflict at cap.eko
+               and unbound names in the capability source. */
+            return;
+        }
         if (held && !held->external) {
             /* The std/ path is reserved; a user module already holding
                the companion's stem collides over the closure, whichever
@@ -346,12 +425,21 @@ static void load_import(r_ctx *c, r_mod *from, const ek_node *imp)
             r_error(c, file, imp->line, imp->col, "E-name-conflict",
                     "module stem `%s` is already imported from `%s` "
                     "(Clauses 7.2.2, 7.4.6)", stem, held->file);
-        } else if (!held) {
-            /* A companion stem obeys the stem rules like any module
-               name. */
-            if (stem_legal(c, file, imp, stem)) {
-                r_module_companion(c, stem);
-            }
+            return;
+        }
+        if (held) {
+            /* An unknown companion's stub holds the stem. */
+            return;
+        }
+        /* A companion stem obeys the stem rules like any module
+           name. */
+        if (!stem_legal(c, file, imp, stem)) {
+            return;
+        }
+        if (r_companion_stem(stem)) {
+            load_companion(c, stem);
+        } else {
+            r_module_companion(c, stem);
         }
         return;
     }
@@ -386,26 +474,30 @@ static void load_import(r_ctx *c, r_mod *from, const ek_node *imp)
 void r_closure_walk(r_ctx *c, r_mod *m)
 {
     const ek_node *mod;
-    size_t i;
+    size_t i, idx;
 
     if (!m || c->oom || m->state != 0) {
         return;
     }
+    /* The walk holds the module by index: a nested import grows the
+       closure table, and a held pointer would dangle across the
+       realloc. */
+    idx = (size_t)(m - c->mods);
     m->state = 1;
-    if (!m->ast || m->external) {
-        m->state = 2;
+    mod = m->ast;
+    if (!mod || m->external) {
+        c->mods[idx].state = 2;
         return;
     }
-    mod = m->ast;
     for (i = 0; i < mod->u.kids.count; i++) {
         const ek_node *imp = mod->u.kids.data[i];
 
         if (imp->kind != EK_N_IMPORT || imp->u.imports.path.count == 0) {
             continue;
         }
-        load_import(c, m, imp);
+        load_import(c, &c->mods[idx], imp);
     }
-    m->state = 2;
+    c->mods[idx].state = 2;
 }
 
 void r_closure(r_ctx *c, r_mod *root)

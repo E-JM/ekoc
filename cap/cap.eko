@@ -4,6 +4,10 @@
 // each capability (Clause 10.8); the fifteen compiler-provided
 // declarations arrive as compiler rows, not source.
 
+// The time vocabulary of the signatures below (FileInfo.mtime, the
+// Clock bundle) is the std/time companion's (Clause 9.1.3).
+import std/time
+
 // The file-open modes (Clause 9.12.1).
 OpenMode: type = Read | Write | Append | New | Update
 

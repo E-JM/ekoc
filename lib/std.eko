@@ -7,9 +7,10 @@
 // Int/UInt/Float arithmetic, conversions, formatting, and parsers; the
 // machine-word padding rows; Char's code-point bridge; String's scalar
 // access and the Bytes operations; the Dict, Set, Range, and Path
-// operations; the time parsers; Json.parse; List.append; and the
+// operations; Json.parse; List.append; and the
 // panic-coded unwrap/expect pair. Every other member of the inventory
-// is declared here.
+// is declared here. The time family lives in the std/time companion
+// (Clause 9.1.3).
 
 // The two-valued Boolean type.
 Bool: type = True | False
@@ -24,11 +25,6 @@ Option: type t = Some t | None
 
 // A recoverable failure: an `Ok` payload, or the reason it failed.
 Result: type t e = Ok t | Err e
-
-// A span between two endpoints of one ordered scalar. The `..` and
-// `..=` operators construct it; the constructor is private, so no
-// other form exists and the endpoint domain stays the operators'.
-Range: type t = _Range [start: t, end: t, closed: Bool]
 
 // The Option combinators: the payload variable runs through the
 // callback and the result. The maps are open-bit dispatchers, so a
@@ -266,134 +262,6 @@ Result.unwrap_or: (r: Result t e, d: t) -> t =
 // A closed failure reason for the parse family: a missing value, a
 // malformed one, or one outside the target's limits.
 ParseError: type = Empty | Invalid String | OutOfRange
-
-// A wall-clock instant, as nanoseconds since the epoch.
-Time: type = Time Int
-
-// The ISO 8601 UTC display: date, time, an optional fraction trimmed
-// of trailing zeros, and the zone marker (Clause 9.7.4).
-Time.show: (t: Time) -> String =
-    case t:
-        Time n ->
-            date := _civil(n.div(86_400_000_000_000))
-            day_ns := n.mod(86_400_000_000_000)
-            y := "{date.y}".pad_left(4, '0')
-            mon := "{date.m}".pad_left(2, '0')
-            day := "{date.d}".pad_left(2, '0')
-            day_txt := y ++ "-" ++ mon ++ "-" ++ day
-            nanos := day_ns % 1_000_000_000
-            frac :=
-                if nanos == 0: "" else: "." ++ _nanos_frac(nanos, 9)
-            day_txt ++ "T" ++ _clock(day_ns / 1_000_000_000) ++ frac ++ "Z"
-
-// The civil date of a day count since 1970-01-01, floor-division
-// throughout, so dates before the epoch decompose the same way
-// (Hinnant's civil_from_days).
-_civil: (z0: Int) -> [y: Int, m: Int, d: Int] =
-    z := z0 + 719_468
-    era := z.div(146_097)
-    doe := z - era * 146_097
-    yoe := (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365
-    y0 := yoe + era * 400
-    doy := doe - (365 * yoe + yoe / 4 - yoe / 100)
-    mp := (5 * doy + 2) / 153
-    d := doy - (153 * mp + 2) / 5 + 1
-    m := if mp < 10: mp + 3 else: mp - 9
-    y := if m <= 2: y0 + 1 else: y0
-    {y: y, m: m, d: d}
-
-// The time of day of a second count: two digits each.
-_clock: (s: Int) -> String =
-    hh := "{s / 3600}".pad_left(2, '0')
-    mm := "{(s / 60) % 60}".pad_left(2, '0')
-    ss := "{s % 60}".pad_left(2, '0')
-    hh ++ ":" ++ mm ++ ":" ++ ss
-
-// A monotonic reading, as nanoseconds from an arbitrary epoch.
-Mono: type = Mono Int
-
-// A signed span of time, in nanoseconds.
-Duration: type = Duration Int
-
-// The decimal-seconds display: whole seconds, a fraction of at most
-// nine digits with its trailing zeros carried away, and the unit
-// (Clause 9.7.4).
-Duration.show: (d: Duration) -> String =
-    case d:
-        Duration n ->
-            m := n.abs()
-            q := m / 1_000_000_000
-            r := m % 1_000_000_000
-            body :=
-                if r == 0: "{q}" else: "{q}." ++ _nanos_frac(r, 9)
-            sign :=
-                if n < 0: "-" else: ""
-            sign ++ body ++ "s"
-
-// The time arithmetic: the payload is the nanosecond count, and a
-// difference is a signed span.
-Time.sub: (a: Time, b: Time) -> Duration =
-    case a:
-        Time x ->
-            case b:
-                Time y -> Duration (x - y)
-
-Time.add: (t: Time, d: Duration) -> Time =
-    case t:
-        Time x ->
-            case d:
-                Duration y -> Time (x + y)
-
-Time.to_ns: (t: Time) -> Int =
-    case t:
-        Time x -> x
-
-Mono.sub: (a: Mono, b: Mono) -> Duration =
-    case a:
-        Mono x ->
-            case b:
-                Mono y -> Duration (x - y)
-
-Mono.add: (m: Mono, d: Duration) -> Mono =
-    case m:
-        Mono x ->
-            case d:
-                Duration y -> Mono (x + y)
-
-Mono.to_ns: (m: Mono) -> Int =
-    case m:
-        Mono x -> x
-
-Duration.add: (a: Duration, b: Duration) -> Duration =
-    case a:
-        Duration x ->
-            case b:
-                Duration y -> Duration (x + y)
-
-Duration.mul: (d: Duration, n: Int) -> Duration =
-    case d:
-        Duration x -> Duration (x * n)
-
-Duration.neg: (d: Duration) -> Duration =
-    case d:
-        Duration x -> Duration (0 - x)
-
-Duration.secs: (n: Int) -> Duration = Duration (n * 1_000_000_000)
-
-Duration.millis: (n: Int) -> Duration = Duration (n * 1_000_000)
-
-Duration.to_ns: (d: Duration) -> Int =
-    case d:
-        Duration x -> x
-
-// The fractional nanosecond digits, shared by the time displays: a
-// trailing zero of the remainder drops one digit and one place
-// together, so the padding never refills it.
-_nanos_frac: (r: Int, width: UInt) -> String =
-    if r != 0 && r % 10 == 0:
-        _nanos_frac(r / 10, width - 1)
-    else:
-        "{r}".pad_left(width, '0')
 
 // The interchange form: the seven JSON variants.
 Json: type =
