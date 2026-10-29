@@ -2,6 +2,8 @@
 // tagging, numeric conversions and parse round trips, frozen time, and
 // formatting (Clauses 9.5, 9.6, 9.7, 9.9, 9.13.1).
 
+import std/time
+
 Sex: type = Man | Woman
 Profile: type = [name: String, sex: Sex]
 

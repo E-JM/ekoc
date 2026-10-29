@@ -78,7 +78,7 @@ static void std_module_surface(void)
 
     rfx_begin(&f, "v: Int = 1\n");
     EK_CHECK_U64(rfx_errors(&f), 0);
-    EK_CHECK_U64(f.res.module_count, 3); /* the root, std, and cap */
+    EK_CHECK_U64(f.res.module_count, 4); /* root, std, cap, time */
     if (f.res.module_count < 2) {
         rfx_end(&f);
         return;
@@ -226,7 +226,7 @@ static void std_body_resolved(void)
 
     rfx_begin(&f, "v: Int = 1\n");
     EK_CHECK_U64(rfx_errors(&f), 0);
-    EK_CHECK_U64(f.res.module_count, 3);
+    EK_CHECK_U64(f.res.module_count, 4);
     if (f.res.module_count < 2) {
         rfx_end(&f);
         return;
@@ -398,44 +398,63 @@ static void local_shadow_free_name(void)
     rfx_end(&f);
 }
 
-/* The fixed forms of the standard library are file declarations: the
-   constructors of the time and failure types are rows of the declaring
-   file, not placeholder rows, and each type has exactly one row. */
+/* The time companion is already in the closure through cap's import;
+   a user file's own `import std/time` is a diamond share, not a second
+   module. */
+static void time_diamond(void)
+{
+    rfx f;
+
+    rfx_begin(&f,
+        "import std/time\n"
+        "\n"
+        "t: Time = Time 5\n");
+    EK_CHECK_U64(rfx_errors(&f), 0);
+    EK_CHECK_U64(f.res.module_count, 4); /* root, std, cap, time */
+    rfx_end(&f);
+}
+
+/* The fixed forms of the shipped surfaces are file declarations: the
+   constructors of the failure types are rows of the std file, the
+   time constructors are rows of the companion file, and no type has
+   a placeholder beside it. */
 static void declared_std_types(void)
 {
     rfx f;
     const ek_ref *r;
     size_t i, k, ctors = 0;
-    int std_seen = 0;
+    int time_seen = 0;
 
     rfx_begin(&f,
+        "import std/time\n"
+        "\n"
         "p: ParseError = Invalid \"x\"\n"
         "j: Json = Obj {\"a\": Null}\n"
         "t: Time = Time 5\n"
         "m: Mono = Mono 0\n"
         "d: Duration = Duration 3\n");
     EK_CHECK_U64(rfx_errors(&f), 0);
-    r = rfx_ref_named(&f, 1, "Invalid");
+    r = rfx_ref_named(&f, 3, "Invalid");
     EK_CHECK(r != NULL);
     EK_CHECK(r->kind == EK_SYM_CONSTRUCTOR);
     EK_CHECK(r->symbol != NULL && r->symbol->decl != NULL);
     EK_CHECK(r->symbol != NULL && r->symbol->owner != NULL
              && strcmp(r->symbol->owner, "ParseError") == 0);
-    r = rfx_ref_named(&f, 2, "Obj");
+    r = rfx_ref_named(&f, 4, "Obj");
     EK_CHECK(r != NULL);
     EK_CHECK(r->kind == EK_SYM_CONSTRUCTOR);
     EK_CHECK(r->symbol != NULL && r->symbol->owner != NULL
              && strcmp(r->symbol->owner, "Json") == 0);
-    r = rfx_ref_named_kind(&f, 3, "Time", EK_SYM_CONSTRUCTOR);
+    r = rfx_ref_named_kind(&f, 5, "Time", EK_SYM_CONSTRUCTOR);
     EK_CHECK(r != NULL);
     EK_CHECK(r->symbol != NULL && r->symbol->decl != NULL);
     for (k = 0; k < f.res.module_count; k++) {
         const ek_surface *s = &f.res.modules[k];
 
-        if (strcmp(s->module, "std") != 0) {
+        if (strcmp(s->module, "time") != 0) {
             continue;
         }
-        std_seen = 1;
+        time_seen = 1;
         for (i = 0; i < s->count; i++) {
             if (s->syms[i].kind == EK_SYM_CONSTRUCTOR
                 && strcmp(s->syms[i].name, "Time") == 0) {
@@ -443,8 +462,8 @@ static void declared_std_types(void)
             }
         }
     }
-    EK_CHECK(std_seen);
-    EK_CHECK_U64(ctors, 1); /* the file's row, no placeholder beside it */
+    EK_CHECK(time_seen);
+    EK_CHECK_U64(ctors, 1); /* the companion's row, no placeholder beside it */
     rfx_end(&f);
 }
 
@@ -453,6 +472,7 @@ int main(void)
     free_names();
     injected_opens();
     std_module_surface();
+    time_diamond();
     declared_std_types();
     std_body_resolved();
     boot_deterministic();

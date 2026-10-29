@@ -1,8 +1,9 @@
 #include "common.h"
 
-/* Ranges are the generic std ADT over one ordered scalar: the two
-   operator forms construct it, the derived services read it, and its
-   private constructor admits no literal or pattern outside std. */
+/* Ranges are the compiler-supplied generic type over one ordered
+   scalar: the two operator forms are its only construction, the
+   derived services read it, and no constructor or pattern form
+   exists. */
 
 /* Both operator forms build a Range, and the derived equality,
    ordering, and display services apply to it. */
@@ -38,26 +39,27 @@ static void invalid_endpoint_type(void)
 {
     cfx f;
 
-    cfx_begin(&f, "bad := True..False\n");
+    cfx_begin(&f, "bad: Range Bool = True..False\n");
     EK_CHECK_U64(cfx_errors(&f), 1);
     EK_CHECK(cfx_code_at_line(&f, "E-no-operator", 1));
     cfx_end(&f);
 }
 
-/* The constructor is private: a composite literal naming it is
-   rejected in resolve, and check never sees a type error from it. */
+/* No constructor exists: a composite literal naming the historical
+   spelling is unbound in resolve, and check never sees a type error
+   from it. */
 static void private_literal(void)
 {
     cfx f;
 
     cfx_begin(&f,
               "x: Range Int = _Range {start: 1, end: 9, closed: False}\n");
-    EK_CHECK(cfx_slice_has(f.ds, f.dn, "E-private-name"));
+    EK_CHECK(cfx_slice_has(f.ds, f.dn, "E-unbound-name"));
     EK_CHECK_U64(cfx_errors(&f), 0);
     cfx_end(&f);
 }
 
-/* A constructor pattern names the same private name. */
+/* A constructor pattern names the same absent name. */
 static void private_pattern(void)
 {
     cfx f;
@@ -66,7 +68,7 @@ static void private_pattern(void)
               "f: (r: Range Int) -> Int =\n"
               "    case r:\n"
               "        _Range {start: s, end: e, closed: c} -> s\n");
-    EK_CHECK(cfx_slice_has(f.ds, f.dn, "E-private-name"));
+    EK_CHECK(cfx_slice_has(f.ds, f.dn, "E-unbound-name"));
     cfx_end(&f);
 }
 

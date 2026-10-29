@@ -546,6 +546,8 @@ static void std_fixed_forms(void)
     cfx_end(&f);
 
     cfx_begin(&f,
+              "import std/time\n"
+              "\n"
               "now: Time = Time 5\n"
               "tick: Mono = Mono 6\n"
               "span: Duration = Duration 7\n"
@@ -554,9 +556,12 @@ static void std_fixed_forms(void)
     cfx_end(&f);
 
     /* The three readings do not interchange. */
-    cfx_begin(&f, "bad: Time = Duration 5\n");
+    cfx_begin(&f,
+              "import std/time\n"
+              "\n"
+              "bad: Time = Duration 5\n");
     EK_CHECK_U64(cfx_errors(&f), 1);
-    EK_CHECK(cfx_code_at_line(&f, "E-nominal-mismatch", 1));
+    EK_CHECK(cfx_code_at_line(&f, "E-nominal-mismatch", 3));
     cfx_end(&f);
 }
 

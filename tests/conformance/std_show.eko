@@ -2,6 +2,8 @@
 // Duration's decimal seconds, Time's ISO 8601 UTC form, and Json's
 // minimal text (Clauses 9.7.4, 9.9.2).
 
+import std/time
+
 duration_show: test =
     assert_eq(Duration.millis(500).show(), "0.5s")
     assert_eq(Duration.secs(1).add(Duration.millis(500)).show(), "1.5s")

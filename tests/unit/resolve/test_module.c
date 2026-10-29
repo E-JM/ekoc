@@ -106,7 +106,7 @@ static void import_opens(void)
     EK_CHECK(r->kind == EK_SYM_CONSTRUCTOR);
     EK_CHECK(r->station == EK_ST_QUALIFIED);
     EK_CHECK(rfx_surface_sym(&f, "geolib", "_secret") != NULL);
-    EK_CHECK(f.res.module_count == 4); /* use + geolib + std + cap */
+    EK_CHECK(f.res.module_count == 5); /* use+geolib+std+cap+time */
     rfx_end(&f);
 }
 
@@ -263,7 +263,7 @@ static void duplicate_import(void)
         "mk: Shape = Circle 2.0\n"
         "approx: Float = geolib.pi\n", "dup.eko");
     EK_CHECK_U64(rfx_errors(&f), 0);
-    EK_CHECK(f.res.module_count == 4); /* use + geolib + std + cap */
+    EK_CHECK(f.res.module_count == 5); /* use+geolib+std+cap+time */
     rfx_end(&f);
 }
 
@@ -340,7 +340,7 @@ static void std_stem_import(void)
     run_in(&f, "import sub/std\n\nv: Int = 1\n", "stdstem.eko");
     EK_CHECK_U64(rfx_errors(&f), 1);
     EK_CHECK(rfx_code_at_line(&f, "E-module-name", 1));
-    EK_CHECK(f.res.module_count == 3); /* the root, std, and cap */
+    EK_CHECK(f.res.module_count == 4); /* the root, std, cap, time */
     rfx_end(&f);
 }
 
@@ -377,6 +377,17 @@ static void root_name_rules(void)
 
     rfx_run(&f, "v: Int = 1\n", NULL, 0, "_geo.eko");
     EK_CHECK_U64(rfx_errors(&f), 1);
+    EK_CHECK(rfx_code_at_line(&f, "E-module-name", 1));
+    rfx_end(&f);
+}
+
+/* The companion stem is reserved for the shipped module: a root file
+   named `time` is rejected like `std` and `_geo`. */
+static void companion_root_name(void)
+{
+    rfx f;
+
+    rfx_run(&f, "v: Int = 1\n", NULL, 0, "time.eko");
     EK_CHECK(rfx_code_at_line(&f, "E-module-name", 1));
     rfx_end(&f);
 }
@@ -432,7 +443,7 @@ static void diamond_share(void)
         "\n"
         "v: Int = 1\n", "droot.eko");
     EK_CHECK_U64(rfx_errors(&f), 0);
-    EK_CHECK(f.res.module_count == 6); /* root, std, cap, three imports */
+    EK_CHECK(f.res.module_count == 7); /* root+std+cap+time+three imports */
     rfx_end(&f);
 }
 
@@ -445,7 +456,7 @@ static void empty_module(void)
     EK_CHECK(rfx_put(MOD_DIR, "emptymod.eko", ""));
     run_in(&f, "import emptymod\n\nv: Int = 1\n", "useempty.eko");
     EK_CHECK_U64(rfx_errors(&f), 0);
-    EK_CHECK(f.res.module_count == 4); /* use + emptymod + std + cap */
+    EK_CHECK(f.res.module_count == 5); /* use+emptymod+std+cap+time */
     rfx_end(&f);
 }
 
@@ -457,7 +468,7 @@ static void broken_import_file(void)
 
     EK_CHECK(rfx_put(MOD_DIR, "broken.eko", "this is not : : valid (((\n"));
     run_in(&f, "import broken\n\nv: Int = 1\n", "usebroken.eko");
-    EK_CHECK(f.res.module_count == 4); /* use + broken + std + cap */
+    EK_CHECK(f.res.module_count == 5); /* use+broken+std+cap+time */
     EK_CHECK(!rfx_has_code(&f, "E-import-missing"));
     EK_CHECK(!rfx_has_code(&f, "E-cycle-import"));
     rfx_end(&f);
@@ -485,6 +496,7 @@ int main(void)
     std_stem_import();
     companion_stem_rules();
     root_name_rules();
+    companion_root_name();
     qualified_ctor_shared_spelling();
     diamond_share();
     empty_module();

@@ -25,7 +25,7 @@ otherwise it names the rejection and the normative clause.
 | N17 | index syntax | parse error |
 | N18 | mixed numeric operands | compile error: no implicit conversion |
 | N19 | `:=` on an unannotated lambda | compile error: `:=` does not generalize |
-| N20 | `?` in a container element position | compile error: `?` position rule |
+| N20 | `?` in a container element position | `E-open-bit-position` |
 | N21 | extern naming a reserved `eko_` symbol | `E-reserved-symbol` |
 | N22 | `ctype` field outside machine words | `E-ctype-field` |
 | N23 | extern parameter outside the marshalling whitelist | `E-extern-type` |

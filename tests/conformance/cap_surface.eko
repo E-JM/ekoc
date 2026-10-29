@@ -3,6 +3,8 @@
 // compiler-provided declarations stay reachable, and the File family
 // answers at a handle parameter (Clauses 9.1.1, 9.12, 9.14.5, 10.8).
 
+import std/time
+
 handles_exist: test =
     m: OpenMode = Read
     info: FileInfo = {size: 0, mtime: Time 0, is_dir: False}

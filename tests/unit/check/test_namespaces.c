@@ -625,6 +625,8 @@ static void time_rows(void)
     cfx f;
 
     cfx_begin(&f,
+              "import std/time\n"
+              "\n"
               "t: Time = Time 5\n"
               "d: Duration = t.sub(Time 2)\n"
               "u: Time = t.add(Duration 3)\n"
@@ -634,13 +636,17 @@ static void time_rows(void)
     cfx_end(&f);
 
     cfx_begin(&f,
+              "import std/time\n"
+              "\n"
               "t: Time = Time 5\n"
               "v: Int = t.bogus()\n");
     EK_CHECK_U64(cfx_errors(&f), 1);
-    EK_CHECK(cfx_code_at_line(&f, "E-unbound-member", 2));
+    EK_CHECK(cfx_code_at_line(&f, "E-unbound-member", 4));
     cfx_end(&f);
 
     cfx_begin(&f,
+              "import std/time\n"
+              "\n"
               "t: Time = Time 5\n"
               "v: Time = t.add(Time 2)\n");
     EK_CHECK_U64(cfx_errors(&f), 1);
@@ -652,6 +658,8 @@ static void mono_rows(void)
     cfx f;
 
     cfx_begin(&f,
+              "import std/time\n"
+              "\n"
               "m: Mono = Mono 5\n"
               "d: Duration = m.sub(Mono 2)\n"
               "u: Mono = m.add(Duration 3)\n"
@@ -660,13 +668,17 @@ static void mono_rows(void)
     cfx_end(&f);
 
     cfx_begin(&f,
+              "import std/time\n"
+              "\n"
               "m: Mono = Mono 5\n"
               "v: Int = m.bogus()\n");
     EK_CHECK_U64(cfx_errors(&f), 1);
-    EK_CHECK(cfx_code_at_line(&f, "E-unbound-member", 2));
+    EK_CHECK(cfx_code_at_line(&f, "E-unbound-member", 4));
     cfx_end(&f);
 
     cfx_begin(&f,
+              "import std/time\n"
+              "\n"
               "m: Mono = Mono 5\n"
               "v: Mono = m.add(Mono 2)\n");
     EK_CHECK_U64(cfx_errors(&f), 1);
@@ -678,6 +690,8 @@ static void duration_rows(void)
     cfx f;
 
     cfx_begin(&f,
+              "import std/time\n"
+              "\n"
               "a: Duration = Duration.secs(2)\n"
               "b: Duration = Duration.millis(500)\n"
               "c: Duration = a.add(b)\n"
@@ -689,13 +703,17 @@ static void duration_rows(void)
     cfx_end(&f);
 
     cfx_begin(&f,
+              "import std/time\n"
+              "\n"
               "a: Duration = Duration.secs(2)\n"
               "v: Int = a.bogus()\n");
     EK_CHECK_U64(cfx_errors(&f), 1);
-    EK_CHECK(cfx_code_at_line(&f, "E-unbound-member", 2));
+    EK_CHECK(cfx_code_at_line(&f, "E-unbound-member", 4));
     cfx_end(&f);
 
     cfx_begin(&f,
+              "import std/time\n"
+              "\n"
               "a: Duration = Duration.secs(2)\n"
               "v: Duration = a.mul(\"x\")\n");
     EK_CHECK_U64(cfx_errors(&f), 1);
