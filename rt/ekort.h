@@ -170,9 +170,22 @@ ek_val ek_num_mul(ek_val a, ek_val b);
 ek_val ek_num_div(ek_val a, ek_val b);
 ek_val ek_num_mod(ek_val a, ek_val b);
 
+/* The floor family over the same tags: the quotient rounds toward
+   negative infinity and the Int remainder takes the divisor's sign,
+   with the same zero and overflow checks as the truncating pair. On
+   UInt the floor is the truncating division, and on Float the IEEE
+   division and remainder. */
+ek_val ek_num_fdiv(ek_val a, ek_val b);
+ek_val ek_num_fmod(ek_val a, ek_val b);
+
 /* Negation over the matching tag; negating the Int minimum overflows
    and panics like the arithmetic above. */
 ek_val ek_num_neg(ek_val a);
+
+/* The absolute value; the Int minimum has none and panics with the
+   overflow code, the unsigned word is its own, and the Float value
+   drops its sign. */
+ek_val ek_num_abs(ek_val a);
 
 /* The comparisons compare a and b in the tag's own order — Int
    signed, UInt unsigned, Float the IEEE ordering, Char by code
@@ -544,6 +557,92 @@ ek_val ek_closure_env(ek_obj *closure);
    writes the String argument's bytes to stdout without a terminator
    and returns the unit value. The caller owns the returned bundle. */
 ek_val ek_cap_out_stdout(void);
+
+/* The remaining session bundles, over the same shape: one closure per
+   member of the compiler's bundle record, in the record's field
+   order. Each constructor returns a bundle the caller owns.
+
+   The In bundle reads the process's standard input; read_line yields
+   Ok None at end of input and Err InvalidData for bytes that are not
+   well-formed UTF-8. The Fs bundle works over the process's working
+   directory: every path resolves through it, and no further
+   restriction applies. The Env bundle reads the process environment.
+   The Args bundle carries the argument vector WITHOUT the program
+   name: argc counts the arguments after it and argv points at the
+   first one. The Clock bundle reads CLOCK_REALTIME and
+   CLOCK_MONOTONIC and sleeps through nanosleep, resuming on an
+   interrupt; a non-positive duration returns immediately. The Rand
+   bundle seeds a deterministic generator from the operating system's
+   entropy. The Proc value is an unforgeable token with no members of
+   its own. */
+ek_val ek_cap_in_stdin(void);
+ek_val ek_cap_fs_cwd(void);
+ek_val ek_cap_env_os(void);
+ek_val ek_cap_args(int argc, char **argv);
+ek_val ek_cap_clock_wall(void);
+ek_val ek_cap_rand_os(void);
+ek_val ek_cap_proc(void);
+
+/* The failure reasons the file family reports. The caller maps a kind
+   onto the IoError variants in this order; the two payload kinds carry
+   the detail string. */
+typedef enum {
+    EK_IO_NOT_FOUND,
+    EK_IO_PERMISSION,
+    EK_IO_EXISTS,
+    EK_IO_NOT_FILE,
+    EK_IO_CLOSED,
+    EK_IO_INVALID_DATA,
+    EK_IO_OTHER
+} ek_io_kind;
+
+/* The file family over the runtime's handle table. A File value packs
+   its table slot and the slot's generation counter, so a handle copied
+   before a close turns stale and every later use reports
+   EK_IO_CLOSED.
+
+   The fallible entries return 1 on success and 0 on failure. On
+   success an entry that produces a value writes an owned object to
+   *out (read_line writes NULL for end of input, which is success). On
+   failure *err carries the ek_io_kind and *detail an owned detail
+   String for the two payload kinds and NULL for every other; the
+   caller that does not store the detail releases it. Passing a value
+   that is not a File reports the failure paths rather than reading
+   memory. */
+int ek_file_read(ek_val f, int64_t nchars, ek_obj **out, int *err,
+                 ek_obj **detail);
+int ek_file_read_bytes(ek_val f, int64_t n, ek_obj **out, int *err,
+                       ek_obj **detail);
+int ek_file_read_line(ek_val f, ek_obj **out, int *err, ek_obj **detail);
+int ek_file_write(ek_val f, ek_obj *s, int *err, ek_obj **detail);
+int ek_file_write_bytes(ek_val f, ek_obj *b, int *err, ek_obj **detail);
+int ek_file_seek(ek_val f, ek_val pos, int *err, ek_obj **detail);
+int ek_file_flush(ek_val f, int *err, ek_obj **detail);
+int ek_file_close(ek_val f, int *err, ek_obj **detail);
+
+/* The advancing derivations of the capability module. ek_in_from_lines
+   builds an In bundle over the list of String lines: read_line yields
+   them in order and then end of input forever. ek_rand_with_seed
+   builds a Rand bundle whose draws follow splitmix64 from the seed;
+   the order is fixed by the seed and the sequence is an implementation
+   detail. Both callers own the returned bundle. */
+ek_val ek_in_from_lines(ek_obj *lines);
+ek_val ek_rand_with_seed(ek_val seed);
+
+/* Exits the process with the given code, which passes through
+   unchanged; the normal exit is 0 and a panic exits 1. Never
+   returns. */
+void ek_proc_exit(ek_val proc, ek_val code);
+
+/* The lexical path vocabulary over String objects, with no
+   file-system contact. join inserts a separator between the parts,
+   an empty part contributing nothing; normalize drops `.` segments,
+   pops `..`, and keeps a leading separator, an empty result reading
+   as "."; the absolute test reports a leading separator. Each entry
+   returns a fresh object or value the caller owns. */
+ek_obj *ek_path_join(ek_obj *a, ek_obj *b);
+ek_obj *ek_path_normalize(ek_obj *path);
+ek_val ek_path_is_absolute(ek_obj *path);
 
 /* Adds one reference when v refers to a heap object; any other tag is
    left unchanged. */

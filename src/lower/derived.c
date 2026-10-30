@@ -296,11 +296,11 @@ int lower_variants_of(lower_ctx *c, const ek_node *at, const ek_type *t,
         if (!cs) {
             return 0;
         }
-        g = lower_ctor_of_symbol(c, at, cs);
+        g = lower_ctor_of_symbol(c, at, cs, 0);
         if (!g) {
             return 0;
         }
-        g->constructed = 1; /* the typeinfo the dispatch tests joins */
+        g->shared = 1; /* the typeinfo the dispatch tests joins */
         vs[i].name = v->u.variant.name;
         vs[i].stem = g->stem;
         vs[i].payload = NULL;
@@ -336,7 +336,7 @@ const char *lower_std_ctor(lower_ctx *c, const ek_node *at,
             if (m->kind == EK_SYM_CONSTRUCTOR && m->owner
                 && strcmp(m->owner, owner) == 0
                 && strcmp(m->name, name) == 0) {
-                lower_gtype *g = lower_ctor_of_symbol(c, at, m);
+                lower_gtype *g = lower_ctor_of_symbol(c, at, m, 1);
 
                 return g ? g->helper : NULL;
             }

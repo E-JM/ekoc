@@ -103,7 +103,11 @@ static void emit_drop(lower_ctx *c, ek_buf *u, const lower_gtype *g)
 
 static void emit_typeinfo(lower_ctx *c, ek_buf *u, const lower_gtype *g)
 {
-    uprintf(c, u, "static ek_typeinfo ekT_%s = { EK_KIND_STRUCT, "
+    /* External linkage and const: the runtime's bundle closures build
+       values over the unit's own typeinfo identity, so the symbol is
+       shared with rt exactly as a generated struct shares it with the
+       patterns that read it. */
+    uprintf(c, u, "const ek_typeinfo ekT_%s = { EK_KIND_STRUCT, "
                   "drop_%s };\n\n", g->stem, g->stem);
 }
 
@@ -164,7 +168,9 @@ static void emit_list_helper(lower_ctx *c, ek_buf *u)
 
 /* Emits the registered families: typedefs of everything a body
    references, and typeinfo, drop, and helper of everything a body
-   constructs, in an order the C compiler reads top to bottom. */
+   constructs, in an order the C compiler reads top to bottom. A family
+   the runtime shares keeps its typeinfo and drop without the helper:
+   the runtime builds its values directly over the identity. */
 void lower_emit_types(lower_ctx *c, ek_buf *unit)
 {
     int constructed = 0;
@@ -185,7 +191,7 @@ void lower_emit_types(lower_ctx *c, ek_buf *unit)
         }
     }
     for (i = 0; i < c->ngt; i++) {
-        if (c->gtypes[i].constructed) {
+        if (c->gtypes[i].constructed || c->gtypes[i].shared) {
             emit_drop(c, unit, &c->gtypes[i]);
             emit_typeinfo(c, unit, &c->gtypes[i]);
         }

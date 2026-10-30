@@ -163,7 +163,29 @@ static const intrinsic_row rows[] = {
      OUT_I64, 0},
     {"Range", "map", "ek_range_map", "vv", W_PLAIN, OUT_I64, 0},
     {"Range", "fold", "ek_range_fold", "vvv", W_PLAIN, OUT_I64, 0},
+
+    /* The lexical path vocabulary over String. */
+    {"Path", "join", "ek_path_join", "oo", W_REF, OUT_I64, 0},
+    {"Path", "normalize", "ek_path_normalize", "o", W_REF, OUT_I64, 0},
+    {"Path", "is_absolute", "ek_path_is_absolute", "o", W_PLAIN, OUT_I64,
+     0},
+
+    /* The floor family of the integers, the division the time
+       companion's civil arithmetic builds on, and the absolute value
+       under the arithmetic rule. */
+    {"Int", "div", "ek_num_fdiv", "vv", W_PLAIN, OUT_I64, 0},
+    {"Int", "mod", "ek_num_fmod", "vv", W_PLAIN, OUT_I64, 0},
+    {"Int", "abs", "ek_num_abs", "v", W_PLAIN, OUT_I64, 0},
+    {"Float", "abs", "ek_num_abs", "v", W_PLAIN, OUT_I64, 0},
 };
+
+/* The capability channel owns the File, In, Rand, and Proc families:
+   the compiler-provided rows of Clause 10.8 route through capwrap.c. */
+static int cap_family(const char *family)
+{
+    return strcmp(family, "File") == 0 || strcmp(family, "In") == 0
+        || strcmp(family, "Rand") == 0 || strcmp(family, "Proc") == 0;
+}
 
 /* The row of one family and member spelling. */
 static const intrinsic_row *lookup(const char *family, const char *member)
@@ -179,8 +201,9 @@ static const intrinsic_row *lookup(const char *family, const char *member)
     return NULL;
 }
 
-/* The std family a receiver type names: the structural containers and
-   the std placeholder scalars. */
+/* The family a receiver type names: the structural containers, the
+   std placeholder scalars, and the capability module's own types --
+   the File family's rows route through the same table. */
 const char *lower_intrinsic_family(const ek_type *t)
 {
     if (!t) {
@@ -193,7 +216,8 @@ const char *lower_intrinsic_family(const ek_type *t)
         return "Dict";
     }
     if (t->kind == EK_T_NOMINAL && t->u.nominal.sym && t->u.nominal.sym->module
-        && strcmp(t->u.nominal.sym->module, "std") == 0) {
+        && (strcmp(t->u.nominal.sym->module, "std") == 0
+            || strcmp(t->u.nominal.sym->module, "cap") == 0)) {
         return t->u.nominal.sym->name;
     }
     return NULL;
@@ -308,6 +332,27 @@ static void release_temps(lower_ctx *c, const char **as, size_t na)
     }
 }
 
+/* The row's result wrapping, dispatched over its shape; the plain
+   shapes build in emit_plain over the argument temps. */
+static lower_val emit_wrap(lower_ctx *c, lower_scope *scope,
+                           const ek_node *e, const intrinsic_row *row,
+                           const char *args, const char **as)
+{
+    switch (row->wrap) {
+    case W_OPTION:
+        return lower_wrap_option(c, scope, e, row->sym, args, row->out);
+    case W_OPTION_OBJ:
+        return lower_wrap_option_obj(c, scope, e, row->sym, args);
+    case W_PARSE:
+        return lower_wrap_parse(c, scope, e, row->sym, args, row->out,
+                                row->radix);
+    case W_DECODE:
+        return lower_wrap_decode(c, scope, e, row->sym, args);
+    default:
+        return emit_plain(c, scope, row, args, as);
+    }
+}
+
 lower_val lower_intrinsic_call(lower_ctx *c, lower_scope *scope,
                                const ek_node *e, const ek_node *callee,
                                const char *family, int has_recv)
@@ -317,6 +362,9 @@ lower_val lower_intrinsic_call(lower_ctx *c, lower_scope *scope,
     size_t na, written;
     lower_val out;
 
+    if (!row && cap_family(family)) {
+        return lower_cap_call(c, scope, e, callee, family, has_recv);
+    }
     if (!row) {
         return (lower_val){ NULL, 0 };
     }
@@ -334,27 +382,7 @@ lower_val lower_intrinsic_call(lower_ctx *c, lower_scope *scope,
     {
         const char *args = value_args(c, row, as, na);
 
-        switch (row->wrap) {
-        case W_LEN:
-        case W_PLAIN:
-        case W_REF:
-        case W_KEEP:
-            out = emit_plain(c, scope, row, args, as);
-            break;
-        case W_OPTION:
-            out = lower_wrap_option(c, scope, e, row->sym, args, row->out);
-            break;
-        case W_OPTION_OBJ:
-            out = lower_wrap_option_obj(c, scope, e, row->sym, args);
-            break;
-        case W_PARSE:
-            out = lower_wrap_parse(c, scope, e, row->sym, args, row->out,
-                                   row->radix);
-            break;
-        default:
-            out = lower_wrap_decode(c, scope, e, row->sym, args);
-            break;
-        }
+        out = emit_wrap(c, scope, e, row, args, as);
     }
     release_temps(c, as, na);
     return out;

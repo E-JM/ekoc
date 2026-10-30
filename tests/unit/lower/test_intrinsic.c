@@ -139,10 +139,36 @@ static void decode_wraps_detail(void)
     EK_CHECK(lfx_check_clean(&f));
     EK_CHECK(lfx_lower_clean(&f));
     /* the detail object becomes the Invalid reason and dies with its
-       own reference */
+       own reference: the constructor's argument temp is the one the
+       wrap releases */
     EK_CHECK(lfx_has(&f, "ek_bytes_from_hex("));
-    EK_CHECK(lfx_has(&f, "ekn_std_ParseError_Invalid(t7);"));
-    EK_CHECK(lfx_has(&f, "ek_release(t7);"));
+    {
+        const char *def = strstr(f.low.text,
+                                 "ekn_std_ParseError_Invalid(ek_val p0)");
+        const char *body = def ? def + strlen("ekn_std_ParseError_Invalid"
+                                              "(ek_val p0)") : NULL;
+        const char *call = body ? strstr(body, "ekn_std_ParseError_Invalid(")
+                                : NULL;
+        char temp[16];
+        char rel[48];
+
+        EK_CHECK(def != NULL);
+        if (def != NULL) {
+            EK_CHECK(call != NULL);
+        }
+        if (call != NULL) {
+            const char *arg = call + strlen("ekn_std_ParseError_Invalid(");
+            size_t n = strcspn(arg, ")");
+
+            EK_CHECK(n > 0 && n < sizeof temp);
+            if (n > 0 && n < sizeof temp) {
+                memcpy(temp, arg, n);
+                temp[n] = 0;
+                snprintf(rel, sizeof rel, "ek_release(%s);", temp);
+                EK_CHECK(strstr(f.low.text, rel) != NULL);
+            }
+        }
+    }
     lfx_end(&f);
 }
 
@@ -172,7 +198,7 @@ static void unsupported_rows_keep_elower(void)
     lfx_begin(&f,
               "main: () -> _ =\n"
               "    n = 4\n"
-              "    r = n.abs()\n"
+              "    r = n.pow(2)\n"
               "    _ := r\n"
               "    _\n");
     EK_CHECK(lfx_check_clean(&f));

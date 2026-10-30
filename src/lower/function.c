@@ -98,18 +98,58 @@ static const char *param_cap_name(const ek_node *p)
     return t->u.path.data[t->u.path.count - 1];
 }
 
-/* Whether the annotation is exactly one parameter of type Out: the
-   capability the entry shim can supply. */
-static int out_main_param(const ek_node *ann)
+/* The bundle constructor the entry shim builds for one capability of
+   the manifest, or NULL when the lowerer cannot supply it. */
+static const char *shim_ctor_of(const char *cap)
 {
-    const char *name;
+    static const struct {
+        const char *cap;
+        const char *ctor;
+    } ctors[] = {
+        {"Out",   "ek_cap_out_stdout"},
+        {"In",    "ek_cap_in_stdin"},
+        {"Fs",    "ek_cap_fs_cwd"},
+        {"Env",   "ek_cap_env_os"},
+        {"Args",  "ek_cap_args"},
+        {"Clock", "ek_cap_clock_wall"},
+        {"Rand",  "ek_cap_rand_os"},
+        {"Proc",  "ek_cap_proc"},
+    };
+    size_t i;
 
-    if (!ann || ann->kind != EK_N_T_FN
-        || ann->u.t_fn.params.count != 1) {
-        return 0;
+    for (i = 0; i < sizeof ctors / sizeof *ctors; i++) {
+        if (strcmp(ctors[i].cap, cap) == 0) {
+            return ctors[i].ctor;
+        }
     }
-    name = param_cap_name(ann->u.t_fn.params.data[0]);
-    return name && strcmp(name, "Out") == 0;
+    return NULL;
+}
+
+/* The authorization manifest: every parameter is a capability the shim
+   supplies by position, and the runtime's shared families register
+   once for the manifest. A parameter outside the table keeps the
+   no-shim balance. */
+static int entry_manifest(lower_ctx *c, const ek_node *decl,
+                          const ek_node *ann)
+{
+    const ek_nlist *params = &ann->u.t_fn.params;
+    size_t i;
+
+    for (i = 0; i < params->count; i++) {
+        const char *cap = param_cap_name(params->data[i]);
+        const char *ctor = cap ? shim_ctor_of(cap) : NULL;
+
+        if (!ctor) {
+            lower_error(c, decl, "a `main` parameter of `%s` is not "
+                                 "supported by this lowerer",
+                        cap ? cap : "?");
+            c->nshim = 0;
+            return 0;
+        }
+        c->shim[c->nshim++] = ctor;
+    }
+    lower_cap_families(c, decl);
+    return 1;
 }
 
 /* The declaration of one function: the signature check, the parameter
@@ -139,14 +179,11 @@ static const char *declare_function(lower_ctx *c, const ek_symbol *sym,
         c->entry_mangled = mangled;
         if (*nparams == 0) {
             c->has_main = 1;
-        } else if (out_main_param(ann)) {
-            /* the shim builds the standard output's Out bundle and
-               supplies it by position */
+        } else if (ann->u.t_fn.params.count <= sizeof c->shim
+                       / sizeof *c->shim
+                   && entry_manifest(c, decl, ann)) {
+            /* the shim builds every declared capability by position */
             c->has_main = 1;
-            c->main_cap_out = 1;
-        } else {
-            lower_error(c, decl, "a `main` with parameters is not "
-                                 "supported by this lowerer");
         }
     }
     sig = signature(c, mangled, ps);

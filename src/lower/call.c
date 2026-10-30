@@ -405,7 +405,8 @@ static lower_val intrinsic_member(lower_ctx *c, lower_scope *scope,
         family = lower_intrinsic_family(rrow->type);
         has_recv = 1;
     } else if (head && head->symbol && head->symbol->module
-               && strcmp(head->symbol->module, "std") == 0) {
+               && (strcmp(head->symbol->module, "std") == 0
+                   || strcmp(head->symbol->module, "cap") == 0)) {
         family = head->symbol->name;
     }
     if (!family) {

@@ -28,7 +28,7 @@ static void record_shape(void)
     /* the drop releases the fields in declaration order */
     EK_CHECK(lfx_has(&f, "ek_release(((ekS_test_Person *)o)->f_name);\n"
                          "    ek_release(((ekS_test_Person *)o)->f_age);"));
-    EK_CHECK(lfx_has(&f, "static ek_typeinfo ekT_test_Person = "
+    EK_CHECK(lfx_has(&f, "const ek_typeinfo ekT_test_Person = "
                          "{ EK_KIND_STRUCT, drop_test_Person };"));
     EK_CHECK(lfx_has(&f, "static ek_val ekn_test_Person_rec(ek_val p0, "
                          "ek_val p1)"));
@@ -74,7 +74,7 @@ static void adt_shape(void)
     EK_CHECK(lfx_has(&f, "ek_release(((ekS_std_Option_Some *)o)->p0);"));
     EK_CHECK(lfx_has(&f, "static void drop_std_Option_None(ek_obj *o)\n"
                          "{\n    (void)o;"));
-    EK_CHECK(lfx_has(&f, "static ek_typeinfo ekT_std_Option_Some = "
+    EK_CHECK(lfx_has(&f, "const ek_typeinfo ekT_std_Option_Some = "
                          "{ EK_KIND_STRUCT, drop_std_Option_Some };"));
     EK_CHECK(lfx_has(&f, "static ek_val ekn_std_Option_Some(ek_val p0)"));
     EK_CHECK(lfx_has(&f, "o->obj.info = &ekT_std_Option_Some;"));

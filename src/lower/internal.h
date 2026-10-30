@@ -65,6 +65,10 @@ typedef struct lower_gtype {
     int used;              /* an emitted body references the layout */
     int constructed;       /* the unit constructs it: typeinfo, drop,
                               and helper join the typedef */
+    int shared;            /* the runtime builds the values: typeinfo
+                              and drop join the typedef without the
+                              helper, and the typeinfo keeps external
+                              linkage the runtime names */
 } lower_gtype;
 
 /* The runtime slot a std scalar occupies: the domain words widen into
@@ -201,7 +205,9 @@ struct lower_ctx {
     unsigned anon_rec; /* the anonymous record families so far */
     int uses_list; /* some body folds a list literal */
     int has_main;
-    int main_cap_out; /* the entry shim builds the Out capability */
+    const char *shim[9]; /* the entry shim's bundle constructors, by
+                            position (the manifest's capability order) */
+    size_t nshim;
     int oom;
 };
 
@@ -322,8 +328,10 @@ lower_gtype *lower_anon_record(lower_ctx *c, const ek_type *rec);
 lower_gtype *lower_anon_tuple(lower_ctx *c, size_t n);
 lower_gtype *lower_ctor_family(lower_ctx *c, const ek_node *at,
                                const ek_ref *ref, const ek_symbol *tsym);
+lower_gtype *lower_ctor_built(lower_ctx *c, const ek_node *at,
+                              const ek_ref *ref, const ek_symbol *tsym);
 lower_gtype *lower_ctor_of_symbol(lower_ctx *c, const ek_node *at,
-                                  const ek_symbol *cs);
+                                  const ek_symbol *cs, int construct);
 lower_gtype *lower_env_family(lower_ctx *c, const char **names, size_t n);
 lower_gtype *lower_range_family(lower_ctx *c, lower_scalar slot);
 const char *lower_field_slot(lower_ctx *c, const ek_node *at,
@@ -426,9 +434,13 @@ lower_val lower_intrinsic_call(lower_ctx *c, lower_scope *scope,
 
 /* wrap.c: the std constructor wrapping of the status+out contracts.
    lower_wrap_helper registers the family of one std constructor and
-   names its construction helper, with the payload arity in nf. */
+   names its construction helper, with the payload arity in nf;
+   lower_ctor_helper names a constructor of any module the same way. */
 const char *lower_wrap_helper(lower_ctx *c, const ek_node *at,
                               const char *owner, const char *name, int *nf);
+const char *lower_ctor_helper(lower_ctx *c, const ek_node *at,
+                              const char *module, const char *owner,
+                              const char *name, int *nf);
 lower_val lower_wrap_option(lower_ctx *c, lower_scope *scope,
                             const ek_node *e, const char *sym,
                             const char *args, out_kind out);
@@ -441,6 +453,36 @@ lower_val lower_wrap_parse(lower_ctx *c, lower_scope *scope,
 lower_val lower_wrap_decode(lower_ctx *c, lower_scope *scope,
                             const ek_node *e, const char *sym,
                             const char *args);
+
+/* capfam.c: the generated families the runtime builds over, registered
+   as one set whenever the program touches the capability channel --
+   the manifest supplies bundles and the advancing derivation builds
+   one, and the archive members pull each other in, so one union covers
+   every identity the runtime may name. The registrations stamp the
+   identities without the construction helpers: the runtime builds the
+   values itself. */
+void lower_cap_families(lower_ctx *c, const ek_node *at);
+
+/* capwrap.c: the capability channel's wrapping. The runtime's status
+   contracts over the file family wrap into the std Result and the
+   capability module's IoError; ok picks the success arm's shape. */
+typedef enum {
+    LOWER_IO_OK_REF,  /* an owned object payload */
+    LOWER_IO_OK_UNIT, /* the unit payload */
+    LOWER_IO_OK_OPT   /* an owned object or end of input: Some or None */
+} lower_io_ok;
+
+lower_val lower_wrap_io(lower_ctx *c, lower_scope *scope, const ek_node *e,
+                        const char *sym, const char *args, lower_io_ok ok);
+lower_val lower_wrap_exit(lower_ctx *c, lower_scope *scope, const char *sym,
+                          const char *args);
+
+/* capwrap.c: the compiler-provided rows of the capability channel --
+   the eight File members, the process exit, and the two advancing
+   derivations. A NULL result hands the decision back. */
+lower_val lower_cap_call(lower_ctx *c, lower_scope *scope,
+                         const ek_node *e, const ek_node *callee,
+                         const char *family, int has_recv);
 
 /* capture.c: the capture set of a closure body. */
 typedef struct {

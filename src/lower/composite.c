@@ -368,7 +368,7 @@ lower_val lower_ctor_value(lower_ctx *c, const ek_node *e, const ek_ref *ref)
                     ref->symbol ? ref->symbol->name : "?");
         return lower_val_unit();
     }
-    g = lower_ctor_family(c, e, ref, tsym);
+    g = lower_ctor_built(c, e, ref, tsym);
     if (!g) {
         return lower_val_unit(); /* the family diagnosed the mismatch */
     }
@@ -405,7 +405,7 @@ lower_val lower_ctor_apply(lower_ctx *c, lower_scope *scope,
         lower_emitf(c, "ek_release(%s);\n", at);
         return lower_val_unit();
     }
-    g = lower_ctor_family(c, e, ref, tsym);
+    g = lower_ctor_built(c, e, ref, tsym);
     if (!g) {
         lower_pad(c);
         lower_emitf(c, "ek_release(%s);\n", at);

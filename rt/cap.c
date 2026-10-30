@@ -8,7 +8,8 @@
    unwrap and wrap are the identity between the capability value and
    its bundle, so the record here is layout-compatible with the
    compiler's one-field records and generated code reads the closures
-   through its own layout. */
+   through its own layout. The shared bundle families and the value
+   builders over the emitted unit's identities live in capval.c. */
 
 /* The session-write bundle of Out: the single write closure. The
    typeinfo's drop releases the closure with the record. */
@@ -52,4 +53,29 @@ ek_val ek_cap_out_stdout(void)
     out->obj.rc = 1;
     out->write = ek_closure_new(out_write, ek_val_unit());
     return ek_val_ref(&out->obj);
+}
+
+/* The process-control token: an unforgeable value with no members of
+   its own, carried to ek_proc_exit. */
+typedef struct {
+    ek_obj obj;
+} ek_cap_proc_tok;
+
+static const ek_typeinfo ek_typeinfo_cap_proc = { EK_KIND_STRUCT, NULL };
+
+ek_val ek_cap_proc(void)
+{
+    ek_cap_proc_tok *p = ek_rt_alloc_zeroed(sizeof *p);
+
+    p->obj.info = &ek_typeinfo_cap_proc;
+    p->obj.rc = 1;
+    return ek_val_ref(&p->obj);
+}
+
+/* Exits with the code: a program-requested exit passes its code
+   through, so the status vocabulary stays with the program. */
+void ek_proc_exit(ek_val proc, ek_val code)
+{
+    (void)proc;
+    exit(code.tag == EK_VAL_INT ? (int)code.as.i : 0);
 }

@@ -253,7 +253,7 @@ static int unit_preamble(ek_buf *unit)
         && unit_puts(unit, "#include <string.h>\n\n")
         && unit_puts(unit, "static ek_val ek_keep(ek_val v) "
                            "{ ek_retain(v); return v; }\n\n")
-        && unit_puts(unit, "static void ek_release_obj(ek_obj *o) "
+        && unit_puts(unit, "static inline void ek_release_obj(ek_obj *o) "
                            "{ ek_release(ek_val_ref(o)); }\n\n");
 }
 
@@ -272,11 +272,72 @@ static void emit_decls(ek_buf *unit, lower_ctx *c)
     }
 }
 
+/* Appends to the unit, recording exhaustion on the context. */
+static void putf(ek_buf *unit, lower_ctx *c, const char *fmt, ...)
+{
+    va_list ap;
+
+    va_start(ap, fmt);
+    if (!ek_buf_vprintf(unit, fmt, ap)) {
+        c->oom = 1;
+    }
+    va_end(ap);
+}
+
+/* One constructed bundle of the shim, the Args slot carrying the
+   argument vector without the program name. */
+static void emit_shim_bundle(ek_buf *unit, lower_ctx *c, size_t i,
+                             const char *ctor)
+{
+    if (strcmp(ctor, "ek_cap_args") != 0) {
+        putf(unit, c, "    ek_val c%zu = %s();\n", i, ctor);
+        return;
+    }
+    putf(unit, c, "    ek_val c%zu = ek_cap_args("
+                  "argc > 0 ? argc - 1 : 0, "
+                  "argc > 0 ? argv + 1 : (char **)0);\n", i);
+}
+
+/* The entry shim: a parameterless main is called bare; a main over the
+   authorization manifest receives one constructed capability per
+   position, released with the entry's result. The Args bundle carries
+   the argument vector without the program name, so the shim is the
+   one place that reads argc and argv. */
+static void emit_main_shim(ek_buf *unit, lower_ctx *c)
+{
+    size_t i;
+    int has_args = 0;
+
+    if (c->nshim == 0) {
+        putf(unit, c, "int main(void) { ek_val t = %s(); "
+                      "ek_release(t); return 0; }\n", c->entry_mangled);
+        return;
+    }
+    for (i = 0; i < c->nshim; i++) {
+        has_args = has_args || strcmp(c->shim[i], "ek_cap_args") == 0;
+    }
+    putf(unit, c, "int main(int argc, char **argv) {\n");
+    if (!has_args) {
+        putf(unit, c, "    (void)argc; (void)argv;\n");
+    }
+    for (i = 0; i < c->nshim; i++) {
+        emit_shim_bundle(unit, c, i, c->shim[i]);
+    }
+    putf(unit, c, "    ek_val t = %s(", c->entry_mangled);
+    for (i = 0; i < c->nshim; i++) {
+        putf(unit, c, "%sc%zu", i ? ", " : "", i);
+    }
+    putf(unit, c, ");\n");
+    for (i = c->nshim; i-- > 0;) {
+        putf(unit, c, "    ek_release(c%zu);\n", i);
+    }
+    putf(unit, c, "    ek_release(t);\n    return 0;\n}\n");
+}
+
 /* The collected bodies, the derived service bodies, and, when the root
-   module declares `main`, the entry shim: a parameterless main is
-   called bare, and a main over the Out capability receives the
-   standard output's bundle by position. The service bodies stand after
-   the functions; their forward declarations joined the unit already. */
+   module declares `main`, the entry shim. The service bodies stand
+   after the functions; their forward declarations joined the unit
+   already. */
 static void emit_bodies(ek_buf *unit, lower_ctx *c)
 {
     if (c->body.data
@@ -287,23 +348,8 @@ static void emit_bodies(ek_buf *unit, lower_ctx *c)
         && !ek_buf_append_bytes(unit, c->dsvc.data, c->dsvc.len)) {
         c->oom = 1;
     }
-    if (!c->has_main) {
-        return;
-    }
-    if (c->main_cap_out) {
-        if (!ek_buf_printf(unit, "int main(void) { ek_val c0 = "
-                                "ek_cap_out_stdout(); ek_val t = %s(c0); "
-                                "ek_release(c0); ek_release(t); "
-                                "return 0; }\n",
-                          c->entry_mangled)) {
-            c->oom = 1;
-        }
-        return;
-    }
-    if (!ek_buf_printf(unit, "int main(void) { ek_val t = %s(); "
-                            "ek_release(t); return 0; }\n",
-                       c->entry_mangled)) {
-        c->oom = 1;
+    if (c->has_main) {
+        emit_main_shim(unit, c);
     }
 }
 

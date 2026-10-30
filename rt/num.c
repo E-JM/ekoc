@@ -195,6 +195,69 @@ ek_val ek_num_mod(ek_val a, ek_val b)
     }
 }
 
+/* The floor family over Int: the quotient rounds toward negative
+   infinity and the remainder takes the divisor's sign, so both stay in
+   the same checks as the truncating pair. */
+static ek_val int_fdiv(int64_t a, int64_t b)
+{
+    if (b == 0)
+        die_div();
+    if (a == INT64_MIN && b == -1)
+        die_overflow();
+    if (((a % b) != 0) && ((a < 0) != (b < 0)))
+        return ek_val_int(a / b - 1);
+    return ek_val_int(a / b);
+}
+
+static ek_val int_fmod(int64_t a, int64_t b)
+{
+    if (b == 0)
+        die_div();
+    if (a == INT64_MIN && b == -1)
+        die_overflow();
+    if (((a % b) != 0) && ((a < 0) != (b < 0)))
+        return ek_val_int(a % b + b);
+    return ek_val_int(a % b);
+}
+
+/* The absolute value: negating the Int minimum has no result and
+   panics like the arithmetic above; the unsigned word is its own
+   absolute value. */
+ek_val ek_num_abs(ek_val a)
+{
+    switch (a.tag) {
+    case EK_VAL_INT:
+        if (a.as.i >= 0)
+            return a;
+        if (a.as.i == INT64_MIN)
+            die_overflow();
+        return ek_val_int(-a.as.i);
+    case EK_VAL_UINT:  return a;
+    case EK_VAL_FLOAT: return ek_val_float(a.as.f < 0 ? -a.as.f : a.as.f);
+    default:           return no_word();
+    }
+}
+
+ek_val ek_num_fdiv(ek_val a, ek_val b)
+{
+    switch (a.tag) {
+    case EK_VAL_INT:   return int_fdiv(a.as.i, b.as.i);
+    case EK_VAL_UINT:  return uint_div(a.as.u, b.as.u);
+    case EK_VAL_FLOAT: return float_div(a.as.f, b.as.f);
+    default:           return no_word();
+    }
+}
+
+ek_val ek_num_fmod(ek_val a, ek_val b)
+{
+    switch (a.tag) {
+    case EK_VAL_INT:   return int_fmod(a.as.i, b.as.i);
+    case EK_VAL_UINT:  return uint_mod(a.as.u, b.as.u);
+    case EK_VAL_FLOAT: return float_mod(a.as.f, b.as.f);
+    default:           return no_word();
+    }
+}
+
 ek_val ek_num_neg(ek_val a)
 {
     switch (a.tag) {

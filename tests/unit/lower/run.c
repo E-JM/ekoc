@@ -714,30 +714,31 @@ static void tee_prints_twice(void)
     EK_CHECK(err[0] == '\0');
 }
 
-/* A `main` over a capability the shim cannot supply is diagnosed: only
-   the single Out parameter lowers in this slice. */
+/* A `main` over a capability the shim cannot supply is diagnosed: the
+   concurrency surface has no scheduler in this slice, so the manifest
+   keeps no shim. */
 static void unsupported_capabilities(void)
 {
     lfx f;
 
     lfx_begin(&f,
-              "main: (fs: Fs) ! =\n"
-              "    w = fs.exists(\"x\")\n"
+              "main: (c: Conc) -> _ =\n"
+              "    hold = c\n"
+              "    _ := hold\n"
               "    _\n");
-    EK_CHECK(lfx_check_clean(&f));
     EK_CHECK_U64(lfx_errors(&f), 1);
     EK_CHECK(lfx_has_code(&f, "E-lower"));
-    EK_CHECK(lfx_lacks(&f, "int main(void)"));
+    EK_CHECK(lfx_lacks(&f, "int main"));
     lfx_end(&f);
 
     lfx_begin(&f,
-              "main: (o: Out, c: Clock) ! =\n"
-              "    t = c.now()\n"
+              "main: (o: Out, c: Conc) -> _ =\n"
+              "    hold = c\n"
+              "    _ := hold\n"
               "    _\n");
-    EK_CHECK(lfx_check_clean(&f));
     EK_CHECK_U64(lfx_errors(&f), 1);
     EK_CHECK(lfx_has_code(&f, "E-lower"));
-    EK_CHECK(lfx_lacks(&f, "int main(void)"));
+    EK_CHECK(lfx_lacks(&f, "int main"));
     lfx_end(&f);
 }
 

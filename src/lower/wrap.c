@@ -34,8 +34,9 @@ static const char *payload_of(lower_ctx *c, out_kind out, const char *o)
     }
 }
 
-const char *lower_wrap_helper(lower_ctx *c, const ek_node *at,
-                              const char *owner, const char *name, int *nf)
+const char *lower_ctor_helper(lower_ctx *c, const ek_node *at,
+                              const char *module, const char *owner,
+                              const char *name, int *nf)
 {
     size_t k, i;
 
@@ -43,7 +44,7 @@ const char *lower_wrap_helper(lower_ctx *c, const ek_node *at,
     for (k = 0; k < c->resolved.module_count; k++) {
         const ek_surface *s = &c->resolved.modules[k];
 
-        if (strcmp(s->module, "std") != 0) {
+        if (strcmp(s->module, module) != 0) {
             continue;
         }
         for (i = 0; i < s->count; i++) {
@@ -52,7 +53,7 @@ const char *lower_wrap_helper(lower_ctx *c, const ek_node *at,
             if (m->kind == EK_SYM_CONSTRUCTOR && m->owner
                 && strcmp(m->owner, owner) == 0
                 && strcmp(m->name, name) == 0) {
-                lower_gtype *g = lower_ctor_of_symbol(c, at, m);
+                lower_gtype *g = lower_ctor_of_symbol(c, at, m, 1);
 
                 if (!g) {
                     return NULL;
@@ -65,6 +66,12 @@ const char *lower_wrap_helper(lower_ctx *c, const ek_node *at,
     lower_error(c, at, "the constructor `%s.%s` is not supported by "
                       "this lowerer", owner, name);
     return NULL;
+}
+
+const char *lower_wrap_helper(lower_ctx *c, const ek_node *at,
+                              const char *owner, const char *name, int *nf)
+{
+    return lower_ctor_helper(c, at, "std", owner, name, nf);
 }
 
 /* A status word and an out slot: the hit wraps the payload, the miss

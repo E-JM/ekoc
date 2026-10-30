@@ -107,6 +107,8 @@ CHECK_OBJ := $(CHECK_SRC:src/%.c=$(BUILD)/%.o)
 LOWER_SRC := \
 	src/lower/body.c \
 	src/lower/call.c \
+	src/lower/capfam.c \
+	src/lower/capwrap.c \
 	src/lower/capture.c \
 	src/lower/case.c \
 	src/lower/composite.c \
@@ -156,7 +158,8 @@ CLI_OBJ := $(CLI_SRC:src/%.c=$(BUILD)/%.o)
 RT_SRC := rt/value.c rt/rc.c rt/num.c rt/panic.c \
 	rt/string.c rt/bytes.c rt/list.c rt/dict.c rt/closure.c \
 	rt/fmt.c rt/parse.c rt/convert.c rt/strops.c rt/charops.c rt/bytesops.c \
-	rt/cap.c rt/range.c
+	rt/cap.c rt/capval.c rt/capenv.c rt/in.c rt/clock.c rt/rand.c \
+	rt/file.c rt/fs.c rt/fsdir.c rt/path.c rt/range.c
 LIB_RT := $(BUILD)/libekort.a
 RT_OBJ := $(RT_SRC:rt/%.c=$(BUILD)/rt/%.o)
 
