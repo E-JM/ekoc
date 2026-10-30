@@ -384,6 +384,37 @@ static lower_val identity_call(lower_ctx *c, lower_scope *scope,
     return (lower_val){ t, 1 };
 }
 
+/* The intrinsic dispatch of a member call the std source does not
+   declare: the reading check recorded gates it, and the family comes
+   from the receiver's type or from the qualified head's type symbol.
+   A NULL result hands the decision back. */
+static lower_val intrinsic_member(lower_ctx *c, lower_scope *scope,
+                                  const ek_node *e, const ek_node *callee,
+                                  const ek_ck_row *frow,
+                                  const ek_ck_row *rrow, const ek_ref *head,
+                                  const call_form *form)
+{
+    const char *family = NULL;
+    int has_recv = 0;
+    lower_val v;
+
+    if (!frow || frow->reading != EK_RD_NAMESPACE || form->extra) {
+        return (lower_val){ NULL, 0 };
+    }
+    if (rrow && rrow->type) {
+        family = lower_intrinsic_family(rrow->type);
+        has_recv = 1;
+    } else if (head && head->symbol && head->symbol->module
+               && strcmp(head->symbol->module, "std") == 0) {
+        family = head->symbol->name;
+    }
+    if (!family) {
+        return (lower_val){ NULL, 0 };
+    }
+    v = lower_intrinsic_call(c, scope, e, callee, family, has_recv);
+    return v.text ? v : (lower_val){ NULL, 0 };
+}
+
 /* A receiver-form member call: a function-valued field is the callee
    value, and any other link names a std or declared member found the
    way check finds it. A NULL result hands the decision back. */
@@ -392,47 +423,44 @@ static lower_val member_call(lower_ctx *c, lower_scope *scope,
                              const call_form *form)
 {
     const ek_ck_row *frow = lower_row(c, callee);
+    const ek_node *recv = callee->u.field.recv;
+    const ek_ck_row *rrow = recv ? lower_row(c, recv) : NULL;
+    const ek_ref *head = NULL;
+    const ek_symbol *ms;
 
     if (frow && frow->reading == EK_RD_FIELD) {
         lower_val f = lower_sub(c, scope, callee);
 
         return value_call(c, scope, e, f, form->extra);
     }
-    {
-        const ek_node *recv = callee->u.field.recv;
-        const ek_ck_row *rrow = recv ? lower_row(c, recv) : NULL;
-        const ek_symbol *ms;
-
-        if (rrow && rrow->type) {
-            ms = member_symbol(c, rrow->type, callee->u.field.name);
-        } else {
-            /* a qualified head names its type: the receiver node
-               carries no value row, and the type ref names the
-               namespace owner */
-            const ek_ref *ref = recv ? lower_ref(c, recv) : NULL;
-
-            ms = ref && ref->kind == EK_SYM_TYPE && ref->symbol
-                     && ref->station == EK_ST_QUALIFIED
-                     ? member_scan(c, ref->symbol->name,
-                                   ref->symbol->module, ref->symbol,
-                                   callee->u.field.name)
-                     : NULL;
-        }
-        if (ms) {
-            if (rrow && rrow->type) {
-                call_form member = *form;
-
-                member.has_recv = 1;
-                member.recv = lower_sub(c, scope, recv);
-                return direct_call(c, scope, e, ms, &member);
-            }
-            /* the head supplies namespace context, not a receiver
-               value: the written arguments fill the signature's
-               slots, receiver first */
-            return direct_call(c, scope, e, ms, form);
-        }
+    if (rrow && rrow->type) {
+        ms = member_symbol(c, rrow->type, callee->u.field.name);
+    } else {
+        /* a qualified head names its type: the receiver node carries
+           no value row, and the type ref names the namespace owner */
+        head = recv ? lower_ref(c, recv) : NULL;
+        ms = head && head->kind == EK_SYM_TYPE && head->symbol
+                 && head->station == EK_ST_QUALIFIED
+                 ? member_scan(c, head->symbol->name, head->symbol->module,
+                               head->symbol, callee->u.field.name)
+                 : NULL;
     }
-    return (lower_val){ NULL, 0 };
+    if (ms) {
+        if (rrow && rrow->type) {
+            call_form member = *form;
+
+            member.has_recv = 1;
+            member.recv = lower_sub(c, scope, recv);
+            return direct_call(c, scope, e, ms, &member);
+        }
+        /* the head supplies namespace context, not a receiver value:
+           the written arguments fill the signature's slots, receiver
+           first */
+        return direct_call(c, scope, e, ms, form);
+    }
+    /* a compiler row of the std namespaces: the reading check
+       recorded selects the runtime dispatch */
+    return intrinsic_member(c, scope, e, callee, frow, rrow, head, form);
 }
 
 /* One call: the callee's reading decides the form. */

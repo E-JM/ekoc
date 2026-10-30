@@ -198,13 +198,12 @@ static const ek_symbol *pick_ctor(const ek_ref *ref, const ek_symbol *tsym)
     return NULL;
 }
 
-/* Registers the constructor family of an algebraic type: one struct
-   per constructor, its payload the variant's own. */
-lower_gtype *lower_ctor_family(lower_ctx *c, const ek_node *at,
-                               const ek_ref *ref, const ek_symbol *tsym)
+/* Registers the family of one constructor over its owner's
+   declaration: one struct per constructor, its payload the variant's
+   own. */
+static lower_gtype *register_ctor(lower_ctx *c, const ek_node *at,
+                                  const ek_symbol *cs, const ek_node *dn)
 {
-    const ek_symbol *cs = tsym ? pick_ctor(ref, tsym) : NULL;
-    const ek_node *dn = tsym ? tsym->decl : NULL;
     const char **slots;
     lower_gtype *g;
     size_t cap = 0, i;
@@ -212,7 +211,7 @@ lower_gtype *lower_ctor_family(lower_ctx *c, const ek_node *at,
     if (!cs || !dn || dn->kind != EK_N_TYPE_DECL) {
         lower_error(c, at, "the constructor `%s` is not supported by "
                           "this lowerer",
-                    ref && ref->symbol ? ref->symbol->name : "?");
+                    cs ? cs->name : "?");
         return NULL;
     }
     g = find_family(c, cs, NULL);
@@ -230,7 +229,7 @@ lower_gtype *lower_ctor_family(lower_ctx *c, const ek_node *at,
             return NULL;
         }
         g->key_sym = cs;
-        g->stem = lower_str(c, "%s_%s_%s", tsym->module, tsym->name,
+        g->stem = lower_str(c, "%s_%s_%s", cs->module, cs->owner,
                             cs->name);
         g->helper = lower_str(c, "ekn_%s", g->stem);
         g->shape = GT_CTOR;
@@ -249,6 +248,51 @@ lower_gtype *lower_ctor_family(lower_ctx *c, const ek_node *at,
     lower_error(c, at, "the constructor `%s` is not supported by this "
                        "lowerer", cs->name);
     return NULL;
+}
+
+/* Registers the constructor family of an algebraic type: the
+   constructor a reference denotes, re-derived the way check picks
+   one -- the candidate owned by the expected type's declaration. */
+lower_gtype *lower_ctor_family(lower_ctx *c, const ek_node *at,
+                               const ek_ref *ref, const ek_symbol *tsym)
+{
+    const ek_symbol *cs = tsym ? pick_ctor(ref, tsym) : NULL;
+
+    return register_ctor(c, at, cs, tsym ? tsym->decl : NULL);
+}
+
+/* Registers the constructor family of a symbol the intrinsic dispatch
+   wraps with: no reference node stands behind it, so the owner type's
+   declaration in the constructor's own module supplies the
+   variants. */
+lower_gtype *lower_ctor_of_symbol(lower_ctx *c, const ek_node *at,
+                                  const ek_symbol *cs)
+{
+    const ek_symbol *tsym = NULL;
+    size_t k, i;
+
+    if (!cs || !cs->owner || !cs->module) {
+        lower_error(c, at, "the constructor `%s` is not supported by "
+                          "this lowerer",
+                    cs ? cs->name : "?");
+        return NULL;
+    }
+    for (k = 0; k < c->resolved.module_count && !tsym; k++) {
+        const ek_surface *s = &c->resolved.modules[k];
+
+        if (strcmp(s->module, cs->module) != 0) {
+            continue;
+        }
+        for (i = 0; i < s->count; i++) {
+            const ek_symbol *m = &s->syms[i];
+
+            if (m->kind == EK_SYM_TYPE && strcmp(m->name, cs->owner) == 0) {
+                tsym = m;
+                break;
+            }
+        }
+    }
+    return register_ctor(c, at, cs, tsym ? tsym->decl : NULL);
 }
 
 /* The C text reading one field of a receiver temp: the receiver's

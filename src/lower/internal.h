@@ -198,6 +198,8 @@ lower_gtype *lower_anon_record(lower_ctx *c, const ek_type *rec);
 lower_gtype *lower_anon_tuple(lower_ctx *c, size_t n);
 lower_gtype *lower_ctor_family(lower_ctx *c, const ek_node *at,
                                const ek_ref *ref, const ek_symbol *tsym);
+lower_gtype *lower_ctor_of_symbol(lower_ctx *c, const ek_node *at,
+                                  const ek_symbol *cs);
 lower_gtype *lower_env_family(lower_ctx *c, const char **names, size_t n);
 const char *lower_field_slot(lower_ctx *c, const ek_node *at,
                              const ek_type *recv, const char *temp,
@@ -281,6 +283,39 @@ lower_val lower_call_expr(lower_ctx *c, lower_scope *scope,
                           const ek_node *e);
 lower_val lower_call_extra(lower_ctx *c, lower_scope *scope,
                            const ek_node *e, const char *extra);
+
+/* The out slot a status-returning runtime entry writes: a signed or
+   unsigned word, a float, a code point, or a borrowed value. */
+typedef enum {
+    OUT_I64, OUT_U64, OUT_F64, OUT_U32, OUT_VAL
+} out_kind;
+
+/* intrinsic.c: the compiler rows of the std namespaces routed to the
+   runtime. The family is the receiver's std spelling; the call is
+   handled when a table row matches, and left to the member path
+   otherwise. */
+const char *lower_intrinsic_family(const ek_type *t);
+lower_val lower_intrinsic_call(lower_ctx *c, lower_scope *scope,
+                               const ek_node *e, const ek_node *callee,
+                               const char *family, int has_recv);
+
+/* wrap.c: the std constructor wrapping of the status+out contracts.
+   lower_wrap_helper registers the family of one std constructor and
+   names its construction helper, with the payload arity in nf. */
+const char *lower_wrap_helper(lower_ctx *c, const ek_node *at,
+                              const char *owner, const char *name, int *nf);
+lower_val lower_wrap_option(lower_ctx *c, lower_scope *scope,
+                            const ek_node *e, const char *sym,
+                            const char *args, out_kind out);
+lower_val lower_wrap_option_obj(lower_ctx *c, lower_scope *scope,
+                                const ek_node *e, const char *sym,
+                                const char *args);
+lower_val lower_wrap_parse(lower_ctx *c, lower_scope *scope,
+                           const ek_node *e, const char *sym,
+                           const char *args, out_kind out, int radix);
+lower_val lower_wrap_decode(lower_ctx *c, lower_scope *scope,
+                            const ek_node *e, const char *sym,
+                            const char *args);
 
 /* capture.c: the capture set of a closure body. */
 typedef struct {

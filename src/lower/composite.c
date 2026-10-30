@@ -170,15 +170,64 @@ static int scalar_key(const ek_type *k)
     return 0;
 }
 
-/* A dictionary literal: the pairs evaluate in source order, then the
-   set chain builds the table one fresh dictionary at a step, each
-   intermediate dying once its replacement exists. */
+/* The key and value temps of the entries, in source order; the arrays
+   hold one slot per kid, NULL where a side is absent. */
+static void dict_item_temps(lower_ctx *c, lower_scope *scope,
+                            const ek_node *e, const char **kt,
+                            const char **vt)
+{
+    size_t i;
+
+    for (i = 0; i < e->u.kids.count; i++) {
+        const ek_node *item = e->u.kids.data[i];
+        const ek_node *key = item->kind == EK_N_COMPOSITE_ITEM
+                                 ? item->u.pair.a : NULL;
+        const ek_node *val = item->kind == EK_N_COMPOSITE_ITEM
+                                 ? item->u.pair.b : item;
+        lower_val a;
+
+        kt[i] = NULL;
+        vt[i] = NULL;
+        if (key) {
+            a = lower_sub(c, scope, key);
+            kt[i] = lower_as_temp(c, scope, &a);
+        }
+        if (val) {
+            a = lower_sub(c, scope, val);
+            vt[i] = lower_as_temp(c, scope, &a);
+        }
+    }
+}
+
+/* Releases the entry temps, most recent first. */
+static void release_dict_temps(lower_ctx *c, const char **kt,
+                               const char **vt, size_t n)
+{
+    size_t i = n;
+
+    while (i > 0) {
+        i--;
+        if (vt[i]) {
+            lower_pad(c);
+            lower_emitf(c, "ek_release(%s);\n", vt[i]);
+        }
+        if (kt[i]) {
+            lower_pad(c);
+            lower_emitf(c, "ek_release(%s);\n", kt[i]);
+        }
+    }
+}
+
+/* A dictionary literal: every keyed entry's key and value evaluate in
+   source order, then the set chain builds the table one fresh
+   dictionary at a step, each intermediate dying once its replacement
+   exists. */
 static lower_val dict_literal(lower_ctx *c, lower_scope *scope,
                               const ek_node *e)
 {
     const ek_ck_row *row = lower_row(c, e);
-    const char **argv;
-    size_t n = e->u.kids.count, i;
+    const char **kt, **vt;
+    size_t n = e->u.kids.count, cap = 0, i;
     const char *d;
 
     if (row && row->type && row->type->kind == EK_T_DICT
@@ -189,28 +238,30 @@ static lower_val dict_literal(lower_ctx *c, lower_scope *scope,
     if (n == 0) {
         return (lower_val){ "ek_dict_new()", 0 };
     }
-    argv = item_temps(c, scope, e);
-    if (!argv) {
+    kt = lower_grow(c, NULL, &cap, n * 2, sizeof *kt);
+    if (!kt) {
         return lower_val_unit();
     }
+    vt = kt + n;
+    dict_item_temps(c, scope, e, kt, vt);
     d = lower_temp(c, scope);
     lower_pad(c);
     lower_emitf(c, "ek_val %s = ek_dict_new();\n", d);
-    for (i = 0; i + 1 < n; i += 2) {
+    for (i = 0; i < n; i++) {
         const char *nd;
 
-        if (!argv[i] || !argv[i + 1]) {
-            continue; /* a malformed pair check already diagnosed */
+        if (!kt[i] || !vt[i]) {
+            continue; /* a malformed entry check already diagnosed */
         }
         nd = lower_temp(c, scope);
         lower_pad(c);
         lower_emitf(c, "ek_val %s = ek_dict_set(%s, %s, %s);\n", nd, d,
-                    argv[i], argv[i + 1]);
+                    kt[i], vt[i]);
         lower_pad(c);
         lower_emitf(c, "ek_release(%s);\n", d);
         d = nd;
     }
-    release_temps(c, argv, n);
+    release_dict_temps(c, kt, vt, n);
     return (lower_val){ d, 1 };
 }
 

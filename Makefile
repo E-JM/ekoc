@@ -113,6 +113,7 @@ LOWER_SRC := \
 	src/lower/ctl.c \
 	src/lower/expr.c \
 	src/lower/function.c \
+	src/lower/intrinsic.c \
 	src/lower/lambda.c \
 	src/lower/literal.c \
 	src/lower/lower.c \
@@ -122,7 +123,8 @@ LOWER_SRC := \
 	src/lower/patlist.c \
 	src/lower/tce.c \
 	src/lower/type.c \
-	src/lower/typeemit.c
+	src/lower/typeemit.c \
+	src/lower/wrap.c
 
 LIB_LOWER := $(BUILD)/libek_lower.a
 LOWER_OBJ := $(LOWER_SRC:src/%.c=$(BUILD)/%.o)
