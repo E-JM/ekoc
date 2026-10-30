@@ -344,6 +344,14 @@ int ek_str_le(ek_obj *a, ek_obj *b);
 int ek_str_gt(ek_obj *a, ek_obj *b);
 int ek_str_ge(ek_obj *a, ek_obj *b);
 
+/* A fresh string holding the quote character, the bytes of s with the
+   quote, the backslash, and the C0 controls escaped (the named pair as
+   \n \t \r, every other control as \uXXXX), and the quote character
+   again: the literal form the structural channel shows a String in.
+   The quote is a Unicode scalar value. The caller owns the returned
+   object. */
+ek_obj *ek_str_quote(ek_obj *s, uint32_t quote);
+
 /* Nonzero when s holds exactly len bytes of well-formed UTF-8: no
    overlong forms, no surrogate encodings, and no code point above the
    encoding maximum. */

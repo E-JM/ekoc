@@ -201,3 +201,66 @@ int ek_str_ge(ek_obj *a, ek_obj *b)
 {
     return ek_str_cmp(a, b) >= 0;
 }
+
+/* The escaped body of one quoted string: the backslash and the quote
+   gain their pair, the named controls their letters, every other C0
+   control a lowercase four-digit escape, and every remaining byte
+   stands. */
+static size_t write_escaped(char *out, const unsigned char *p, size_t len,
+                            uint32_t quote)
+{
+    size_t pos = 0;
+    size_t i = 0;
+
+    while (i < len) {
+        unsigned char b = p[i];
+        size_t step = scalar_step(p + i);
+
+        if (b == '\\' || b == (unsigned char)quote) {
+            out[pos++] = '\\';
+            out[pos++] = (char)b;
+        } else if (b == '\n') {
+            out[pos++] = '\\';
+            out[pos++] = 'n';
+        } else if (b == '\t') {
+            out[pos++] = '\\';
+            out[pos++] = 't';
+        } else if (b == '\r') {
+            out[pos++] = '\\';
+            out[pos++] = 'r';
+        } else if (b < 0x20) {
+            static const char digits[] = "0123456789abcdef";
+
+            out[pos++] = '\\';
+            out[pos++] = 'u';
+            out[pos++] = '0';
+            out[pos++] = '0';
+            out[pos++] = digits[(b >> 4) & 0xF];
+            out[pos++] = digits[b & 0xF];
+        } else {
+            for (size_t k = 0; k < step && i + k < len; k++)
+                out[pos++] = (char)p[i + k];
+        }
+        i += step;
+    }
+    return pos;
+}
+
+ek_obj *ek_str_quote(ek_obj *s, uint32_t quote)
+{
+    const unsigned char *p = (const unsigned char *)ek_str_cstr(s);
+    size_t len = ek_str_len(s);
+    char quote_buf[8];
+    size_t quote_len = ek_utf8_encode(quote, quote_buf);
+    size_t cap = len * 6 + 2 * quote_len + 1;
+    char *buf = ek_rt_alloc_zeroed(cap);
+    ek_obj *out;
+    size_t pos = 0;
+
+    pos += (size_t)ek_utf8_encode(quote, buf + pos);
+    pos += write_escaped(buf + pos, p, len, quote);
+    pos += (size_t)ek_utf8_encode(quote, buf + pos);
+    out = ek_str_new(buf, pos);
+    free(buf);
+    return out;
+}

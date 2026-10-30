@@ -67,6 +67,22 @@ typedef struct lower_gtype {
                               and helper join the typedef */
 } lower_gtype;
 
+/* The runtime slot a std scalar occupies: the domain words widen into
+   the Int, UInt, and Float slots. */
+typedef enum {
+    EKSC_OTHER, EKSC_INT, EKSC_UINT, EKSC_FLOAT, EKSC_CHAR,
+    EKSC_BOOL, EKSC_STRING, EKSC_BYTES
+} lower_scalar;
+
+/* One variant of an algebraic receiver: its spelling, its constructor
+   family's stem (the typeinfo the dispatch tests), and the applied
+   payload type, NULL for a zero-payload variant. */
+typedef struct {
+    const char *name;
+    const char *stem;
+    const ek_type *payload;
+} lower_variant;
+
 static inline lower_val lower_val_unit(void)
 {
     lower_val v;
@@ -98,12 +114,43 @@ typedef struct {
     const char *name;
 } lower_tramp;
 
+/* One derived service emitted for an applied type: the structural key
+   that shares one body among equal spellings, the C name, and the
+   family the body renders. */
+typedef struct {
+    const char *key;
+    const char *name;
+    unsigned char kind;
+} lower_dsvc;
+
+/* The service families. */
+typedef enum {
+    DSV_EQ,        /* int(ek_val a, ek_val b): structural equality */
+    DSV_ORD,       /* int(ek_val a, ek_val b): -1, 0, or 1 */
+    DSV_SHOW,      /* ek_obj *(ek_val v): the display channel */
+    DSV_INSPECT,   /* ek_obj *(ek_val v): the structural channel */
+    DSV_TOJSON,    /* ek_val(ek_val v): the Json value of v */
+    DSV_FROMJSON   /* ek_val(ek_val j): Result of the decode */
+} lower_dsvc_kind;
+
+typedef struct lower_ctx lower_ctx;
+
+/* The text emitter of one service body: writes into the body's own
+   buffer and mints the body's temps. A body opens its buffer, emits,
+   and closes it, so a child requested mid-body joins the unit whole
+   instead of splitting the parent's text. */
+typedef struct {
+    lower_ctx *c;
+    unsigned tmp;
+    ek_buf *buf;
+} lower_demit;
+
 /* Lowering state. Function text accumulates in body; the entry point
    assembles the unit around it. work/seen drive reachability; file is
    the source file of the function being emitted; depth is the
    indentation level of the statement being emitted; in_tail marks a
    tail position of the function being emitted. */
-typedef struct {
+struct lower_ctx {
     ek_resolve_result resolved;
     ek_check_result checked;
     ek_arena *arena;
@@ -147,12 +194,87 @@ typedef struct {
     lower_gtype *gtypes; /* the generated struct families, in first-use
                             order */
     size_t ngt, cgt;
+    lower_dsvc *dsvcs; /* the derived services, in first-use order */
+    size_t ndsvc, cdsvc;
+    ek_buf dsvc;       /* the derived service bodies, joined after the
+                          functions */
     unsigned anon_rec; /* the anonymous record families so far */
     int uses_list; /* some body folds a list literal */
     int has_main;
     int main_cap_out; /* the entry shim builds the Out capability */
     int oom;
-} lower_ctx;
+};
+
+/* derived.c: shared classification and emission plumbing. */
+void lower_d_begin(lower_ctx *c, lower_demit *d, ek_buf *b);
+void lower_d_end(lower_ctx *c, ek_buf *b);
+lower_scalar lower_scalar_kind(const ek_type *t);
+void lower_d_printf(lower_demit *d, const char *fmt, ...);
+const char *lower_d_temp(lower_demit *d);
+void lower_d_concat_lit(lower_demit *d, const char *indent, const char *acc,
+                        const char *lit);
+void lower_d_concat_obj(lower_demit *d, const char *indent, const char *acc,
+                        const char *part);
+const char *lower_d_cstr(lower_ctx *c, const char *s);
+int lower_shape_of(lower_ctx *c, const ek_node *at, const ek_type *t,
+                   const char ***fnames, const ek_type ***ftypes, size_t *nf,
+                   lower_gtype **g);
+int lower_variants_of(lower_ctx *c, const ek_node *at, const ek_type *t,
+                      lower_variant **out, size_t *nv);
+const char *lower_std_ctor(lower_ctx *c, const ek_node *at,
+                           const char *owner, const char *name);
+
+/* typewalk.c: the applied type of a type-syntax node under a
+   declaration's instantiation. */
+const ek_type *lower_applied_type(lower_ctx *c, const ek_node *tnode,
+                                  const ek_node *decl, const ek_type *owner);
+
+/* derivedjson.c, derivedfrom.c: the JSON emitters and their shared
+   spellings. OK_INFO is the typeinfo test of the std Result's Ok. */
+#define LOWER_OK_INFO "&ekT_std_Result_Ok" 
+const char *lower_json_ctor(lower_ctx *c, const char *variant);
+const char *lower_result_ctor(lower_ctx *c, const char *name);
+void lower_json_err_lit(lower_demit *d, const char *indent,
+                        const char *detail);
+void lower_json_err_obj(lower_demit *d, const char *indent, const char *obj);
+const char *lower_json_slot(lower_ctx *c, const char *variant,
+                            const char *v);
+const char *lower_fromj_of(lower_ctx *c, const ek_type *t);
+void lower_json_ok_emit(lower_demit *d, const char *indent, const char *expr);
+void lower_val_text_is(lower_demit *d, const char *k, const char *raw);
+void lower_obj_text_is(lower_demit *d, const char *obj, const char *raw);
+void lower_from_tuple_emit(lower_ctx *c, lower_demit *d, lower_gtype *g,
+                           const ek_type **ftypes, size_t nf);
+void lower_from_record_emit(lower_ctx *c, lower_demit *d, const char *name,
+                            const char **fnames, const ek_type **ftypes,
+                            size_t nf, lower_gtype *g);
+
+/* derivedeq.c, derivedshow.c, derivedjson.c: the body emitters. */
+void lower_dsvc_eq_emit(lower_ctx *c, const char *name, const ek_type *t);
+void lower_dsvc_ord_emit(lower_ctx *c, const char *name, const ek_type *t);
+void lower_dsvc_show_emit(lower_ctx *c, const char *name, const ek_type *t,
+                          int inspect);
+void lower_dsvc_json_emit(lower_ctx *c, const char *name, const ek_type *t,
+                          int from);
+void lower_dsvc_from_emit(lower_ctx *c, const char *name, const ek_type *t);
+
+/* The form of a derived call: the receiver is the member link's node,
+   the free call's first argument, or absent at a type head. */
+typedef enum {
+    CF_MEMBER, CF_FREE, CF_QUALIFIED
+} lower_cmp_form;
+
+/* derived.c: the service registry and the call-site routing. */
+const char *lower_dsvc_request(lower_ctx *c, const ek_node *at,
+                               lower_dsvc_kind kind, const ek_type *t);
+lower_val lower_derived_call(lower_ctx *c, lower_scope *scope,
+                             const ek_node *e, const ek_node *callee,
+                             const ek_ck_row *frow, lower_cmp_form form);
+lower_val lower_derived_with(lower_ctx *c, lower_scope *scope,
+                             const ek_node *e, const ek_node *recv);
+const char *lower_derived_cmp(lower_ctx *c, const ek_node *e, ek_binop op);
+/* The service behind a comparison operator over the value layer's
+   object slots (String, Bytes); NULL keeps the runtime entry. */
 
 /* lower.c: shared helpers. */
 void lower_emitf(lower_ctx *c, const char *fmt, ...);

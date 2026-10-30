@@ -416,8 +416,9 @@ static lower_val intrinsic_member(lower_ctx *c, lower_scope *scope,
 }
 
 /* A receiver-form member call: a function-valued field is the callee
-   value, and any other link names a std or declared member found the
-   way check finds it. A NULL result hands the decision back. */
+   value, a derived reading lowers to its service, and any other link
+   names a std or declared member found the way check finds it. A NULL
+   result hands the decision back. */
 static lower_val member_call(lower_ctx *c, lower_scope *scope,
                              const ek_node *e, const ek_node *callee,
                              const call_form *form)
@@ -432,6 +433,14 @@ static lower_val member_call(lower_ctx *c, lower_scope *scope,
         lower_val f = lower_sub(c, scope, callee);
 
         return value_call(c, scope, e, f, form->extra);
+    }
+    if (frow && frow->reading == EK_RD_DERIVED && !form->extra) {
+        if (strcmp(callee->u.field.name, "with") == 0) {
+            return lower_derived_with(c, scope, e, recv);
+        }
+        return lower_derived_call(c, scope, e, callee, frow,
+                                  rrow && rrow->type ? CF_MEMBER
+                                                     : CF_QUALIFIED);
     }
     if (rrow && rrow->type) {
         ms = member_symbol(c, rrow->type, callee->u.field.name);
@@ -491,6 +500,15 @@ static lower_val emit_call(lower_ctx *c, lower_scope *scope,
 
         if (v.text) {
             return v;
+        }
+    }
+    if (callee && callee->kind == EK_N_NAME) {
+        /* the free-call form of a derived service: its first argument
+           is the receiver, exactly as the member form passes it */
+        const ek_ck_row *nrow = lower_row(c, callee);
+
+        if (nrow && nrow->reading == EK_RD_DERIVED && !form->extra) {
+            return lower_derived_call(c, scope, e, callee, nrow, CF_FREE);
         }
     }
     {

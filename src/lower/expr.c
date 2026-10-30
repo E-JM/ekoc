@@ -203,8 +203,25 @@ static lower_val binary_expr(lower_ctx *c, lower_scope *scope,
         return bool_op(c, scope, e, 0);
     }
     {
-        const char *fn = e->u.binary.op == EK_BIN_CONCAT
-                             ? concat_fn(c, e) : num_op(e->u.binary.op);
+        ek_binop op = e->u.binary.op;
+        const char *fn = NULL;
+        int derived = 0;
+
+        /* the comparison family reads the derived service over the
+           value layer's object slots first, every other row keeping
+           the runtime comparisons */
+        if (op == EK_BIN_EQ || op == EK_BIN_NE || op == EK_BIN_LT
+            || op == EK_BIN_LE || op == EK_BIN_GT || op == EK_BIN_GE) {
+            fn = lower_derived_cmp(c, e, op);
+            derived = fn != NULL;
+            if (!fn) {
+                fn = num_op(op);
+            }
+        } else if (op == EK_BIN_CONCAT) {
+            fn = concat_fn(c, e);
+        } else {
+            fn = num_op(op);
+        }
         lower_val l = lower_sub(c, scope, e->u.binary.lhs);
         lower_val r = lower_sub(c, scope, e->u.binary.rhs);
         const char *lt = lower_as_temp(c, scope, &l);
@@ -222,7 +239,29 @@ static lower_val binary_expr(lower_ctx *c, lower_scope *scope,
         }
         t = lower_temp(c, scope);
         lower_pad(c);
-        if (e->u.binary.op == EK_BIN_CONCAT) {
+        if (derived) {
+            /* the structural comparison over the object slots answers
+               an ordering word or a Bool word */
+            if (e->u.binary.op == EK_BIN_EQ) {
+                lower_emitf(c, "ek_val %s = ek_bool(%s(%s, %s));\n", t, fn,
+                            lt, rt);
+            } else if (e->u.binary.op == EK_BIN_NE) {
+                lower_emitf(c, "ek_val %s = ek_bool(!%s(%s, %s));\n", t, fn,
+                            lt, rt);
+            } else if (e->u.binary.op == EK_BIN_LT) {
+                lower_emitf(c, "ek_val %s = ek_bool(%s(%s, %s) < 0);\n", t,
+                            fn, lt, rt);
+            } else if (e->u.binary.op == EK_BIN_LE) {
+                lower_emitf(c, "ek_val %s = ek_bool(%s(%s, %s) <= 0);\n", t,
+                            fn, lt, rt);
+            } else if (e->u.binary.op == EK_BIN_GT) {
+                lower_emitf(c, "ek_val %s = ek_bool(%s(%s, %s) > 0);\n", t,
+                            fn, lt, rt);
+            } else {
+                lower_emitf(c, "ek_val %s = ek_bool(%s(%s, %s) >= 0);\n", t,
+                            fn, lt, rt);
+            }
+        } else if (e->u.binary.op == EK_BIN_CONCAT) {
             /* the string join works over the objects; the result is
                born owned */
             lower_emitf(c, "ek_val %s = ek_val_ref(%s(%s.as.ref, "

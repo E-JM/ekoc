@@ -131,13 +131,13 @@ static lower_val list_literal(lower_ctx *c, lower_scope *scope,
     return (lower_val){ out, 1 };
 }
 
-/* The scalar key slots the runtime hashes: the tag word and the exact
-   payload. */
+/* The key slots the runtime hashes: the scalars by their payload, and
+   String by its bytes. */
 static int scalar_key_name(const ek_symbol *sym)
 {
     static const char *names[] = {
-        "Bool", "Int", "UInt", "Float", "Char", "I8", "I16", "I32",
-        "I64", "U8", "U16", "U32", "U64", "F32", "F64"
+        "Bool", "Int", "UInt", "Float", "Char", "String",
+        "I8", "I16", "I32", "I64", "U8", "U16", "U32", "U64", "F32", "F64"
     };
     size_t i;
 

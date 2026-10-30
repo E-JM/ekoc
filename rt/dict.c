@@ -45,24 +45,41 @@ static size_t payload_width(const ek_val *v)
     return v->tag == EK_VAL_CHAR ? sizeof v->as.c : sizeof v->as;
 }
 
-/* FNV-1a over the tag byte and the payload bytes, so keys of different
-   tags stay distinct even when their payloads coincide. */
+/* A String value keys its bytes, not its address, so two spellings of
+   one text read as one key: the key domain compares structurally. */
+static int text_key(const ek_val *v)
+{
+    return v->tag == EK_VAL_REF && v->as.ref != NULL
+        && v->as.ref->info->kind == EK_KIND_STR;
+}
+
+/* FNV-1a over the tag byte and the identifying bytes, so keys of
+   different tags stay distinct even when their payloads coincide. */
 static uint64_t hash_key(ek_val v)
 {
     uint64_t h = 14695981039346656037ULL;
     const unsigned char *p = (const unsigned char *)&v.as;
-    size_t width = payload_width(&v);
-    size_t i;
+    size_t width;
 
+    if (text_key(&v)) {
+        p = (const unsigned char *)ek_str_cstr(v.as.ref);
+        width = ek_str_len(v.as.ref);
+    } else {
+        width = payload_width(&v);
+    }
     h = (h ^ (uint64_t)v.tag) * 1099511628211ULL;
-    for (i = 0; i < width; i++)
+    for (size_t i = 0; i < width; i++)
         h = (h ^ p[i]) * 1099511628211ULL;
     return h;
 }
 
-/* Nonzero when the two keys carry the same tag and payload. */
+/* Nonzero when the two keys identify the same mapping. */
 static int key_eq(ek_val a, ek_val b)
 {
+    if (text_key(&a) || text_key(&b)) {
+        return text_key(&a) && text_key(&b)
+            && ek_str_eq(a.as.ref, b.as.ref);
+    }
     return a.tag == b.tag
         && memcmp(&a.as, &b.as, payload_width(&a)) == 0;
 }

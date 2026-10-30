@@ -2,7 +2,8 @@
 
 /* The E-lower diagnostics: constructs outside the lowerer's coverage
    come back as errors at the construct's position, and the parts that
-   lowered still produce text. */
+   lowered still produce text. The derived services and the
+   string-keyed dictionaries, once gaps, now lower. */
 
 static void derived_service(void)
 {
@@ -12,10 +13,9 @@ static void derived_service(void)
                   "    s = show(7)\n"
                   "    _\n");
     EK_CHECK(lfx_check_clean(&f));
+    EK_CHECK(lfx_lower_clean(&f));
     EK_CHECK_U64(f.low.fn_count, 1);
-    EK_CHECK_U64(lfx_errors(&f), 1);
-    EK_CHECK(lfx_has_code(&f, "E-lower"));
-    EK_CHECK(lfx_code_at_line(&f, "E-lower", 2));
+    EK_CHECK(lfx_has(&f, "ekd_show_std_Int("));
     EK_CHECK(f.low.text != NULL);
     EK_CHECK(lfx_has(&f, "#include \"ekort.h\""));
     EK_CHECK(lfx_has(&f, "int main(void)"));
@@ -32,10 +32,10 @@ static void dict_string_key(void)
                   "    n = look(d)\n"
                   "    _\n");
     EK_CHECK(lfx_check_clean(&f));
+    EK_CHECK(lfx_lower_clean(&f));
     EK_CHECK_U64(f.low.fn_count, 2);
-    EK_CHECK_U64(lfx_errors(&f), 1);
-    EK_CHECK(lfx_has_code(&f, "E-lower"));
-    EK_CHECK(lfx_code_at_line(&f, "E-lower", 3));
+    /* the key hashes its bytes, not its address */
+    EK_CHECK(lfx_has(&f, "ek_dict_set("));
     EK_CHECK(f.low.text != NULL);
     lfx_end(&f);
 }

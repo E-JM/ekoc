@@ -111,6 +111,15 @@ LOWER_SRC := \
 	src/lower/case.c \
 	src/lower/composite.c \
 	src/lower/ctl.c \
+	src/lower/derived.c \
+	src/lower/derivedcall.c \
+	src/lower/derivedeq.c \
+	src/lower/derivedfrom.c \
+	src/lower/derivedjson.c \
+	src/lower/derivedrec.c \
+	src/lower/derivedshow.c \
+	src/lower/derivedwith.c \
+	src/lower/dsvcreg.c \
 	src/lower/expr.c \
 	src/lower/function.c \
 	src/lower/intrinsic.c \
@@ -124,6 +133,7 @@ LOWER_SRC := \
 	src/lower/tce.c \
 	src/lower/type.c \
 	src/lower/typeemit.c \
+	src/lower/typewalk.c \
 	src/lower/wrap.c
 
 LIB_LOWER := $(BUILD)/libek_lower.a

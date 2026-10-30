@@ -249,9 +249,12 @@ static int unit_puts(ek_buf *b, const char *s)
 static int unit_preamble(ek_buf *unit)
 {
     return unit_puts(unit, "#include \"ekort.h\"\n")
-        && unit_puts(unit, "#include <stdlib.h>\n\n")
+        && unit_puts(unit, "#include <stdlib.h>\n")
+        && unit_puts(unit, "#include <string.h>\n\n")
         && unit_puts(unit, "static ek_val ek_keep(ek_val v) "
-                           "{ ek_retain(v); return v; }\n\n");
+                           "{ ek_retain(v); return v; }\n\n")
+        && unit_puts(unit, "static void ek_release_obj(ek_obj *o) "
+                           "{ ek_release(ek_val_ref(o)); }\n\n");
 }
 
 /* A forward declaration per emitted function. */
@@ -269,13 +272,19 @@ static void emit_decls(ek_buf *unit, lower_ctx *c)
     }
 }
 
-/* The collected bodies and, when the root module declares `main`, the
-   entry shim: a parameterless main is called bare, and a main over the
-   Out capability receives the standard output's bundle by position. */
+/* The collected bodies, the derived service bodies, and, when the root
+   module declares `main`, the entry shim: a parameterless main is
+   called bare, and a main over the Out capability receives the
+   standard output's bundle by position. The service bodies stand after
+   the functions; their forward declarations joined the unit already. */
 static void emit_bodies(ek_buf *unit, lower_ctx *c)
 {
     if (c->body.data
         && !ek_buf_append_bytes(unit, c->body.data, c->body.len)) {
+        c->oom = 1;
+    }
+    if (c->dsvc.data
+        && !ek_buf_append_bytes(unit, c->dsvc.data, c->dsvc.len)) {
         c->oom = 1;
     }
     if (!c->has_main) {
@@ -332,6 +341,7 @@ ek_lower_result ek_lower(ek_resolve_result resolved, ek_check_result checked,
     c.arena = arena;
     c.diag = diag;
     ek_buf_init(&c.body);
+    ek_buf_init(&c.dsvc);
     ek_buf_init(&unit);
     if (!unit_preamble(&unit)) {
         c.oom = 1;
@@ -352,5 +362,6 @@ ek_lower_result ek_lower(ek_resolve_result resolved, ek_check_result checked,
     out.fn_count = c.fn_count;
     ek_buf_destroy(&unit);
     ek_buf_destroy(&c.body);
+    ek_buf_destroy(&c.dsvc);
     return out;
 }
