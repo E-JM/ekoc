@@ -68,10 +68,53 @@ static void n17_index_syntax(void)
     pfx_end(&f);
 }
 
+/* A comma inside a parenthesized group: the group holds one expression
+   and the tuple literal is a brace form. The rejection is one
+   diagnostic at the first comma, and the recovery keeps the group's
+   binding and the members that follow it. */
+static void paren_comma_group(void)
+{
+    parse_fixture f;
+
+    /* The binding survives its rejected value, and the members after
+       the line stay members of the same block. */
+    pfx_begin(&f,
+        "main: () -> _ =\n"
+        "    p = (1, \"a\")\n"
+        "    q = p\n"
+        "    _ := q\n"
+        "    _\n");
+    EK_CHECK_U64(pfx_errors(&f), 1);
+    pfx_collect(&f);
+    EK_CHECK(pfx_msg_has(&f, "braces"));
+    EK_CHECK(pfx_msg_has(&f, "6.6.1"));
+    EK_CHECK(f.ast.module != NULL);
+    if (f.ast.module) {
+        const ek_node *main = f.ast.module->u.kids.data[0];
+        const ek_node *block = main->u.bind.value;
+
+        EK_CHECK_U64(block->u.kids.count, 4);
+        if (block->u.kids.count == 4) {
+            EK_CHECK_U64(block->u.kids.data[0]->kind, EK_N_LET);
+            EK_CHECK_U64(block->u.kids.data[1]->kind, EK_N_LET);
+            EK_CHECK_U64(block->u.kids.data[2]->kind, EK_N_REBIND);
+            EK_CHECK_U64(block->u.kids.data[3]->kind, EK_N_NAME);
+        }
+    }
+    pfx_end(&f);
+
+    /* A one-line binding value: one diagnostic, the LET survives. */
+    pfx_begin(&f, "f: Int = (1, \"a\")\n");
+    EK_CHECK_U64(pfx_errors(&f), 1);
+    EK_CHECK(pfx_item(&f, 0) != NULL);
+    pfx_end(&f);
+}
+
 int main(void)
 {
     n04_bare_panic_arm();
     n16_chained_comparison();
     n17_index_syntax();
+    paren_comma_group();
     return ek_test_report("parse/negative");
 }

@@ -188,6 +188,15 @@ static void calls_and_chains(void)
     EK_CHECK_U64(e->u.pair.b->u.kids.count, 2);
     pfx_end(&f);
 
+    /* several payload components ride one brace literal */
+    e = expr_of(&f, "Node {Leaf 1, Leaf 2, 3}");
+    EK_CHECK_U64(pfx_errors(&f), 0);
+    EK_CHECK_U64(e->kind, EK_N_APPLY);
+    EK_CHECK_U64(e->u.pair.b->kind, EK_N_COMPOSITE);
+    EK_CHECK_U64(e->u.pair.b->u.kids.count, 3);
+    EK_CHECK_U64(e->u.pair.b->u.kids.data[0]->u.pair.b->kind, EK_N_APPLY);
+    pfx_end(&f);
+
     /* postfix on a literal */
     e = expr_of(&f, "255.to_hex()");
     EK_CHECK_U64(pfx_errors(&f), 0);
@@ -225,6 +234,14 @@ static void composite_literals(void)
     e = expr_of(&f, "{address: {city: \"y\"}}");
     EK_CHECK_U64(pfx_errors(&f), 0);
     EK_CHECK_U64(e->u.kids.data[0]->u.pair.b->kind, EK_N_COMPOSITE);
+    pfx_end(&f);
+
+    /* a nested tuple element, and a trailing element after it */
+    e = expr_of(&f, "{1, {2, 3}, 4}");
+    EK_CHECK_U64(pfx_errors(&f), 0);
+    EK_CHECK_U64(e->u.kids.count, 3);
+    EK_CHECK_U64(e->u.kids.data[1]->u.pair.b->kind, EK_N_COMPOSITE);
+    EK_CHECK_U64(e->u.kids.data[1]->u.pair.b->u.kids.count, 2);
     pfx_end(&f);
 }
 
@@ -525,6 +542,68 @@ static void header_paren_conditions(void)
     pfx_end(&f);
 }
 
+/* A comma inside a parenthesized group: the group holds one expression
+   and the tuple literal is a brace form. Each comma is one rejection;
+   the recovery keeps the group around the expression before the
+   comma. */
+static void paren_comma_groups(void)
+{
+    parse_fixture f;
+    const ek_node *e;
+
+    e = expr_of(&f, "(1, \"a\")");
+    EK_CHECK_U64(pfx_errors(&f), 1);
+    pfx_collect(&f);
+    EK_CHECK(pfx_msg_has(&f, "braces"));
+    EK_CHECK(pfx_msg_has(&f, "6.6.1"));
+    EK_CHECK(e != NULL);
+    if (e) {
+        EK_CHECK_U64(e->kind, EK_N_PAREN);
+        EK_CHECK_U64(e->u.wrap.inner->kind, EK_N_INT_LIT);
+    }
+    pfx_end(&f);
+
+    /* A deeper line after the comma is the spliced continuation of the
+       group, so the diagnostic count does not grow. */
+    e = expr_of(&f, "(1,\n         \"a\")");
+    EK_CHECK(e != NULL);
+    EK_CHECK_U64(pfx_errors(&f), 1);
+    pfx_end(&f);
+
+    /* Each comma is one rejection; the groups nest independently. */
+    e = expr_of(&f, "((1, 2), 3)");
+    EK_CHECK(e != NULL);
+    EK_CHECK_U64(pfx_errors(&f), 2);
+    if (e) {
+        EK_CHECK_U64(e->kind, EK_N_PAREN);
+        EK_CHECK_U64(e->u.wrap.inner->kind, EK_N_PAREN);
+    }
+    pfx_end(&f);
+
+    /* Constructor payload and call argument positions reject the same
+       way and keep their application. */
+    e = expr_of(&f, "Node (Leaf, 2, Leaf)");
+    EK_CHECK(e != NULL);
+    EK_CHECK_U64(pfx_errors(&f), 1);
+    pfx_collect(&f);
+    EK_CHECK(pfx_msg_has(&f, "braces"));
+    if (e) {
+        EK_CHECK_U64(e->kind, EK_N_APPLY);
+        EK_CHECK_U64(e->u.pair.b->kind, EK_N_PAREN);
+    }
+    pfx_end(&f);
+
+    e = expr_of(&f, "f((1, 2))");
+    EK_CHECK(e != NULL);
+    EK_CHECK_U64(pfx_errors(&f), 1);
+    if (e) {
+        EK_CHECK_U64(e->kind, EK_N_CALL);
+        EK_CHECK_U64(e->u.call.args.count, 1);
+        EK_CHECK_U64(e->u.call.args.data[0]->kind, EK_N_PAREN);
+    }
+    pfx_end(&f);
+}
+
 int main(void)
 {
     literals_and_names();
@@ -538,5 +617,6 @@ int main(void)
     operand_blocks();
     operand_lambdas();
     header_paren_conditions();
+    paren_comma_groups();
     return ek_test_report("parse/expr");
 }

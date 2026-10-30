@@ -185,6 +185,21 @@ static ek_node *composite_item(p_ctx *c)
     return item;
 }
 
+/* A comma inside a parenthesized group claims the tuple form, which is
+   written in braces; one diagnostic fires and the cursor recovers to
+   the matching ')' so the group's node survives. */
+static void paren_comma(p_ctx *c, size_t open, size_t close)
+{
+    p_error_tok(c, "E-syntax", p_peek(c),
+                "a parenthesized group holds one expression; a tuple "
+                "literal is written in braces (Clause 6.6.1)");
+    if (c->match && c->match[open] == close) {
+        while (c->pos < close) {
+            p_take(c);
+        }
+    }
+}
+
 /* '(' in primary position: a parenthesized expression, or a lambda
    when the matching ')' is followed by ':' and the position is not
    an operator operand (the colon of an enclosing header wins
@@ -199,17 +214,21 @@ ek_node *p_paren_primary(p_ctx *c)
         return lambda(c);
     }
     {
-        const ek_layout_token *open = p_take(c);
+        size_t open = c->pos;
+        const ek_layout_token *open_tok = p_take(c);
         ek_node *inner = p_expr(c);
         ek_node *n;
 
         if (!inner) {
             return NULL;
         }
+        if (p_at(c, EK_TOK_COMMA)) {
+            paren_comma(c, open, close);
+        }
         if (!p_expect(c, EK_TOK_RPAREN, "')'")) {
             return NULL;
         }
-        n = p_node(c, EK_N_PAREN, open->line, open->col);
+        n = p_node(c, EK_N_PAREN, open_tok->line, open_tok->col);
         if (!n) {
             return NULL;
         }
