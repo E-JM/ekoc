@@ -118,6 +118,40 @@ typedef struct {
     const char *name;
 } lower_tramp;
 
+/* The marshalling shape of one extern signature type, classified from
+   the written annotation; the C namespace spellings live only there,
+   so the shape is re-derived at the boundary, not read off the check
+   row. */
+typedef enum {
+    MS_BOOL, MS_INT, MS_UINT, MS_FLOAT, MS_WORD, MS_STRING, MS_BYTES,
+    MS_CTYPE, MS_CIN, MS_PTR, MS_SIZE, MS_CLOSURE, MS_UNIT, MS_BAD
+} lower_ms_kind;
+
+typedef struct {
+    lower_ms_kind kind;
+    const char *word;       /* the machine word's spelling, MS_WORD */
+    const ek_symbol *ctype; /* the declaration symbol, MS_CTYPE and
+                               MS_CIN */
+    const ek_node *fn;      /* the written arrow, MS_CLOSURE */
+} lower_mshape;
+
+/* One emitted prototype of an extern declaration: the symbol's
+   prototype joins the unit once, at its first call site. */
+typedef struct {
+    const ek_symbol *sym;
+    int bad; /* the signature has a shape without a lowering */
+} lower_ext;
+
+/* One callback adapter: the target-callable function and the context
+   struct type of one extern signature's closure parameter. */
+typedef struct {
+    const ek_symbol *esym;
+    size_t param;
+    const char *fn;    /* the adapter's C name, NULL on a failed shape */
+    const char *ctxty; /* the context struct's C name */
+    int bad;           /* the callback signature has no lowering */
+} lower_cbr;
+
 /* One derived service emitted for an applied type: the structural key
    that shares one body among equal spellings, the C name, and the
    family the body renders. */
@@ -194,6 +228,15 @@ struct lower_ctx {
     lower_tramp *idents; /* the injected pair identities, in creation
                             order */
     size_t nident, cident;
+    ek_buf cext;         /* the ctype C structs and extern prototypes,
+                            joined after the preamble */
+    lower_ext *exts;     /* the emitted prototypes, in first-call order */
+    size_t next_r, cext_r;
+    lower_cbr *cbrs;     /* the callback adapters, in creation order */
+    size_t ncbr, ccbr;
+    unsigned cbr;        /* the callback adapters minted so far */
+    const ek_symbol **ctypedefs; /* the emitted ctype C structs */
+    size_t nct, cct;
     size_t fn_count;
     lower_gtype *gtypes; /* the generated struct families, in first-use
                             order */
@@ -523,5 +566,57 @@ lower_val lower_block_value(lower_ctx *c, lower_scope *scope,
 lower_val lower_members(lower_ctx *c, lower_scope *scope,
                         const ek_node **kids, size_t n);
 const lower_local *scope_find_local(lower_scope *scope, const char *name);
+
+/* extctype.c: the frozen C struct of a ctype and the walks between
+   its two shapes. lower_ctype_of_node names the declaration a written
+   annotation node denotes when it names a ctype, NULL otherwise.
+   lower_ctype_shape registers the value family and the frozen C
+   struct of a ctype declaration, returning the family or NULL.
+   lower_ctype_pack_expr renders the compound literal carrying the ek
+   value expression across the boundary by value; lower_ctype_unpack
+   renders the ek_val builder expression over the C struct expression
+   src. */
+const ek_symbol *lower_ctype_of_node(lower_ctx *c, const ek_node *tn);
+lower_gtype *lower_ctype_shape(lower_ctx *c, const ek_symbol *tsym);
+const char *lower_ctype_pack_expr(lower_ctx *c, const ek_symbol *tsym,
+                                  const char *src);
+const char *lower_ctype_unpack(lower_ctx *c, const ek_symbol *tsym,
+                               const char *src);
+
+/* extshape.c: the shape side of the whitelist. lower_word_ctype names
+   the exact-width C type of a machine word's spelling, NULL outside
+   the word set. lower_ms_of classifies one written annotation node; a
+   NULL node is the elided unit result. lower_scalar_out_expr names
+   the C expression reading one scalar shape out of a value temp and
+   rebuilding one back from a C value, and lower_ms_param_type the C
+   type of one shape in a parameter position. The two callback rows name the parameter and result C
+   types in the direction each flows, NULL outside the set. */
+const char *lower_cbr_param_type(lower_ctx *c, const lower_mshape *s);
+const char *lower_cbr_ret_type(lower_ctx *c, const lower_mshape *s);
+const char *lower_word_ctype(const char *name);
+const char *lower_word_out(lower_ctx *c, const char *word, const char *v);
+const char *lower_word_in(lower_ctx *c, const char *word, const char *r);
+lower_mshape lower_ms_of(lower_ctx *c, const ek_node *tn);
+const char *lower_scalar_out_expr(lower_ctx *c, const lower_mshape *s,
+                                  const char *v);
+const char *lower_scalar_in_expr(lower_ctx *c, const lower_mshape *s,
+                                 const char *r);
+const char *lower_ms_param_type(lower_ctx *c, const lower_mshape *s);
+
+/* extern.c: the native call path. lower_extern_call lowers one call
+   whose reference denotes an extern declaration: the prototype joins
+   the unit at the first call site, every argument marshals per the
+   whitelist, and the result marshals back. extra is the appended
+   callback of a chain, which an extern call does not take. */
+lower_val lower_extern_call(lower_ctx *c, lower_scope *scope,
+                            const ek_node *e, const ek_symbol *sym,
+                            const char *extra);
+
+/* extcback.c: the callback adapters. lower_cbr_ensure returns the
+   adapter and context-struct names of one extern signature's closure
+   parameter, emitting them once; 0 means the callback signature has
+   no lowering and the diagnostic stands. */
+int lower_cbr_ensure(lower_ctx *c, const ek_symbol *esym, size_t param,
+                     const char **fn, const char **ctxty);
 
 #endif

@@ -342,6 +342,10 @@ static lower_val nominal_literal(lower_ctx *c, lower_scope *scope,
     const ek_node *dn = tsym ? tsym->decl : NULL;
     lower_gtype *g;
 
+    if (dn && dn->kind == EK_N_CTYPE_DECL) {
+        g = lower_decl_repr(c, tsym);
+        return record_literal(c, scope, e, g);
+    }
     if (dn && dn->kind == EK_N_TYPE_DECL
         && dn->u.type_decl.rhs == EK_TYPE_RHS_RECORD) {
         g = lower_decl_repr(c, tsym);

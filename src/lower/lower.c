@@ -388,6 +388,7 @@ ek_lower_result ek_lower(ek_resolve_result resolved, ek_check_result checked,
     c.diag = diag;
     ek_buf_init(&c.body);
     ek_buf_init(&c.dsvc);
+    ek_buf_init(&c.cext);
     ek_buf_init(&unit);
     if (!unit_preamble(&unit)) {
         c.oom = 1;
@@ -401,6 +402,12 @@ ek_lower_result ek_lower(ek_resolve_result resolved, ek_check_result checked,
         lower_function(&c, c.work[c.head]);
         c.head++;
     }
+    /* the ctype C structs and the extern prototypes stand between the
+       preamble and the struct families: the prototypes name the
+       structs, and nothing earlier reads either */
+    if (c.cext.data && !ek_buf_append_bytes(&unit, c.cext.data, c.cext.len)) {
+        c.oom = 1;
+    }
     lower_emit_types(&c, &unit);
     emit_decls(&unit, &c);
     emit_bodies(&unit, &c);
@@ -409,5 +416,6 @@ ek_lower_result ek_lower(ek_resolve_result resolved, ek_check_result checked,
     ek_buf_destroy(&unit);
     ek_buf_destroy(&c.body);
     ek_buf_destroy(&c.dsvc);
+    ek_buf_destroy(&c.cext);
     return out;
 }

@@ -59,6 +59,13 @@ static void qualified(r_ctx *c, r_file *f, const ek_node *t)
     const ek_symbol *mod = r_lookup_mod(f, mname);
     r_mod *m;
 
+    if (!mod && strcmp(mname, "C") == 0) {
+        /* The C namespace of the native interface has no module
+           surface; its type spellings keep the bridged reading
+           (resolve.h). */
+        r_add_ref(c, t, EK_SYM_EXTERNAL, EK_ST_EXTERNAL, NULL);
+        return;
+    }
     if (!mod) {
         r_error(c, file, t->line, t->col, "E-unbound-name",
                 "`%s` is not a module in scope (Clause 7.4.4)", mname);
@@ -179,6 +186,11 @@ void r_type(r_ctx *c, r_file *f, const ek_node *t)
             }
         } else if (t->u.path.count == 2) {
             qualified(c, f, t);
+        } else if (t->u.path.count > 2
+                   && strcmp(t->u.path.data[0], "C") == 0) {
+            /* The C namespace's longer spellings (`C.Ptr.Void`) keep
+               the same bridged reading as its two-segment ones. */
+            r_add_ref(c, t, EK_SYM_EXTERNAL, EK_ST_EXTERNAL, NULL);
         } else {
             r_error(c, f->mod->file, t->line, t->col, "E-unbound-name",
                     "`%s.%s` is not a type position form; a qualified "

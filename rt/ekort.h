@@ -644,6 +644,20 @@ ek_obj *ek_path_join(ek_obj *a, ek_obj *b);
 ek_obj *ek_path_normalize(ek_obj *path);
 ek_val ek_path_is_absolute(ek_obj *path);
 
+/* The C namespace's opaque pointer: an object wrapping one void *
+   that crosses the native boundary unchanged in either direction.
+   There is no dereference and no arithmetic; ek_ptr_wrap builds the
+   object over the pointer and ek_ptr_unwrap reads it back. The
+   wrapper owns no storage and holds no child references. ek_ptr_wrap
+   returns a value the caller owns; ek_ptr_unwrap on a value of
+   another family is undefined. */
+ek_val ek_ptr_wrap(void *p);
+void *ek_ptr_unwrap(ek_val v);
+
+/* The C thread-local errno, which is program-internal state and
+   therefore pure. */
+int ek_get_errno(void);
+
 /* Adds one reference when v refers to a heap object; any other tag is
    left unchanged. */
 void ek_retain(ek_val v);

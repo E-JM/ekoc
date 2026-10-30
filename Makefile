@@ -122,6 +122,10 @@ LOWER_SRC := \
 	src/lower/derivedshow.c \
 	src/lower/derivedwith.c \
 	src/lower/dsvcreg.c \
+	src/lower/extcback.c \
+	src/lower/extern.c \
+	src/lower/extctype.c \
+	src/lower/extshape.c \
 	src/lower/expr.c \
 	src/lower/function.c \
 	src/lower/intrinsic.c \
@@ -159,7 +163,7 @@ RT_SRC := rt/value.c rt/rc.c rt/num.c rt/panic.c \
 	rt/string.c rt/bytes.c rt/list.c rt/dict.c rt/closure.c \
 	rt/fmt.c rt/parse.c rt/convert.c rt/strops.c rt/charops.c rt/bytesops.c \
 	rt/cap.c rt/capval.c rt/capenv.c rt/in.c rt/clock.c rt/rand.c \
-	rt/file.c rt/fs.c rt/fsdir.c rt/path.c rt/range.c
+	rt/file.c rt/fs.c rt/fsdir.c rt/path.c rt/range.c rt/ptr.c
 LIB_RT := $(BUILD)/libekort.a
 RT_OBJ := $(RT_SRC:rt/%.c=$(BUILD)/rt/%.o)
 

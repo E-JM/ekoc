@@ -302,8 +302,10 @@ static void chain_head(r_ctx *c, r_file *f, const ek_node *head, r_head *cur,
     if (r_is_snake(head->u.path.data[0])) {
         r_name_head(c, f, head, 1, cur);
         if (cur->kind == EK_SYM_MODULE) {
+            /* The C namespace head carries no module symbol; its
+               members bridge. */
             *state = 1;
-            *walk_mod = r_module_find(c, cur->sym->name);
+            *walk_mod = cur->sym ? r_module_find(c, cur->sym->name) : NULL;
         }
         return;
     }

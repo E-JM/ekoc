@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include <string.h>
 
 #include "lower/internal.h"
@@ -473,6 +474,39 @@ static lower_val member_call(lower_ctx *c, lower_scope *scope,
     return intrinsic_member(c, scope, e, callee, frow, rrow, head, form);
 }
 
+/* The C namespace's member call: the receiver names the namespace,
+   not a module, and the machine-interface vocabulary routes to the
+   runtime. A NULL result hands the decision back. */
+static lower_val c_ns_call(lower_ctx *c, lower_scope *scope,
+                           const ek_node *e, const ek_node *callee,
+                           const call_form *form)
+{
+    const ek_node *recv = callee->u.field.recv;
+    const ek_ref *ref = recv ? lower_ref(c, recv) : NULL;
+    const char *name;
+    const char *t;
+
+    /* The namespace head reads as a bridged external or as a module
+       without a surface; either way it names no value. */
+    if (!ref || ref->symbol || !recv || recv->kind != EK_N_NAME
+        || recv->u.path.count != 1
+        || strcmp(recv->u.path.data[0], "C") != 0
+        || (ref->kind != EK_SYM_EXTERNAL
+            && ref->kind != EK_SYM_MODULE)) {
+        return (lower_val){ NULL, 0 };
+    }
+    name = callee->u.field.name;
+    if (strcmp(name, "get_errno") == 0 && e->u.call.args.count == 0
+        && !form->extra && !form->has_recv) {
+        t = lower_temp(c, scope);
+        lower_pad(c);
+        lower_emitf(c, "ek_val %s = ek_val_int(ek_get_errno());\n", t);
+        return (lower_val){ t, 1 };
+    }
+    lower_error(c, e, "the member `C.%s` has no lowering", name);
+    return discard_call(c, scope, e, form);
+}
+
 /* One call: the callee's reading decides the form. */
 static lower_val emit_call(lower_ctx *c, lower_scope *scope,
                            const ek_node *e, const call_form *form)
@@ -482,6 +516,9 @@ static lower_val emit_call(lower_ctx *c, lower_scope *scope,
 
     if (!ref && callee) {
         ref = lower_ref(c, callee);
+    }
+    if (ref && ref->symbol && ref->kind == EK_SYM_EXTERN) {
+        return lower_extern_call(c, scope, e, ref->symbol, form->extra);
     }
     if (ref && ref->symbol
         && (ref->kind == EK_SYM_FUNC || ref->kind == EK_SYM_NAMESPACE)) {
@@ -497,7 +534,12 @@ static lower_val emit_call(lower_ctx *c, lower_scope *scope,
         return direct_call(c, scope, e, ref->symbol, form);
     }
     if (callee && callee->kind == EK_N_FIELD) {
-        lower_val v = member_call(c, scope, e, callee, form);
+        lower_val v = c_ns_call(c, scope, e, callee, form);
+
+        if (v.text) {
+            return v;
+        }
+        v = member_call(c, scope, e, callee, form);
 
         if (v.text) {
             return v;

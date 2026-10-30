@@ -45,12 +45,16 @@ static lower_gtype *add_family(lower_ctx *c)
 
 /* Registers the record or tuple representation of a declared type:
    the layout follows the declaration's right-hand side, records in
-   declaration order. A std placeholder or an algebraic type has no
-   representation and registers nothing. */
+   declaration order. A ctype's family takes its fields from its own
+   record body, in declaration order, and the layout is frozen there;
+   the C-side mirror registers separately at the boundary. A std
+   placeholder or an algebraic type has no representation and
+   registers nothing. */
 lower_gtype *lower_decl_repr(lower_ctx *c, const ek_symbol *tsym)
 {
     lower_gtype *g;
     const ek_node *dn;
+    const ek_node *rec;
     const ek_nlist *kids;
     size_t cap = 0, i;
 
@@ -63,7 +67,36 @@ lower_gtype *lower_decl_repr(lower_ctx *c, const ek_symbol *tsym)
         return g;
     }
     dn = tsym->decl;
-    if (!dn || dn->kind != EK_N_TYPE_DECL) {
+    if (!dn) {
+        return NULL;
+    }
+    if (dn->kind == EK_N_CTYPE_DECL) {
+        rec = dn->u.decl.body;
+        if (!rec || rec->kind != EK_N_T_RECORD) {
+            return NULL;
+        }
+        kids = &rec->u.kids;
+        g = add_family(c);
+        if (!g) {
+            return NULL;
+        }
+        g->key_sym = tsym;
+        g->stem = lower_str(c, "%s_%s", tsym->module, tsym->name);
+        g->helper = lower_str(c, "ekn_%s_%s_rec", tsym->module, tsym->name);
+        g->shape = GT_REC;
+        g->nf = kids->count;
+        g->fnames = lower_grow(c, NULL, &cap, g->nf, sizeof *g->fnames);
+        if (!g->fnames) {
+            c->ngt--;
+            return NULL;
+        }
+        for (i = 0; i < g->nf; i++) {
+            g->fnames[i] = kids->data[i]->u.t_field.name;
+        }
+        g->used = 1;
+        return g;
+    }
+    if (dn->kind != EK_N_TYPE_DECL) {
         return NULL;
     }
     if (dn->u.type_decl.rhs != EK_TYPE_RHS_RECORD

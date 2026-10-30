@@ -261,6 +261,13 @@ void r_name_head(r_ctx *c, r_file *f, const ek_node *n, int chained,
         if (!chained) {
             module_value(c, f, n);
         }
+    } else if (strcmp(name, "C") == 0) {
+        /* The C namespace of the native interface: no module surface
+           stands behind the name, so the qualified walk continues
+           without one and the members keep the bridged reading
+           (resolve.h). */
+        out->kind = EK_SYM_MODULE;
+        out->st = EK_ST_HEAD_MODULE;
     } else if (service_name(name)) {
         /* No layer binds it: the free form of the receiver service.
            check supplies the receiver and its reading. */

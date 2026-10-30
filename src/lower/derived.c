@@ -192,10 +192,16 @@ int lower_shape_of(lower_ctx *c, const ek_node *at, const ek_type *t,
     }
     *g = lower_decl_repr(c, t->u.nominal.sym);
     dn = t->u.nominal.sym->decl;
-    if (!*g || !dn || dn->kind != EK_N_TYPE_DECL) {
+    if (!*g || !dn) {
         return 0;
     }
-    repr = lower_applied_type(c, dn->u.type_decl.type, dn, t);
+    if (dn->kind == EK_N_CTYPE_DECL) {
+        repr = lower_applied_type(c, dn->u.decl.body, dn, t);
+    } else if (dn->kind == EK_N_TYPE_DECL) {
+        repr = lower_applied_type(c, dn->u.type_decl.type, dn, t);
+    } else {
+        return 0;
+    }
     if (!repr) {
         return 0;
     }

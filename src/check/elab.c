@@ -104,6 +104,12 @@ static const ek_type *elab_name(ck_ctx *c, const ek_node *t, ck_tvars *tv)
             (void)ck_ref_at(c, t, EK_SYM_TYPE, &ref);
             out = type_name(c, t, ref, n0);
         }
+    } else if (t->u.path.count > 2
+               && strcmp(t->u.path.data[0], "C") == 0) {
+        /* The C namespace's longer spellings keep the bridged
+           opacity; the lowerer re-derives them from the written
+           annotation. */
+        out = ck_opaque(c);
     } else if (t->u.path.count == 2) {
         const char *n1 = t->u.path.data[1];
 
