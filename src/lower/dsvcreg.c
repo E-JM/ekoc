@@ -213,6 +213,13 @@ static int supported(lower_dsvc_kind kind, const ek_type *t)
             return kind != DSV_ORD || sk == EKSC_STRING
                 || sk == EKSC_BYTES;
         }
+        if (lower_is_range(t)) {
+            /* The compiler supplies the display and comparison
+               services over the range's struct: the operator form and
+               the endpoint order. */
+            return kind == DSV_SHOW || kind == DSV_INSPECT
+                || kind == DSV_EQ || kind == DSV_ORD;
+        }
         return t->u.nominal.sym && t->u.nominal.sym->decl != NULL;
     default:
         return kind != DSV_ORD;

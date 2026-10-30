@@ -484,6 +484,41 @@ ek_val ek_dict_merge(ek_val a, ek_val b);
    the caller passes it back unchanged between calls. */
 int ek_dict_next(ek_val dict, size_t *cursor, ek_val *key, ek_val *val);
 
+/* A range is a compiler-emitted struct over one ordered scalar: the
+   object header is followed by three ek_val fields in this order --
+   start, end, closed -- and the closed field carries Bool, an Int of
+   0 or 1. That layout is the contract between the generated struct
+   families and the entries below; the entries take the range value
+   and read it through the contract. Endpoints travel in the Int,
+   UInt, or Char slot, and the traversals visit in ascending order,
+   empty when the start exceeds the end. Each traversal runs as a
+   native loop, so its stack usage is independent of the element
+   count, and the callback's world bit does not reach the runtime. */
+
+/* The count of the elements: the span plus the closed flag. Empty
+   when the start exceeds the end; a span outside the Int domain
+   panics like any other arithmetic overflow. */
+ek_val ek_range_length(ek_val range);
+
+/* The elements as a fresh list, ascending. Aborts on exhaustion. */
+ek_val ek_range_to_list(ek_val range);
+
+/* The callback's results as a fresh list, ascending; the callback is
+   called once per element in order. Aborts on exhaustion. */
+ek_val ek_range_map(ek_val range, ek_val f);
+
+/* The callback over every element in ascending order; the results
+   are dropped and the unit value returned. */
+ek_val ek_range_each(ek_val range, ek_val f);
+
+/* The callback over every element with its position from zero. */
+ek_val ek_range_each_index(ek_val range, ek_val f);
+
+/* The left-to-right fold: the accumulator starts at acc, each step
+   calls f with the accumulator and the element, and the last step's
+   result is returned. */
+ek_val ek_range_fold(ek_val range, ek_val acc, ek_val f);
+
 /* The uniform call ABI: the closure receives the environment it
    captured and the argument array of argc values, or NULL when argc is
    zero. The callee retains whatever it stores. */

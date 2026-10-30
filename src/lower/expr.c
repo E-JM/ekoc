@@ -100,16 +100,36 @@ static const char *num_op(ek_binop op)
     }
 }
 
-/* The concatenation entry: `++` over String joins the runtime strings;
-   the operator's other domains are outside this lowerer. */
-static const char *concat_fn(lower_ctx *c, const ek_node *e)
+/* The concatenation entry: `++` joins the runtime families -- strings
+   and byte blocks over their objects, lists through the spine append,
+   dictionaries through the merge that lets the right operand win.
+   *by_obj marks the entries that read the two operands as objects.
+   The operator's other domains are outside this lowerer. */
+static const char *concat_fn(lower_ctx *c, const ek_node *e, int *by_obj)
 {
     const ek_ck_row *row = lower_row(c, e);
     const ek_type *t = row ? row->type : NULL;
+    const char *n;
 
-    if (t && t->kind == EK_T_NOMINAL && t->u.nominal.sym
-        && strcmp(t->u.nominal.sym->name, "String") == 0) {
+    if (!t || t->kind != EK_T_NOMINAL || !t->u.nominal.sym) {
+        if (t && t->kind == EK_T_LIST) {
+            *by_obj = 0;
+            return "ek_list_append";
+        }
+        if (t && t->kind == EK_T_DICT) {
+            *by_obj = 0;
+            return "ek_dict_merge";
+        }
+        return NULL;
+    }
+    n = t->u.nominal.sym->name;
+    if (strcmp(n, "String") == 0) {
+        *by_obj = 1;
         return "ek_str_concat";
+    }
+    if (strcmp(n, "Bytes") == 0) {
+        *by_obj = 1;
+        return "ek_bytes_concat";
     }
     return NULL;
 }
@@ -193,6 +213,67 @@ static lower_val bool_op(lower_ctx *c, lower_scope *scope,
     return (lower_val){ r, 1 };
 }
 
+/* The range construction: the two endpoints and the closed flag
+   build the generated struct family of the element slot; the helper
+   retains every field, so the value is born owned. */
+static lower_val range_expr(lower_ctx *c, lower_scope *scope,
+                            const ek_node *e, int closed)
+{
+    const ek_ck_row *row = lower_row(c, e);
+    const ek_type *t = row ? row->type : NULL;
+    const ek_type *elem = t && t->kind == EK_T_NOMINAL
+        && t->u.nominal.argc == 1 ? t->u.nominal.args[0] : NULL;
+    lower_scalar slot = lower_scalar_kind(elem);
+    lower_gtype *g;
+    lower_val l, r;
+    const char *lt, *rt, *tname;
+
+    if (slot != EKSC_INT && slot != EKSC_UINT && slot != EKSC_CHAR) {
+        lower_error(c, e, "the %s operator is not supported by this "
+                          "lowerer",
+                    e->u.binary.op == EK_BIN_RANGE_INC ? "`..=`" : "`..`");
+        l = lower_sub(c, scope, e->u.binary.lhs);
+        r = lower_sub(c, scope, e->u.binary.rhs);
+        lt = lower_as_temp(c, scope, &l);
+        rt = lower_as_temp(c, scope, &r);
+        lower_pad(c);
+        lower_emitf(c, "ek_release(%s);\n", rt);
+        lower_pad(c);
+        lower_emitf(c, "ek_release(%s);\n", lt);
+        return lower_val_unit();
+    }
+    g = lower_range_family(c, slot);
+    if (!g) {
+        return lower_val_unit();
+    }
+    l = lower_sub(c, scope, e->u.binary.lhs);
+    r = lower_sub(c, scope, e->u.binary.rhs);
+    lt = lower_as_temp(c, scope, &l);
+    rt = lower_as_temp(c, scope, &r);
+    tname = lower_temp(c, scope);
+    lower_pad(c);
+    lower_emitf(c, "ek_val %s = %s(%s, %s, ek_bool(%d));\n", tname,
+                g->helper, lt, rt, closed);
+    lower_pad(c);
+    lower_emitf(c, "ek_release(%s);\n", rt);
+    lower_pad(c);
+    lower_emitf(c, "ek_release(%s);\n", lt);
+    return (lower_val){ tname, 1 };
+}
+
+/* The join line: the object families read the operands' references,
+   the value families the slots; the result is born owned either way. */
+static void emit_concat_call(lower_ctx *c, const char *t, const char *fn,
+                             int by_obj, const char *lt, const char *rt)
+{
+    if (by_obj) {
+        lower_emitf(c, "ek_val %s = ek_val_ref(%s(%s.as.ref, "
+                       "%s.as.ref));\n", t, fn, lt, rt);
+        return;
+    }
+    lower_emitf(c, "ek_val %s = %s(%s, %s);\n", t, fn, lt, rt);
+}
+
 static lower_val binary_expr(lower_ctx *c, lower_scope *scope,
                              const ek_node *e)
 {
@@ -202,10 +283,17 @@ static lower_val binary_expr(lower_ctx *c, lower_scope *scope,
     if (e->u.binary.op == EK_BIN_OR) {
         return bool_op(c, scope, e, 0);
     }
+    if (e->u.binary.op == EK_BIN_RANGE_EXC) {
+        return range_expr(c, scope, e, 0);
+    }
+    if (e->u.binary.op == EK_BIN_RANGE_INC) {
+        return range_expr(c, scope, e, 1);
+    }
     {
         ek_binop op = e->u.binary.op;
         const char *fn = NULL;
         int derived = 0;
+        int by_obj = 0;
 
         /* the comparison family reads the derived service over the
            value layer's object slots first, every other row keeping
@@ -218,7 +306,7 @@ static lower_val binary_expr(lower_ctx *c, lower_scope *scope,
                 fn = num_op(op);
             }
         } else if (op == EK_BIN_CONCAT) {
-            fn = concat_fn(c, e);
+            fn = concat_fn(c, e, &by_obj);
         } else {
             fn = num_op(op);
         }
@@ -262,10 +350,7 @@ static lower_val binary_expr(lower_ctx *c, lower_scope *scope,
                             fn, lt, rt);
             }
         } else if (e->u.binary.op == EK_BIN_CONCAT) {
-            /* the string join works over the objects; the result is
-               born owned */
-            lower_emitf(c, "ek_val %s = ek_val_ref(%s(%s.as.ref, "
-                           "%s.as.ref));\n", t, fn, lt, rt);
+            emit_concat_call(c, t, fn, by_obj, lt, rt);
         } else {
             lower_emitf(c, "ek_val %s = %s(%s, %s);\n", t, fn, lt, rt);
         }
@@ -368,7 +453,7 @@ lower_val lower_expr(lower_ctx *c, lower_scope *scope, const ek_node *e)
     case EK_N_CHAR_LIT:
         return lower_char_lit(c, e);
     case EK_N_STRING_LIT:
-        return lower_string_expr(c, e);
+        return lower_string_expr(c, scope, e);
     case EK_N_NAME:
         return name_expr(c, scope, e);
     case EK_N_PAREN:

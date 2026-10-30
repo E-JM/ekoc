@@ -40,16 +40,19 @@ static void dict_string_key(void)
     lfx_end(&f);
 }
 
+/* Interpolation lowers; the one slot without a rendering here is the
+   function-typed one, whose show the service registry does not back. */
 static void interpolated_string(void)
 {
     lfx f;
 
     lfx_begin(&f, "main: () -> _ =\n"
-                  "    s = \"a{1}\"\n"
+                  "    h: (Int) -> Int = (x): x\n"
+                  "    s = \"a{h}\"\n"
                   "    _\n");
     EK_CHECK(lfx_check_clean(&f));
     EK_CHECK(lfx_has_code(&f, "E-lower"));
-    EK_CHECK(lfx_code_at_line(&f, "E-lower", 2));
+    EK_CHECK(lfx_code_at_line(&f, "E-lower", 3));
     EK_CHECK_U64(lfx_errors(&f), 1);
     EK_CHECK(f.low.text != NULL);
     lfx_end(&f);

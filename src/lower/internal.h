@@ -209,6 +209,7 @@ struct lower_ctx {
 void lower_d_begin(lower_ctx *c, lower_demit *d, ek_buf *b);
 void lower_d_end(lower_ctx *c, ek_buf *b);
 lower_scalar lower_scalar_kind(const ek_type *t);
+int lower_is_range(const ek_type *t);
 void lower_d_printf(lower_demit *d, const char *fmt, ...);
 const char *lower_d_temp(lower_demit *d);
 void lower_d_concat_lit(lower_demit *d, const char *indent, const char *acc,
@@ -310,7 +311,8 @@ void lower_string_literal(lower_ctx *c, ek_buf *b, const char *bytes,
 lower_val lower_int_lit(lower_ctx *c, const ek_node *e);
 lower_val lower_float_lit(lower_ctx *c, const ek_node *e);
 lower_val lower_char_lit(lower_ctx *c, const ek_node *e);
-lower_val lower_string_expr(lower_ctx *c, const ek_node *e);
+lower_val lower_string_expr(lower_ctx *c, lower_scope *scope,
+                            const ek_node *e);
 
 /* type.c: the generated struct layer. Registration happens while the
    bodies lower; the families themselves are emitted into the unit
@@ -323,6 +325,7 @@ lower_gtype *lower_ctor_family(lower_ctx *c, const ek_node *at,
 lower_gtype *lower_ctor_of_symbol(lower_ctx *c, const ek_node *at,
                                   const ek_symbol *cs);
 lower_gtype *lower_env_family(lower_ctx *c, const char **names, size_t n);
+lower_gtype *lower_range_family(lower_ctx *c, lower_scalar slot);
 const char *lower_field_slot(lower_ctx *c, const ek_node *at,
                              const ek_type *recv, const char *temp,
                              const char *name);

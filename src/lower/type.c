@@ -356,6 +356,56 @@ void lower_use_list(lower_ctx *c)
     c->uses_list = 1;
 }
 
+/* The spelling piece of one range element slot. */
+static const char *range_slot_name(lower_scalar slot)
+{
+    switch (slot) {
+    case EKSC_UINT: return "UInt";
+    case EKSC_CHAR: return "Char";
+    default: return "Int";
+    }
+}
+
+/* The generated struct family of one Range over an element scalar:
+   the endpoints and the closed flag, shared by the two operator
+   forms and keyed by the element slot, so Int and Char ranges never
+   share a layout. The runtime's traversal entries read the fields
+   through the layout contract in rt/ekort.h. */
+lower_gtype *lower_range_family(lower_ctx *c, lower_scalar slot)
+{
+    const char *elem = range_slot_name(slot);
+    const char *key = lower_str(c, "range:%s", elem);
+    lower_gtype *g = find_family(c, NULL, key);
+    const char **slots;
+    size_t cap = 0;
+
+    if (g) {
+        g->used = 1;
+        return g;
+    }
+    g = add_family(c);
+    if (!g) {
+        return NULL;
+    }
+    g->key_str = key;
+    g->stem = lower_str(c, "std_Range_%s", elem);
+    g->helper = lower_str(c, "ekn_%s", g->stem);
+    g->shape = GT_REC;
+    g->nf = 3;
+    slots = lower_grow(c, NULL, &cap, 3, sizeof *slots);
+    if (!slots) {
+        c->ngt--;
+        return NULL;
+    }
+    slots[0] = "start";
+    slots[1] = "end";
+    slots[2] = "closed";
+    g->fnames = slots;
+    g->used = 1;
+    g->constructed = 1;
+    return g;
+}
+
 #include <string.h>
 
 #include "lower/internal.h"

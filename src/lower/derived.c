@@ -35,6 +35,17 @@ lower_scalar lower_scalar_kind(const ek_type *t)
     return EKSC_OTHER;
 }
 
+/* True when the nominal is the compiler-supplied Range placeholder:
+   the type whose generated struct family the range operators build
+   and the runtime traversals read. */
+int lower_is_range(const ek_type *t)
+{
+    return t && t->kind == EK_T_NOMINAL && t->u.nominal.sym
+        && t->u.nominal.sym->module
+        && strcmp(t->u.nominal.sym->module, "std") == 0
+        && strcmp(t->u.nominal.sym->name, "Range") == 0;
+}
+
 /* Opens one service body's buffer. */
 void lower_d_begin(lower_ctx *c, lower_demit *d, ek_buf *b)
 {

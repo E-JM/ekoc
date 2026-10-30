@@ -169,6 +169,38 @@ static void emit_opaque_eq(lower_demit *d)
     lower_d_printf(d, "    return a.as.u == b.as.u;\n");
 }
 
+/* The range's equality: the two endpoints by their payload, the
+   closed flag last. */
+static void emit_range_eq(lower_ctx *c, lower_demit *d, const ek_type *t)
+{
+    const ek_type *elem = t->u.nominal.argc == 1 ? t->u.nominal.args[0]
+                                                 : NULL;
+    lower_gtype *g = elem ? lower_range_family(c, lower_scalar_kind(elem))
+                          : NULL;
+    const char *w;
+
+    if (!g) {
+        lower_d_printf(d, "    return 0;\n");
+        return;
+    }
+    switch (lower_scalar_kind(elem)) {
+    case EKSC_UINT: w = "u"; break;
+    case EKSC_CHAR: w = "c"; break;
+    default:        w = "i"; break;
+    }
+    lower_d_printf(d, "    if (((ekS_%s *)a.as.ref)->f_start.as.%s != "
+                      "((ekS_%s *)b.as.ref)->f_start.as.%s)\n", g->stem, w,
+                   g->stem, w);
+    lower_d_printf(d, "        return 0;\n");
+    lower_d_printf(d, "    if (((ekS_%s *)a.as.ref)->f_end.as.%s != "
+                      "((ekS_%s *)b.as.ref)->f_end.as.%s)\n", g->stem, w,
+                   g->stem, w);
+    lower_d_printf(d, "        return 0;\n");
+    lower_d_printf(d, "    return ((ekS_%s *)a.as.ref)->f_closed.as.i == "
+                      "((ekS_%s *)b.as.ref)->f_closed.as.i;\n", g->stem,
+                   g->stem);
+}
+
 void lower_dsvc_eq_emit(lower_ctx *c, const char *name, const ek_type *t)
 {
     lower_demit d;
@@ -181,7 +213,9 @@ void lower_dsvc_eq_emit(lower_ctx *c, const char *name, const ek_type *t)
 
     lower_d_begin(c, &d, &b);
     lower_d_printf(&d, "static int %s(ek_val a, ek_val b)\n{\n", name);
-    if (lower_scalar_kind(t) != EKSC_OTHER) {
+    if (lower_is_range(t)) {
+        emit_range_eq(c, &d, t);
+    } else if (lower_scalar_kind(t) != EKSC_OTHER) {
         emit_scalar_eq(&d, lower_scalar_kind(t));
     } else if (t->kind == EK_T_UNIT) {
         lower_d_printf(&d, "    return 1;\n");
@@ -248,6 +282,46 @@ static void emit_adt_ord(lower_ctx *c, lower_demit *d, lower_variant *vs,
     lower_d_printf(d, "    return 0;\n");
 }
 
+/* The range's order: the endpoints lexicographically, the closed
+   flag last, False before True. */
+static void emit_range_ord(lower_ctx *c, lower_demit *d, const ek_type *t)
+{
+    const ek_type *elem = t->u.nominal.argc == 1 ? t->u.nominal.args[0]
+                                                 : NULL;
+    lower_gtype *g = elem ? lower_range_family(c, lower_scalar_kind(elem))
+                          : NULL;
+    const char *w;
+
+    if (!g) {
+        lower_d_printf(d, "    return 0;\n");
+        return;
+    }
+    switch (lower_scalar_kind(elem)) {
+    case EKSC_UINT: w = "u"; break;
+    case EKSC_CHAR: w = "c"; break;
+    default:        w = "i"; break;
+    }
+    lower_d_printf(d, "    if (((ekS_%s *)a.as.ref)->f_start.as.%s != "
+                      "((ekS_%s *)b.as.ref)->f_start.as.%s)\n", g->stem, w,
+                   g->stem, w);
+    lower_d_printf(d, "        return ((ekS_%s *)a.as.ref)->f_start.as.%s "
+                      "< ((ekS_%s *)b.as.ref)->f_start.as.%s ? -1 : 1;\n",
+                   g->stem, w, g->stem, w);
+    lower_d_printf(d, "    if (((ekS_%s *)a.as.ref)->f_end.as.%s != "
+                      "((ekS_%s *)b.as.ref)->f_end.as.%s)\n", g->stem, w,
+                   g->stem, w);
+    lower_d_printf(d, "        return ((ekS_%s *)a.as.ref)->f_end.as.%s "
+                      "< ((ekS_%s *)b.as.ref)->f_end.as.%s ? -1 : 1;\n",
+                   g->stem, w, g->stem, w);
+    lower_d_printf(d, "    if (((ekS_%s *)a.as.ref)->f_closed.as.i != "
+                      "((ekS_%s *)b.as.ref)->f_closed.as.i)\n", g->stem,
+                   g->stem);
+    lower_d_printf(d, "        return ((ekS_%s *)a.as.ref)->f_closed.as.i "
+                      "< ((ekS_%s *)b.as.ref)->f_closed.as.i ? -1 : 1;\n",
+                   g->stem, g->stem);
+    lower_d_printf(d, "    return 0;\n");
+}
+
 void lower_dsvc_ord_emit(lower_ctx *c, const char *name, const ek_type *t)
 {
     lower_demit d;
@@ -257,7 +331,10 @@ void lower_dsvc_ord_emit(lower_ctx *c, const char *name, const ek_type *t)
 
     lower_d_begin(c, &d, &b);
     lower_d_printf(&d, "static int %s(ek_val a, ek_val b)\n{\n", name);
-    if (t->kind == EK_T_NOMINAL && lower_variants_of(c, NULL, t, &vs, &nv)) {
+    if (lower_is_range(t)) {
+        emit_range_ord(c, &d, t);
+    } else if (t->kind == EK_T_NOMINAL
+               && lower_variants_of(c, NULL, t, &vs, &nv)) {
         emit_adt_ord(c, &d, vs, nv);
     } else if (lower_scalar_kind(t) == EKSC_STRING) {
         lower_d_printf(&d, "    return ek_str_cmp(a.as.ref, b.as.ref);\n");

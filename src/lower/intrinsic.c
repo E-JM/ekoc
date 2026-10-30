@@ -153,6 +153,16 @@ static const intrinsic_row rows[] = {
     {"Dict", "insert", "ek_dict_set", "vvv", W_PLAIN, OUT_I64, 0},
     {"Dict", "remove", "ek_dict_remove", "vv", W_PLAIN, OUT_I64, 0},
     {"Dict", "merge", "ek_dict_merge", "vv", W_PLAIN, OUT_I64, 0},
+
+    /* The range's namespace: the struct value and the callback ride
+       as values, and the traversals run natively in the runtime. */
+    {"Range", "length", "ek_range_length", "v", W_PLAIN, OUT_I64, 0},
+    {"Range", "to_list", "ek_range_to_list", "v", W_PLAIN, OUT_I64, 0},
+    {"Range", "each", "ek_range_each", "vv", W_PLAIN, OUT_I64, 0},
+    {"Range", "each_with_index", "ek_range_each_index", "vv", W_PLAIN,
+     OUT_I64, 0},
+    {"Range", "map", "ek_range_map", "vv", W_PLAIN, OUT_I64, 0},
+    {"Range", "fold", "ek_range_fold", "vvv", W_PLAIN, OUT_I64, 0},
 };
 
 /* The row of one family and member spelling. */

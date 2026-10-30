@@ -45,8 +45,14 @@ static void emit_scalar_show(lower_demit *d, lower_scalar sk, int inspect)
         return;
     }
     if (sk == EKSC_CHAR) {
-        lower_d_printf(d, "    return ek_str_quote(ek_show_char(v), "
-                          "'\\'');\n");
+        /* The character's display channel is bare; the structural
+           channel quotes it as the literal form. */
+        if (inspect) {
+            lower_d_printf(d, "    return ek_str_quote(ek_show_char(v), "
+                              "'\\'');\n");
+        } else {
+            lower_d_printf(d, "    return ek_show_char(v);\n");
+        }
         return;
     }
     if (sk == EKSC_INT) {
@@ -198,6 +204,38 @@ static void emit_adt_show(lower_ctx *c, lower_demit *d, lower_variant *vs,
     lower_d_printf(d, "    return ek_str_from_cstr(\"<opaque>\");\n");
 }
 
+/* The operator form of a range value: the two endpoints in their own
+   literal forms joined by the closed flag's operator, so neither
+   channel prints a constructor name. */
+static void emit_range_show(lower_ctx *c, lower_demit *d, const ek_type *t)
+{
+    const ek_type *elem = t->u.nominal.argc == 1 ? t->u.nominal.args[0]
+                                                 : NULL;
+    lower_gtype *g = elem ? lower_range_family(c, lower_scalar_kind(elem))
+                          : NULL;
+    const char *f = elem ? insp_of(c, elem) : NULL;
+    const char *part;
+
+    if (!g || !f) {
+        lower_d_printf(d, "    return ek_str_from_cstr(%s);\n",
+                       lower_d_cstr(d->c, "<range>"));
+        return;
+    }
+    lower_d_printf(d, "    ek_obj *acc = %s(((ekS_%s *)v.as.ref)"
+                      "->f_start);\n", f, g->stem);
+    lower_d_printf(d, "    if (((ekS_%s *)v.as.ref)->f_closed.as.i) {\n",
+                   g->stem);
+    lower_d_concat_lit(d, "        ", "acc", "..=");
+    lower_d_printf(d, "    } else {\n");
+    lower_d_concat_lit(d, "        ", "acc", "..");
+    lower_d_printf(d, "    }\n");
+    part = lower_d_temp(d);
+    lower_d_printf(d, "    ek_obj *%s = %s(((ekS_%s *)v.as.ref)"
+                      "->f_end);\n", part, f, g->stem);
+    lower_d_concat_obj(d, "    ", "acc", part);
+    lower_d_printf(d, "    return acc;\n");
+}
+
 void lower_dsvc_show_emit(lower_ctx *c, const char *name, const ek_type *t,
                           int inspect)
 {
@@ -230,6 +268,8 @@ void lower_dsvc_show_emit(lower_ctx *c, const char *name, const ek_type *t,
         emit_list_show(c, &d, t);
     } else if (t->kind == EK_T_DICT) {
         emit_dict_show(c, &d, t);
+    } else if (lower_is_range(t)) {
+        emit_range_show(c, &d, t);
     } else if (t->kind == EK_T_TUPLE || t->kind == EK_T_RECORD) {
         if (lower_shape_of(c, NULL, t, &fnames, &ftypes, &nf, &g) && g) {
             emit_fields_show(c, &d, g->stem, fnames, ftypes, nf);
