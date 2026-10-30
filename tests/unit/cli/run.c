@@ -211,6 +211,83 @@ static void bad_usage(void)
     EK_CHECK(exited(status, 2));
 }
 
+/* Building from a directory outside the tree: the runtime root is the
+   compiler's own location, never the caller's working directory. */
+static void builds_from_foreign_cwd(void)
+{
+    char self[512];
+    char root[512];
+    char cmd[1024];
+    char buf[64];
+    ssize_t n;
+    char *slash;
+    int len;
+    int status;
+
+    n = readlink("/proc/self/exe", self, sizeof self - 1);
+    if (n <= 0) {
+        EK_CHECK(0);
+        return;
+    }
+    self[n] = '\0';
+    slash = strrchr(self, '/');
+    if (slash == NULL) {
+        EK_CHECK(0);
+        return;
+    }
+    *slash = '\0';
+    slash = strrchr(self, '/');
+    if (slash == NULL) {
+        EK_CHECK(0);
+        return;
+    }
+    *slash = '\0';
+    slash = strrchr(self, '/');
+    if (slash == NULL) {
+        EK_CHECK(0);
+        return;
+    }
+    *slash = '\0';
+    slash = strrchr(self, '/');
+    if (slash == NULL) {
+        EK_CHECK(0);
+        return;
+    }
+    *slash = '\0';
+    len = snprintf(root, sizeof root, "%s", self);
+    if (len < 0 || (size_t)len >= sizeof root) {
+        EK_CHECK(0);
+        return;
+    }
+    len = snprintf(cmd, sizeof cmd,
+                   "cd / && %s/build/ekoc build %s/build/cli_foreign.eko"
+                   " -o /tmp/ekoc_cli_foreign > %s/build/cli_foreign.out"
+                   " 2> %s/build/cli_foreign.err",
+                   root, root, root, root);
+    if (len < 0 || (size_t)len >= sizeof cmd) {
+        EK_CHECK(0);
+        return;
+    }
+    len = snprintf(self, sizeof self, "%s/build/cli_foreign.eko", root);
+    if (len < 0 || (size_t)len >= sizeof self) {
+        EK_CHECK(0);
+        return;
+    }
+    write_file(self, "main: () -> _ =\n    _\n");
+    status = system(cmd);
+    EK_CHECK(exited(status, 0));
+    status = system("/tmp/ekoc_cli_foreign");
+    EK_CHECK(exited(status, 0));
+    len = snprintf(self, sizeof self, "%s/build/cli_foreign.err", root);
+    if (len < 0 || (size_t)len >= sizeof self) {
+        EK_CHECK(0);
+        return;
+    }
+    EK_CHECK(read_file(self, buf, sizeof buf) == 0);
+    remove("/tmp/ekoc_cli_foreign");
+    remove("/tmp/ekoc_cli_foreign.c");
+}
+
 int main(void)
 {
     if (mkdir("build", 0777) != 0 && errno != EEXIST) {
@@ -220,6 +297,7 @@ int main(void)
     good_build();
     default_output_name();
     prints_through_the_capability();
+    builds_from_foreign_cwd();
     compile_error();
     missing_file();
     bad_usage();

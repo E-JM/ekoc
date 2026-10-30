@@ -20,7 +20,6 @@ static void tree_root(char *buf, size_t cap)
     ssize_t n = readlink("/proc/self/exe", buf, cap - 1);
     char *slash;
 
-    buf[0] = '\0';
     if (n <= 0) {
         strcpy(buf, ".");
         return;
