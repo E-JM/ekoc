@@ -246,17 +246,22 @@ lower_val lower_derived_call(lower_ctx *c, lower_scope *scope,
         lower_error(c, e, "the call of `%s` is malformed", name);
         return discard_all(c, scope, e, callee, form);
     }
-    svc = lower_dsvc_request(c, e, kind, spec);
-    if (!svc) {
-        lower_error(c, e, "the derived `%s` has no lowering here", name);
-        return discard_all(c, scope, e, callee, form);
+    sk = lower_scalar_kind(spec);
+    if (family && num_slot(sk, family == 2)) {
+        svc = NULL; /* the runtime comparison entries answer directly */
+    } else {
+        svc = lower_dsvc_request(c, e, kind, spec);
+        if (!svc) {
+            lower_error(c, e, "the derived `%s` has no lowering here",
+                        name);
+            return discard_all(c, scope, e, callee, form);
+        }
     }
     n = (size_t)(form == CF_MEMBER) + want;
     argv = call_temps(c, scope, e, callee, form, n);
     if (!argv) {
         return lower_val_unit();
     }
-    sk = lower_scalar_kind(spec);
     if (family) {
         lower_val out = emit_cmp(c, scope, name, svc, sk, argv);
 

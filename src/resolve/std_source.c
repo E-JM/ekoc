@@ -173,7 +173,7 @@ const char *const ek_std_source_parts[] = {
     "                   List.sort_by(List.drop(xs, mid), before), before)\n",
     "\n",
     "_list_merge: (a: []t, b: []t, before: (t, t) \?-> Bool) \?-> []t =\n",
-    "    List.reverse(_merge_rev(a, b, {}, before))\n",
+    "    _merge_rev(a, b, {}, before)\n",
     "\n",
     "_merge_rev: (a: []t, b: []t, acc: []t, before: (t, t) \?-> Bool) \?-> []t =\n",
     "    case a, b:\n",
@@ -507,7 +507,7 @@ const char *const ek_std_source_parts[] = {
 };
 
 const size_t ek_std_source_nparts = 499;
-const size_t ek_std_source_len = 15731;
+const size_t ek_std_source_len = 15717;
 
 char *ek_std_source_join(ek_arena *arena)
 {

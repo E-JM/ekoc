@@ -166,7 +166,7 @@ List.sort_by: (xs: []t, before: (t, t) ?-> Bool) ?-> []t =
                    List.sort_by(List.drop(xs, mid), before), before)
 
 _list_merge: (a: []t, b: []t, before: (t, t) ?-> Bool) ?-> []t =
-    List.reverse(_merge_rev(a, b, {}, before))
+    _merge_rev(a, b, {}, before)
 
 _merge_rev: (a: []t, b: []t, acc: []t, before: (t, t) ?-> Bool) ?-> []t =
     case a, b:

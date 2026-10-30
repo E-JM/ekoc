@@ -325,6 +325,31 @@ static void nested_composition(void)
     EK_CHECK(err[0] == '\0');
 }
 
+/* A stable sort through the derived ordering of the element type: the
+   merge walks with an accumulator, so deep inputs stay at constant
+   stack, and the explicit comparator drives the same ordering
+   service. */
+static void sort_stable(void)
+{
+    static const char *src =
+        "main: (o: Out) ! =\n"
+        "    seed: []Int = {5, 3, 8, 1, 9, 2, 7}\n"
+        "    sorted = seed.sort()\n"
+        "    o.println(sorted.show())\n"
+        "    down = seed.sort_by((a, b): a > b)\n"
+        "    o.println(down.show())\n"
+        "    _\n";
+    char out[64], err[8];
+    int status = gate_print(src, "spec_run_sort", 13, out, sizeof out, err,
+                            sizeof err);
+
+    if (status >= 0 && WIFEXITED(status)) {
+        EK_CHECK_U64(WEXITSTATUS(status), 0);
+    }
+    EK_CHECK_STR(out, "{1, 2, 3, 5, 7, 8, 9}\n{9, 8, 7, 5, 3, 2, 1}\n");
+    EK_CHECK(err[0] == '\0');
+}
+
 int main(void)
 {
     if (mkdir("build", 0777) != 0 && errno != EEXIST) {
@@ -336,5 +361,6 @@ int main(void)
     container_stress();
     two_instantiations();
     nested_composition();
+    sort_stable();
     return ek_test_report("lower/run_spec");
 }
