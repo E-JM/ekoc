@@ -203,8 +203,7 @@ static void pat_list(lower_pat *pat, const ek_node *p, const char *slot)
 void lower_pat_brace(lower_pat *pat, const ek_node *p, const char *slot)
 {
     lower_ctx *c = pat->c;
-    const ek_ck_row *row = lower_row(c, p);
-    const ek_type *t = row ? row->type : NULL;
+    const ek_type *t = lower_pat_type(pat, p);
     lower_gtype *g = NULL;
 
     if (t && t->kind == EK_T_LIST) {

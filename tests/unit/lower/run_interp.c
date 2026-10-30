@@ -249,7 +249,7 @@ static void map_filter_char(void)
                "    e = r.filter((n): n % 2 == 0)\n"
                "    o.println(e.show())\n"
                "    _\n",
-               "interp_map_filter", 3,
+               "interp_map_filter", 6,
                "{98, 100, 102}\n");
 }
 

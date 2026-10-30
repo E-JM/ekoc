@@ -154,13 +154,14 @@ static int entry_manifest(lower_ctx *c, const ek_node *decl,
 
 /* The declaration of one function: the signature check, the parameter
    scope, the entry bookkeeping, and the stored forward declaration.
+   name is the emitted spelling, plain or instantiation-suffixed.
    Returns the signature, or NULL when the function has no lowering. */
 static const char *declare_function(lower_ctx *c, const ek_symbol *sym,
-                                    lower_scope *ps, size_t *nparams)
+                                    const char *name, lower_scope *ps,
+                                    size_t *nparams)
 {
     const ek_node *ann = sym->type;
     const ek_node *decl = sym->decl;
-    const char *mangled;
     const char *sig;
     const char **slot;
 
@@ -174,9 +175,8 @@ static const char *declare_function(lower_ctx *c, const ek_symbol *sym,
     }
     memset(ps, 0, sizeof *ps);
     *nparams = add_params(c, ps, ann);
-    mangled = lower_mangled(c, sym);
     if (sym == c->entry) {
-        c->entry_mangled = mangled;
+        c->entry_mangled = name;
         if (*nparams == 0) {
             c->has_main = 1;
         } else if (ann->u.t_fn.params.count <= sizeof c->shim
@@ -186,7 +186,7 @@ static const char *declare_function(lower_ctx *c, const ek_symbol *sym,
             c->has_main = 1;
         }
     }
-    sig = signature(c, mangled, ps);
+    sig = signature(c, name, ps);
     slot = lower_grow(c, c->sigs, &c->csig, c->nsig + 1, sizeof *slot);
     if (slot) {
         slot[c->nsig++] = sig;
@@ -215,25 +215,62 @@ static void emit_prologue(lower_ctx *c, lower_scope *params,
     }
 }
 
+/* The return discipline: the body's value lands in a temp while the
+   owned locals and parameters release in reverse order. */
+static void finish_function(lower_ctx *c, lower_scope *params,
+                            lower_scope *top, lower_val v)
+{
+    const char *ret;
+
+    if (!v.text) {
+        v = lower_val_unit(); /* the tail jumped to retry */
+    }
+    if (v.is_temp) {
+        ret = v.text;
+    } else {
+        ret = lower_temp(c, top);
+        lower_pad(c);
+        lower_emitf(c, "ek_val %s = %s;\n", ret, v.text);
+    }
+    lower_release_scope(c, top);
+    lower_release_scope(c, params);
+    lower_pad(c);
+    lower_emitf(c, "return %s;\n", ret);
+}
+
 /* One emitted function: signature, the owned-parameter prologue, the
-   optional retry label, the body, and the return discipline — the
-   body's value is held in a temp while the owned locals, parameters
-   included, release in reverse order. */
-void lower_function(lower_ctx *c, const ek_symbol *sym)
+   optional retry label, the body, and the return discipline. A
+   specialized item builds its binder substitution first, so every
+   row-type read in the body sees the instantiation's types. */
+void lower_function(lower_ctx *c, const lower_item *item)
 {
     lower_scope params;
     lower_scope top;
+    const ek_symbol *sym = item->sym;
+    const char **saved_names = c->env_names;
+    const ek_type **saved_args = c->env_args;
+    size_t saved_n = c->nenv, saved_cap = c->cenv_cap;
     const char *sig;
     size_t nparams;
     lower_val v;
-    const char *ret;
     unsigned d;
     int saved;
 
     c->temp = 0;
     c->file = surface_file(c, sym->module);
-    sig = declare_function(c, sym, &params, &nparams);
+    c->env_names = NULL;
+    c->env_args = NULL;
+    c->nenv = 0;
+    c->cenv_cap = 0;
+    if (item->nargs) {
+        lower_env_build(c, sym, item->fn);
+    }
+    sig = declare_function(c, sym, item->name, &params, &nparams);
     if (!sig) {
+        c->env_names = saved_names;
+        c->env_args = saved_args;
+        c->nenv = saved_n;
+        c->cenv_cap = saved_cap;
         return;
     }
     memset(&top, 0, sizeof top);
@@ -246,25 +283,16 @@ void lower_function(lower_ctx *c, const ek_symbol *sym)
     c->in_tail = 1;
     v = lower_block_value(c, &top, decl_body(sym));
     c->in_tail = saved;
-    if (!v.text) {
-        v = lower_val_unit(); /* the tail jumped to retry */
-    }
-    if (v.is_temp) {
-        ret = v.text;
-    } else {
-        ret = lower_temp(c, &top);
-        lower_pad(c);
-        lower_emitf(c, "ek_val %s = %s;\n", ret, v.text);
-    }
-    lower_release_scope(c, &top);
-    lower_release_scope(c, &params);
-    lower_pad(c);
-    lower_emitf(c, "return %s;\n", ret);
+    finish_function(c, &params, &top, v);
     c->depth = d;
     lower_emitf(c, "}\n\n");
     c->fn_count++;
     c->tce_self = NULL;
     c->tce_params = NULL;
     c->tce_label = NULL;
+    c->env_names = saved_names;
+    c->env_args = saved_args;
+    c->nenv = saved_n;
+    c->cenv_cap = saved_cap;
     lower_flush_pending(c);
 }

@@ -330,11 +330,13 @@ static void invert_shape(void)
     EK_CHECK(lfx_check_clean(&f));
     EK_CHECK(lfx_lower_clean(&f));
     /* the continuation is the call's last argument, its parameters
-       owned like any function's */
+       owned like any function's; Result.try specializes over its
+       applied variables t, e, u in first-occurrence order */
     EK_CHECK(lfx_has(&f, "ek_val t1 = ek_closure_new(ekl_0, t0);\n"
                          "    ek_release(t0);\n"
                          "    ek_val t2 = ek_keep(r);\n"
-                         "    ek_val t3 = ekf_std_Result_try(t2, t1);\n"
+                         "    ek_val t3 = ekf_std_Result_try$std_Int_"
+                         "std_String_std_Int(t2, t1);\n"
                          "    ek_release(t1);\n    ek_release(t2);"));
     EK_CHECK(lfx_has(&f, "static ek_val ekl_0(ek_val env, ek_val *args, "
                          "size_t argc)"));

@@ -172,8 +172,7 @@ static const char *str_lit_cond(lower_pat *pat, const char *slot,
 static void pat_lit(lower_pat *pat, const ek_node *p, const char *slot)
 {
     lower_ctx *c = pat->c;
-    const ek_ck_row *row = lower_row(c, p);
-    const ek_type *t = row ? row->type : NULL;
+    const ek_type *t = lower_pat_type(pat, p);
     const ek_node *inner = p->u.wrap.inner;
     int neg = inner && inner->kind == EK_N_UNARY;
     const char *name;
@@ -225,8 +224,7 @@ static void pat_lit(lower_pat *pat, const ek_node *p, const char *slot)
 static void pat_cons(lower_pat *pat, const ek_node *p, const char *slot)
 {
     lower_ctx *c = pat->c;
-    const ek_ck_row *row = lower_row(c, p);
-    const ek_type *t = row ? row->type : NULL;
+    const ek_type *t = lower_pat_type(pat, p);
     const ek_ref *ref = lower_ref(c, p);
     const ek_symbol *tsym = t && t->kind == EK_T_NOMINAL
                                 ? t->u.nominal.sym : NULL;
@@ -263,6 +261,26 @@ void lower_pat_init(lower_ctx *c, lower_pat *pat, lower_scope *scope)
     pat->scope = scope;
     pat->m = lower_temp(c, scope);
     lower_pat_new_group(pat);
+}
+
+/* Sets the column's effective type the next pattern reads: the row's
+   own type, or the recovered result when the row stayed opaque. */
+void lower_pat_column(lower_pat *pat, const ek_type *t)
+{
+    pat->col = t;
+}
+
+/* The type a pattern reads at: its check row under the instantiation
+   being emitted, falling back to the column's effective type when the
+   row kept a variable the substitution could not close. */
+const ek_type *lower_pat_type(lower_pat *pat, const ek_node *p)
+{
+    const ek_type *t = lower_row_type(pat->c, p);
+
+    if (lower_type_has_var(t)) {
+        return pat->col ? pat->col : t;
+    }
+    return t;
 }
 
 /* The tests and bindings of one arm's pattern over its column. */

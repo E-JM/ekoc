@@ -123,14 +123,14 @@ static void release_args(lower_ctx *c, const char **argv, size_t n)
 
 /* The call line over the argument slots. */
 static const char *emit_invoke(lower_ctx *c, lower_scope *scope,
-                               const ek_symbol *sym, const char **argv,
+                               const char *name, const char **argv,
                                size_t n)
 {
     const char *t = lower_temp(c, scope);
     size_t i;
 
     lower_pad(c);
-    lower_emitf(c, "ek_val %s = %s(", t, lower_mangled(c, sym));
+    lower_emitf(c, "ek_val %s = %s(", t, name);
     for (i = 0; i < n; i++) {
         lower_emitf(c, "%s%s", i ? ", " : "", argv[i]);
     }
@@ -189,8 +189,36 @@ static void fill_written(lower_ctx *c, lower_scope *scope,
     }
 }
 
+/* The applied instantiation of a generic callee: the callee row's
+   function type under the substitution of the body being emitted,
+   when the callee's own annotation carries rigid variables and the
+   row answers with a concrete function of the same shape. NULL keeps
+   the plain emission. */
+static const ek_type *callee_inst(lower_ctx *c, const ek_node *e,
+                                  const ek_symbol *sym, size_t nparams)
+{
+    const ek_ck_row *row;
+    const ek_type *f;
+
+    if (!nparams || !sym->type) {
+        return NULL;
+    }
+    row = lower_row(c, sym->type);
+    if (!row || !row->type || !lower_type_has_var(row->type)) {
+        return NULL;
+    }
+    f = lower_row_type(c, e->u.call.callee);
+    if (!f || f->kind != EK_T_FN || f->u.fn.count != nparams
+        || lower_type_has_ivar(f)) {
+        return NULL;
+    }
+    return f;
+}
+
 /* A direct call to a known function: the receiver of a member form is
-   the first argument, the appended callback the last. */
+   the first argument, the appended callback the last. A generic
+   callee instantiates at the applied type its row carries, keyed by
+   the applied arguments, one per binder. */
 static lower_val direct_call(lower_ctx *c, lower_scope *scope,
                              const ek_node *e, const ek_symbol *sym,
                              const call_form *form)
@@ -198,10 +226,19 @@ static lower_val direct_call(lower_ctx *c, lower_scope *scope,
     const ek_node *ann = sym->type;
     size_t n = ann && ann->kind == EK_N_T_FN ? ann->u.t_fn.params.count : 0;
     size_t first = form->has_recv ? 1 : 0;
+    const ek_type *inst = callee_inst(c, e, sym, n);
+    const ek_type **iargs = NULL;
+    size_t ni = 0;
     const char **argv = NULL;
     size_t cap = 0;
     const char *t;
 
+    if (inst) {
+        ni = lower_inst_args(c, sym, inst, &iargs);
+        if (!ni) {
+            inst = NULL;
+        }
+    }
     if (n) {
         argv = lower_grow(c, NULL, &cap, n, sizeof *argv);
         if (!argv) {
@@ -213,8 +250,14 @@ static lower_val direct_call(lower_ctx *c, lower_scope *scope,
         fill_recv(c, scope, form, argv, n);
     }
     fill_written(c, scope, &e->u.call.args, form, argv, n, first);
-    lower_enqueue(c, sym);
-    t = emit_invoke(c, scope, sym, argv, n);
+    if (inst) {
+        lower_enqueue_item(c, sym, iargs, ni, inst);
+        t = emit_invoke(c, scope, lower_inst_name(c, sym, iargs, ni),
+                        argv, n);
+    } else {
+        lower_enqueue(c, sym);
+        t = emit_invoke(c, scope, lower_mangled(c, sym), argv, n);
+    }
     release_args(c, argv, n);
     return (lower_val){ t, 1 };
 }
@@ -396,14 +439,15 @@ static lower_val intrinsic_member(lower_ctx *c, lower_scope *scope,
                                   const call_form *form)
 {
     const char *family = NULL;
+    const ek_type *rt = rrow ? lower_type_in(c, rrow->type) : NULL;
     int has_recv = 0;
     lower_val v;
 
     if (!frow || frow->reading != EK_RD_NAMESPACE || form->extra) {
         return (lower_val){ NULL, 0 };
     }
-    if (rrow && rrow->type) {
-        family = lower_intrinsic_family(rrow->type);
+    if (rt) {
+        family = lower_intrinsic_family(rt);
         has_recv = 1;
     } else if (head && head->symbol && head->symbol->module
                && (strcmp(head->symbol->module, "std") == 0
@@ -417,10 +461,97 @@ static lower_val intrinsic_member(lower_ctx *c, lower_scope *scope,
     return v.text ? v : (lower_val){ NULL, 0 };
 }
 
+/* The re-routed call at an open receiver the instantiation substituted
+   concrete: the site means what the same member over the applied type
+   means, so the declared namespace member wins, then the compiler
+   rows, then the derived services, in the order check reads them. */
+static lower_val open_call(lower_ctx *c, lower_scope *scope,
+                           const ek_node *e, const ek_node *callee,
+                           const ek_type *rs, const call_form *form)
+{
+    const char *name = callee->u.field.name;
+    const ek_symbol *ms = member_symbol(c, rs, name);
+    const ek_ck_row *row = lower_row(c, callee);
+
+    if (ms) {
+        call_form member = *form;
+
+        member.has_recv = 1;
+        member.recv = lower_sub(c, scope, callee->u.field.recv);
+        return direct_call(c, scope, e, ms, &member);
+    }
+    if (strcmp(name, "with") == 0) {
+        return lower_derived_with(c, scope, e, callee->u.field.recv);
+    }
+    if (row) {
+        ek_ck_row ns = *row;
+        ek_ck_row recv_row = *row;
+        lower_val v;
+
+        ns.reading = EK_RD_NAMESPACE;
+        recv_row.type = rs;
+        v = intrinsic_member(c, scope, e, callee, &ns, &recv_row, NULL,
+                             form);
+        if (v.text) {
+            return v;
+        }
+    }
+    return lower_derived_call(c, scope, e, callee, row, CF_MEMBER);
+}
+
+/* The result type of a derived-service call at a receiver the
+   instantiation substituted concrete: the fixed result of the service,
+   the receiver itself for `with`. NULL when the site is not such a
+   call. */
+const ek_type *lower_open_call_result(lower_ctx *c, const ek_node *e)
+{
+    const ek_node *callee;
+    const char *name = NULL;
+    const ek_node *recv = NULL;
+    lower_dsvc_kind kind;
+    const ek_type *rs;
+
+    if (!e || e->kind != EK_N_CALL) {
+        return NULL;
+    }
+    callee = e->u.call.callee;
+    if (callee && callee->kind == EK_N_FIELD) {
+        name = callee->u.field.name;
+        recv = callee->u.field.recv;
+    } else if (callee && callee->kind == EK_N_NAME
+               && callee->u.path.count == 1) {
+        name = callee->u.path.data[0];
+        recv = e->u.call.args.count ? e->u.call.args.data[0] : NULL;
+    }
+    if (!name || !recv) {
+        return NULL;
+    }
+    rs = lower_row_type(c, recv);
+    if (!rs || lower_type_has_var(rs)) {
+        return NULL;
+    }
+    if (lower_service_kind(name, &kind)) {
+        switch (kind) {
+        case DSV_EQ:
+        case DSV_ORD:
+            return lower_std_nominal(c, "Bool");
+        case DSV_SHOW:
+        case DSV_INSPECT:
+            return lower_std_nominal(c, "String");
+        case DSV_TOJSON:
+            return lower_std_nominal(c, "Json");
+        default:
+            return NULL;
+        }
+    }
+    return strcmp(name, "with") == 0 ? rs : NULL;
+}
+
 /* A receiver-form member call: a function-valued field is the callee
-   value, a derived reading lowers to its service, and any other link
-   names a std or declared member found the way check finds it. A NULL
-   result hands the decision back. */
+   value, a derived reading lowers to its service, an open receiver the
+   instantiation substituted concrete re-routes at the applied type,
+   and any other link names a std or declared member found the way
+   check finds it. A NULL result hands the decision back. */
 static lower_val member_call(lower_ctx *c, lower_scope *scope,
                              const ek_node *e, const ek_node *callee,
                              const call_form *form)
@@ -428,6 +559,7 @@ static lower_val member_call(lower_ctx *c, lower_scope *scope,
     const ek_ck_row *frow = lower_row(c, callee);
     const ek_node *recv = callee->u.field.recv;
     const ek_ck_row *rrow = recv ? lower_row(c, recv) : NULL;
+    const ek_type *rt = rrow ? lower_type_in(c, rrow->type) : NULL;
     const ek_ref *head = NULL;
     const ek_symbol *ms;
 
@@ -441,11 +573,17 @@ static lower_val member_call(lower_ctx *c, lower_scope *scope,
             return lower_derived_with(c, scope, e, recv);
         }
         return lower_derived_call(c, scope, e, callee, frow,
-                                  rrow && rrow->type ? CF_MEMBER
-                                                     : CF_QUALIFIED);
+                                  rt ? CF_MEMBER : CF_QUALIFIED);
     }
-    if (rrow && rrow->type) {
-        ms = member_symbol(c, rrow->type, callee->u.field.name);
+    if (frow && frow->reading == EK_RD_UNKNOWN && !form->extra && rt) {
+        lower_val v = open_call(c, scope, e, callee, rt, form);
+
+        if (v.text) {
+            return v;
+        }
+    }
+    if (rt) {
+        ms = member_symbol(c, rt, callee->u.field.name);
     } else {
         /* a qualified head names its type: the receiver node carries
            no value row, and the type ref names the namespace owner */
@@ -457,7 +595,7 @@ static lower_val member_call(lower_ctx *c, lower_scope *scope,
                  : NULL;
     }
     if (ms) {
-        if (rrow && rrow->type) {
+        if (rt) {
             call_form member = *form;
 
             member.has_recv = 1;
@@ -525,9 +663,8 @@ static lower_val emit_call(lower_ctx *c, lower_scope *scope,
         if (ref->kind == EK_SYM_FUNC && is_injected(ref->symbol)) {
             return identity_call(c, scope, e, ref->symbol, form);
         }
-        if (!form->has_recv && !form->extra && ref->kind == EK_SYM_FUNC
-            && c->in_tail && c->tce_self && c->tce_label
-            && ref->symbol == c->tce_self) {
+        if (!form->has_recv && !form->extra && c->in_tail && c->tce_self
+            && c->tce_label && ref->symbol == c->tce_self) {
             lower_emit_self_tail(c, scope, e, ref);
             return (lower_val){ NULL, 0 }; /* the tail jumped to retry */
         }
@@ -547,17 +684,23 @@ static lower_val emit_call(lower_ctx *c, lower_scope *scope,
     }
     if (callee && callee->kind == EK_N_NAME) {
         /* the free-call form of a derived service: its first argument
-           is the receiver, exactly as the member form passes it */
+           is the receiver, exactly as the member form passes it; an
+           open receiver the instantiation substituted concrete
+           re-routes the same way */
         const ek_ck_row *nrow = lower_row(c, callee);
 
         if (nrow && nrow->reading == EK_RD_DERIVED && !form->extra) {
             return lower_derived_call(c, scope, e, callee, nrow, CF_FREE);
         }
+        if (nrow && nrow->reading == EK_RD_UNKNOWN && !form->extra
+            && lower_open_call_result(c, e)) {
+            return lower_derived_call(c, scope, e, callee, nrow, CF_FREE);
+        }
     }
     {
-        const ek_ck_row *crow = callee ? lower_row(c, callee) : NULL;
+        const ek_type *ct = callee ? lower_row_type(c, callee) : NULL;
 
-        if (crow && crow->type && crow->type->kind == EK_T_FN) {
+        if (ct && ct->kind == EK_T_FN) {
             lower_val f = lower_sub(c, scope, callee);
 
             return value_call(c, scope, e, f, form->extra);

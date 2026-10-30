@@ -78,10 +78,12 @@ Option.to_result: (o: Option t, reason: e) -> Result t e =
 
 // The list namespace. `++` is the compiler-supplied append; every
 // other member is source over the inductive list patterns.
-List.length: (xs: []t) -> Int =
+List.length: (xs: []t) -> Int = _list_length(xs, 0)
+
+_list_length: (xs: []t, n: Int) -> Int =
     case xs:
-        {} -> 0
-        {h, ..rest} -> 1 + List.length(rest)
+        {} -> n
+        {_, ..rest} -> _list_length(rest, n + 1)
 
 List.get: (xs: []t, i: Int) -> Option t =
     case xs:
@@ -98,16 +100,22 @@ _list_rev: (xs: []t, acc: []t) -> []t =
         {h, ..rest} -> _list_rev(rest, {h} ++ acc)
 
 List.map: (xs: []t, f: (t) ?-> u) ?-> []u =
+    List.reverse(_map_rev(xs, {}, f))
+
+_map_rev: (xs: []t, acc: []u, f: (t) ?-> u) ?-> []u =
     case xs:
-        {} -> {}
-        {h, ..rest} -> {f(h)} ++ List.map(rest, f)
+        {} -> acc
+        {h, ..rest} -> _map_rev(rest, {f(h)} ++ acc, f)
 
 List.filter: (xs: []t, f: (t) ?-> Bool) ?-> []t =
+    List.reverse(_filter_rev(xs, {}, f))
+
+_filter_rev: (xs: []t, acc: []t, f: (t) ?-> Bool) ?-> []t =
     case xs:
-        {} -> {}
+        {} -> acc
         {h, ..rest} ->
-            if f(h): {h} ++ List.filter(rest, f)
-            else: List.filter(rest, f)
+            if f(h): _filter_rev(rest, {h} ++ acc, f)
+            else: _filter_rev(rest, acc, f)
 
 List.fold: (xs: []t, init: u, f: (u, t) ?-> u) ?-> u =
     case xs:
@@ -158,25 +166,34 @@ List.sort_by: (xs: []t, before: (t, t) ?-> Bool) ?-> []t =
                    List.sort_by(List.drop(xs, mid), before), before)
 
 _list_merge: (a: []t, b: []t, before: (t, t) ?-> Bool) ?-> []t =
+    List.reverse(_merge_rev(a, b, {}, before))
+
+_merge_rev: (a: []t, b: []t, acc: []t, before: (t, t) ?-> Bool) ?-> []t =
     case a, b:
-        {}, _ -> b
-        _, {} -> a
+        {}, bs -> _list_rev(acc, {}) ++ bs
+        as, {} -> _list_rev(acc, {}) ++ as
         {x, ..xr}, {y, ..yr} ->
-            if before(y, x): {y} ++ _list_merge(a, yr, before)
-            else: {x} ++ _list_merge(xr, b, before)
+            if before(y, x): _merge_rev(a, yr, {y} ++ acc, before)
+            else: _merge_rev(xr, b, {x} ++ acc, before)
 
 List.zip_with: (xs: []t, ys: []u, f: (t, u) ?-> v) ?-> []v =
+    List.reverse(_zip_rev(xs, ys, {}, f))
+
+_zip_rev: (xs: []t, ys: []u, acc: []v, f: (t, u) ?-> v) ?-> []v =
     case xs, ys:
-        {}, _ -> {}
-        _, {} -> {}
-        {x, ..xr}, {y, ..yr} -> {f(x, y)} ++ List.zip_with(xr, yr, f)
+        {}, _ -> acc
+        _, {} -> acc
+        {x, ..xr}, {y, ..yr} -> _zip_rev(xr, yr, {f(x, y)} ++ acc, f)
 
 List.take: (xs: []t, n: Int) -> []t =
-    if n <= 0: {}
+    List.reverse(_take_rev(xs, n, {}))
+
+_take_rev: (xs: []t, n: Int, acc: []t) -> []t =
+    if n <= 0: acc
     else:
         case xs:
-            {} -> {}
-            {h, ..rest} -> {h} ++ List.take(rest, n - 1)
+            {} -> acc
+            {h, ..rest} -> _take_rev(rest, n - 1, {h} ++ acc)
 
 List.drop: (xs: []t, n: Int) -> []t =
     if n <= 0: xs
@@ -186,11 +203,14 @@ List.drop: (xs: []t, n: Int) -> []t =
             {h, ..rest} -> List.drop(rest, n - 1)
 
 List.take_while: (xs: []t, f: (t) ?-> Bool) ?-> []t =
+    List.reverse(_take_while_rev(xs, {}, f))
+
+_take_while_rev: (xs: []t, acc: []t, f: (t) ?-> Bool) ?-> []t =
     case xs:
-        {} -> {}
+        {} -> acc
         {h, ..rest} ->
-            if f(h): {h} ++ List.take_while(rest, f)
-            else: {}
+            if f(h): _take_while_rev(rest, {h} ++ acc, f)
+            else: acc
 
 List.drop_while: (xs: []t, f: (t) ?-> Bool) ?-> []t =
     case xs:
@@ -200,11 +220,14 @@ List.drop_while: (xs: []t, f: (t) ?-> Bool) ?-> []t =
             else: xs
 
 List.join: (xs: []t, sep: String) -> String =
+    _join_rev(List.reverse(xs), "", sep)
+
+_join_rev: (xs: []t, acc: String, sep: String) -> String =
     case xs:
-        {} -> ""
+        {} -> acc
         {h, ..rest} ->
-            if rest.length() == 0: h.show()
-            else: h.show() ++ sep ++ List.join(rest, sep)
+            if acc == "": _join_rev(rest, h.show(), sep)
+            else: _join_rev(rest, h.show() ++ sep ++ acc, sep)
 
 // A slice is a start and a length; a request outside the list is a
 // domain miss, never a clamp.
@@ -234,15 +257,17 @@ Result.map_err: (r: Result t e, f: (e) ?-> g) ?-> Result t g =
 
 // The successes collect in order; the first error short-circuits.
 Result.traverse: (xs: []t, f: (t) ?-> Result u e) ?-> Result ([]u) e =
+    case _traverse_rev(xs, {}, f):
+        Err reason -> Err reason
+        Ok acc -> Ok (List.reverse(acc))
+
+_traverse_rev: (xs: []t, acc: []u, f: (t) ?-> Result u e) ?-> Result ([]u) e =
     case xs:
-        {} -> Ok {}
+        {} -> Ok acc
         {h, ..rest} ->
             case f(h):
                 Err reason -> Err reason
-                Ok x ->
-                    case Result.traverse(rest, f):
-                        Err reason -> Err reason
-                        Ok ys -> Ok ({x} ++ ys)
+                Ok x -> _traverse_rev(rest, {x} ++ acc, f)
 
 Result.is_ok: (r: Result t e) -> Bool =
     case r:
@@ -294,10 +319,12 @@ _json_entry: (acc: String, k: String, v: Json) -> String =
 // The escaped text of one string, one scalar at a time.
 _json_escape: (s: String) -> String = _json_chars(s.chars())
 
-_json_chars: (cs: []Char) -> String =
+_json_chars: (cs: []Char) -> String = _json_into(cs, "")
+
+_json_into: (cs: []Char, acc: String) -> String =
     case cs:
-        {} -> ""
-        {c, ..rest} -> _json_char(c) ++ _json_chars(rest)
+        {} -> acc
+        {c, ..rest} -> _json_into(rest, acc ++ _json_char(c))
 
 // The two mandatory escapes and the control characters as four
 // lowercase hex digits; every other scalar stands as itself.
@@ -320,12 +347,12 @@ String.lines: (s: String) -> []String =
     if s.ends_with("\n"): _drop_last(parts) else: parts
 
 _drop_last: (xs: []t) -> []t =
+    List.reverse(_drop_first(List.reverse(xs)))
+
+_drop_first: (xs: []t) -> []t =
     case xs:
         {} -> {}
-        {h, ..rest} ->
-            case rest:
-                {} -> {}
-                _ -> {h} ++ _drop_last(rest)
+        {_, ..rest} -> rest
 
 String.split: (s: String, sep: String) -> []String =
     if sep.length() == 0:
@@ -420,8 +447,11 @@ String.pad_right: (s: String, width: UInt, c: Char) -> String =
     n := s.length()
     if n >= w: s else: s ++ _repeat_char(c, w - n)
 
-_repeat_char: (c: Char, n: Int) -> String =
-    if n <= 0: "" else: String.from_char(c) ++ _repeat_char(c, n - 1)
+_repeat_char: (c: Char, n: Int) -> String = _repeat_into(c, n, "")
+
+_repeat_into: (c: Char, n: Int, acc: String) -> String =
+    if n <= 0: acc
+    else: _repeat_into(c, n - 1, String.from_char(c) ++ acc)
 
 // True when the character is Unicode White_Space (Clause 9.11.1).
 _is_space: (c: Char) -> Bool =

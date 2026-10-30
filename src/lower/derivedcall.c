@@ -12,7 +12,7 @@
    stands. */
 
 
-/* The comparison family a member spelling names: 1 for equality, 2 for
+/* The service family a member spelling names: 1 for equality, 2 for
    ordering, 0 for the rest. */
 static int cmp_family(const char *name)
 {
@@ -22,6 +22,38 @@ static int cmp_family(const char *name)
     if (strcmp(name, "lt") == 0 || strcmp(name, "le") == 0
         || strcmp(name, "gt") == 0 || strcmp(name, "ge") == 0) {
         return 2;
+    }
+    return 0;
+}
+
+/* The service kind behind a member spelling, with 0 when the name is
+   no derived service. The open-receiver re-route and the result-type
+   recovery share the table. */
+int lower_service_kind(const char *name, lower_dsvc_kind *out)
+{
+    if (strcmp(name, "show") == 0) {
+        *out = DSV_SHOW;
+        return 1;
+    }
+    if (strcmp(name, "inspect") == 0) {
+        *out = DSV_INSPECT;
+        return 1;
+    }
+    if (strcmp(name, "to_json") == 0) {
+        *out = DSV_TOJSON;
+        return 1;
+    }
+    if (strcmp(name, "from_json") == 0) {
+        *out = DSV_FROMJSON;
+        return 1;
+    }
+    if (cmp_family(name) == 1) {
+        *out = DSV_EQ;
+        return 1;
+    }
+    if (cmp_family(name) == 2) {
+        *out = DSV_ORD;
+        return 1;
     }
     return 0;
 }
@@ -84,8 +116,9 @@ static void release_temps(lower_ctx *c, const char **argv, size_t n)
     }
 }
 
-/* The comparison line: the runtime family over the scalar slots, the
-   derived service everywhere else. */
+/* The comparison line: the runtime family over the scalar slots -- its
+   entries already answer Bool values -- and the derived service
+   everywhere else. */
 static lower_val emit_cmp(lower_ctx *c, lower_scope *scope,
                           const char *name, const char *svc, lower_scalar sk,
                           const char **argv)
@@ -98,8 +131,11 @@ static lower_val emit_cmp(lower_ctx *c, lower_scope *scope,
     int ordering = cmp_family(name) == 2;
 
     if (num_slot(sk, ordering)) {
-        core = lower_str(c, "ek_num_%s(%s, %s)", name, x, y);
-    } else if (strcmp(name, "eq") == 0) {
+        lower_pad(c);
+        lower_emitf(c, "ek_val %s = ek_num_%s(%s, %s);\n", t, name, x, y);
+        return (lower_val){ t, 1 };
+    }
+    if (strcmp(name, "eq") == 0) {
         core = lower_str(c, "%s(%s, %s)", svc, x, y);
     } else if (strcmp(name, "ne") == 0) {
         core = lower_str(c, "%s(%s, %s)", svc, x, y);
@@ -124,7 +160,8 @@ static lower_val emit_cmp(lower_ctx *c, lower_scope *scope,
 
 /* The applied type the service specializes over: the receiver's row
    type at a receiver or free call, the arrow's parameter (or the
-   Result's payload of a from_json link) at a type-head call. */
+   Result's payload of a from_json link) at a type-head call -- each
+   under the instantiation the body being emitted specializes. */
 static const ek_type *spec_type(lower_ctx *c, const ek_node *e,
                                 const ek_node *callee, const ek_ck_row *frow,
                                 lower_cmp_form form, const char *name)
@@ -135,21 +172,19 @@ static const ek_type *spec_type(lower_ctx *c, const ek_node *e,
     if (form == CF_MEMBER) {
         row = callee->u.field.recv ? lower_row(c, callee->u.field.recv)
                                    : NULL;
-        return row ? row->type : NULL;
+        return row ? lower_type_in(c, row->type) : NULL;
     }
     if (form == CF_FREE) {
         row = e->u.call.args.count ? lower_row(c, e->u.call.args.data[0])
                                    : NULL;
-        return row ? row->type : NULL;
+        return row ? lower_type_in(c, row->type) : NULL;
     }
-    (void)c;
-    f = frow ? frow->type : NULL;
+    f = frow ? lower_type_in(c, frow->type) : NULL;
     if (!f || f->kind != EK_T_FN || f->u.fn.count < 1) {
         return NULL;
     }
     if (strcmp(name, "from_json") == 0) {
         const ek_type *res = f->u.fn.result;
-
         if (res && res->kind == EK_T_NOMINAL && res->u.nominal.argc == 2) {
             return res->u.nominal.args[0];
         }
@@ -246,9 +281,8 @@ lower_val lower_derived_call(lower_ctx *c, lower_scope *scope,
    the derived member call. NULL hands the operator back. */
 const char *lower_derived_cmp(lower_ctx *c, const ek_node *e, ek_binop op)
 {
-    const ek_ck_row *row = e->u.binary.lhs ? lower_row(c, e->u.binary.lhs)
-                                           : NULL;
-    const ek_type *t = row ? row->type : NULL;
+    const ek_type *t = e->u.binary.lhs ? lower_row_type(c, e->u.binary.lhs)
+                                       : NULL;
     lower_scalar sk = t ? lower_scalar_kind(t) : EKSC_OTHER;
 
     if (sk != EKSC_STRING && sk != EKSC_BYTES) {

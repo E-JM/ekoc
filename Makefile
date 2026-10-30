@@ -136,6 +136,7 @@ LOWER_SRC := \
 	src/lower/name.c \
 	src/lower/pattern.c \
 	src/lower/patlist.c \
+	src/lower/subst.c \
 	src/lower/tce.c \
 	src/lower/type.c \
 	src/lower/typeemit.c \

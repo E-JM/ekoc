@@ -1,3 +1,4 @@
+#include <stdlib.h>
 #include <string.h>
 
 #include "lower/internal.h"
@@ -128,18 +129,35 @@ lower_gtype *lower_decl_repr(lower_ctx *c, const ek_symbol *tsym)
 }
 
 /* The registry key of an anonymous record: its field names in the
-   canonical sorted order the checker reports. */
+   canonical sorted order, so one shape shares one family whichever
+   path reads it -- the checker stores record fields sorted, the
+   type-syntax walk in written order. */
+static int key_name_order(const void *a, const void *b)
+{
+    return strcmp(*(const char *const *)a, *(const char *const *)b);
+}
+
 static const char *record_key(lower_ctx *c, const ek_type *rec)
 {
     ek_buf b;
-    size_t i;
+    const char **names;
+    size_t cap = 0, i;
 
     ek_buf_init(&b);
+    names = lower_grow(c, NULL, &cap, rec->u.record.count, sizeof *names);
+    if (!names && rec->u.record.count) {
+        ek_buf_destroy(&b);
+        return NULL;
+    }
+    for (i = 0; i < rec->u.record.count; i++) {
+        names[i] = rec->u.record.fields[i].name;
+    }
+    qsort(names, rec->u.record.count, sizeof *names, key_name_order);
     for (i = 0; i < rec->u.record.count; i++) {
         if (i && !ek_buf_append_char(&b, ',')) {
             c->oom = 1;
         }
-        if (!ek_buf_append_str(&b, rec->u.record.fields[i].name)) {
+        if (!ek_buf_append_str(&b, names[i])) {
             c->oom = 1;
         }
     }

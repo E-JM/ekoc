@@ -11,7 +11,8 @@
    label. The stack the call uses is constant. */
 
 /* The reference of a call site, when it names the function being
-   emitted directly. */
+   emitted directly: the plain form and the qualified member form
+   resolve to the same surface symbol. */
 static int self_ref(lower_ctx *c, const ek_node *e, const ek_ref **out)
 {
     const ek_ref *ref = lower_ref(c, e);
@@ -19,7 +20,8 @@ static int self_ref(lower_ctx *c, const ek_node *e, const ek_ref **out)
     if (!ref && e->u.call.callee) {
         ref = lower_ref(c, e->u.call.callee);
     }
-    if (ref && ref->kind == EK_SYM_FUNC && ref->symbol
+    if (ref && ref->symbol
+        && (ref->kind == EK_SYM_FUNC || ref->kind == EK_SYM_NAMESPACE)
         && ref->symbol == c->tce_self) {
         *out = ref;
         return 1;

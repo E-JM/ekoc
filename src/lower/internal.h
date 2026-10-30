@@ -97,7 +97,10 @@ static inline lower_val lower_val_unit(void)
 }
 
 /* One deferred definition appended after the function that created it:
-   a closure body still to lower, or the ready text of a trampoline. */
+   a closure body still to lower, or the ready text of a trampoline.
+   A closure body created inside a specialized function carries the
+   instantiation that body emitted under, so the lambda's own rows
+   substitute the same way. */
 typedef struct lower_pending {
     const char *text;         /* ready definition text, or NULL */
     const ek_node **members;  /* the body members */
@@ -109,8 +112,24 @@ typedef struct lower_pending {
     size_t nparams;
     const char *stem;         /* the environment family's stem */
     const char *file;         /* the owner's surface file */
+    const char **env_names;   /* the owner instantiation's binders */
+    const ek_type **env_args; /* the applied arguments, aligned */
+    size_t nenv;
     struct lower_pending *next;
 } lower_pending;
+
+/* One reachability item: the function symbol and the instantiation
+   its body emits under. A non-generic function takes the empty
+   instantiation and keeps its plain name; a generic one's name spells
+   the applied type arguments, and args carries them in binder order
+   with fn, the applied function type the pairing pairs against. */
+typedef struct {
+    const char *name;       /* the emitted function's C name */
+    const ek_symbol *sym;
+    const ek_type **args;   /* the applied arguments; NULL when plain */
+    size_t nargs;
+    const ek_type *fn;      /* the applied function type, NULL when plain */
+} lower_item;
 
 /* One trampoline: the function it forwards to and its C name. */
 typedef struct {
@@ -196,10 +215,16 @@ struct lower_ctx {
     ek_buf body;
     const char **sigs;
     size_t nsig, csig;
-    const ek_symbol **work;
+    lower_item *work; /* the reachable (symbol, instantiation) pairs */
     size_t nwork, cwork, head;
-    const ek_symbol **seen;
+    lower_item *seen; /* the items already queued, keyed by name */
     size_t nseen, cseen;
+    /* The instantiation the body being emitted specializes: the
+       function's binder names and the applied arguments, aligned.
+       Empty for a non-specialized body. */
+    const char **env_names;
+    const ek_type **env_args;
+    size_t nenv, cenv_cap;
     const ek_symbol *entry;
     const char *entry_mangled;
     const char *file;
@@ -278,6 +303,14 @@ const char *lower_std_ctor(lower_ctx *c, const ek_node *at,
    declaration's instantiation. */
 const ek_type *lower_applied_type(lower_ctx *c, const ek_node *tnode,
                                   const ek_node *decl, const ek_type *owner);
+const ek_symbol *lower_type_symbol(lower_ctx *c, const char *mod,
+                                   const char *name);
+
+/* call.c: the result type a derived-service call returns, when the
+   site's open receiver substitutes concrete under the instantiation
+   being emitted -- the type the specialized body reads the call at.
+   NULL when the site is not such a call. */
+const ek_type *lower_open_call_result(lower_ctx *c, const ek_node *e);
 
 /* derivedjson.c, derivedfrom.c: the JSON emitters and their shared
    spellings. OK_INFO is the typeinfo test of the std Result's Ok. */
@@ -314,6 +347,11 @@ typedef enum {
     CF_MEMBER, CF_FREE, CF_QUALIFIED
 } lower_cmp_form;
 
+/* dsvcreg.c: the applied-type spelling the service names and the
+   specialized function names share. */
+const char *lower_spell_apply(lower_ctx *c, const ek_type *const *args,
+                              size_t n);
+
 /* derived.c: the service registry and the call-site routing. */
 const char *lower_dsvc_request(lower_ctx *c, const ek_node *at,
                                lower_dsvc_kind kind, const ek_type *t);
@@ -325,6 +363,10 @@ lower_val lower_derived_with(lower_ctx *c, lower_scope *scope,
 const char *lower_derived_cmp(lower_ctx *c, const ek_node *e, ek_binop op);
 /* The service behind a comparison operator over the value layer's
    object slots (String, Bytes); NULL keeps the runtime entry. */
+
+/* derivedcall.c: the service spelling behind a member name, -1 when
+   the name is no service. */
+int lower_service_kind(const char *name, lower_dsvc_kind *out);
 
 /* lower.c: shared helpers. */
 void lower_emitf(lower_ctx *c, const char *fmt, ...);
@@ -338,10 +380,28 @@ const char *surface_file(lower_ctx *c, const char *stem);
 const ek_ck_row *lower_row(lower_ctx *c, const ek_node *n);
 const ek_ref *lower_ref(lower_ctx *c, const ek_node *n);
 void lower_enqueue(lower_ctx *c, const ek_symbol *sym);
+void lower_enqueue_item(lower_ctx *c, const ek_symbol *sym,
+                        const ek_type **args, size_t nargs,
+                        const ek_type *fn);
 void lower_clean_push(lower_ctx *c, const char *temp);
 void lower_clean_pop(lower_ctx *c);
 void lower_clean_release(lower_ctx *c, size_t base);
 void lower_pending_add(lower_ctx *c, lower_pending *p);
+
+/* subst.c: the instantiation substitution. lower_type_has_var is true
+   when a tvar or an inference variable occurs anywhere; env build
+   pairs the annotation's rigid variables with the applied function
+   type of the call that keyed the emission, and every row-type read
+   the emitter makes goes through lower_row_type so a specialized body
+   sees its instantiation's types. */
+int lower_type_has_var(const ek_type *t);
+int lower_type_has_ivar(const ek_type *t);
+int lower_env_build(lower_ctx *c, const ek_symbol *sym, const ek_type *fn);
+size_t lower_inst_args(lower_ctx *c, const ek_symbol *sym,
+                       const ek_type *fn, const ek_type ***out);
+const ek_type *lower_type_in(lower_ctx *c, const ek_type *t);
+const ek_type *lower_row_type(lower_ctx *c, const ek_node *n);
+const ek_type *lower_std_nominal(lower_ctx *c, const char *name);
 
 /* tce.c: the self tail-call transform. */
 int lower_has_self_tail(lower_ctx *c, const ek_symbol *self,
@@ -351,6 +411,8 @@ void lower_emit_self_tail(lower_ctx *c, lower_scope *scope,
 
 /* name.c: the mangled function symbol, C spellings, string escapes. */
 const char *lower_mangled(lower_ctx *c, const ek_symbol *sym);
+const char *lower_inst_name(lower_ctx *c, const ek_symbol *sym,
+                            const ek_type *const *args, size_t n);
 const char *lower_temp(lower_ctx *c, lower_scope *scope);
 const char *lower_c_name(lower_ctx *c, lower_scope *scope, const char *name);
 void lower_string_literal(lower_ctx *c, ek_buf *b, const char *bytes,
@@ -423,6 +485,9 @@ typedef struct {
     lower_ctx *c;
     lower_scope *scope;     /* the arm scope: binding spellings mint here */
     const char *m;          /* the arm's match flag */
+    const ek_type *col;     /* the column's effective type: the row's
+                               own, or the recovered result of a derived
+                               call the row left opaque */
     ek_buf stmts;           /* the test statements, unpadded lines */
     const char **parts;     /* the pending conjuncts, flushed in order */
     size_t npart, cpart;
@@ -436,6 +501,8 @@ typedef struct {
 } lower_pat;
 
 void lower_pat_init(lower_ctx *c, lower_pat *pat, lower_scope *scope);
+void lower_pat_column(lower_pat *pat, const ek_type *t);
+const ek_type *lower_pat_type(lower_pat *pat, const ek_node *p);
 void lower_pat_line(lower_pat *pat, const char *fmt, ...);
 void lower_pat_cond(lower_pat *pat, const char *expr);
 void lower_pat_new_group(lower_pat *pat);
@@ -554,7 +621,7 @@ lower_val lower_invert(lower_ctx *c, lower_scope *scope, const ek_node *m,
                        const ek_node **members, size_t nmembers);
 const char *lower_trampoline(lower_ctx *c, const ek_symbol *sym);
 void lower_flush_pending(lower_ctx *c);/* body.c: functions, statement members, and the if form. */
-void lower_function(lower_ctx *c, const ek_symbol *sym);
+void lower_function(lower_ctx *c, const lower_item *item);
 void lower_if(lower_ctx *c, lower_scope *scope, const ek_node *e,
               lower_val *out);
 void lower_scope_add(lower_ctx *c, lower_scope *s, const char *eko,

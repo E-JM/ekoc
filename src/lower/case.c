@@ -60,11 +60,30 @@ static void emit_guarded_body(lower_ctx *c, lower_scope *arm_scope,
     lower_release_scope(c, arm_scope);
 }
 
+/* The effective type of one scrutinee column: the row's type under
+   the instantiation, or the recovered result when the check left a
+   re-routed derived call's row opaque and the specialized body knows
+   the service's result. */
+static const ek_type *col_type(lower_ctx *c, const ek_node *scrut)
+{
+    const ek_type *t = lower_row_type(c, scrut);
+
+    if (lower_type_has_var(t)) {
+        const ek_type *call = lower_open_call_result(c, scrut);
+
+        if (call) {
+            return call;
+        }
+    }
+    return t;
+}
+
 /* One arm: the test cascade over the scrutinee temps, the guard, and
    the body. The arm's temps — the literal hoists, the list-walk
    cursors, and the pattern bindings — release on every exit. */
 static void emit_arm(lower_ctx *c, lower_scope *outer, const ek_node *arm,
-                     const char **s, size_t nsc, const char *r, int tail)
+                     const char **s, const ek_type **cols, size_t nsc,
+                     const char *r, int tail)
 {
     lower_scope arm_scope;
     lower_pat pat;
@@ -82,6 +101,7 @@ static void emit_arm(lower_ctx *c, lower_scope *outer, const ek_node *arm,
     for (k = 0; nsc && k < arm->u.arm.patterns.count; k++) {
         size_t col = k < nsc ? k : nsc - 1;
 
+        lower_pat_column(&pat, cols[col]);
         lower_pat_walk(c, &pat, arm->u.arm.patterns.data[k], s[col]);
     }
     lower_pat_emit(c, &pat);
@@ -115,15 +135,17 @@ lower_val lower_case(lower_ctx *c, lower_scope *scope, const ek_node *e)
 {
     size_t nsc = e->u.caseexpr.scrutinees.count;
     const char **s = NULL;
-    size_t cap = 0;
+    const ek_type **cols = NULL;
+    size_t scap = 0, ccap = 0;
     size_t clean_base = c->nclean;
     const char *r;
     size_t i;
     int saved = c->in_tail;
 
     if (nsc) {
-        s = lower_grow(c, NULL, &cap, nsc, sizeof *s);
-        if (!s) {
+        s = lower_grow(c, NULL, &scap, nsc, sizeof *s);
+        cols = lower_grow(c, NULL, &ccap, nsc, sizeof *cols);
+        if (!s || !cols) {
             return lower_val_unit();
         }
     }
@@ -131,6 +153,7 @@ lower_val lower_case(lower_ctx *c, lower_scope *scope, const ek_node *e)
         lower_val v = lower_sub(c, scope, e->u.caseexpr.scrutinees.data[i]);
 
         s[i] = lower_as_temp(c, scope, &v);
+        cols[i] = col_type(c, e->u.caseexpr.scrutinees.data[i]);
         lower_clean_push(c, s[i]);
     }
     r = lower_temp(c, scope);
@@ -140,7 +163,8 @@ lower_val lower_case(lower_ctx *c, lower_scope *scope, const ek_node *e)
     lower_emitf(c, "do {\n");
     c->depth++;
     for (i = 0; i < e->u.caseexpr.arms.count; i++) {
-        emit_arm(c, scope, e->u.caseexpr.arms.data[i], s, nsc, r, saved);
+        emit_arm(c, scope, e->u.caseexpr.arms.data[i], s, cols, nsc, r,
+                 saved);
     }
     lower_pad(c);
     lower_emitf(c, "ek_panic(\"P-panic\", \"no matching case arm\");\n");

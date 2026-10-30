@@ -61,8 +61,7 @@ static lower_val discard_with(lower_ctx *c, lower_scope *scope,
 lower_val lower_derived_with(lower_ctx *c, lower_scope *scope,
                              const ek_node *e, const ek_node *recv)
 {
-    const ek_ck_row *rrow = recv ? lower_row(c, recv) : NULL;
-    const ek_type *t = rrow ? rrow->type : NULL;
+    const ek_type *t = recv ? lower_row_type(c, recv) : NULL;
     const ek_node *lit = e->u.call.args.count == 1
                              ? e->u.call.args.data[0] : NULL;
     lower_gtype *g = NULL;

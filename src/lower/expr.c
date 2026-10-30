@@ -26,8 +26,7 @@ lower_val lower_sub(lower_ctx *c, lower_scope *scope, const ek_node *e)
    Every other constructor lands through the generated struct layer. */
 static lower_val ctor_expr(lower_ctx *c, const ek_node *e, const ek_ref *ref)
 {
-    const ek_ck_row *row = lower_row(c, e);
-    const ek_type *t = row ? row->type : NULL;
+    const ek_type *t = lower_row_type(c, e);
     const ek_symbol *sym = ref->symbol;
     int is_bool = t && t->kind == EK_T_NOMINAL && t->u.nominal.sym
         && strcmp(t->u.nominal.sym->name, "Bool") == 0;
@@ -107,8 +106,7 @@ static const char *num_op(ek_binop op)
    The operator's other domains are outside this lowerer. */
 static const char *concat_fn(lower_ctx *c, const ek_node *e, int *by_obj)
 {
-    const ek_ck_row *row = lower_row(c, e);
-    const ek_type *t = row ? row->type : NULL;
+    const ek_type *t = lower_row_type(c, e);
     const char *n;
 
     if (!t || t->kind != EK_T_NOMINAL || !t->u.nominal.sym) {
@@ -219,8 +217,7 @@ static lower_val bool_op(lower_ctx *c, lower_scope *scope,
 static lower_val range_expr(lower_ctx *c, lower_scope *scope,
                             const ek_node *e, int closed)
 {
-    const ek_ck_row *row = lower_row(c, e);
-    const ek_type *t = row ? row->type : NULL;
+    const ek_type *t = lower_row_type(c, e);
     const ek_type *elem = t && t->kind == EK_T_NOMINAL
         && t->u.nominal.argc == 1 ? t->u.nominal.args[0] : NULL;
     lower_scalar slot = lower_scalar_kind(elem);
@@ -382,9 +379,7 @@ static lower_val field_expr(lower_ctx *c, lower_scope *scope,
                             const ek_node *e)
 {
     const ek_ck_row *row = lower_row(c, e);
-    const ek_ck_row *rrow = e->u.field.recv
-                                ? lower_row(c, e->u.field.recv) : NULL;
-    const ek_type *rt = rrow ? rrow->type : NULL;
+    const ek_type *rt = lower_row_type(c, e->u.field.recv);
     lower_val v;
     const char *t, *r, *slot;
 

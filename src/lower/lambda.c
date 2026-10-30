@@ -64,10 +64,15 @@ static const char *closure_return(lower_ctx *c, lower_scope *top,
 
 /* One closure body: the environment reads are borrowed bindings, the
    parameters are owned keeps of the argument slots, and the return
-   path releases the owned locals. */
+   path releases the owned locals. The body emits under the
+   instantiation the creating function specialized, so its rows read
+   the same types the creation site saw. */
 static void emit_closure_body(lower_ctx *c, lower_pending *p)
 {
     const char *file = c->file;
+    const char **saved_names = c->env_names;
+    const ek_type **saved_args = c->env_args;
+    size_t saved_n = c->nenv, saved_cap = c->cenv_cap;
     unsigned d = c->depth;
     int saved_tail = c->in_tail;
     lower_scope caps, ps, top;
@@ -79,6 +84,10 @@ static void emit_closure_body(lower_ctx *c, lower_pending *p)
     c->tce_self = NULL;
     c->tce_params = NULL;
     c->tce_label = NULL;
+    c->env_names = p->nenv ? p->env_names : NULL;
+    c->env_args = p->nenv ? p->env_args : NULL;
+    c->nenv = p->nenv;
+    c->cenv_cap = 0;
     memset(&caps, 0, sizeof caps);
     memset(&ps, 0, sizeof ps);
     memset(&top, 0, sizeof top);
@@ -106,6 +115,10 @@ static void emit_closure_body(lower_ctx *c, lower_pending *p)
     c->depth = d;
     lower_emitf(c, "}\n\n");
     c->file = file;
+    c->env_names = saved_names;
+    c->env_args = saved_args;
+    c->nenv = saved_n;
+    c->cenv_cap = saved_cap;
 }
 
 /* A lambda at a value position: the environment builds and the
@@ -152,6 +165,9 @@ lower_val lower_lambda(lower_ctx *c, lower_scope *scope, const ek_node *e)
     p->nparams = nparams;
     p->stem = g->stem;
     p->file = c->file;
+    p->env_names = c->env_names;
+    p->env_args = c->env_args;
+    p->nenv = c->nenv;
     lower_pending_add(c, p);
     return (lower_val){ clo, 1 };
 }

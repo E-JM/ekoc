@@ -15,8 +15,7 @@ enum lit_slot { LIT_INT, LIT_UINT, LIT_FLOAT, LIT_CHAR };
 
 static enum lit_slot lit_slot(lower_ctx *c, const ek_node *e)
 {
-    const ek_ck_row *row = lower_row(c, e);
-    const ek_type *t = row ? row->type : NULL;
+    const ek_type *t = lower_row_type(c, e);
 
     if (t && t->kind == EK_T_NOMINAL && t->u.nominal.sym) {
         const char *n = t->u.nominal.sym->name;
@@ -77,16 +76,25 @@ static const char *seg_cstr(lower_ctx *c, const ek_str_seg *seg)
 }
 
 /* The derived show specialization of one slot's row type; NULL when
-   the slot's value has no rendering here. */
+   the slot's value has no rendering here. A slot whose row the check
+   left opaque recovers the call's own result type when the open-call
+   re-route handles it, since the service fixes its result. */
 static const char *slot_show(lower_ctx *c, const ek_node *expr)
 {
-    const ek_ck_row *row = lower_row(c, expr);
-    const ek_type *t = row ? row->type : NULL;
+    const ek_type *t = lower_row_type(c, expr);
+    const ek_type *rt = t;
 
-    if (!t) {
+    if (t && lower_type_has_var(t)) {
+        const ek_type *call = lower_open_call_result(c, expr);
+
+        if (call) {
+            rt = call;
+        }
+    }
+    if (!rt) {
         return NULL;
     }
-    return lower_dsvc_request(c, expr, DSV_SHOW, t);
+    return lower_dsvc_request(c, expr, DSV_SHOW, rt);
 }
 
 /* acc = acc ++ part; the part and the old accumulator die in the

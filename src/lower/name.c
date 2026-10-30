@@ -76,6 +76,19 @@ const char *lower_mangled(lower_ctx *c, const ek_symbol *sym)
     return lower_str(c, "ekf_%s_%s", sym->module, sym->name);
 }
 
+/* The C name of one instantiation: the plain spelling, then a `$`
+   separator no Eko identifier character can supply, then the applied
+   arguments in the service names' own spelling. */
+const char *lower_inst_name(lower_ctx *c, const ek_symbol *sym,
+                            const ek_type *const *args, size_t n)
+{
+    if (!n) {
+        return lower_mangled(c, sym);
+    }
+    return lower_str(c, "%s$%s", lower_mangled(c, sym),
+                     lower_spell_apply(c, args, n));
+}
+
 /* A fresh temp name, unique against every binding and temp visible
    here, so no temp ever shadows a name a later statement reads. */
 const char *lower_temp(lower_ctx *c, lower_scope *scope)

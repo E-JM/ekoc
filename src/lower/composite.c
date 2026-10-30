@@ -31,8 +31,7 @@ static const char *item_field(const ek_node *kid)
 /* The declared type a construction lands at, from the check row. */
 static const ek_symbol *row_nominal(lower_ctx *c, const ek_node *at)
 {
-    const ek_ck_row *row = lower_row(c, at);
-    const ek_type *t = row ? row->type : NULL;
+    const ek_type *t = lower_row_type(c, at);
 
     if (t && t->kind == EK_T_NOMINAL) {
         return t->u.nominal.sym;
@@ -225,13 +224,12 @@ static void release_dict_temps(lower_ctx *c, const char **kt,
 static lower_val dict_literal(lower_ctx *c, lower_scope *scope,
                               const ek_node *e)
 {
-    const ek_ck_row *row = lower_row(c, e);
+    const ek_type *t = lower_row_type(c, e);
     const char **kt, **vt;
     size_t n = e->u.kids.count, cap = 0, i;
     const char *d;
 
-    if (row && row->type && row->type->kind == EK_T_DICT
-        && !scalar_key(row->type->u.dict.key)) {
+    if (t && t->kind == EK_T_DICT && !scalar_key(t->u.dict.key)) {
         lower_error(c, e, "the dictionary key is not a scalar this "
                           "lowerer supports");
     }
@@ -431,8 +429,7 @@ lower_val lower_ctor_apply(lower_ctx *c, lower_scope *scope,
 lower_val lower_composite(lower_ctx *c, lower_scope *scope,
                           const ek_node *e)
 {
-    const ek_ck_row *row = lower_row(c, e);
-    const ek_type *t = row ? row->type : NULL;
+    const ek_type *t = lower_row_type(c, e);
 
     if (!t) {
         return lower_val_unit(); /* check diagnosed the literal */

@@ -190,6 +190,25 @@ static void spell_into(lower_ctx *c, ek_buf *b, const ek_type *t)
     }
 }
 
+/* The identifier pieces of one instantiation's applied arguments,
+   joined with underscores: the suffix a specialized function's name
+   carries after the separator. */
+const char *lower_spell_apply(lower_ctx *c, const ek_type *const *args,
+                              size_t n)
+{
+    ek_buf b;
+    size_t i;
+
+    ek_buf_init(&b);
+    for (i = 0; i < n; i++) {
+        if (i && !ek_buf_append_char(&b, '_')) {
+            c->oom = 1;
+        }
+        spell_into(c, &b, args[i]);
+    }
+    return lower_take(c, &b);
+}
+
 /* Which families a service renders at all. */
 static int supported(lower_dsvc_kind kind, const ek_type *t)
 {

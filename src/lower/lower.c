@@ -141,30 +141,58 @@ const ek_ref *lower_ref(lower_ctx *c, const ek_node *n)
     return NULL;
 }
 
-/* Adds a symbol to the worklist unless it was visited already. */
-void lower_enqueue(lower_ctx *c, const ek_symbol *sym)
+/* Adds one reachability item unless its name was queued already: the
+   name is the identity, so two sites that spell one instantiation
+   share the body, and the first site's applied arguments stand. args
+   is the applied argument per binder, fn the applied function type
+   the body's pairing pairs against; both NULL for the plain item. */
+void lower_enqueue_item(lower_ctx *c, const ek_symbol *sym,
+                        const ek_type **args, size_t nargs,
+                        const ek_type *fn)
 {
-    const ek_symbol **slots;
+    const char *name;
+    lower_item *slots;
     size_t i;
 
     if (!sym) {
         return;
     }
+    name = args ? lower_inst_name(c, sym, args, nargs)
+                : lower_mangled(c, sym);
     for (i = 0; i < c->nseen; i++) {
-        if (c->seen[i] == sym) {
+        if (strcmp(c->seen[i].name, name) == 0) {
             return;
         }
     }
-    slots = lower_grow(c, c->seen, &c->cseen, c->nseen + 1, sizeof *slots);
+    slots = lower_grow(c, c->seen, &c->cseen, c->nseen + 1,
+                       sizeof *slots);
     if (slots) {
-        slots[c->nseen++] = sym;
+        memset(&slots[c->nseen], 0, sizeof slots[c->nseen]);
+        slots[c->nseen].name = name;
+        slots[c->nseen].sym = sym;
+        slots[c->nseen].args = args;
+        slots[c->nseen].nargs = nargs;
+        slots[c->nseen].fn = fn;
         c->seen = slots;
+        c->nseen++;
     }
-    slots = lower_grow(c, c->work, &c->cwork, c->nwork + 1, sizeof *slots);
+    slots = lower_grow(c, c->work, &c->cwork, c->nwork + 1,
+                       sizeof *slots);
     if (slots) {
-        slots[c->nwork++] = sym;
+        slots[c->nwork].name = name;
+        slots[c->nwork].sym = sym;
+        slots[c->nwork].args = args;
+        slots[c->nwork].nargs = nargs;
+        slots[c->nwork].fn = fn;
         c->work = slots;
+        c->nwork++;
     }
+}
+
+/* Adds a symbol to the worklist under the empty instantiation. */
+void lower_enqueue(lower_ctx *c, const ek_symbol *sym)
+{
+    lower_enqueue_item(c, sym, NULL, 0, NULL);
 }
 
 /* Records one live reference temp a retry jump would abandon. */
@@ -399,8 +427,10 @@ ek_lower_result ek_lower(ek_resolve_result resolved, ek_check_result checked,
         lower_enqueue(&c, entry);
     }
     while (c.head < c.nwork && !c.oom) {
-        lower_function(&c, c.work[c.head]);
+        lower_item item = c.work[c.head];
+
         c.head++;
+        lower_function(&c, &item);
     }
     /* the ctype C structs and the extern prototypes stand between the
        preamble and the struct families: the prototypes name the
