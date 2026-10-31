@@ -430,7 +430,11 @@ ek_lower_result ek_lower(ek_resolve_result resolved, ek_check_result checked,
         lower_item item = c.work[c.head];
 
         c.head++;
-        lower_function(&c, &item);
+        if (lower_is_value(item.sym)) {
+            lower_value_binding(&c, &item);
+        } else {
+            lower_function(&c, &item);
+        }
     }
     /* the ctype C structs and the extern prototypes stand between the
        preamble and the struct families: the prototypes name the

@@ -39,6 +39,36 @@ static const ek_symbol *row_nominal(lower_ctx *c, const ek_node *at)
     return NULL;
 }
 
+/* True when a node's row leaves the type open: absent or an unbound
+   inference variable. */
+static int row_opaque(lower_ctx *c, const ek_node *n)
+{
+    const ek_type *t = n ? lower_row_type(c, n) : NULL;
+
+    return !t || t->kind == EK_T_IVAR;
+}
+
+/* One item value: an item whose own row the check left opaque lowers
+   under the expected type the literal's anchor re-derived for it. The
+   override is the subtree's alone and restores on the way out. */
+static lower_val item_under(lower_ctx *c, lower_scope *scope,
+                            const ek_node *e, const ek_type *t)
+{
+    const ek_node *sn = c->exp_node;
+    const ek_type *st = c->exp_type;
+    lower_val v;
+
+    if (!t || !row_opaque(c, e)) {
+        return lower_sub(c, scope, e);
+    }
+    c->exp_node = e;
+    c->exp_type = t;
+    v = lower_sub(c, scope, e);
+    c->exp_node = sn;
+    c->exp_type = st;
+    return v;
+}
+
 /* A literal (or constructor) the row gives no family for: the item
    expressions still evaluate, and the literal is diagnosed. */
 static lower_val opaque_literal(lower_ctx *c, lower_scope *scope,
@@ -58,16 +88,37 @@ static lower_val opaque_literal(lower_ctx *c, lower_scope *scope,
     return lower_val_unit();
 }
 
+/* The expected type of one positional item: the element or component
+   the literal's own effective type names. */
+static const ek_type *item_expected(const ek_type *t, size_t i)
+{
+    if (!t) {
+        return NULL;
+    }
+    if (t->kind == EK_T_LIST) {
+        return t->u.list.elem;
+    }
+    if (t->kind == EK_T_TUPLE && i < t->u.tuple.count) {
+        return t->u.tuple.items[i];
+    }
+    return NULL;
+}
+
 /* The item temps of a literal, one slot per kid in source order;
-   NULL where the kid carries no value expression. */
+   NULL where the kid carries no value expression. t is the literal's
+   own effective type for the positional families, rec the record type
+   the named fields read; an item whose own row is opaque lowers under
+   the type the literal's anchor names for it. */
 static const char **item_temps(lower_ctx *c, lower_scope *scope,
-                               const ek_node *e)
+                               const ek_node *e, const ek_type *t,
+                               const ek_type *rec)
 {
     const char **argv = NULL;
     size_t cap = 0, i;
 
     for (i = 0; i < e->u.kids.count; i++) {
         const ek_node *item = e->u.kids.data[i];
+        const ek_type *ft;
         lower_val a;
 
         argv = lower_grow(c, argv, &cap, i + 1, sizeof *argv);
@@ -78,7 +129,11 @@ static const char **item_temps(lower_ctx *c, lower_scope *scope,
             argv[i] = NULL;
             continue;
         }
-        a = lower_sub(c, scope, item_expr(item));
+        ft = rec ? lower_record_field(rec, item_field(item)) : NULL;
+        if (!ft) {
+            ft = item_expected(t, i);
+        }
+        a = item_under(c, scope, item_expr(item), ft);
         argv[i] = lower_as_temp(c, scope, &a);
     }
     return argv;
@@ -103,6 +158,7 @@ static void release_temps(lower_ctx *c, const char **argv, size_t n)
 static lower_val list_literal(lower_ctx *c, lower_scope *scope,
                               const ek_node *e)
 {
+    const ek_type *t = lower_row_type(c, e);
     const char **argv;
     size_t n = e->u.kids.count, i;
     const char *arr, *out;
@@ -110,7 +166,7 @@ static lower_val list_literal(lower_ctx *c, lower_scope *scope,
     if (n == 0) {
         return (lower_val){ "ek_nil_val()", 0 };
     }
-    argv = item_temps(c, scope, e);
+    argv = item_temps(c, scope, e, t, NULL);
     if (!argv) {
         return lower_val_unit();
     }
@@ -130,51 +186,17 @@ static lower_val list_literal(lower_ctx *c, lower_scope *scope,
     return (lower_val){ out, 1 };
 }
 
-/* The key slots the runtime hashes: the scalars by their payload, and
-   String by its bytes. */
-static int scalar_key_name(const ek_symbol *sym)
-{
-    static const char *names[] = {
-        "Bool", "Int", "UInt", "Float", "Char", "String",
-        "I8", "I16", "I32", "I64", "U8", "U16", "U32", "U64", "F32", "F64"
-    };
-    size_t i;
-
-    if (!sym || !sym->name) {
-        return 0;
-    }
-    for (i = 0; i < sizeof names / sizeof *names; i++) {
-        if (strcmp(names[i], sym->name) == 0) {
-            return 1;
-        }
-    }
-    return 0;
-}
-
-static int scalar_key(const ek_type *k)
-{
-    if (!k) {
-        return 1; /* an undetermined key: the row exists no clearer */
-    }
-    if (k->kind == EK_T_UNIT || k->kind == EK_T_NEVER
-        || k->kind == EK_T_IVAR || k->kind == EK_T_TVAR) {
-        return 1;
-    }
-    if (k->kind == EK_T_NOMINAL) {
-        return k->u.nominal.sym
-            && (!k->u.nominal.sym->decl
-                || strcmp(k->u.nominal.sym->module, "std") == 0)
-            && scalar_key_name(k->u.nominal.sym);
-    }
-    return 0;
-}
-
 /* The key and value temps of the entries, in source order; the arrays
-   hold one slot per kid, NULL where a side is absent. */
+   hold one slot per kid, NULL where a side is absent. t is the
+   literal's own dictionary type, naming the key and value types the
+   opaque rows read. A key that lowers to the unit placeholder under a
+   determined non-unit key type diagnoses: the placeholder keys every
+   entry alike, and the unit value itself is never a non-unit key. */
 static void dict_item_temps(lower_ctx *c, lower_scope *scope,
-                            const ek_node *e, const char **kt,
-                            const char **vt)
+                            const ek_node *e, const ek_type *t,
+                            const char **kt, const char **vt)
 {
+    const ek_type *dtype = t && t->kind == EK_T_DICT ? t : NULL;
     size_t i;
 
     for (i = 0; i < e->u.kids.count; i++) {
@@ -188,11 +210,18 @@ static void dict_item_temps(lower_ctx *c, lower_scope *scope,
         kt[i] = NULL;
         vt[i] = NULL;
         if (key) {
-            a = lower_sub(c, scope, key);
+            const ek_type *kt_row;
+
+            a = item_under(c, scope, key, dtype ? dtype->u.dict.key : NULL);
+            kt_row = dtype ? lower_row_type(c, key) : NULL;
+            if (!a.is_temp && strcmp(a.text, "ek_val_unit()") == 0
+                && kt_row && kt_row->kind != EK_T_UNIT) {
+                lower_error(c, key, "the dictionary key has no lowering");
+            }
             kt[i] = lower_as_temp(c, scope, &a);
         }
         if (val) {
-            a = lower_sub(c, scope, val);
+            a = item_under(c, scope, val, dtype ? dtype->u.dict.val : NULL);
             vt[i] = lower_as_temp(c, scope, &a);
         }
     }
@@ -229,8 +258,8 @@ static lower_val dict_literal(lower_ctx *c, lower_scope *scope,
     size_t n = e->u.kids.count, cap = 0, i;
     const char *d;
 
-    if (t && t->kind == EK_T_DICT && !scalar_key(t->u.dict.key)) {
-        lower_error(c, e, "the dictionary key is not a scalar this "
+    if (t && t->kind == EK_T_DICT && !lower_key_hooks(c, t->u.dict.key)) {
+        lower_error(c, e, "the dictionary key is not a key domain this "
                           "lowerer supports");
     }
     if (n == 0) {
@@ -241,7 +270,7 @@ static lower_val dict_literal(lower_ctx *c, lower_scope *scope,
         return lower_val_unit();
     }
     vt = kt + n;
-    dict_item_temps(c, scope, e, kt, vt);
+    dict_item_temps(c, scope, e, t, kt, vt);
     d = lower_temp(c, scope);
     lower_pad(c);
     lower_emitf(c, "ek_val %s = ek_dict_new();\n", d);
@@ -265,9 +294,12 @@ static lower_val dict_literal(lower_ctx *c, lower_scope *scope,
 
 /* A record literal: the items map to the family's fields by name, in
    the layout order the declaration fixes; a field no item names was
-   diagnosed by check and passes the unit value. */
+   diagnosed by check and passes the unit value. rec is the record
+   value type the item rows read their field types from, NULL when the
+   literal's anchor named none. */
 static lower_val record_literal(lower_ctx *c, lower_scope *scope,
-                                const ek_node *e, lower_gtype *g)
+                                const ek_node *e, lower_gtype *g,
+                                const ek_type *rec)
 {
     const char **argv;
     size_t n = e->u.kids.count, i;
@@ -277,7 +309,7 @@ static lower_val record_literal(lower_ctx *c, lower_scope *scope,
         return opaque_literal(c, scope, e);
     }
     g->constructed = 1;
-    argv = item_temps(c, scope, e);
+    argv = item_temps(c, scope, e, NULL, rec);
     if (!argv) {
         return lower_val_unit();
     }
@@ -306,7 +338,8 @@ static lower_val record_literal(lower_ctx *c, lower_scope *scope,
 
 /* A tuple literal: the items map to the components by position. */
 static lower_val tuple_literal(lower_ctx *c, lower_scope *scope,
-                               const ek_node *e, lower_gtype *g)
+                               const ek_node *e, lower_gtype *g,
+                               const ek_type *tup)
 {
     const char **argv;
     size_t n = e->u.kids.count, i;
@@ -316,7 +349,7 @@ static lower_val tuple_literal(lower_ctx *c, lower_scope *scope,
         return opaque_literal(c, scope, e);
     }
     g->constructed = 1;
-    argv = item_temps(c, scope, e);
+    argv = item_temps(c, scope, e, tup, NULL);
     if (!argv) {
         return lower_val_unit();
     }
@@ -333,26 +366,29 @@ static lower_val tuple_literal(lower_ctx *c, lower_scope *scope,
 }
 
 /* The literal's family from the expected type: a nominal lands through
-   its declared representation. */
+   its declared representation, whose field and component types the
+   opaque item rows read. */
 static lower_val nominal_literal(lower_ctx *c, lower_scope *scope,
-                                 const ek_node *e, const ek_symbol *tsym)
+                                 const ek_node *e, const ek_type *t)
 {
+    const ek_symbol *tsym = t && t->kind == EK_T_NOMINAL
+                                ? t->u.nominal.sym : NULL;
     const ek_node *dn = tsym ? tsym->decl : NULL;
     lower_gtype *g;
 
     if (dn && dn->kind == EK_N_CTYPE_DECL) {
         g = lower_decl_repr(c, tsym);
-        return record_literal(c, scope, e, g);
+        return record_literal(c, scope, e, g, NULL);
     }
     if (dn && dn->kind == EK_N_TYPE_DECL
         && dn->u.type_decl.rhs == EK_TYPE_RHS_RECORD) {
         g = lower_decl_repr(c, tsym);
-        return record_literal(c, scope, e, g);
+        return record_literal(c, scope, e, g, lower_repr_type(c, t));
     }
     if (dn && dn->kind == EK_N_TYPE_DECL
         && dn->u.type_decl.rhs == EK_TYPE_RHS_TUPLE) {
         g = lower_decl_repr(c, tsym);
-        return tuple_literal(c, scope, e, g);
+        return tuple_literal(c, scope, e, g, lower_repr_type(c, t));
     }
     return opaque_literal(c, scope, e);
 }
@@ -440,12 +476,12 @@ lower_val lower_composite(lower_ctx *c, lower_scope *scope,
     case EK_T_DICT:
         return dict_literal(c, scope, e);
     case EK_T_RECORD:
-        return record_literal(c, scope, e, lower_anon_record(c, t));
+        return record_literal(c, scope, e, lower_anon_record(c, t), t);
     case EK_T_TUPLE:
         return tuple_literal(c, scope, e,
-                             lower_anon_tuple(c, t->u.tuple.count));
+                             lower_anon_tuple(c, t->u.tuple.count), t);
     case EK_T_NOMINAL:
-        return nominal_literal(c, scope, e, t->u.nominal.sym);
+        return nominal_literal(c, scope, e, t);
     default:
         return opaque_literal(c, scope, e);
     }

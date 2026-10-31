@@ -340,11 +340,17 @@ const ek_type *lower_type_in(lower_ctx *c, const ek_type *t)
 }
 
 /* The type a node's check row carries under the instantiation being
-   emitted: the row's own snapshot with the binders replaced. */
+   emitted: the row's own snapshot with the binders replaced. The
+   expected-type override answers first, so a subtree the row left
+   opaque reads the type the constructor anchor re-derived for it. */
 const ek_type *lower_row_type(lower_ctx *c, const ek_node *n)
 {
-    const ek_ck_row *row = lower_row(c, n);
+    const ek_ck_row *row;
 
+    if (n && n == c->exp_node && c->exp_type) {
+        return c->exp_type;
+    }
+    row = lower_row(c, n);
     return row ? lower_type_in(c, row->type) : NULL;
 }
 

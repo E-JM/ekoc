@@ -39,19 +39,6 @@ typedef struct ek_obj ek_obj;
    references. */
 typedef void (*ek_drop_fn)(ek_obj *);
 
-/* Family classification of a heap object. */
-typedef struct ek_typeinfo {
-    uint8_t kind;
-    ek_drop_fn drop;
-} ek_typeinfo;
-
-/* Heap object header. Every heap family embeds it as the first member
-   of its struct, and a new object is born with rc == 1. */
-struct ek_obj {
-    const ek_typeinfo *info;
-    unsigned long rc;
-};
-
 /* A value occupies exactly 16 bytes: the tag word and its payload. */
 typedef struct ek_val {
     ek_tag tag;
@@ -63,6 +50,28 @@ typedef struct ek_val {
         ek_obj *ref;
     } as;
 } ek_val;
+
+/* Family classification of a heap object. The eq and hash members are
+   the structural keying hooks: eq answers nonzero when a and b carry
+   the same key value, and hash mixes v into a word the dictionary and
+   set tables spread over their slots. Both are deterministic within
+   one process run, and values eq calls equal hash equal. NULL means
+   the family carries no structural hook and keys on identity. The
+   hooks are consulted only over values of one family: a key of
+   another family compares unequal before any hook runs. */
+typedef struct ek_typeinfo {
+    uint8_t kind;
+    ek_drop_fn drop;
+    int (*eq)(ek_val a, ek_val b);
+    unsigned long (*hash)(ek_val v);
+} ek_typeinfo;
+
+/* Heap object header. Every heap family embeds it as the first member
+   of its struct, and a new object is born with rc == 1. */
+struct ek_obj {
+    const ek_typeinfo *info;
+    unsigned long rc;
+};
 
 /* Each constructor wraps a scalar in a value of the matching tag; the
    payload is stored unchanged. */
@@ -187,6 +196,32 @@ ek_val ek_num_neg(ek_val a);
    overflow code, the unsigned word is its own, and the Float value
    drops its sign. */
 ek_val ek_num_abs(ek_val a);
+
+/* The floating-point mathematics surface: each entry reads the Float
+   slot and answers the Float slot, C99's libm under the names the
+   standard pins, and the three predicates answer Bool. A value of
+   another tag reads as the neutral unit value; the predicates read as
+   false. */
+ek_val ek_num_floor(ek_val a);
+ek_val ek_num_ceil(ek_val a);
+ek_val ek_num_trunc(ek_val a);
+ek_val ek_num_round(ek_val a);
+ek_val ek_num_sqrt(ek_val a);
+ek_val ek_num_exp(ek_val a);
+ek_val ek_num_log(ek_val a);
+ek_val ek_num_log2(ek_val a);
+ek_val ek_num_log10(ek_val a);
+ek_val ek_num_sin(ek_val a);
+ek_val ek_num_cos(ek_val a);
+ek_val ek_num_tan(ek_val a);
+ek_val ek_num_asin(ek_val a);
+ek_val ek_num_acos(ek_val a);
+ek_val ek_num_atan(ek_val a);
+ek_val ek_num_pow(ek_val a, ek_val b);
+ek_val ek_num_atan2(ek_val a, ek_val b);
+int ek_num_is_nan(ek_val a);
+int ek_num_is_inf(ek_val a);
+int ek_num_is_finite(ek_val a);
 
 /* The comparisons compare a and b in the tag's own order — Int
    signed, UInt unsigned, Float the IEEE ordering, Char by code
@@ -493,8 +528,11 @@ size_t ek_list_len(ek_val list);
 
 /* A dictionary maps inline scalar keys to values. Setting a key builds
    a fresh dictionary; the old one is untouched and keeps its own
-   references. Keys compare on the tag and the exact payload bytes. The
-   accessors take a dictionary value. */
+   references. Keys compare on the tag and the exact payload bytes; a
+   key that refers to an object whose typeinfo carries the structural
+   hooks keys through them, so two structurally equal composite values
+   are one key and a key of another family never matches. The accessors
+   take a dictionary value. */
 
 /* The empty dictionary. Aborts on exhaustion. */
 ek_val ek_dict_new(void);
@@ -561,9 +599,11 @@ ek_val ek_dict_filter(ek_val dict, ek_val f);
    the runtime itself can compare: scalars on the tag and the payload,
    String and Bytes on their bytes, and a Float on IEEE equality, so
    0.0 and -0.0 are one element while a NaN element never matches, not
-   even itself. Every other heap family keys on the object's address,
-   the same rule the dictionary applies to keys it cannot walk. The
-   accessors take a set value. */
+   even itself. A heap element whose typeinfo carries the structural
+   hooks keys through them, both sides tested for one family first;
+   every other heap family keys on the object's address, the same rule
+   the dictionary applies to keys it cannot walk. The accessors take a
+   set value. */
 
 /* The empty set. Aborts on exhaustion. */
 ek_val ek_set_new(void);

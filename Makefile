@@ -113,10 +113,12 @@ LOWER_SRC := \
 	src/lower/case.c \
 	src/lower/composite.c \
 	src/lower/ctl.c \
+	src/lower/destructure.c \
 	src/lower/derived.c \
 	src/lower/derivedcall.c \
 	src/lower/derivedeq.c \
 	src/lower/derivedfrom.c \
+	src/lower/derivedhash.c \
 	src/lower/derivedjson.c \
 	src/lower/derivedrec.c \
 	src/lower/derivedshow.c \
@@ -141,6 +143,7 @@ LOWER_SRC := \
 	src/lower/type.c \
 	src/lower/typeemit.c \
 	src/lower/typewalk.c \
+	src/lower/value.c \
 	src/lower/wrap.c
 
 LIB_LOWER := $(BUILD)/libek_lower.a
@@ -160,7 +163,7 @@ CLI_OBJ := $(CLI_SRC:src/%.c=$(BUILD)/%.o)
 
 # rt is the runtime library (ekort) linked into compiled Eko programs;
 # it is not a pipeline stage and stands outside the stage link order.
-RT_SRC := rt/value.c rt/rc.c rt/num.c rt/panic.c \
+RT_SRC := rt/value.c rt/rc.c rt/num.c rt/nummath.c rt/panic.c \
 	rt/string.c rt/bytes.c rt/list.c rt/dict.c rt/closure.c \
 	rt/fmt.c rt/parse.c rt/convert.c rt/strops.c rt/charops.c rt/bytesops.c \
 	rt/cap.c rt/capval.c rt/capenv.c rt/in.c rt/clock.c rt/rand.c \

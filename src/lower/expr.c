@@ -70,10 +70,19 @@ static lower_val name_expr(lower_ctx *c, lower_scope *scope, const ek_node *e)
         return ctor_expr(c, e, ref);
     }
     if (ref->kind == EK_SYM_FUNC && ref->symbol) {
-        const char *ekt = lower_trampoline(c, ref->symbol);
+        if (lower_is_value(ref->symbol)) {
+            lower_enqueue(c, ref->symbol);
+            return (lower_val){ lower_str(c, "%s()",
+                                            lower_value_getter(c,
+                                                               ref->symbol)),
+                                0 };
+        }
+        {
+            const char *ekt = lower_trampoline(c, ref->symbol);
 
-        return (lower_val){ lower_str(c, "ek_closure_new(%s, "
-                                          "ek_val_unit())", ekt), 0 };
+            return (lower_val){ lower_str(c, "ek_closure_new(%s, "
+                                             "ek_val_unit())", ekt), 0 };
+        }
     }
     lower_error(c, e, "the reference to `%s` is not supported by this "
                       "lowerer",
@@ -373,6 +382,29 @@ static lower_val unary_expr(lower_ctx *c, lower_scope *scope,
     return (lower_val){ r, 1 };
 }
 
+/* A module-qualified read of a top-level binding or function: the
+   value the name read gives, spelled through the qualified path. */
+static lower_val qualified_read(lower_ctx *c, const ek_node *e)
+{
+    const ek_ref *ref = lower_ref(c, e);
+
+    if (!ref || ref->kind != EK_SYM_FUNC || !ref->symbol) {
+        return (lower_val){ NULL, 0 };
+    }
+    if (lower_is_value(ref->symbol)) {
+        lower_enqueue(c, ref->symbol);
+        return (lower_val){ lower_str(c, "%s()",
+                                      lower_value_getter(c, ref->symbol)),
+                            0 };
+    }
+    {
+        const char *ekt = lower_trampoline(c, ref->symbol);
+
+        return (lower_val){ lower_str(c, "ek_closure_new(%s, "
+                                         "ek_val_unit())", ekt), 0 };
+    }
+}
+
 /* A field access: the receiver lowers to a temp, the read is an owned
    copy out of the generated struct, and the receiver temp dies. */
 static lower_val field_expr(lower_ctx *c, lower_scope *scope,
@@ -384,6 +416,11 @@ static lower_val field_expr(lower_ctx *c, lower_scope *scope,
     const char *t, *r, *slot;
 
     if (!row || row->reading != EK_RD_FIELD || !rt) {
+        lower_val q = qualified_read(c, e);
+
+        if (q.text) {
+            return q;
+        }
         lower_error(c, e, "the %s is not supported by this lowerer",
                     lower_construct(e));
         return lower_val_unit();

@@ -24,7 +24,7 @@ static void cap_out_drop(ek_obj *obj)
 }
 
 static const ek_typeinfo ek_typeinfo_cap_out = { EK_KIND_STRUCT,
-                                                 cap_out_drop };
+                                                 cap_out_drop, NULL, NULL };
 
 /* The write closure of the standard output bundle: the argument's
    bytes, without the stored terminator, land on stdout; the stream
@@ -61,7 +61,7 @@ typedef struct {
     ek_obj obj;
 } ek_cap_proc_tok;
 
-static const ek_typeinfo ek_typeinfo_cap_proc = { EK_KIND_STRUCT, NULL };
+static const ek_typeinfo ek_typeinfo_cap_proc = { EK_KIND_STRUCT, NULL, NULL, NULL };
 
 ek_val ek_cap_proc(void)
 {

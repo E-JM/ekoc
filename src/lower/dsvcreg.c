@@ -222,7 +222,7 @@ static int supported(lower_dsvc_kind kind, const ek_type *t)
     case EK_T_NEVER:
         return 0;
     case EK_T_DICT:
-        if (kind == DSV_ORD) {
+        if (kind == DSV_ORD || kind == DSV_HASH) {
             return 0;
         }
         return lower_scalar_kind(t->u.dict.key) == EKSC_STRING;
@@ -233,11 +233,11 @@ static int supported(lower_dsvc_kind kind, const ek_type *t)
                 || sk == EKSC_BYTES;
         }
         if (lower_is_range(t)) {
-            /* The compiler supplies the display and comparison
-               services over the range's struct: the operator form and
-               the endpoint order. */
+            /* The compiler supplies the display, comparison, and
+               keying services over the range's struct: the operator
+               form, the endpoint order, and the keying walk. */
             return kind == DSV_SHOW || kind == DSV_INSPECT
-                || kind == DSV_EQ || kind == DSV_ORD;
+                || kind == DSV_EQ || kind == DSV_ORD || kind == DSV_HASH;
         }
         return t->u.nominal.sym && t->u.nominal.sym->decl != NULL;
     default:
@@ -250,6 +250,7 @@ static const char *kind_prefix(lower_dsvc_kind kind)
     switch (kind) {
     case DSV_EQ: return "ekq_";
     case DSV_ORD: return "eko_";
+    case DSV_HASH: return "ekh_";
     case DSV_SHOW: return "ekd_show_";
     case DSV_INSPECT: return "ekd_inspect_";
     case DSV_TOJSON: return "ekd_to_json_";
@@ -307,6 +308,11 @@ static void emit_service(lower_ctx *c, const lower_dsvc *s,
         } else {
             lower_dsvc_ord_emit(c, s->name, t);
         }
+        break;
+    case DSV_HASH:
+        lower_push_sig(c, lower_str(c, "static unsigned long %s(ek_val v)",
+                                    s->name));
+        lower_dsvc_hash_emit(c, s->name, t);
         break;
     case DSV_SHOW:
     case DSV_INSPECT:

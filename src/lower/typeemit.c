@@ -106,9 +106,19 @@ static void emit_typeinfo(lower_ctx *c, ek_buf *u, const lower_gtype *g)
     /* External linkage and const: the runtime's bundle closures build
        values over the unit's own typeinfo identity, so the symbol is
        shared with rt exactly as a generated struct shares it with the
-       patterns that read it. */
+       patterns that read it. A family carrying the structural keying
+       hooks names them in the initializer, with their signatures
+       ahead of it: the definitions stand in the service buffer. */
+    if (g->eq_name) {
+        uprintf(c, u, "static int %s(ek_val a, ek_val b);\n", g->eq_name);
+    }
+    if (g->hash_name) {
+        uprintf(c, u, "static unsigned long %s(ek_val v);\n", g->hash_name);
+    }
     uprintf(c, u, "const ek_typeinfo ekT_%s = { EK_KIND_STRUCT, "
-                  "drop_%s };\n\n", g->stem, g->stem);
+                  "drop_%s, %s, %s };\n\n", g->stem, g->stem,
+                  g->eq_name ? g->eq_name : "NULL",
+                  g->hash_name ? g->hash_name : "NULL");
 }
 
 /* One construction helper: allocates the zeroed struct, marks it born

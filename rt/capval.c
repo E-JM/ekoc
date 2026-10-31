@@ -168,9 +168,9 @@ static void bundle16_drop(ek_obj *obj)
     }
 }
 
-static const ek_typeinfo bundle1_info = { EK_KIND_STRUCT, bundle1_drop };
-static const ek_typeinfo bundle3_info = { EK_KIND_STRUCT, bundle3_drop };
-static const ek_typeinfo bundle16_info = { EK_KIND_STRUCT, bundle16_drop };
+static const ek_typeinfo bundle1_info = { EK_KIND_STRUCT, bundle1_drop, NULL, NULL };
+static const ek_typeinfo bundle3_info = { EK_KIND_STRUCT, bundle3_drop, NULL, NULL };
+static const ek_typeinfo bundle16_info = { EK_KIND_STRUCT, bundle16_drop, NULL, NULL };
 
 ek_val ek_bundle1_new(ek_val a)
 {

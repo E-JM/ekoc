@@ -236,21 +236,61 @@ static void emit_range_show(lower_ctx *c, lower_demit *d, const ek_type *t)
     lower_d_printf(d, "    return acc;\n");
 }
 
-void lower_dsvc_show_emit(lower_ctx *c, const char *name, const ek_type *t,
-                          int inspect)
+/* The struct side of the dispatch: the composite and nominal shapes. */
+static void emit_struct_show(lower_ctx *c, lower_demit *d, const ek_type *t)
 {
-    lower_demit d;
-    ek_buf b;
     lower_gtype *g = NULL;
     const char **fnames;
     const ek_type **ftypes;
     lower_variant *vs;
     size_t nf, nv;
+
+    if (t->kind == EK_T_LIST) {
+        emit_list_show(c, d, t);
+    } else if (t->kind == EK_T_DICT) {
+        emit_dict_show(c, d, t);
+    } else if (lower_is_range(t)) {
+        emit_range_show(c, d, t);
+    } else if (t->kind == EK_T_TUPLE || t->kind == EK_T_RECORD) {
+        if (lower_shape_of(c, NULL, t, &fnames, &ftypes, &nf, &g) && g) {
+            emit_fields_show(c, d, g->stem, fnames, ftypes, nf);
+        } else {
+            lower_d_printf(d, "    return ek_str_from_cstr("
+                              "\"<opaque>\");\n");
+        }
+    } else if (t->kind == EK_T_NOMINAL
+               && lower_shape_of(c, NULL, t, &fnames, &ftypes, &nf, &g)
+               && g) {
+        emit_fields_show(c, d, g->stem, fnames, ftypes, nf);
+    } else if (t->kind == EK_T_NOMINAL
+               && lower_variants_of(c, NULL, t, &vs, &nv)) {
+        emit_adt_show(c, d, vs, nv);
+    } else {
+        lower_d_printf(d, "    return ek_str_from_cstr(\"<cap>\");\n");
+    }
+}
+
+void lower_dsvc_show_emit(lower_ctx *c, const char *name, const ek_type *t,
+                          int inspect)
+{
+    lower_demit d;
+    ek_buf b;
     lower_scalar sk = lower_scalar_kind(t);
+    const ek_symbol *user = NULL;
 
     lower_d_begin(c, &d, &b);
     lower_d_printf(&d, "static ek_obj *%s(ek_val v)\n{\n", name);
-    if (sk != EKSC_OTHER) {
+    /* The display channel loses to a declared member: a namespace
+       `show` over the receiver's type renders through it, the same
+       reading the member call gives, and inspect stays structural. */
+    if (!inspect && t && t->kind == EK_T_NOMINAL) {
+        user = lower_member_symbol(c, t, "show");
+    }
+    if (user) {
+        lower_enqueue(c, user);
+        lower_d_printf(&d, "    return %s(v).as.ref;\n",
+                       lower_mangled(c, user));
+    } else if (sk != EKSC_OTHER) {
         emit_scalar_show(&d, sk, inspect);
     } else if (!inspect) {
         const char *is = insp_of(c, t);
@@ -264,28 +304,8 @@ void lower_dsvc_show_emit(lower_ctx *c, const char *name, const ek_type *t,
         lower_d_printf(&d, "    return ek_str_from_cstr(\"_\");\n");
     } else if (t->kind == EK_T_FN) {
         lower_d_printf(&d, "    return ek_str_from_cstr(\"<fn>\");\n");
-    } else if (t->kind == EK_T_LIST) {
-        emit_list_show(c, &d, t);
-    } else if (t->kind == EK_T_DICT) {
-        emit_dict_show(c, &d, t);
-    } else if (lower_is_range(t)) {
-        emit_range_show(c, &d, t);
-    } else if (t->kind == EK_T_TUPLE || t->kind == EK_T_RECORD) {
-        if (lower_shape_of(c, NULL, t, &fnames, &ftypes, &nf, &g) && g) {
-            emit_fields_show(c, &d, g->stem, fnames, ftypes, nf);
-        } else {
-            lower_d_printf(&d, "    return ek_str_from_cstr("
-                               "\"<opaque>\");\n");
-        }
-    } else if (t->kind == EK_T_NOMINAL
-               && lower_shape_of(c, NULL, t, &fnames, &ftypes, &nf, &g)
-               && g) {
-        emit_fields_show(c, &d, g->stem, fnames, ftypes, nf);
-    } else if (t->kind == EK_T_NOMINAL
-               && lower_variants_of(c, NULL, t, &vs, &nv)) {
-        emit_adt_show(c, &d, vs, nv);
     } else {
-        lower_d_printf(&d, "    return ek_str_from_cstr(\"<cap>\");\n");
+        emit_struct_show(c, &d, t);
     }
     lower_d_printf(&d, "}\n\n");
     lower_d_end(c, &b);

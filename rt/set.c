@@ -15,8 +15,10 @@
    Elements key structurally over the domains the runtime itself can
    compare: scalars on the tag and the payload, String and Bytes on
    their bytes, and a Float on IEEE equality, so 0.0 and -0.0 are one
-   element while a NaN element never matches, not even itself. Every
-   other heap family keys on the object's address, the same rule the
+   element while a NaN element never matches, not even itself. A heap
+   element whose typeinfo carries the structural hooks keys through
+   them, both sides tested for one family before any hook runs.
+   Families without hooks keep the address rule, the same rule the
    dictionary applies to keys it cannot walk; the compiler's check
    admits only element types whose keying this discipline honors. */
 
@@ -59,6 +61,14 @@ static int content_key(const ek_val *v)
         || v->as.ref->info->kind == EK_KIND_BYTES;
 }
 
+/* Nonzero when the element refers to an object whose family carries
+   the structural hash: the table spreads the hook's word. */
+static int hooked_key(const ek_val *v)
+{
+    return v->tag == EK_VAL_REF && v->as.ref != NULL
+        && v->as.ref->info->hash != NULL;
+}
+
 /* The identifying bytes of a String or Bytes element. */
 static void content_view(const ek_val *v, const unsigned char **p,
                          size_t *width)
@@ -99,6 +109,12 @@ static uint64_t hash_key(ek_val v)
         bits = float_key(&v);
         p = (const unsigned char *)&bits;
         width = sizeof bits;
+    } else if (hooked_key(&v)) {
+        unsigned long kh = v.as.ref->info->hash(v);
+
+        bits = (uint64_t)kh;
+        p = (const unsigned char *)&bits;
+        width = sizeof bits;
     } else {
         width = payload_width(&v);
     }
@@ -108,7 +124,10 @@ static uint64_t hash_key(ek_val v)
     return h;
 }
 
-/* Nonzero when the two elements are the same element. */
+/* Nonzero when the two elements are the same element. One family is
+   the precheck: the typeinfo pointer separates the constructors
+   before any hook runs, and the hook answers within it. Elements of
+   families without hooks key on the object's address. */
 static int key_eq(ek_val a, ek_val b)
 {
     if (content_key(&a) || content_key(&b)) {
@@ -127,8 +146,13 @@ static int key_eq(ek_val a, ek_val b)
         return 0;
     if (a.tag == EK_VAL_FLOAT)
         return a.as.f == b.as.f;
-    if (a.tag == EK_VAL_REF)
+    if (a.tag == EK_VAL_REF) {
+        if (a.as.ref == NULL || b.as.ref == NULL)
+            return a.as.ref == b.as.ref;
+        if (a.as.ref->info == b.as.ref->info && a.as.ref->info->eq)
+            return a.as.ref->info->eq(a, b);
         return a.as.ref == b.as.ref;
+    }
     return memcmp(&a.as, &b.as, payload_width(&a)) == 0;
 }
 

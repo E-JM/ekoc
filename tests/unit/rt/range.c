@@ -34,7 +34,7 @@ static void test_range_drop(ek_obj *obj)
 }
 
 static const ek_typeinfo test_range_info = { EK_KIND_STRUCT,
-                                             test_range_drop };
+                                             test_range_drop, NULL, NULL };
 
 /* Builds one range value over the endpoint values. */
 static ek_val make_range(ek_val start, ek_val end, int closed)

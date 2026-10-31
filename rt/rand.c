@@ -16,7 +16,7 @@ typedef struct {
     uint64_t state;
 } ek_rand_cell;
 
-static const ek_typeinfo ek_typeinfo_rand_cell = { EK_KIND_STRUCT, NULL };
+static const ek_typeinfo ek_typeinfo_rand_cell = { EK_KIND_STRUCT, NULL, NULL, NULL };
 
 static uint64_t splitmix64(uint64_t *state)
 {

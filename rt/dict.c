@@ -7,11 +7,15 @@
 /* Dictionaries are immutable maps with copy-on-insert: setting a key
    builds a fresh table, and the old dictionary keeps its references.
    Keys are inline scalars, hashed with FNV-1a over the tag byte and
-   the payload bytes; the table is open addressing with linear probing
-   that grows from eight slots and stays at or under seventy percent
-   full, so a probe always finds an empty slot. The build order of
-   each table is kept in a chain of entry indices, so iteration walks
-   insertion order even after the keys rehash into new slots. */
+   the payload bytes; a key that refers to an object whose typeinfo
+   carries the structural hash spreads the hook's word instead, and
+   the eq hook answers the lookups over one family. Keys whose family
+   carries no hooks keep the payload discipline, which keys a heap
+   object on its address. The table is open addressing with linear
+   probing that grows from eight slots and stays at or under seventy
+   percent full, so a probe always finds an empty slot. The build order
+   of each table is kept in a chain of entry indices, so iteration
+   walks insertion order even after the keys rehash into new slots. */
 
 /* The load limit and the starting capacity of the table. */
 #define DICT_LOAD_NUM 10
@@ -53,17 +57,30 @@ static int text_key(const ek_val *v)
         && v->as.ref->info->kind == EK_KIND_STR;
 }
 
+/* Nonzero when the key refers to an object whose family carries the
+   structural hash: the table spreads the hook's word over the slots. */
+static int hooked_key(const ek_val *v)
+{
+    return v->tag == EK_VAL_REF && v->as.ref != NULL
+        && v->as.ref->info->hash != NULL;
+}
+
 /* FNV-1a over the tag byte and the identifying bytes, so keys of
    different tags stay distinct even when their payloads coincide. */
 static uint64_t hash_key(ek_val v)
 {
     uint64_t h = 14695981039346656037ULL;
     const unsigned char *p = (const unsigned char *)&v.as;
+    unsigned long kh = 0;
     size_t width;
 
     if (text_key(&v)) {
         p = (const unsigned char *)ek_str_cstr(v.as.ref);
         width = ek_str_len(v.as.ref);
+    } else if (hooked_key(&v)) {
+        kh = v.as.ref->info->hash(v);
+        p = (const unsigned char *)&kh;
+        width = sizeof kh;
     } else {
         width = payload_width(&v);
     }
@@ -73,15 +90,26 @@ static uint64_t hash_key(ek_val v)
     return h;
 }
 
-/* Nonzero when the two keys identify the same mapping. */
+/* Nonzero when the two keys identify the same mapping. One family is
+   the precheck: the typeinfo pointer separates the constructors before
+   any hook runs, and the hook answers within it. Keys of families
+   without hooks key on the object's address. */
 static int key_eq(ek_val a, ek_val b)
 {
     if (text_key(&a) || text_key(&b)) {
         return text_key(&a) && text_key(&b)
             && ek_str_eq(a.as.ref, b.as.ref);
     }
-    return a.tag == b.tag
-        && memcmp(&a.as, &b.as, payload_width(&a)) == 0;
+    if (a.tag != b.tag)
+        return 0;
+    if (a.tag == EK_VAL_REF) {
+        if (a.as.ref == NULL || b.as.ref == NULL)
+            return a.as.ref == b.as.ref;
+        if (a.as.ref->info == b.as.ref->info && a.as.ref->info->eq)
+            return a.as.ref->info->eq(a, b);
+        return a.as.ref == b.as.ref;
+    }
+    return memcmp(&a.as, &b.as, payload_width(&a)) == 0;
 }
 
 /* The index of the slot key occupies, or of the free slot where it

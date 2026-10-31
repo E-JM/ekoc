@@ -25,7 +25,7 @@ static int drop_log_len;
 
 static void probe_drop(ek_obj *obj);
 
-static const ek_typeinfo probe_info = { EK_KIND_STRUCT, probe_drop };
+static const ek_typeinfo probe_info = { EK_KIND_STRUCT, probe_drop, NULL, NULL };
 
 /* Releases the children, then records the reclamation order, so the
    log shows children going before their parents. */

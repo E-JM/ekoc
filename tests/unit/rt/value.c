@@ -9,7 +9,7 @@
    round-trips, the constructor and predicate surface, and the exact
    layout the generated code compiles against. */
 
-static const ek_typeinfo probe_info = { EK_KIND_STRUCT, NULL };
+static const ek_typeinfo probe_info = { EK_KIND_STRUCT, NULL, NULL, NULL };
 static ek_obj probe_obj = { &probe_info, 1 };
 
 static void unit_is_tag_only(void)

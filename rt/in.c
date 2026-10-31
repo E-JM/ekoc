@@ -81,7 +81,8 @@ static void lines_cell_drop(ek_obj *obj)
 }
 
 static const ek_typeinfo ek_typeinfo_lines_cell = { EK_KIND_STRUCT,
-                                                    lines_cell_drop };
+                                                    lines_cell_drop,
+                                                    NULL, NULL };
 
 /* The element at the cursor, borrowed; NULL past the end. */
 static ek_obj *cell_line(ek_lines_cell *cell)

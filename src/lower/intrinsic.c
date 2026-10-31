@@ -15,6 +15,9 @@ typedef enum {
     W_PLAIN,      /* the call value is the result */
     W_REF,        /* an owned object result: the reference value of it */
     W_KEEP,       /* the widening identity: the argument kept */
+    W_BOOL,       /* a C truth word: the Bool value of it */
+    W_SHOW,       /* a fresh display object over the value slots: the
+                     reference value of it */
     W_OPTION,     /* status + out slot: Some payload or None */
     W_OPTION_OBJ, /* an owned object or NULL: Some payload or None */
     W_PARSE,      /* parse status + out slot: Ok payload or Err the
@@ -109,6 +112,25 @@ static const intrinsic_row rows[] = {
     {"Float", "from_f32", NULL, "v", W_KEEP, OUT_I64, 0},
     {"Float", "from_f64", NULL, "v", W_KEEP, OUT_I64, 0},
 
+    /* The radix channel: the words the radix parsers read back, and
+       the machine words' fixed-width hexadecimal. */
+    {"Int", "to_hex", "ek_show_radix", "v", W_SHOW, OUT_I64, 16},
+    {"Int", "to_oct", "ek_show_radix", "v", W_SHOW, OUT_I64, 8},
+    {"Int", "to_bin", "ek_show_radix", "v", W_SHOW, OUT_I64, 2},
+    {"UInt", "to_hex", "ek_show_radix", "v", W_SHOW, OUT_I64, 16},
+    {"UInt", "to_oct", "ek_show_radix", "v", W_SHOW, OUT_I64, 8},
+    {"UInt", "to_bin", "ek_show_radix", "v", W_SHOW, OUT_I64, 2},
+    {"I8", "to_hex_pad", "ek_show_hex_pad", "vv", W_SHOW, OUT_I64, 0},
+    {"I16", "to_hex_pad", "ek_show_hex_pad", "vv", W_SHOW, OUT_I64, 0},
+    {"I32", "to_hex_pad", "ek_show_hex_pad", "vv", W_SHOW, OUT_I64, 0},
+    {"I64", "to_hex_pad", "ek_show_hex_pad", "vv", W_SHOW, OUT_I64, 0},
+    {"U8", "to_hex_pad", "ek_show_hex_pad", "vv", W_SHOW, OUT_I64, 0},
+    {"U16", "to_hex_pad", "ek_show_hex_pad", "vv", W_SHOW, OUT_I64, 0},
+    {"U32", "to_hex_pad", "ek_show_hex_pad", "vv", W_SHOW, OUT_I64, 0},
+    {"U64", "to_hex_pad", "ek_show_hex_pad", "vv", W_SHOW, OUT_I64, 0},
+    {"F32", "to_hex_pad", "ek_show_hex_pad", "vv", W_SHOW, OUT_I64, 0},
+    {"F64", "to_hex_pad", "ek_show_hex_pad", "vv", W_SHOW, OUT_I64, 0},
+
     /* The parse family: the kind wraps into the Result's ParseError. */
     {"Int", "parse", "ek_parse_int", "o", W_PARSE, OUT_I64, 0},
     {"Int", "parse_hex", "ek_parse_int_radix", "o", W_PARSE, OUT_I64, 16},
@@ -129,7 +151,7 @@ static const intrinsic_row rows[] = {
     {"String", "length", "ek_str_length", "o", W_LEN, OUT_I64, 0},
     {"String", "chars", "ek_str_chars", "o", W_PLAIN, OUT_I64, 0},
     {"String", "from_char", "ek_str_from_char", "v", W_REF, OUT_I64, 0},
-    {"String", "from_chars", "ek_str_from_chars", "o", W_REF, OUT_I64, 0},
+    {"String", "from_chars", "ek_str_from_chars", "v", W_REF, OUT_I64, 0},
     {"String", "append", "ek_str_concat", "oo", W_REF, OUT_I64, 0},
     {"String", "to_bytes", "ek_str_to_bytes", "o", W_REF, OUT_I64, 0},
 
@@ -146,13 +168,28 @@ static const intrinsic_row rows[] = {
      0},
 
     /* The containers: the append the operator builds on, the
-       dictionary's persistent updates, and the counts. */
+       dictionary's persistent updates, the traversals over the
+       insertion order, and the set's vocabulary. */
     {"List", "append", "ek_list_append", "vv", W_PLAIN, OUT_I64, 0},
     {"Dict", "length", "ek_dict_len", "v", W_LEN, OUT_I64, 0},
     {"Dict", "get", "ek_dict_get", "vv", W_OPTION, OUT_VAL, 0},
     {"Dict", "insert", "ek_dict_set", "vvv", W_PLAIN, OUT_I64, 0},
     {"Dict", "remove", "ek_dict_remove", "vv", W_PLAIN, OUT_I64, 0},
     {"Dict", "merge", "ek_dict_merge", "vv", W_PLAIN, OUT_I64, 0},
+    {"Dict", "fold", "ek_dict_fold", "vvv", W_PLAIN, OUT_I64, 0},
+    {"Dict", "each", "ek_dict_each", "vv", W_PLAIN, OUT_I64, 0},
+    {"Dict", "map", "ek_dict_map", "vv", W_PLAIN, OUT_I64, 0},
+    {"Dict", "filter", "ek_dict_filter", "vv", W_PLAIN, OUT_I64, 0},
+    {"Set", "of", "ek_set_of", "v", W_PLAIN, OUT_I64, 0},
+    {"Set", "insert", "ek_set_insert", "vv", W_PLAIN, OUT_I64, 0},
+    {"Set", "remove", "ek_set_remove", "vv", W_PLAIN, OUT_I64, 0},
+    {"Set", "contains", "ek_set_contains", "vv", W_BOOL, OUT_I64, 0},
+    {"Set", "length", "ek_set_len", "v", W_LEN, OUT_I64, 0},
+    {"Set", "to_list", "ek_set_to_list", "v", W_PLAIN, OUT_I64, 0},
+
+    /* The Json document reader: the runtime builds the Result over the
+       unit's own std identities, which the routing stamps. */
+    {"Json", "parse", "ek_json_parse", "o", W_PLAIN, OUT_I64, 0},
 
     /* The range's namespace: the struct value and the callback ride
        as values, and the traversals run natively in the runtime. */
@@ -177,6 +214,29 @@ static const intrinsic_row rows[] = {
     {"Int", "mod", "ek_num_fmod", "vv", W_PLAIN, OUT_I64, 0},
     {"Int", "abs", "ek_num_abs", "v", W_PLAIN, OUT_I64, 0},
     {"Float", "abs", "ek_num_abs", "v", W_PLAIN, OUT_I64, 0},
+
+    /* The floating-point mathematics surface: libm under the names the
+       standard pins, and the three predicates. */
+    {"Float", "floor", "ek_num_floor", "v", W_PLAIN, OUT_I64, 0},
+    {"Float", "ceil", "ek_num_ceil", "v", W_PLAIN, OUT_I64, 0},
+    {"Float", "trunc", "ek_num_trunc", "v", W_PLAIN, OUT_I64, 0},
+    {"Float", "round", "ek_num_round", "v", W_PLAIN, OUT_I64, 0},
+    {"Float", "sqrt", "ek_num_sqrt", "v", W_PLAIN, OUT_I64, 0},
+    {"Float", "exp", "ek_num_exp", "v", W_PLAIN, OUT_I64, 0},
+    {"Float", "log", "ek_num_log", "v", W_PLAIN, OUT_I64, 0},
+    {"Float", "log2", "ek_num_log2", "v", W_PLAIN, OUT_I64, 0},
+    {"Float", "log10", "ek_num_log10", "v", W_PLAIN, OUT_I64, 0},
+    {"Float", "sin", "ek_num_sin", "v", W_PLAIN, OUT_I64, 0},
+    {"Float", "cos", "ek_num_cos", "v", W_PLAIN, OUT_I64, 0},
+    {"Float", "tan", "ek_num_tan", "v", W_PLAIN, OUT_I64, 0},
+    {"Float", "asin", "ek_num_asin", "v", W_PLAIN, OUT_I64, 0},
+    {"Float", "acos", "ek_num_acos", "v", W_PLAIN, OUT_I64, 0},
+    {"Float", "atan", "ek_num_atan", "v", W_PLAIN, OUT_I64, 0},
+    {"Float", "pow", "ek_num_pow", "vv", W_PLAIN, OUT_I64, 0},
+    {"Float", "atan2", "ek_num_atan2", "vv", W_PLAIN, OUT_I64, 0},
+    {"Float", "is_nan", "ek_num_is_nan", "v", W_BOOL, OUT_I64, 0},
+    {"Float", "is_inf", "ek_num_is_inf", "v", W_BOOL, OUT_I64, 0},
+    {"Float", "is_finite", "ek_num_is_finite", "v", W_BOOL, OUT_I64, 0},
 };
 
 /* The capability channel owns the File, In, Rand, and Proc families:
@@ -270,8 +330,8 @@ static lower_val discard_call(lower_ctx *c, lower_scope *scope,
     return lower_val_unit();
 }
 
-/* The plain shapes: the count, the call value, the owned object, and
-   the widening identity. */
+/* The plain shapes: the count, the call value, the owned object, the
+   Bool word, the display object, and the widening identity. */
 static lower_val emit_plain(lower_ctx *c, lower_scope *scope,
                             const intrinsic_row *row, const char *args,
                             const char **as)
@@ -285,6 +345,15 @@ static lower_val emit_plain(lower_ctx *c, lower_scope *scope,
         lower_emitf(c, "ek_val %s = ek_val_int((int64_t)%s(%s));\n", t,
                     row->sym, args);
     } else if (row->wrap == W_REF) {
+        lower_emitf(c, "ek_val %s = ek_val_ref(%s(%s));\n", t, row->sym,
+                    args);
+    } else if (row->wrap == W_BOOL) {
+        lower_emitf(c, "ek_val %s = ek_bool(%s(%s));\n", t, row->sym,
+                    args);
+    } else if (row->wrap == W_SHOW && row->radix) {
+        lower_emitf(c, "ek_val %s = ek_val_ref(%s(%s, %d));\n", t,
+                    row->sym, args, row->radix);
+    } else if (row->wrap == W_SHOW) {
         lower_emitf(c, "ek_val %s = ek_val_ref(%s(%s));\n", t, row->sym,
                     args);
     } else {
@@ -353,6 +422,57 @@ static lower_val emit_wrap(lower_ctx *c, lower_scope *scope,
     }
 }
 
+/* Whether the row carries a key or element of the receiver's own key
+   domain at all. */
+static int keys_over_domain(const char *family, const char *member)
+{
+    if (strcmp(family, "Dict") == 0) {
+        return strcmp(member, "get") == 0 || strcmp(member, "insert") == 0
+            || strcmp(member, "remove") == 0
+            || strcmp(member, "merge") == 0;
+    }
+    if (strcmp(family, "Set") == 0) {
+        return strcmp(member, "of") == 0 || strcmp(member, "insert") == 0
+            || strcmp(member, "remove") == 0
+            || strcmp(member, "contains") == 0;
+    }
+    return 0;
+}
+
+/* Stamps the structural keying of the domain the row builds over: the
+   dictionary's key or the set's element, read off the receiver's type
+   or, at the qualified form, off the list argument's element type. */
+static void stamp_key_domain(lower_ctx *c, const ek_node *e,
+                             const ek_node *callee, const char *family,
+                             int has_recv)
+{
+    const ek_type *rt;
+    const ek_type *kt = NULL;
+
+    if (has_recv && callee->u.field.recv) {
+        rt = lower_row_type(c, callee->u.field.recv);
+    } else if (e->u.call.args.count) {
+        rt = lower_row_type(c, e->u.call.args.data[0]);
+    } else {
+        rt = NULL;
+    }
+    if (!rt) {
+        return;
+    }
+    if (strcmp(family, "Dict") == 0 && rt->kind == EK_T_DICT) {
+        kt = rt->u.dict.key;
+    } else if (strcmp(family, "Set") == 0) {
+        if (rt->kind == EK_T_LIST) {
+            kt = rt->u.list.elem;
+        } else if (rt->kind == EK_T_NOMINAL && rt->u.nominal.argc == 1) {
+            kt = rt->u.nominal.args[0];
+        }
+    }
+    if (kt) {
+        lower_key_hooks(c, kt);
+    }
+}
+
 lower_val lower_intrinsic_call(lower_ctx *c, lower_scope *scope,
                                const ek_node *e, const ek_node *callee,
                                const char *family, int has_recv)
@@ -378,6 +498,11 @@ lower_val lower_intrinsic_call(lower_ctx *c, lower_scope *scope,
     as = prep_temps(c, scope, e, callee, na, has_recv);
     if (!as) {
         return lower_val_unit();
+    }
+    if (strcmp(family, "Json") == 0) {
+        lower_json_families(c, e);
+    } else if (keys_over_domain(family, callee->u.field.name)) {
+        stamp_key_domain(c, e, callee, family, has_recv);
     }
     {
         const char *args = value_args(c, row, as, na);

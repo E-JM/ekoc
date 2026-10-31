@@ -110,3 +110,22 @@ void lower_cap_families(lower_ctx *c, const ek_node *at)
     register_ctor(c, at, "time", "Time", "Time");
     register_ctor(c, at, "time", "Mono", "Mono");
 }
+
+/* The seven Json and three ParseError constructor families the
+   runtime's document reader builds values over. A program that never
+   routes the parse row references no identity of theirs, so the
+   stamping fires exactly at the routing. */
+void lower_json_families(lower_ctx *c, const ek_node *at)
+{
+    static const char *json[] = {"Null", "Bool", "Int",  "Float",
+                                 "Str",  "Arr",  "Obj"};
+    static const char *errs[] = {"Empty", "Invalid", "OutOfRange"};
+    size_t i;
+
+    for (i = 0; i < sizeof json / sizeof *json; i++) {
+        register_ctor(c, at, "std", "Json", json[i]);
+    }
+    for (i = 0; i < sizeof errs / sizeof *errs; i++) {
+        register_ctor(c, at, "std", "ParseError", errs[i]);
+    }
+}

@@ -40,7 +40,8 @@ static void file_rec_drop(ek_obj *obj)
 }
 
 static const ek_typeinfo ek_typeinfo_file_rec = { EK_KIND_STRUCT,
-                                                  file_rec_drop };
+                                                  file_rec_drop,
+                                                  NULL, NULL };
 
 static ek_val file_val(size_t slot, unsigned gen)
 {

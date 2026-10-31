@@ -62,6 +62,10 @@ typedef struct lower_gtype {
                                  a representation, the constructor
                                  symbol of a constructor family */
     const char *key_str;   /* registry identity of an anonymous shape */
+    const char *eq_name;   /* the stamped structural eq, NULL when the
+                              family keys on identity */
+    const char *hash_name; /* the stamped structural hash, NULL when
+                              the family keys on identity */
     int used;              /* an emitted body references the layout */
     int constructed;       /* the unit constructs it: typeinfo, drop,
                               and helper join the typedef */
@@ -184,6 +188,7 @@ typedef struct {
 typedef enum {
     DSV_EQ,        /* int(ek_val a, ek_val b): structural equality */
     DSV_ORD,       /* int(ek_val a, ek_val b): -1, 0, or 1 */
+    DSV_HASH,      /* unsigned long(ek_val v): the structural hash */
     DSV_SHOW,      /* ek_obj *(ek_val v): the display channel */
     DSV_INSPECT,   /* ek_obj *(ek_val v): the structural channel */
     DSV_TOJSON,    /* ek_val(ek_val v): the Json value of v */
@@ -272,10 +277,17 @@ struct lower_ctx {
                           functions */
     unsigned anon_rec; /* the anonymous record families so far */
     int uses_list; /* some body folds a list literal */
+    int hash_mix;  /* the hash bodies' mixing helper is emitted */
     int has_main;
     const char *shim[9]; /* the entry shim's bundle constructors, by
                             position (the manifest's capability order) */
     size_t nshim;
+    /* The expected type one subtree lowers under: a constructor
+       application whose payload the check row left opaque reads the
+       constructor's own payload type, and the composite items under it
+       read their field or element types the same way. */
+    const ek_node *exp_node;
+    const ek_type *exp_type;
     int oom;
 };
 
@@ -312,6 +324,12 @@ const ek_symbol *lower_type_symbol(lower_ctx *c, const char *mod,
    NULL when the site is not such a call. */
 const ek_type *lower_open_call_result(lower_ctx *c, const ek_node *e);
 
+/* call.c: the declared member of one receiver type's namespace, found
+   the way the member-call path finds it; NULL when no declaration
+   owns the name. */
+const ek_symbol *lower_member_symbol(lower_ctx *c, const ek_type *recv,
+                                     const char *name);
+
 /* derivedjson.c, derivedfrom.c: the JSON emitters and their shared
    spellings. OK_INFO is the typeinfo test of the std Result's Ok. */
 #define LOWER_OK_INFO "&ekT_std_Result_Ok" 
@@ -332,14 +350,23 @@ void lower_from_record_emit(lower_ctx *c, lower_demit *d, const char *name,
                             const char **fnames, const ek_type **ftypes,
                             size_t nf, lower_gtype *g);
 
-/* derivedeq.c, derivedshow.c, derivedjson.c: the body emitters. */
+/* derivedeq.c, derivedhash.c, derivedshow.c, derivedjson.c: the body
+   emitters. */
 void lower_dsvc_eq_emit(lower_ctx *c, const char *name, const ek_type *t);
 void lower_dsvc_ord_emit(lower_ctx *c, const char *name, const ek_type *t);
+void lower_dsvc_hash_emit(lower_ctx *c, const char *name, const ek_type *t);
 void lower_dsvc_show_emit(lower_ctx *c, const char *name, const ek_type *t,
                           int inspect);
 void lower_dsvc_json_emit(lower_ctx *c, const char *name, const ek_type *t,
                           int from);
 void lower_dsvc_from_emit(lower_ctx *c, const char *name, const ek_type *t);
+
+/* derivedhash.c: the key-domain stamping. lower_key_hooks stamps the
+   structural eq and hash of the applied key domain onto the families
+   that carry its values, lazily at the dict and set sites that build
+   over it, and answers nonzero when the domain keys at all -- zero
+   for the domains whose derivation halts (functions, capabilities). */
+int lower_key_hooks(lower_ctx *c, const ek_type *t);
 
 /* The form of a derived call: the receiver is the member link's node,
    the free call's first argument, or absent at a type head. */
@@ -388,6 +415,15 @@ void lower_clean_pop(lower_ctx *c);
 void lower_clean_release(lower_ctx *c, size_t base);
 void lower_pending_add(lower_ctx *c, lower_pending *p);
 
+/* value.c: the top-level value bindings. lower_is_value is true when
+   the symbol is a module-level binding whose annotation is not a
+   function type. The binding lowers to a lazily initialized static
+   slot behind a getter; a reference in value position reads the
+   getter, which pulls the binding into the unit. */
+int lower_is_value(const ek_symbol *sym);
+const char *lower_value_getter(lower_ctx *c, const ek_symbol *sym);
+void lower_value_binding(lower_ctx *c, const lower_item *item);
+
 /* subst.c: the instantiation substitution. lower_type_has_var is true
    when a tvar or an inference variable occurs anywhere; env build
    pairs the annotation's rigid variables with the applied function
@@ -429,6 +465,7 @@ lower_val lower_string_expr(lower_ctx *c, lower_scope *scope,
    bodies lower; the families themselves are emitted into the unit
    before the functions. */
 lower_gtype *lower_decl_repr(lower_ctx *c, const ek_symbol *tsym);
+lower_gtype *lower_gtype_of_stem(lower_ctx *c, const char *stem);
 lower_gtype *lower_anon_record(lower_ctx *c, const ek_type *rec);
 lower_gtype *lower_anon_tuple(lower_ctx *c, size_t n);
 lower_gtype *lower_ctor_family(lower_ctx *c, const ek_node *at,
@@ -443,6 +480,16 @@ const char *lower_field_slot(lower_ctx *c, const ek_node *at,
                              const ek_type *recv, const char *temp,
                              const char *name);
 void lower_use_list(lower_ctx *c);
+/* The declared record or tuple representation of a nominal as a value
+   type, binders replaced; NULL when the declaration carries neither
+   shape. */
+const ek_type *lower_repr_type(lower_ctx *c, const ek_type *nom);
+const ek_type *lower_record_field(const ek_type *rec, const char *name);
+/* The payload type of the constructor a reference denotes, applied
+   under the owner's instantiation; NULL for a zero-payload variant or
+   a constructor the owner's declaration does not carry. */
+const ek_type *lower_ctor_payload_type(lower_ctx *c, const ek_ref *ref,
+                                       const ek_type *nom);
 void lower_emit_types(lower_ctx *c, ek_buf *unit);
 
 /* composite.c: constructors and composite literals. */
@@ -573,6 +620,12 @@ lower_val lower_wrap_decode(lower_ctx *c, lower_scope *scope,
    values itself. */
 void lower_cap_families(lower_ctx *c, const ek_node *at);
 
+/* capfam.c: the Json and ParseError constructor families the runtime's
+   document reader builds values over, stamped as one set exactly when
+   the parse row routes -- the rt references stay inside json.o, so a
+   unit without the routing links without the identities. */
+void lower_json_families(lower_ctx *c, const ek_node *at);
+
 /* capwrap.c: the capability channel's wrapping. The runtime's status
    contracts over the file family wrap into the std Result and the
    capability module's IoError; ok picks the success arm's shape. */
@@ -633,6 +686,12 @@ lower_val lower_block_value(lower_ctx *c, lower_scope *scope,
 lower_val lower_members(lower_ctx *c, lower_scope *scope,
                         const ek_node **kids, size_t n);
 const lower_local *scope_find_local(lower_scope *scope, const char *name);
+
+/* destructure.c: the flat tuple destructuring of an initial binding.
+   1 when the paren pattern lowered, 0 to keep the general
+   diagnostic. */
+int lower_tuple_let(lower_ctx *c, lower_scope *scope, const ek_node *m,
+                    const ek_node *pat);
 
 /* extctype.c: the frozen C struct of a ctype and the walks between
    its two shapes. lower_ctype_of_node names the declaration a written

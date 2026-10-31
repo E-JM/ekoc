@@ -44,6 +44,20 @@ static lower_gtype *add_family(lower_ctx *c)
     return &slots[c->ngt++];
 }
 
+/* Finds a registered family by its stem, the name the typeinfo and
+   the drop carry; NULL when no family registers under it. */
+lower_gtype *lower_gtype_of_stem(lower_ctx *c, const char *stem)
+{
+    size_t i;
+
+    for (i = 0; i < c->ngt; i++) {
+        if (strcmp(c->gtypes[i].stem, stem) == 0) {
+            return &c->gtypes[i];
+        }
+    }
+    return NULL;
+}
+
 /* Registers the record or tuple representation of a declared type:
    the layout follows the declaration's right-hand side, records in
    declaration order. A ctype's family takes its fields from its own
@@ -435,6 +449,77 @@ lower_gtype *lower_env_family(lower_ctx *c, const char **names, size_t n)
 void lower_use_list(lower_ctx *c)
 {
     c->uses_list = 1;
+}
+
+/* The declared record or tuple representation of a nominal as a value
+   type, the binders replaced by the applied arguments; NULL when the
+   declaration carries neither shape. The composite literals read the
+   field and component types out of it. */
+const ek_type *lower_repr_type(lower_ctx *c, const ek_type *nom)
+{
+    const ek_symbol *tsym;
+    const ek_node *dn;
+
+    if (!nom || nom->kind != EK_T_NOMINAL || !nom->u.nominal.sym) {
+        return NULL;
+    }
+    tsym = nom->u.nominal.sym;
+    dn = tsym->decl;
+    if (!dn || dn->kind != EK_N_TYPE_DECL
+        || (dn->u.type_decl.rhs != EK_TYPE_RHS_RECORD
+            && dn->u.type_decl.rhs != EK_TYPE_RHS_TUPLE)) {
+        return NULL;
+    }
+    return lower_applied_type(c, dn->u.type_decl.type, dn, nom);
+}
+
+/* The field type of one written field name in a record value type. */
+const ek_type *lower_record_field(const ek_type *rec, const char *name)
+{
+    size_t i;
+
+    if (!rec || rec->kind != EK_T_RECORD) {
+        return NULL;
+    }
+    for (i = 0; i < rec->u.record.count; i++) {
+        if (strcmp(rec->u.record.fields[i].name, name) == 0) {
+            return rec->u.record.fields[i].type;
+        }
+    }
+    return NULL;
+}
+
+/* The payload type of the constructor a reference denotes, applied
+   under the owner's instantiation; NULL for a zero-payload variant or
+   a constructor the owner's declaration does not carry. */
+const ek_type *lower_ctor_payload_type(lower_ctx *c, const ek_ref *ref,
+                                       const ek_type *nom)
+{
+    const ek_symbol *tsym;
+    const ek_symbol *cs;
+    const ek_node *dn;
+    size_t i;
+
+    if (!nom || nom->kind != EK_T_NOMINAL || !nom->u.nominal.sym) {
+        return NULL;
+    }
+    tsym = nom->u.nominal.sym;
+    cs = pick_ctor(ref, tsym);
+    dn = tsym->decl;
+    if (!cs || !dn || dn->kind != EK_N_TYPE_DECL) {
+        return NULL;
+    }
+    for (i = 0; i < dn->u.type_decl.variants.count; i++) {
+        const ek_node *v = dn->u.type_decl.variants.data[i];
+
+        if (strcmp(v->u.variant.name, cs->name) == 0) {
+            if (!v->u.variant.payload) {
+                return NULL;
+            }
+            return lower_applied_type(c, v->u.variant.payload, dn, nom);
+        }
+    }
+    return NULL;
 }
 
 /* The spelling piece of one range element slot. */

@@ -31,56 +31,56 @@ static void capident_drop3(ek_obj *o)
 }
 
 const ek_typeinfo ekT_std_Result_Ok = { EK_KIND_STRUCT,
-                                               capident_drop1 };
+                                        capident_drop1, NULL, NULL };
 const ek_typeinfo ekT_std_Result_Err = { EK_KIND_STRUCT,
-                                                capident_drop1 };
+                                         capident_drop1, NULL, NULL };
 const ek_typeinfo ekT_std_Option_Some = { EK_KIND_STRUCT,
-                                                 capident_drop1 };
+                                          capident_drop1, NULL, NULL };
 const ek_typeinfo ekT_std_Option_None = { EK_KIND_STRUCT,
-                                                 capident_drop0 };
+                                          capident_drop0, NULL, NULL };
 const ek_typeinfo ekT_cap_IoError_NotFound = { EK_KIND_STRUCT,
-                                                      capident_drop0 };
+                                               capident_drop0, NULL, NULL };
 const ek_typeinfo ekT_cap_IoError_Permission = { EK_KIND_STRUCT,
-                                                        capident_drop0 };
+                                                 capident_drop0, NULL, NULL };
 const ek_typeinfo ekT_cap_IoError_Exists = { EK_KIND_STRUCT,
-                                                    capident_drop0 };
+                                             capident_drop0, NULL, NULL };
 const ek_typeinfo ekT_cap_IoError_NotFile = { EK_KIND_STRUCT,
-                                                     capident_drop0 };
+                                              capident_drop0, NULL, NULL };
 const ek_typeinfo ekT_cap_IoError_Closed = { EK_KIND_STRUCT,
-                                                    capident_drop0 };
+                                             capident_drop0, NULL, NULL };
 const ek_typeinfo ekT_cap_IoError_InvalidData = { EK_KIND_STRUCT,
-                                                         capident_drop1 };
+                                                  capident_drop1, NULL, NULL };
 const ek_typeinfo ekT_cap_IoError_Other = { EK_KIND_STRUCT,
-                                                   capident_drop1 };
+                                            capident_drop1, NULL, NULL };
 const ek_typeinfo ekT_cap_OpenMode_Read = { EK_KIND_STRUCT,
-                                                   capident_drop0 };
+                                            capident_drop0, NULL, NULL };
 const ek_typeinfo ekT_cap_OpenMode_Write = { EK_KIND_STRUCT,
-                                                    capident_drop0 };
+                                             capident_drop0, NULL, NULL };
 const ek_typeinfo ekT_cap_OpenMode_Append = { EK_KIND_STRUCT,
-                                                     capident_drop0 };
+                                              capident_drop0, NULL, NULL };
 const ek_typeinfo ekT_cap_OpenMode_New = { EK_KIND_STRUCT,
-                                                  capident_drop0 };
+                                           capident_drop0, NULL, NULL };
 const ek_typeinfo ekT_cap_OpenMode_Update = { EK_KIND_STRUCT,
-                                                     capident_drop0 };
+                                              capident_drop0, NULL, NULL };
 const ek_typeinfo ekT_cap_FileInfo = { EK_KIND_STRUCT,
-                                              capident_drop3 };
+                                       capident_drop3, NULL, NULL };
 const ek_typeinfo ekT_time_Time_Time = { EK_KIND_STRUCT,
-                                                capident_drop1 };
+                                         capident_drop1, NULL, NULL };
 const ek_typeinfo ekT_time_Mono_Mono = { EK_KIND_STRUCT,
-                                                capident_drop1 };
+                                         capident_drop1, NULL, NULL };
 const ek_typeinfo ekT_time_Duration_Duration = { EK_KIND_STRUCT,
-                                                 capident_drop1 };
+                                                 capident_drop1, NULL, NULL };
 const ek_typeinfo ekT_std_ParseError_Empty = { EK_KIND_STRUCT,
-                                               capident_drop0 };
+                                               capident_drop0, NULL, NULL };
 const ek_typeinfo ekT_std_ParseError_Invalid = { EK_KIND_STRUCT,
-                                                 capident_drop1 };
+                                                 capident_drop1, NULL, NULL };
 const ek_typeinfo ekT_std_ParseError_OutOfRange = { EK_KIND_STRUCT,
-                                                    capident_drop0 };
-const ek_typeinfo ekT_std_Json_Null = { EK_KIND_STRUCT, capident_drop0 };
-const ek_typeinfo ekT_std_Json_Bool = { EK_KIND_STRUCT, capident_drop1 };
-const ek_typeinfo ekT_std_Json_Int = { EK_KIND_STRUCT, capident_drop1 };
-const ek_typeinfo ekT_std_Json_Float = { EK_KIND_STRUCT, capident_drop1 };
-const ek_typeinfo ekT_std_Json_Str = { EK_KIND_STRUCT, capident_drop1 };
-const ek_typeinfo ekT_std_Json_Arr = { EK_KIND_STRUCT, capident_drop1 };
-const ek_typeinfo ekT_std_Json_Obj = { EK_KIND_STRUCT, capident_drop1 };
+                                                    capident_drop0, NULL, NULL };
+const ek_typeinfo ekT_std_Json_Null = { EK_KIND_STRUCT, capident_drop0, NULL, NULL };
+const ek_typeinfo ekT_std_Json_Bool = { EK_KIND_STRUCT, capident_drop1, NULL, NULL };
+const ek_typeinfo ekT_std_Json_Int = { EK_KIND_STRUCT, capident_drop1, NULL, NULL };
+const ek_typeinfo ekT_std_Json_Float = { EK_KIND_STRUCT, capident_drop1, NULL, NULL };
+const ek_typeinfo ekT_std_Json_Str = { EK_KIND_STRUCT, capident_drop1, NULL, NULL };
+const ek_typeinfo ekT_std_Json_Arr = { EK_KIND_STRUCT, capident_drop1, NULL, NULL };
+const ek_typeinfo ekT_std_Json_Obj = { EK_KIND_STRUCT, capident_drop1, NULL, NULL };
 #endif

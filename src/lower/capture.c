@@ -102,8 +102,12 @@ static void reads_ctl(lower_reads *r, const ek_node *e)
     }
 }
 
-/* The name reads of a body, nested lambdas excluded: their captures
-   are their own. */
+/* The name reads of a body. A nested lambda descends as well: a free
+   name read only inside it must still reach the creation site's own
+   capture set when the site can see the name, or a closure body
+   between the read and the binding would strand it. A lambda body
+   that shadows the name rebinds it closer, so the extra capture stays
+   harmless. */
 void lower_reads_walk(lower_reads *r, const ek_node *e)
 {
     size_t i;
@@ -116,6 +120,7 @@ void lower_reads_walk(lower_reads *r, const ek_node *e)
         lower_read_put(r, e);
         return;
     case EK_N_LAMBDA:
+        lower_reads_walk(r, e->u.pair.b);
         return;
     case EK_N_BLOCK:
     case EK_N_MODULE:

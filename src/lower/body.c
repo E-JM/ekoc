@@ -178,6 +178,10 @@ static void emit_let(lower_ctx *c, lower_scope *scope, const ek_node *m)
         lower_emitf(c, "ek_release(%s);\n", cname);
         return;
     }
+    if (pat && pat->kind == EK_N_P_PAREN
+        && lower_tuple_let(c, scope, m, pat)) {
+        return;
+    }
     if (!pat || pat->kind != EK_N_P_VAR || pat->u.path.count != 1) {
         lower_error(c, m, "the destructuring pattern is not supported by "
                           "this lowerer");

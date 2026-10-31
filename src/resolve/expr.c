@@ -305,7 +305,9 @@ static void r_apply(r_ctx *c, r_file *f, const ek_node *e)
 
 /* Composite items: the value of every item resolves; a colon item's
    key is a record field or a dictionary key expression, and the
-   expected type decides, so keys resolve in check. */
+   expected type decides, so a bare name stays unread here -- check
+   reads the fields. A key that is not a bare name can only be a
+   dictionary key expression, and it resolves here. */
 static void r_items(r_ctx *c, r_file *f, const ek_node *e)
 {
     size_t i;
@@ -313,8 +315,13 @@ static void r_items(r_ctx *c, r_file *f, const ek_node *e)
     for (i = 0; i < e->u.kids.count; i++) {
         const ek_node *item = e->u.kids.data[i];
 
-        if (item->kind == EK_N_COMPOSITE_ITEM) {
-            r_expr(c, f, item->u.pair.b);
+        if (item->kind != EK_N_COMPOSITE_ITEM) {
+            continue;
+        }
+        r_expr(c, f, item->u.pair.b);
+        if (item->u.pair.a && (item->u.pair.a->kind != EK_N_NAME
+                               || item->u.pair.a->u.path.count != 1)) {
+            r_expr(c, f, item->u.pair.a);
         }
     }
 }

@@ -12,7 +12,7 @@ typedef struct {
     void *p;
 } ek_ptr;
 
-static const ek_typeinfo ek_typeinfo_ptr = { EK_KIND_STRUCT, NULL };
+static const ek_typeinfo ek_typeinfo_ptr = { EK_KIND_STRUCT, NULL, NULL, NULL };
 
 ek_val ek_ptr_wrap(void *p)
 {

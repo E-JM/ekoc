@@ -47,7 +47,7 @@ typedef struct {
     size_t n;
 } ek_cap_argv;
 
-static const ek_typeinfo ek_typeinfo_cap_argv = { EK_KIND_STRUCT, NULL };
+static const ek_typeinfo ek_typeinfo_cap_argv = { EK_KIND_STRUCT, NULL, NULL, NULL };
 
 static ek_val args_all(ek_val env, ek_val *args, size_t argc)
 {

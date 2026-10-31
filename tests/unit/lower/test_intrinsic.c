@@ -206,11 +206,12 @@ static void unsupported_rows_keep_elower(void)
     EK_CHECK(lfx_has_code(&f, "E-lower"));
     lfx_end(&f);
 
-    /* the Set namespace has no runtime representation to bridge to */
+    /* the set algebra has no runtime representation to bridge to */
     lfx_begin(&f,
               "main: () -> _ =\n"
               "    s = Set.of({1})\n"
-              "    _ := s\n"
+              "    u = s.union(s)\n"
+              "    _ := u\n"
               "    _\n");
     EK_CHECK(lfx_check_clean(&f));
     EK_CHECK(lfx_errors(&f) >= 1);

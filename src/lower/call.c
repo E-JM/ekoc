@@ -374,6 +374,15 @@ static const ek_symbol *member_symbol(lower_ctx *c, const ek_type *recv,
     return member_scan(c, owner, mod, tsym, name);
 }
 
+/* The declared member of one receiver type's namespace, the way the
+   member-call path finds it; the display slots consult it before the
+   derived services, since a declared `show` outranks the derived one. */
+const ek_symbol *lower_member_symbol(lower_ctx *c, const ek_type *recv,
+                                     const char *name)
+{
+    return member_symbol(c, recv, name);
+}
+
 /* The unsupported-call balance: the receiver and the arguments still
    evaluate and die. */
 static lower_val discard_call(lower_ctx *c, lower_scope *scope,
