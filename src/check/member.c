@@ -717,12 +717,26 @@ const ek_type *ck_field_of(ck_ctx *c, const ek_type *r, const char *name)
     return NULL;
 }
 
-/* A bare x.f is a field access. */
+/* A bare x.f is a field access. A head-qualified chain resolve decided
+   names a module function, a namespace member, or an extern; its
+   scheme is the chain's type, so the member reads as a value wherever
+   the chain does. A receiver-form module path keeps the field walk:
+   check owes it the receiver-type decision a field of the same
+   spelling can win. */
 const ek_type *ck_field(ck_ctx *c, const ek_node *e)
 {
-    const ek_type *recv = ck_expr(c, e->u.field.recv, NULL);
+    const ek_ref *ref = NULL;
+    const ek_type *recv;
     ek_reading rd = EK_RD_NONE;
 
+    if (ck_ref_at(c, e, 0, &ref) && ref->station == EK_ST_QUALIFIED
+        && ref->symbol
+        && (ref->kind == EK_SYM_FUNC || ref->kind == EK_SYM_NAMESPACE
+            || ref->kind == EK_SYM_EXTERN)) {
+        (void)ck_expr(c, e->u.field.recv, NULL);
+        return ck_type_of(c, ref->symbol);
+    }
+    recv = ck_expr(c, e->u.field.recv, NULL);
     return ck_link(c, e, recv, e->u.field.name, &rd);
 }
 

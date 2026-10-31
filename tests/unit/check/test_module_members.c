@@ -53,8 +53,46 @@ static void module_qualified_members(void)
     cfx_end(&f);
 }
 
+/* A head-qualified member read as a value: the member's scheme types
+   the chain, so a module function of known signature fills an
+   open-arrow parameter and its result determines the callee's
+   variable. A receiver-form module path stays a field walk. */
+static void module_member_values(void)
+{
+    static const char *const mpath[1] = {MEMBER_DIR};
+    cfx f;
+
+    EK_CHECK(put_module("mfns.eko",
+        "double: (x: Int) -> Int = x * 2\n"
+        "shout: (s: String) -> String = s\n"));
+    cfx_run(&f,
+        "import mfns\n"
+        "\n"
+        "use: () -> _ =\n"
+        "    xs: []Int = {1, 2, 3}\n"
+        "    ys := xs.map(mfns.double)\n"
+        "    g := mfns.double\n"
+        "    zs := xs.map(g)\n"
+        "    _\n", mpath, 1, "mfns_use.eko");
+    EK_CHECK_U64(cfx_stage_errors(f.ds, f.dn), 0);
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+
+    cfx_run(&f,
+        "import mfns\n"
+        "\n"
+        "use: () -> _ =\n"
+        "    xs: []Int = {1, 2, 3}\n"
+        "    ys := xs.map(mfns.shout)\n"
+        "    _\n", mpath, 1, "mfns_bad.eko");
+    EK_CHECK_U64(cfx_stage_errors(f.ds, f.dn), 0);
+    EK_CHECK(cfx_code_at_line(&f, "E-type-mismatch", 5));
+    cfx_end(&f);
+}
+
 int main(void)
 {
     module_qualified_members();
+    module_member_values();
     return ek_test_report("check/module-members");
 }
