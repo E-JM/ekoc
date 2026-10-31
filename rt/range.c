@@ -355,14 +355,15 @@ ek_val ek_range_each_index(ek_val range, ek_val f)
     return ek_val_unit();
 }
 
-/* The left-to-right fold: the accumulator flows through the callback,
-   the previous one released once its successor exists. */
+/* The left-to-right fold: the accumulator is borrowed -- the caller
+   keeps its own reference -- and the accumulator flows through the
+   callback, the previous one released once its successor exists. The
+   returned accumulator is the caller's to release. */
 ek_val ek_range_fold(ek_val range, ek_val acc, ek_val f)
 {
     ek_val s, e, c;
 
     if (!ek_val_is_ref(range)) {
-        ek_release(acc);
         return ek_val_unit();
     }
     range_fields(range, &s, &e, &c);
@@ -371,6 +372,7 @@ ek_val ek_range_fold(ek_val range, ek_val acc, ek_val f)
 
         fd.f = f;
         fd.acc = acc;
+        ek_retain(acc);
         walker_of(range)(range, c.as.i != 0, fold_visit, &fd);
         return fd.acc;
     }

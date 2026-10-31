@@ -16,12 +16,12 @@
 typedef struct {
     ek_obj obj;
     ek_val p0;
-} ek_gen_one;
+} ek_gen_p0_shape;
 
 /* The fieldless shape of a zero-payload constructor family. */
 typedef struct {
     ek_obj obj;
-} ek_gen_zero;
+} ek_gen_bare_shape;
 
 /* The FileInfo record of the capability module: the fields in the
    declaration's order. */
@@ -32,9 +32,9 @@ typedef struct {
     ek_val f_is_dir;
 } ek_gen_finfo;
 
-static ek_val gen_one(const ek_typeinfo *info, ek_val p0)
+ek_val ek_gen_one(const ek_typeinfo *info, ek_val p0)
 {
-    ek_gen_one *o = ek_rt_alloc_zeroed(sizeof *o);
+    ek_gen_p0_shape *o = ek_rt_alloc_zeroed(sizeof *o);
 
     o->obj.info = info;
     o->obj.rc = 1;
@@ -43,9 +43,9 @@ static ek_val gen_one(const ek_typeinfo *info, ek_val p0)
     return ek_val_ref(&o->obj);
 }
 
-static ek_val gen_zero(const ek_typeinfo *info)
+ek_val ek_gen_zero(const ek_typeinfo *info)
 {
-    ek_gen_zero *o = ek_rt_alloc_zeroed(sizeof *o);
+    ek_gen_bare_shape *o = ek_rt_alloc_zeroed(sizeof *o);
 
     o->obj.info = info;
     o->obj.rc = 1;
@@ -54,22 +54,22 @@ static ek_val gen_zero(const ek_typeinfo *info)
 
 ek_val ek_gen_result_ok(ek_val payload)
 {
-    return gen_one(&ekT_std_Result_Ok, payload);
+    return ek_gen_one(&ekT_std_Result_Ok, payload);
 }
 
 ek_val ek_gen_result_err(ek_val payload)
 {
-    return gen_one(&ekT_std_Result_Err, payload);
+    return ek_gen_one(&ekT_std_Result_Err, payload);
 }
 
 ek_val ek_gen_option_some(ek_val payload)
 {
-    return gen_one(&ekT_std_Option_Some, payload);
+    return ek_gen_one(&ekT_std_Option_Some, payload);
 }
 
 ek_val ek_gen_option_none(void)
 {
-    return gen_zero(&ekT_std_Option_None);
+    return ek_gen_zero(&ekT_std_Option_None);
 }
 
 ek_val ek_gen_ioerr(int kind, const char *msg)
@@ -83,10 +83,10 @@ ek_val ek_gen_ioerr(int kind, const char *msg)
     ek_val r;
 
     if (kind <= EK_IO_CLOSED) {
-        return gen_zero(kinds[kind]);
+        return ek_gen_zero(kinds[kind]);
     }
     d = ek_val_ref(ek_str_from_cstr(msg != NULL ? msg : ""));
-    r = gen_one(kind == EK_IO_INVALID_DATA ? &ekT_cap_IoError_InvalidData
+    r = ek_gen_one(kind == EK_IO_INVALID_DATA ? &ekT_cap_IoError_InvalidData
                                            : &ekT_cap_IoError_Other,
                 d);
     ek_release(d);
@@ -95,12 +95,12 @@ ek_val ek_gen_ioerr(int kind, const char *msg)
 
 ek_val ek_gen_time(int64_t ns)
 {
-    return gen_one(&ekT_time_Time_Time, ek_val_int(ns));
+    return ek_gen_one(&ekT_time_Time_Time, ek_val_int(ns));
 }
 
 ek_val ek_gen_mono(int64_t ns)
 {
-    return gen_one(&ekT_time_Mono_Mono, ek_val_int(ns));
+    return ek_gen_one(&ekT_time_Mono_Mono, ek_val_int(ns));
 }
 
 ek_val ek_gen_file_info(uint64_t size, ek_val mtime, int is_dir)
@@ -121,7 +121,7 @@ int64_t ek_gen_ns(ek_val v)
     if (!ek_val_is_ref(v)) {
         return 0;
     }
-    return ((const ek_gen_one *)v.as.ref)->p0.as.i;
+    return ((const ek_gen_p0_shape *)v.as.ref)->p0.as.i;
 }
 
 /* The shared bundle families: the header followed by the member

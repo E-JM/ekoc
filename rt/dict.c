@@ -227,8 +227,10 @@ ek_val ek_dict_remove(ek_val d, ek_val key)
     ek_dict *fresh;
     uint32_t idx;
 
-    if (find_entry(old, key) == NULL)
+    if (find_entry(old, key) == NULL) {
+        ek_retain(d);
         return d;
+    }
     fresh = dict_sized_for(old->count - 1);
     for (idx = old->head; idx != DICT_NO_ENTRY; idx = old->entries[idx].next) {
         const ek_dict_entry *e = &old->entries[idx];
@@ -265,6 +267,99 @@ int ek_dict_next(ek_val d, size_t *cursor, ek_val *key, ek_val *val)
     *val = dict->entries[idx].val;
     *cursor = (size_t)idx + 1;
     return 1;
+}
+
+/* The traversals run as native loops over the build-order chain, so
+   their stack usage is independent of the entry count. The entries are
+   borrowed: the caller's dictionary reference keeps them alive for the
+   walk, and each callback retains whatever it stores. */
+
+/* The left-to-right fold in insertion order: the accumulator starts at
+   acc, each step calls f with the accumulator, the key, and the value,
+   and the last step's result is returned. acc is borrowed -- the
+   caller keeps its own reference -- and the returned accumulator is the
+   caller's to release. */
+ek_val ek_dict_fold(ek_val d, ek_val acc, ek_val f)
+{
+    const ek_dict *dict = (const ek_dict *)d.as.ref;
+    uint32_t idx;
+
+    ek_retain(acc);
+    for (idx = dict->head; idx != DICT_NO_ENTRY; idx = dict->entries[idx].next) {
+        ek_val args[3];
+        ek_val out;
+
+        args[0] = acc;
+        args[1] = dict->entries[idx].key;
+        args[2] = dict->entries[idx].val;
+        out = ek_closure_call(f, args, 3);
+        ek_release(acc);
+        acc = out;
+    }
+    return acc;
+}
+
+/* The callback over every mapping in insertion order; the results are
+   dropped and the unit value returned. */
+ek_val ek_dict_each(ek_val d, ek_val f)
+{
+    const ek_dict *dict = (const ek_dict *)d.as.ref;
+    uint32_t idx;
+
+    for (idx = dict->head; idx != DICT_NO_ENTRY; idx = dict->entries[idx].next) {
+        ek_val args[2];
+        ek_val out;
+
+        args[0] = dict->entries[idx].key;
+        args[1] = dict->entries[idx].val;
+        out = ek_closure_call(f, args, 2);
+        ek_release(out);
+    }
+    return ek_val_unit();
+}
+
+/* A fresh dictionary whose values are the callback's results, the keys
+   and their insertion order unchanged. */
+ek_val ek_dict_map(ek_val d, ek_val f)
+{
+    const ek_dict *old = (const ek_dict *)d.as.ref;
+    ek_dict *fresh = dict_sized_for(old->count);
+    uint32_t idx;
+
+    for (idx = old->head; idx != DICT_NO_ENTRY; idx = old->entries[idx].next) {
+        ek_val args[2];
+        ek_val out;
+
+        args[0] = old->entries[idx].key;
+        args[1] = old->entries[idx].val;
+        out = ek_closure_call(f, args, 2);
+        entry_store(fresh, old->entries[idx].key, out);
+        ek_release(out);
+    }
+    return ek_val_ref(&fresh->obj);
+}
+
+/* A fresh dictionary holding the mappings whose callback says keep, in
+   insertion order. */
+ek_val ek_dict_filter(ek_val d, ek_val f)
+{
+    const ek_dict *old = (const ek_dict *)d.as.ref;
+    ek_dict *fresh = dict_sized_for(old->count);
+    uint32_t idx;
+
+    for (idx = old->head; idx != DICT_NO_ENTRY; idx = old->entries[idx].next) {
+        ek_val args[2];
+        ek_val out;
+
+        args[0] = old->entries[idx].key;
+        args[1] = old->entries[idx].val;
+        out = ek_closure_call(f, args, 2);
+        if (out.tag == EK_VAL_INT && out.as.i != 0)
+            entry_store(fresh, old->entries[idx].key,
+                        old->entries[idx].val);
+        ek_release(out);
+    }
+    return ek_val_ref(&fresh->obj);
 }
 
 /* Releases every used entry's key and value, walking the table in

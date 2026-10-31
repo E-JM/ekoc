@@ -15,6 +15,58 @@ typedef struct {
     ek_val tail;
 } ek_cons_cell;
 
+/* The growable element buffer of a collecting traversal: the buffer
+   owns the references it is given, and the spine build moves each one
+   into its cell. */
+
+void ek_elems_add(ek_elems *cl, ek_val v)
+{
+    if (cl->len == cl->cap) {
+        size_t ncap = cl->cap ? cl->cap * 2 : 16;
+        ek_val *fresh = realloc(cl->data, ncap * sizeof *fresh);
+
+        if (!fresh)
+            ek_abort("out of memory");
+        cl->data = fresh;
+        cl->cap = ncap;
+    }
+    cl->data[cl->len++] = v;
+}
+
+ek_val ek_elems_list(ek_elems *cl)
+{
+    ek_val acc = ek_nil_val();
+    size_t i = cl->len;
+
+    /* The cells build back to front, so each cons puts its head in
+       front and every element's reference moves into its cell. */
+    while (i > 0) {
+        ek_val cell;
+
+        i--;
+        cell = ek_cons(cl->data[i], acc);
+        ek_release(acc);
+        ek_release(cl->data[i]);
+        acc = cell;
+    }
+    free(cl->data);
+    cl->data = NULL;
+    cl->len = 0;
+    cl->cap = 0;
+    return acc;
+}
+
+void ek_elems_drain(ek_elems *cl)
+{
+    while (cl->len > 0) {
+        cl->len--;
+        ek_release(cl->data[cl->len]);
+    }
+    free(cl->data);
+    cl->data = NULL;
+    cl->cap = 0;
+}
+
 /* Nonzero when v refers to a cons cell. */
 static int is_cons(ek_val v)
 {

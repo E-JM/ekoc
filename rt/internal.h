@@ -32,6 +32,16 @@ extern const ek_typeinfo ekT_std_Result_Ok;
 extern const ek_typeinfo ekT_std_Result_Err;
 extern const ek_typeinfo ekT_std_Option_Some;
 extern const ek_typeinfo ekT_std_Option_None;
+extern const ek_typeinfo ekT_std_ParseError_Empty;
+extern const ek_typeinfo ekT_std_ParseError_Invalid;
+extern const ek_typeinfo ekT_std_ParseError_OutOfRange;
+extern const ek_typeinfo ekT_std_Json_Null;
+extern const ek_typeinfo ekT_std_Json_Bool;
+extern const ek_typeinfo ekT_std_Json_Int;
+extern const ek_typeinfo ekT_std_Json_Float;
+extern const ek_typeinfo ekT_std_Json_Str;
+extern const ek_typeinfo ekT_std_Json_Arr;
+extern const ek_typeinfo ekT_std_Json_Obj;
 extern const ek_typeinfo ekT_cap_IoError_NotFound;
 extern const ek_typeinfo ekT_cap_IoError_Permission;
 extern const ek_typeinfo ekT_cap_IoError_Exists;
@@ -48,9 +58,11 @@ extern const ek_typeinfo ekT_cap_FileInfo;
 extern const ek_typeinfo ekT_time_Time_Time;
 extern const ek_typeinfo ekT_time_Mono_Mono;
 
-/* Value builders over the shared identities above (capval.c). Each
-   takes ownership of the references it stores: a payload argument was
-   owned by the caller and is owned by the built value afterwards. */
+/* The one-payload and zero-payload constructor shapes over the layout
+   contract (capval.c). The payload argument is owned by the caller and
+   owned by the built value afterwards. */
+ek_val ek_gen_one(const ek_typeinfo *info, ek_val p0);
+ek_val ek_gen_zero(const ek_typeinfo *info);
 
 /* The std Result constructors: Ok and Err over a one-slot payload. */
 ek_val ek_gen_result_ok(ek_val payload);
@@ -128,6 +140,7 @@ extern const ek_typeinfo ek_typeinfo_str;
 extern const ek_typeinfo ek_typeinfo_bytes;
 extern const ek_typeinfo ek_typeinfo_cons;
 extern const ek_typeinfo ek_typeinfo_dict;
+extern const ek_typeinfo ek_typeinfo_set;
 extern const ek_typeinfo ek_typeinfo_closure;
 extern const ek_typeinfo ek_typeinfo_nil;
 
@@ -137,6 +150,7 @@ extern const ek_typeinfo ek_typeinfo_nil;
    recursion. */
 void ek_cons_drop(ek_obj *obj);
 void ek_dict_drop(ek_obj *obj);
+void ek_set_drop(ek_obj *obj);
 void ek_closure_drop(ek_obj *obj);
 
 /* Steps one count down and returns the count after the step. A zero
@@ -145,6 +159,19 @@ void ek_closure_drop(ek_obj *obj);
    consume a chain of cells in constant stack. Ordinary releases go
    through ek_release. */
 unsigned long ek_rc_dec(ek_obj *obj);
+
+/* The growable element buffer of a collecting traversal: the buffer
+   owns the references it is given. ek_elems_list builds them into a
+   fresh spine in order and empties the buffer; ek_elems_drain lets
+   every buffered reference go without a list. */
+typedef struct {
+    ek_val *data;
+    size_t len, cap;
+} ek_elems;
+
+void ek_elems_add(ek_elems *cl, ek_val v);
+ek_val ek_elems_list(ek_elems *cl);
+void ek_elems_drain(ek_elems *cl);
 
 /* The length of the sequence starting at p, or 0 when the bytes do
    not form one code point within left bytes: overlong forms,

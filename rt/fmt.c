@@ -144,3 +144,66 @@ ek_obj *ek_show_float(ek_val v)
     }
     return ek_str_from_cstr(buf);
 }
+
+/* The radix channel over the integer slots. The digits carry the
+   unsigned magnitude of the 64-bit slot word: an Int's negative values
+   render in two's-complement form, and a UInt renders its own word.
+   The form is lowercase and shortest -- no leading zeros, the plain
+   zero printing as one zero digit. The radix is 2, 8, or 16, and a
+   value of another tag is undefined. The caller owns the returned
+   object. */
+
+/* Writes the digits least significant first and returns the count. */
+static size_t radix_digits(unsigned long long mag, int radix, char *out)
+{
+    static const char digits[] = "0123456789abcdef";
+    size_t n = 0;
+
+    do {
+        out[n++] = digits[mag % (unsigned long long)radix];
+        mag /= (unsigned long long)radix;
+    } while (mag > 0);
+    return n;
+}
+
+/* The magnitude of the slot word: a UInt is its own word, every other
+   slot reads as the signed word whose two's complement is the value. */
+static unsigned long long radix_magnitude(ek_val v)
+{
+    return v.tag == EK_VAL_UINT ? v.as.u : (unsigned long long)v.as.i;
+}
+
+ek_obj *ek_show_radix(ek_val v, int radix)
+{
+    char digits[65];
+    char out[65];
+    size_t n = radix_digits(radix_magnitude(v), radix, digits);
+    size_t i;
+
+    for (i = 0; i < n; i++)
+        out[i] = digits[n - 1 - i];
+    out[n] = '\0';
+    return ek_str_from_cstr(out);
+}
+
+/* Fixed-width hexadecimal over the same slot words: the radix-16 form
+   zero-padded on the left to at least width digits and never
+   truncated. The width travels as a UInt value; a value of another tag
+   is undefined. The caller owns the returned object. */
+ek_obj *ek_show_hex_pad(ek_val v, ek_val width)
+{
+    char digits[65];
+    size_t n = radix_digits(radix_magnitude(v), 16, digits);
+    size_t pad = width.as.u > n ? (size_t)(width.as.u - n) : 0;
+    char *buf = ek_rt_alloc_zeroed(n + pad);
+    ek_obj *out;
+    size_t i;
+
+    for (i = 0; i < pad; i++)
+        buf[i] = '0';
+    for (i = 0; i < n; i++)
+        buf[pad + i] = digits[n - 1 - i];
+    out = ek_str_new(buf, n + pad);
+    free(buf);
+    return out;
+}

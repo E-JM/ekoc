@@ -119,9 +119,15 @@ static void walk_borrows_its_entries(void)
 static void removing_an_absent_key_yields_the_original(void)
 {
     ek_val d = int_dict((const int64_t[]){1, 2}, 2);
+    ek_val r = ek_dict_remove(d, ek_val_int(9));
+    ek_val r2 = ek_dict_remove(d, ek_val_uint(1));
 
-    EK_CHECK(ek_dict_remove(d, ek_val_int(9)).as.ref == d.as.ref);
-    EK_CHECK(ek_dict_remove(d, ek_val_uint(1)).as.ref == d.as.ref);
+    EK_CHECK(r.as.ref == d.as.ref);
+    EK_CHECK(r2.as.ref == d.as.ref);
+    EK_CHECK_U64(d.as.ref->rc, 3); /* the caller's and the two aliases' */
+    ek_release(r2);
+    ek_release(r);
+    EK_CHECK_U64(d.as.ref->rc, 1);
     ek_release(d);
 }
 

@@ -25,6 +25,7 @@ typedef enum {
     EK_KIND_BYTES,
     EK_KIND_CONS,
     EK_KIND_DICT,
+    EK_KIND_SET,
     EK_KIND_CLOSURE,
     EK_KIND_STRUCT,
     EK_KIND_NIL
@@ -224,6 +225,22 @@ ek_obj *ek_show_float(ek_val v);
 ek_obj *ek_show_char(ek_val v);
 ek_obj *ek_show_bool(ek_val v);
 
+/* The radix channel over the integer slots: the words the radix
+   parsers read back. The digits carry the unsigned magnitude of the
+   64-bit slot word, so an Int's negative values render in
+   two's-complement form and a UInt renders its own word. The form is
+   lowercase and shortest, with no leading zeros and the plain zero as
+   one zero digit. The radix is 2, 8, or 16, the width below is a UInt
+   value, and a value of another tag is undefined. The caller owns each
+   returned object. */
+
+/* The radix form: hex for 16, octal for 8, binary for 2. */
+ek_obj *ek_show_radix(ek_val v, int radix);
+
+/* Fixed-width hexadecimal: the radix-16 form zero-padded on the left
+   to at least width digits and never truncated. */
+ek_obj *ek_show_hex_pad(ek_val v, ek_val width);
+
 /* The parse family reads one scalar out of a String object. Each
    entry validates the whole input and reports one of four kinds:
    EK_PARSE_OK writes the value to *out; EK_PARSE_EMPTY means the
@@ -247,6 +264,20 @@ ek_parse_status ek_parse_uint_radix(ek_obj *s, int radix, uint64_t *out);
    e-notation exponent. A leading digit is required. Overflow and
    underflow take the IEEE result they read as. */
 ek_parse_status ek_parse_float(ek_obj *s, double *out);
+
+/* The Json document reader: the whole text as one value, wrapped in
+   the Result the parse family returns. Ok carries the Json ADT value
+   the text builds -- the seven variants, with an object preserving the
+   text's key order -- and Err carries the ParseError: Empty when the
+   text holds no value at all, Invalid over a detail naming the byte
+   offset and context of the first malformed piece, and OutOfRange when
+   integer syntax leaves the Int domain. A number without a fraction or
+   an exponent reads as Int, anything else as Float, and the scanner
+   accepts the spellings NaN, Inf, and -Inf that the Float display
+   channel produces. Nesting past 512 container levels panics with
+   P-panic rather than exhausting the stack. The returned Result is the
+   caller's to release. */
+ek_val ek_json_parse(ek_obj *text);
 
 /* The conversion family moves one domain word into another slot. The
    ek_try_ entries are the narrowing rows: they return nonzero and
@@ -481,8 +512,10 @@ ek_val ek_dict_set(ek_val dict, ek_val key, ek_val val);
 size_t ek_dict_len(ek_val dict);
 
 /* A fresh dictionary without key's mapping: every remaining entry
-   keeps its insertion order. Removing an absent key yields dict
-   unchanged. Aborts on exhaustion. */
+   keeps its insertion order. Removing an absent key yields the
+   original, and the returned dictionary is the caller's to release
+   either way -- the fresh one, or a reference to the original added.
+   Aborts on exhaustion. */
 ek_val ek_dict_remove(ek_val dict, ek_val key);
 
 /* A fresh dictionary holding every mapping of a and then every
@@ -496,6 +529,69 @@ ek_val ek_dict_merge(ek_val a, ek_val b);
    mapping remains. *cursor starts at zero and is owned by the walk;
    the caller passes it back unchanged between calls. */
 int ek_dict_next(ek_val dict, size_t *cursor, ek_val *key, ek_val *val);
+
+/* The traversals run as native loops over the insertion order, so
+   their stack usage is independent of the entry count. The entries are
+   borrowed, and each callback retains whatever it stores. */
+
+/* The left-to-right fold in insertion order: the accumulator starts at
+   acc, each step calls f with the accumulator, the key, and the value,
+   and the last step's result is returned. acc is borrowed -- the
+   caller keeps its own reference -- and the returned accumulator is
+   the caller's to release. */
+ek_val ek_dict_fold(ek_val dict, ek_val acc, ek_val f);
+
+/* The callback over every mapping in insertion order, with the key
+   first and the value second; the results are dropped and the unit
+   value returned. */
+ek_val ek_dict_each(ek_val dict, ek_val f);
+
+/* A fresh dictionary whose values are the callback's results, the keys
+   and their insertion order unchanged. */
+ek_val ek_dict_map(ek_val dict, ek_val f);
+
+/* A fresh dictionary holding the mappings whose callback says keep, in
+   insertion order. */
+ek_val ek_dict_filter(ek_val dict, ek_val f);
+
+/* A set is an immutable collection of distinct elements with
+   copy-on-insert, carried over the same table discipline as the
+   dictionary: insertion order is kept in a build-order chain and
+   survives every rehash. Elements key structurally over the domains
+   the runtime itself can compare: scalars on the tag and the payload,
+   String and Bytes on their bytes, and a Float on IEEE equality, so
+   0.0 and -0.0 are one element while a NaN element never matches, not
+   even itself. Every other heap family keys on the object's address,
+   the same rule the dictionary applies to keys it cannot walk. The
+   accessors take a set value. */
+
+/* The empty set. Aborts on exhaustion. */
+ek_val ek_set_new(void);
+
+/* A fresh set over the list's elements in order, deduplicated with the
+   first occurrence kept. Aborts on exhaustion. */
+ek_val ek_set_of(ek_val list);
+
+/* A fresh set with the element added: an element already present
+   yields the original, and the returned set is the caller's to release
+   either way -- the fresh one, or a reference to the original added.
+   Aborts on exhaustion. */
+ek_val ek_set_insert(ek_val set, ek_val elem);
+
+/* A fresh set without the element: the remaining elements keep their
+   insertion order, and an absent element yields the original, with the
+   same release rule as insert. Aborts on exhaustion. */
+ek_val ek_set_remove(ek_val set, ek_val elem);
+
+/* Nonzero when the element is present. */
+int ek_set_contains(ek_val set, ek_val elem);
+
+/* The number of elements. */
+size_t ek_set_len(ek_val set);
+
+/* The elements as a fresh list, in insertion order. Aborts on
+   exhaustion. */
+ek_val ek_set_to_list(ek_val set);
 
 /* A range is a compiler-emitted struct over one ordered scalar: the
    object header is followed by three ek_val fields in this order --
@@ -529,7 +625,9 @@ ek_val ek_range_each_index(ek_val range, ek_val f);
 
 /* The left-to-right fold: the accumulator starts at acc, each step
    calls f with the accumulator and the element, and the last step's
-   result is returned. */
+   result is returned. acc is borrowed -- the caller keeps its own
+   reference -- and the returned accumulator is the caller's to
+   release. */
 ek_val ek_range_fold(ek_val range, ek_val acc, ek_val f);
 
 /* The uniform call ABI: the closure receives the environment it

@@ -10,6 +10,7 @@ const ek_typeinfo ek_typeinfo_str     = { EK_KIND_STR, NULL };
 const ek_typeinfo ek_typeinfo_bytes   = { EK_KIND_BYTES, NULL };
 const ek_typeinfo ek_typeinfo_cons    = { EK_KIND_CONS, ek_cons_drop };
 const ek_typeinfo ek_typeinfo_dict    = { EK_KIND_DICT, ek_dict_drop };
+const ek_typeinfo ek_typeinfo_set     = { EK_KIND_SET, ek_set_drop };
 const ek_typeinfo ek_typeinfo_closure = { EK_KIND_CLOSURE, ek_closure_drop };
 const ek_typeinfo ek_typeinfo_nil     = { EK_KIND_NIL, NULL };
 

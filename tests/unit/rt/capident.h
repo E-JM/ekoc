@@ -70,4 +70,17 @@ const ek_typeinfo ekT_time_Mono_Mono = { EK_KIND_STRUCT,
                                                 capident_drop1 };
 const ek_typeinfo ekT_time_Duration_Duration = { EK_KIND_STRUCT,
                                                  capident_drop1 };
+const ek_typeinfo ekT_std_ParseError_Empty = { EK_KIND_STRUCT,
+                                               capident_drop0 };
+const ek_typeinfo ekT_std_ParseError_Invalid = { EK_KIND_STRUCT,
+                                                 capident_drop1 };
+const ek_typeinfo ekT_std_ParseError_OutOfRange = { EK_KIND_STRUCT,
+                                                    capident_drop0 };
+const ek_typeinfo ekT_std_Json_Null = { EK_KIND_STRUCT, capident_drop0 };
+const ek_typeinfo ekT_std_Json_Bool = { EK_KIND_STRUCT, capident_drop1 };
+const ek_typeinfo ekT_std_Json_Int = { EK_KIND_STRUCT, capident_drop1 };
+const ek_typeinfo ekT_std_Json_Float = { EK_KIND_STRUCT, capident_drop1 };
+const ek_typeinfo ekT_std_Json_Str = { EK_KIND_STRUCT, capident_drop1 };
+const ek_typeinfo ekT_std_Json_Arr = { EK_KIND_STRUCT, capident_drop1 };
+const ek_typeinfo ekT_std_Json_Obj = { EK_KIND_STRUCT, capident_drop1 };
 #endif
