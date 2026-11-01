@@ -56,9 +56,9 @@ int cli_resolve(cli_diag_log *log, ek_arena *arena, ek_diag *diag,
    host commands own its presence, a test root is exempt. */
 int cli_has_main(const ek_resolve_result *res);
 
-/* The root module's test bindings in declaration order; names may be
-   NULL for a counting pass. */
-size_t cli_test_names(const ek_resolve_result *res, const char **names);
+/* One module surface's test bindings in declaration order; names may
+   be NULL for a counting pass. A NULL surface holds no tests. */
+size_t cli_test_names(const ek_surface *s, const char **names);
 
 /* The build command: compiles one Eko file into an executable and
    returns the process exit status, 0 on success and 2 on any failure.
@@ -75,11 +75,13 @@ int cli_build(const char *file, const char *out, const char *tree_root);
    diagnostics are warnings. */
 int cli_check(const char *file);
 
-/* The test command: compiles one Eko file's test bindings into a
-   driver binary under tree_root's build/ and runs it once per test,
-   reporting one line per test. Returns the process exit status, 0
-   when every test passed and 2 on any failure before or during the
-   run. tree_root is the directory holding rt/ and build/. */
+/* The test command: collects the test bindings of every module in the
+   compilation unit -- the entry file and its transitive imports -- and
+   lowers and runs one driver binary per module that declares tests,
+   one run per test under that module's report header. Returns the
+   process exit status, 0 when every test passed and 2 on any failure
+   before or during the run; a unit with no test binding anywhere is a
+   failure. tree_root is the directory holding rt/ and build/. */
 int cli_test(const char *file, const char *tree_root);
 
 #endif

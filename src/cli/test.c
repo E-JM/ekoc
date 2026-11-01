@@ -16,22 +16,37 @@
 #include "support/buf.h"
 #include "support/diag.h"
 
-/* The test command: one Eko file's test bindings into a driver binary,
-   then one child process per test. Panic capture is a process
-   boundary: a failing test panics in the child, and the driver reads
-   the panic block from the child's standard error and reports it. The
-   child's standard output passes through, so a test that exercises a
-   derived output channel behaves as it would under its own runner. */
+/* The test command: every module of the compilation unit declaring at
+   least one test binding is a test root. The roots run one by one,
+   each lowered with its own module as the test root into its own
+   driver binary, so same-named tests of different modules never share
+   a dispatch. Panic capture is a process boundary: a failing test
+   panics in the child, and the driver reads the panic block from the
+   child's standard error and reports it. The child's standard output
+   passes through, so a test that exercises a derived output channel
+   behaves as it would under its own runner. */
+
+/* One test root: a closure module, its test names in declaration
+   order, and the driver binary lowered from it. */
+typedef struct {
+    const ek_surface *surface; /* the module's surface in the closure */
+    size_t index;              /* the surface's place in the closure */
+    const char **names;
+    size_t ntests;
+    const char *bin;
+} test_root;
 
 /* The driver binary's path: tree_root's build/ holding the compiler's
-   own artifacts, named after the input so reruns overwrite. */
+   own artifacts, named after the entry and the test root so reruns
+   overwrite and the roots of one unit never share a path. */
 static const char *binary_path(ek_arena *arena, const char *tree_root,
-                               const char *stem)
+                               const char *entry_stem, const char *mod_stem)
 {
     char *path;
     size_t n;
 
-    n = snprintf(NULL, 0, "%s/build/ekoc-test-%s", tree_root, stem);
+    n = snprintf(NULL, 0, "%s/build/ekoc-test-%s-%s", tree_root,
+                 entry_stem, mod_stem);
     if (n == (size_t)-1) {
         return NULL;
     }
@@ -39,7 +54,8 @@ static const char *binary_path(ek_arena *arena, const char *tree_root,
     if (path == NULL) {
         return NULL;
     }
-    snprintf(path, n + 1, "%s/build/ekoc-test-%s", tree_root, stem);
+    snprintf(path, n + 1, "%s/build/ekoc-test-%s-%s", tree_root,
+             entry_stem, mod_stem);
     return path;
 }
 
@@ -147,6 +163,135 @@ static int report_test(const char *name, int status, const ek_buf *err)
     return 0;
 }
 
+/* The unit's test roots in closure order -- the entry module first,
+   then the imported modules in the order resolve discovered them.
+   The order across roots is this implementation's choice; within a
+   root the declaration order holds. Returns 0 when an allocation
+   failed. */
+static int collect_roots(ek_arena *arena, const ek_resolve_result *res,
+                         test_root **roots, size_t *nroots, size_t *ntotal)
+{
+    test_root *found;
+    size_t count, total, i, k;
+
+    *roots = NULL;
+    *nroots = 0;
+    *ntotal = 0;
+    if (res == NULL || res->module_count == 0) {
+        return 1;
+    }
+    count = 0;
+    for (i = 0; i < res->module_count; i++) {
+        if (cli_test_names(&res->modules[i], NULL) != 0) {
+            count++;
+        }
+    }
+    if (count == 0) {
+        return 1;
+    }
+    found = ek_arena_alloc(arena, count * sizeof *found);
+    if (found == NULL) {
+        return 0;
+    }
+    k = 0;
+    total = 0;
+    for (i = 0; i < res->module_count; i++) {
+        const ek_surface *s = &res->modules[i];
+        size_t n = cli_test_names(s, NULL);
+
+        if (n == 0) {
+            continue;
+        }
+        found[k].names = ek_arena_alloc(arena, n * sizeof *found[k].names);
+        if (found[k].names == NULL) {
+            return 0;
+        }
+        cli_test_names(s, found[k].names);
+        found[k].surface = s;
+        found[k].index = i;
+        found[k].ntests = n;
+        found[k].bin = NULL;
+        total += n;
+        k++;
+    }
+    *roots = found;
+    *nroots = k;
+    *ntotal = total;
+    return 1;
+}
+
+/* The closure with the root's module moved to the front: the lowerer
+   takes a test unit's bindings from the first module, and the command
+   lowers one root at a time. The surfaces are borrowed, so the
+   rotation is a shallow copy. Returns 0 when the copy lost to an
+   exhausted arena. */
+static int rooted_at(const ek_resolve_result *res, size_t at,
+                     ek_arena *arena, ek_resolve_result *out)
+{
+    ek_surface *mods;
+
+    mods = ek_arena_alloc(arena, res->module_count * sizeof *mods);
+    if (mods == NULL) {
+        return 0;
+    }
+    memcpy(mods, res->modules, res->module_count * sizeof *mods);
+    mods[0] = res->modules[at];
+    mods[at] = res->modules[0];
+    *out = *res;
+    out->modules = mods;
+    return 1;
+}
+
+/* Lowers and emits one driver binary per test root; each holds only
+   its own module's tests. Returns 0 when an allocation failed. */
+static int build_drivers(const ek_resolve_result *res, ek_check_result chk,
+                         const char *entry_stem, const char *tree_root,
+                         test_root *roots, size_t nroots, ek_arena *arena,
+                         ek_diag *diag, cli_diag_log *log)
+{
+    size_t r;
+
+    for (r = 0; r < nroots; r++) {
+        ek_resolve_result rot;
+        ek_lower_result low;
+
+        if (!rooted_at(res, roots[r].index, arena, &rot)) {
+            return 0;
+        }
+        low = ek_lower_with(rot, chk, EK_LOWER_TESTS, arena, diag);
+        cli_log_drain(log, diag);
+        roots[r].bin = binary_path(arena, tree_root, entry_stem,
+                                   roots[r].surface->module);
+        if (roots[r].bin == NULL) {
+            return 0;
+        }
+        ek_emit_aot(low.text, roots[r].bin, tree_root, arena, diag);
+        cli_log_drain(log, diag);
+    }
+    return 1;
+}
+
+/* Runs every root's tests in collection order: one module header, then
+   one report line per test. Returns the passed count. */
+static size_t run_roots(const test_root *roots, size_t nroots)
+{
+    size_t r, i, passed = 0;
+
+    for (r = 0; r < nroots; r++) {
+        printf("module %s\n", roots[r].surface->module);
+        for (i = 0; i < roots[r].ntests; i++) {
+            ek_buf err;
+            int waited;
+
+            ek_buf_init(&err);
+            waited = run_test(roots[r].bin, roots[r].names[i], &err);
+            passed += (size_t)report_test(roots[r].names[i], waited, &err);
+            ek_buf_destroy(&err);
+        }
+    }
+    return passed;
+}
+
 /* Frees the compilation's wholesale memory. */
 static void finish(ek_buf *source, ek_diag *diag, ek_arena *arena)
 {
@@ -163,10 +308,9 @@ int cli_test(const char *file, const char *tree_root)
     ek_buf source;
     ek_resolve_result res;
     ek_check_result chk;
-    ek_lower_result low;
-    const char **names;
-    const char *bin;
-    size_t ntests, i, passed = 0;
+    test_root *roots;
+    const char *entry_stem;
+    size_t nroots, ntests, passed;
     int status;
 
     memset(&log, 0, sizeof log);
@@ -194,30 +338,23 @@ int cli_test(const char *file, const char *tree_root)
         finish(&source, diag, arena);
         return 2;
     }
-    ntests = cli_test_names(&res, NULL);
+    if (!collect_roots(arena, &res, &roots, &nroots, &ntests)) {
+        finish(&source, diag, arena);
+        return 2;
+    }
     if (ntests == 0) {
         cli_log_print(&log);
         fprintf(stderr, "ekoc: %s declares no test bindings\n", file);
         finish(&source, diag, arena);
         return 2;
     }
-    names = ek_arena_alloc(arena, ntests * sizeof *names);
-    if (names == NULL) {
+    entry_stem = cli_stem_of(arena, file);
+    if (entry_stem == NULL
+        || !build_drivers(&res, chk, entry_stem, tree_root, roots, nroots,
+                          arena, diag, &log)) {
         finish(&source, diag, arena);
         return 2;
     }
-    cli_test_names(&res, names);
-    low = ek_lower_with(res, chk, EK_LOWER_TESTS, arena, diag);
-    cli_log_drain(&log, diag);
-    bin = cli_stem_of(arena, file) != NULL
-              ? binary_path(arena, tree_root, cli_stem_of(arena, file))
-              : NULL;
-    if (bin == NULL) {
-        finish(&source, diag, arena);
-        return 2;
-    }
-    ek_emit_aot(low.text, bin, tree_root, arena, diag);
-    cli_log_drain(&log, diag);
     /* the report always prints: warnings surface also over a clean
        run, before the per-test lines */
     cli_log_print(&log);
@@ -225,15 +362,7 @@ int cli_test(const char *file, const char *tree_root)
         finish(&source, diag, arena);
         return 2;
     }
-    for (i = 0; i < ntests; i++) {
-        ek_buf err;
-        int waited;
-
-        ek_buf_init(&err);
-        waited = run_test(bin, names[i], &err);
-        passed += (size_t)report_test(names[i], waited, &err);
-        ek_buf_destroy(&err);
-    }
+    passed = run_roots(roots, nroots);
     printf("%lu/%lu passed\n", (unsigned long)passed, (unsigned long)ntests);
     status = passed == ntests ? 0 : 1;
     finish(&source, diag, arena);

@@ -157,17 +157,15 @@ int cli_has_main(const ek_resolve_result *res)
     return 0;
 }
 
-/* The root module's test bindings in declaration order; names may be
-   NULL for a counting pass. */
-size_t cli_test_names(const ek_resolve_result *res, const char **names)
+/* One module surface's test bindings in declaration order; names may
+   be NULL for a counting pass. */
+size_t cli_test_names(const ek_surface *s, const char **names)
 {
-    const ek_surface *s;
     size_t i, n = 0;
 
-    if (!res || res->module_count == 0) {
+    if (s == NULL) {
         return 0;
     }
-    s = &res->modules[0];
     for (i = 0; i < s->count; i++) {
         if (s->syms[i].kind == EK_SYM_TEST) {
             if (names != NULL) {

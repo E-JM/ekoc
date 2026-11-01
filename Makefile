@@ -256,6 +256,14 @@ $(BUILD)/tests/%: $(BUILD)/tests/%.o $(STAGE_LIBS) $(LIB_RT)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -Isrc -Itests $< $(STAGE_LIBS) $(LIB_RT) -lm -o $@
 
+# the collection suite exercises the CLI's shared front, which is a
+# program object, not a stage library
+$(BUILD)/tests/cli/test_collect: $(BUILD)/tests/cli/test_collect.o \
+		$(BUILD)/cli/front.o $(STAGE_LIBS) $(LIB_RT)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -Isrc -Itests $< $(BUILD)/cli/front.o \
+		$(STAGE_LIBS) $(LIB_RT) -lm -o $@
+
 $(BUILD)/tests/%.o: tests/unit/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -Isrc -Irt -Itests -MMD -MP -c $< -o $@

@@ -55,7 +55,10 @@ int cli_check(const char *file)
     bytes = source.data != NULL ? source.data : "";
     cli_resolve(&log, arena, diag, file, cli_dir_of(arena, file),
                 bytes, source.len, &res, &chk);
-    if (cli_test_names(&res, NULL) != 0) {
+    /* the entry module alone decides the check's root kind: its own
+       test bindings lift the `main` requirement */
+    if (res.module_count != 0
+        && cli_test_names(&res.modules[0], NULL) != 0) {
         ek_lower_with(res, chk, EK_LOWER_TESTS, arena, diag);
     } else {
         if (!cli_has_main(&res)) {
