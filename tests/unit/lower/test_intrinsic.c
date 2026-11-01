@@ -194,19 +194,8 @@ static void unsupported_rows_keep_elower(void)
 {
     lfx f;
 
-    /* a compiler row the runtime surface does not back */
-    lfx_begin(&f,
-              "main: () -> _ =\n"
-              "    n = 4\n"
-              "    r = n.pow(2)\n"
-              "    _ := r\n"
-              "    _\n");
-    EK_CHECK(lfx_check_clean(&f));
-    EK_CHECK(lfx_errors(&f) >= 1);
-    EK_CHECK(lfx_has_code(&f, "E-lower"));
-    lfx_end(&f);
-
-    /* the set algebra has no runtime representation to bridge to */
+    /* the set algebra is the compiler row the runtime surface does not
+       back: check accepts it, lower keeps the E-lower refusal */
     lfx_begin(&f,
               "main: () -> _ =\n"
               "    s = Set.of({1})\n"

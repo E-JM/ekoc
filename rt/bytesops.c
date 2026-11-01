@@ -9,13 +9,14 @@
    block shape lives in bytes.c; these entries go through its
    accessors. */
 
-int ek_bytes_get(ek_obj *bytes, int64_t index, int64_t *out)
+int ek_bytes_get(ek_obj *bytes, ek_val index, int64_t *out)
 {
     const unsigned char *p = ek_bytes_data(bytes);
+    int64_t i = index.tag == EK_VAL_INT ? index.as.i : -1;
 
-    if (index < 0 || (size_t)index >= ek_bytes_len(bytes))
+    if (i < 0 || (size_t)i >= ek_bytes_len(bytes))
         return 0;
-    *out = p[index];
+    *out = p[i];
     return 1;
 }
 

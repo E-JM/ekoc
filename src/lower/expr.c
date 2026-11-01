@@ -457,6 +457,40 @@ static lower_val qualified_read(lower_ctx *c, const ek_node *e)
     }
 }
 
+/* A compiler row constant of the std scalar namespaces read through
+   the type's name: the domain bounds, born unowned over the value slot
+   the domain travels in. */
+static lower_val ns_constant_read(lower_ctx *c, const ek_node *e)
+{
+    static const struct {
+        const char *family;
+        const char *name;
+        const char *text;
+    } rows[] = {
+        {"Int", "min", "ek_val_int(INT64_MIN)"},
+        {"Int", "max", "ek_val_int(INT64_MAX)"},
+        {"UInt", "max", "ek_val_uint(UINT64_MAX)"},
+    };
+    const ek_ck_row *row = lower_row(c, e);
+    const ek_ref *head;
+    size_t i;
+
+    if (!row || row->reading != EK_RD_NAMESPACE) {
+        return (lower_val){ NULL, 0 };
+    }
+    head = lower_ref(c, e->u.field.recv);
+    if (!head || head->kind != EK_SYM_TYPE || !head->symbol) {
+        return (lower_val){ NULL, 0 };
+    }
+    for (i = 0; i < sizeof rows / sizeof *rows; i++) {
+        if (strcmp(rows[i].family, head->symbol->name) == 0
+            && strcmp(rows[i].name, e->u.field.name) == 0) {
+            return (lower_val){ rows[i].text, 0 };
+        }
+    }
+    return (lower_val){ NULL, 0 };
+}
+
 /* A field access: the receiver lowers to a temp, the read is an owned
    copy out of the generated struct, and the receiver temp dies. */
 static lower_val field_expr(lower_ctx *c, lower_scope *scope,
@@ -470,6 +504,9 @@ static lower_val field_expr(lower_ctx *c, lower_scope *scope,
     if (!row || row->reading != EK_RD_FIELD || !rt) {
         lower_val q = qualified_read(c, e);
 
+        if (!q.text) {
+            q = ns_constant_read(c, e);
+        }
         if (q.text) {
             return q;
         }

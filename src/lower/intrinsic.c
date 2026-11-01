@@ -131,6 +131,12 @@ static const intrinsic_row rows[] = {
     {"F32", "to_hex_pad", "ek_show_hex_pad", "vv", W_SHOW, OUT_I64, 0},
     {"F64", "to_hex_pad", "ek_show_hex_pad", "vv", W_SHOW, OUT_I64, 0},
 
+    /* The decimal text forms of the float: fixed point and scientific
+       notation over the requested digit counts, the String result
+       born over the value slots. */
+    {"Float", "to_fixed", "ek_show_fixed", "vv", W_SHOW, OUT_I64, 0},
+    {"Float", "to_exp", "ek_show_exp", "vv", W_SHOW, OUT_I64, 0},
+
     /* The parse family: the kind wraps into the Result's ParseError. */
     {"Int", "parse", "ek_parse_int", "o", W_PARSE, OUT_I64, 0},
     {"Int", "parse_hex", "ek_parse_int_radix", "o", W_PARSE, OUT_I64, 16},
@@ -213,6 +219,7 @@ static const intrinsic_row rows[] = {
     {"Int", "div", "ek_num_fdiv", "vv", W_PLAIN, OUT_I64, 0},
     {"Int", "mod", "ek_num_fmod", "vv", W_PLAIN, OUT_I64, 0},
     {"Int", "abs", "ek_num_abs", "v", W_PLAIN, OUT_I64, 0},
+    {"Int", "pow", "ek_int_pow", "vv", W_PLAIN, OUT_I64, 0},
     {"Float", "abs", "ek_num_abs", "v", W_PLAIN, OUT_I64, 0},
 
     /* The floating-point mathematics surface: libm under the names the

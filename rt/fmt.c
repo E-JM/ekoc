@@ -207,3 +207,53 @@ ek_obj *ek_show_hex_pad(ek_val v, ek_val width)
     free(buf);
     return out;
 }
+
+/* The decimal text channel: fixed point and scientific notation over
+   a requested digit count, the non-finite values rendered as
+   themselves. The digit count travels as a UInt value; a value of
+   another tag is undefined, and a count beyond the exact form's
+   reach stops at the reach. */
+
+/* The largest count the exact form carries: the smallest subnormal's
+   expansion ends 1074 fractional digits past the point, and the
+   largest finite's integer part fits in 309 digits. */
+#define EK_FMT_MAX_DIGITS 1074
+
+static ek_obj *show_fixed_or_exp(ek_val v, ek_val digits, int scientific)
+{
+    char buf[309 + EK_FMT_MAX_DIGITS + 4];
+    int nd = digits.as.u > EK_FMT_MAX_DIGITS ? EK_FMT_MAX_DIGITS
+                                             : (int)digits.as.u;
+    int neg = signbit(v.as.f);
+
+    if (isnan(v.as.f))
+        return ek_str_from_cstr("NaN");
+    if (isinf(v.as.f))
+        return ek_str_from_cstr(neg ? "-Inf" : "Inf");
+    if (scientific) {
+        snprintf(buf, sizeof buf, "%.*e", nd > 0 ? nd - 1 : 0,
+                 neg ? -v.as.f : v.as.f);
+    } else {
+        snprintf(buf, sizeof buf, "%.*f", nd, neg ? -v.as.f : v.as.f);
+    }
+    if (neg) {
+        char signed_buf[sizeof buf];
+
+        signed_buf[0] = '-';
+        strcpy(signed_buf + 1, buf);
+        return ek_str_from_cstr(signed_buf);
+    }
+    return ek_str_from_cstr(buf);
+}
+
+/* Fixed point with the requested fractional digits. */
+ek_obj *ek_show_fixed(ek_val v, ek_val digits)
+{
+    return show_fixed_or_exp(v, digits, 0);
+}
+
+/* Scientific notation with the requested mantissa digits. */
+ek_obj *ek_show_exp(ek_val v, ek_val digits)
+{
+    return show_fixed_or_exp(v, digits, 1);
+}

@@ -4,7 +4,8 @@
 
 /* The floating-point mathematics surface: each entry reads the Float
    slot and answers the Float slot, C99's libm under the names the
-   standard pins, and the three predicates answer Bool. Static typing
+   standard pins, and the three predicates answer Bool; the integer
+   power reads the Int base and the UInt exponent. Static typing
    leaves no other tag in these entries; the neutral unit value keeps
    the dispatch total without reading a payload. */
 
@@ -86,6 +87,47 @@ ek_val ek_num_acos(ek_val a)
 ek_val ek_num_atan(ek_val a)
 {
     return a.tag == EK_VAL_FLOAT ? float1(atan, a.as.f) : ek_val_unit();
+}
+
+/* The checked product panics on a result outside the domain, the
+   rule the arithmetic family answers under; the exponent bits walk
+   without a squaring once no bit remains to consume it. */
+static void die_pow_overflow(void)
+{
+    ek_panic("P-overflow", "arithmetic overflow");
+}
+
+/* The integer power: the base to the exponent by repeated squaring,
+   one at exponent zero. */
+ek_val ek_int_pow(ek_val a, ek_val b)
+{
+    int64_t base;
+    int64_t acc = 1;
+    uint64_t exp;
+
+    if (a.tag != EK_VAL_INT || b.tag != EK_VAL_UINT) {
+        return ek_val_unit();
+    }
+    base = a.as.i;
+    exp = b.as.u;
+    while (exp != 0) {
+        int64_t r;
+
+        if ((exp & 1) != 0) {
+            if (__builtin_mul_overflow(acc, base, &r)) {
+                die_pow_overflow();
+            }
+            acc = r;
+        }
+        exp >>= 1;
+        if (exp != 0) {
+            if (__builtin_mul_overflow(base, base, &r)) {
+                die_pow_overflow();
+            }
+            base = r;
+        }
+    }
+    return ek_val_int(acc);
 }
 
 ek_val ek_num_pow(ek_val a, ek_val b)

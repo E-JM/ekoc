@@ -37,15 +37,15 @@ static void get_reads_the_indexed_byte(void)
     ek_obj *b = bytes_of(raw, 3);
     int64_t out = -1;
 
-    EK_CHECK(ek_bytes_get(b, 0, &out));
+    EK_CHECK(ek_bytes_get(b, ek_val_int(0), &out));
     EK_CHECK_U64(out, 0);
-    EK_CHECK(ek_bytes_get(b, 1, &out));
+    EK_CHECK(ek_bytes_get(b, ek_val_int(1), &out));
     EK_CHECK_U64(out, 0x7F);
-    EK_CHECK(ek_bytes_get(b, 2, &out));
+    EK_CHECK(ek_bytes_get(b, ek_val_int(2), &out));
     EK_CHECK_U64(out, 0xFF);
-    EK_CHECK(!ek_bytes_get(b, 3, &out));
+    EK_CHECK(!ek_bytes_get(b, ek_val_int(3), &out));
     EK_CHECK_U64(out, 0xFF); /* a miss leaves the out-param alone */
-    EK_CHECK(!ek_bytes_get(b, -1, &out));
+    EK_CHECK(!ek_bytes_get(b, ek_val_int(-1), &out));
     EK_CHECK_U64(out, 0xFF);
     ek_release(ek_val_ref(b));
 }

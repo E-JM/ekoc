@@ -197,6 +197,12 @@ ek_val ek_num_neg(ek_val a);
    drops its sign. */
 ek_val ek_num_abs(ek_val a);
 
+/* The integer power: the Int base to the UInt exponent by repeated
+   squaring, one at exponent zero, and the overflow code panics on a
+   product outside the domain. A value of another tag reads as the
+   neutral unit value. */
+ek_val ek_int_pow(ek_val a, ek_val b);
+
 /* The floating-point mathematics surface: each entry reads the Float
    slot and answers the Float slot, C99's libm under the names the
    standard pins, and the three predicates answer Bool. A value of
@@ -275,6 +281,16 @@ ek_obj *ek_show_radix(ek_val v, int radix);
 /* Fixed-width hexadecimal: the radix-16 form zero-padded on the left
    to at least width digits and never truncated. */
 ek_obj *ek_show_hex_pad(ek_val v, ek_val width);
+
+/* The decimal text channel of the float slot: fixed point carries
+   exactly that many fractional digits, and scientific notation one
+   digit before the point with count minus one after it. Both sign
+   only negative values, render NaN, Inf, and -Inf as themselves, and
+   stop at the exact form's reach when the count asks past it. The
+   count travels as a UInt value; a value of another tag is undefined.
+   The caller owns each returned object. */
+ek_obj *ek_show_fixed(ek_val v, ek_val digits);
+ek_obj *ek_show_exp(ek_val v, ek_val digits);
 
 /* The parse family reads one scalar out of a String object. Each
    entry validates the whole input and reports one of four kinds:
@@ -453,8 +469,9 @@ const void *ek_bytes_data(ek_obj *bytes);
    bridges move between the block and lists. */
 
 /* The byte at the given index: nonzero and the element in *out when
-   the index lies in 0..len-1, zero with *out untouched otherwise. */
-int ek_bytes_get(ek_obj *bytes, int64_t index, int64_t *out);
+   the index lies in 0..len-1, zero with *out untouched otherwise.
+   The index travels as an Int value. */
+int ek_bytes_get(ek_obj *bytes, ek_val index, int64_t *out);
 
 /* A fresh block holding the bytes of a followed by those of b; both
    operands are untouched. Aborts on exhaustion. */
