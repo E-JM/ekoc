@@ -7,7 +7,7 @@ import std/time
 
 handles_exist: test =
     m: OpenMode = Read
-    info: FileInfo = {size: 0, mtime: Time 0, is_dir: False}
+    info: FileInfo = {size: 0, mtime: Time 0, is_dir: True}
     e: IoError = NotFound
     assert(m.eq(Read))
     assert(info.is_dir)
