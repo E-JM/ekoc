@@ -23,23 +23,6 @@
    child's standard output passes through, so a test that exercises a
    derived output channel behaves as it would under its own runner. */
 
-/* The test bindings of the root module, in declaration order; the
-   caller allocates the array. names may be NULL for a counting pass. */
-static size_t test_names(const ek_resolve_result *res, const char **names)
-{
-    const ek_surface *s = &res->modules[0];
-    size_t i, n = 0;
-
-    for (i = 0; i < s->count; i++) {
-        if (s->syms[i].kind == EK_SYM_TEST) {
-            if (names != NULL) {
-                names[n] = s->syms[i].name;
-            }
-            n++;
-        }
-    }
-    return n;
-}
 /* The driver binary's path: tree_root's build/ holding the compiler's
    own artifacts, named after the input so reruns overwrite. */
 static const char *binary_path(ek_arena *arena, const char *tree_root,
@@ -211,8 +194,9 @@ int cli_test(const char *file, const char *tree_root)
         finish(&source, diag, arena);
         return 2;
     }
-    ntests = res.module_count ? test_names(&res, NULL) : 0;
+    ntests = cli_test_names(&res, NULL);
     if (ntests == 0) {
+        cli_log_print(&log);
         fprintf(stderr, "ekoc: %s declares no test bindings\n", file);
         finish(&source, diag, arena);
         return 2;
@@ -222,7 +206,7 @@ int cli_test(const char *file, const char *tree_root)
         finish(&source, diag, arena);
         return 2;
     }
-    test_names(&res, names);
+    cli_test_names(&res, names);
     low = ek_lower_with(res, chk, EK_LOWER_TESTS, arena, diag);
     cli_log_drain(&log, diag);
     bin = cli_stem_of(arena, file) != NULL
@@ -234,8 +218,10 @@ int cli_test(const char *file, const char *tree_root)
     }
     ek_emit_aot(low.text, bin, tree_root, arena, diag);
     cli_log_drain(&log, diag);
+    /* the report always prints: warnings surface also over a clean
+       run, before the per-test lines */
+    cli_log_print(&log);
     if (cli_log_errors(&log) != 0) {
-        cli_log_print(&log);
         finish(&source, diag, arena);
         return 2;
     }

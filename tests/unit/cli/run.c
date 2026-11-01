@@ -131,7 +131,10 @@ static void good_build(void)
     EK_CHECK(exited(status, 0));
     EK_CHECK(read_file("build/cli_good.out", buf, sizeof buf) > 0);
     EK_CHECK_STR(buf, "wrote build/cli_good\n");
-    EK_CHECK(read_file("build/cli_good.err", buf, sizeof buf) == 0);
+    /* a warning reports over a clean build, not only beside errors */
+    EK_CHECK(read_file("build/cli_good.err", buf, sizeof buf) > 0);
+    EK_CHECK(strstr(buf, ": W-unused: the binding `r` is never used")
+                 != NULL);
     EK_CHECK(exited(run_prog("./build/cli_good"), 0));
 }
 

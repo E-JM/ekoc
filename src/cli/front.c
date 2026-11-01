@@ -136,6 +136,49 @@ const char *cli_stem_of(ek_arena *arena, const char *path)
     return stem;
 }
 
+/* True when the root module declares a `main` function binding; check's
+   entry rules validate its shape, and the host commands own its
+   presence -- a test root is exempt (Clause 7.1.3). */
+int cli_has_main(const ek_resolve_result *res)
+{
+    const ek_surface *s;
+    size_t i;
+
+    if (!res || res->module_count == 0) {
+        return 0;
+    }
+    s = &res->modules[0];
+    for (i = 0; i < s->count; i++) {
+        if (s->syms[i].kind == EK_SYM_FUNC
+            && strcmp(s->syms[i].name, "main") == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* The root module's test bindings in declaration order; names may be
+   NULL for a counting pass. */
+size_t cli_test_names(const ek_resolve_result *res, const char **names)
+{
+    const ek_surface *s;
+    size_t i, n = 0;
+
+    if (!res || res->module_count == 0) {
+        return 0;
+    }
+    s = &res->modules[0];
+    for (i = 0; i < s->count; i++) {
+        if (s->syms[i].kind == EK_SYM_TEST) {
+            if (names != NULL) {
+                names[n] = s->syms[i].name;
+            }
+            n++;
+        }
+    }
+    return n;
+}
+
 int cli_resolve(cli_diag_log *log, ek_arena *arena, ek_diag *diag,
                 const char *file, const char *dir,
                 const char *bytes, size_t len,

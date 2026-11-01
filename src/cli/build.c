@@ -17,7 +17,8 @@
 
 /* Hands the lowered text to emit when the front end is clean -- a
    failed front end leaves no unit worth compiling -- then reports and
-   returns the process exit status. */
+   returns the process exit status. The report always prints: warnings
+   stand on their own, also over a clean build. */
 static int finish_build(cli_diag_log *log, ek_arena *arena, ek_diag *diag,
                         const ek_lower_result *low, const char *out,
                         const char *tree_root)
@@ -29,8 +30,8 @@ static int finish_build(cli_diag_log *log, ek_arena *arena, ek_diag *diag,
         cli_log_drain(log, diag);
         failed = cli_log_errors(log) != 0;
     }
+    cli_log_print(log);
     if (failed) {
-        cli_log_print(log);
         return 2;
     }
     printf("wrote %s\n", out);
@@ -99,6 +100,14 @@ int cli_build(const char *file, const char *out, const char *tree_root)
     bytes = source.data != NULL ? source.data : "";
     cli_resolve(&log, arena, diag, file, cli_dir_of(arena, file),
                 bytes, source.len, &res, &chk);
+    if (!cli_has_main(&res)) {
+        /* the entry module owes a `main` before anything compiles; a
+           missing one otherwise surfaces only as the linker's undefined
+           reference (Clause 7.1.3) */
+        ek_diag_emit(diag, EK_SEV_ERROR, "E-entry-point", file, 0, 0,
+                     "the entry module declares no `main` (Clause 7.1.3)");
+        cli_log_drain(&log, diag);
+    }
     low = ek_lower(res, chk, arena, diag);
     cli_log_drain(&log, diag);
     /* The log's report reads the diag buffer's own storage, so nothing

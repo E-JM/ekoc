@@ -52,6 +52,13 @@ int cli_resolve(cli_diag_log *log, ek_arena *arena, ek_diag *diag,
                 const char *bytes, size_t len,
                 ek_resolve_result *res, ek_check_result *chk);
 
+/* True when the root module declares a `main` function binding; the
+   host commands own its presence, a test root is exempt. */
+int cli_has_main(const ek_resolve_result *res);
+
+/* The root module's test bindings in declaration order; names may be
+   NULL for a counting pass. */
+size_t cli_test_names(const ek_resolve_result *res, const char **names);
 
 /* The build command: compiles one Eko file into an executable and
    returns the process exit status, 0 on success and 2 on any failure.
@@ -59,6 +66,7 @@ int cli_resolve(cli_diag_log *log, ek_arena *arena, ek_diag *diag,
    current directory. tree_root is the directory holding rt/ and
    build/. */
 int cli_build(const char *file, const char *out, const char *tree_root);
+
 
 /* The test command: compiles one Eko file's test bindings into a
    driver binary under tree_root's build/ and runs it once per test,
