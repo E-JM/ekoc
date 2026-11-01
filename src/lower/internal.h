@@ -141,6 +141,13 @@ typedef struct {
     const char *name;
 } lower_tramp;
 
+/* One test binding of a TESTS-mode unit: the declared name the
+   dispatching shim matches against and the C name it calls. */
+typedef struct {
+    const char *name;
+    const char *cname;
+} lower_test;
+
 /* The marshalling shape of one extern signature type, classified from
    the written annotation; the C namespace spellings live only there,
    so the shape is re-derived at the boundary, not read off the check
@@ -279,9 +286,13 @@ struct lower_ctx {
     int uses_list; /* some body folds a list literal */
     int hash_mix;  /* the hash bodies' mixing helper is emitted */
     int has_main;
+    ek_lower_mode mode;  /* what the unit is for: the roots and the
+                            entry shim */
     const char *shim[9]; /* the entry shim's bundle constructors, by
                             position (the manifest's capability order) */
     size_t nshim;
+    lower_test *tests; /* the test bindings, in emission order */
+    size_t ntests, ctests;
     /* The expected type one subtree lowers under: a constructor
        application whose payload the check row left opaque reads the
        constructor's own payload type, and the composite items under it
@@ -625,6 +636,14 @@ void lower_cap_families(lower_ctx *c, const ek_node *at);
    the parse row routes -- the rt references stay inside json.o, so a
    unit without the routing links without the identities. */
 void lower_json_families(lower_ctx *c, const ek_node *at);
+
+/* unwrap.c: the panicking observations of the Option and Result
+   namespaces, the compiler rows `unwrap` and `expect`. A NULL result
+   hands the decision back. */
+lower_val lower_unwrap_call(lower_ctx *c, lower_scope *scope,
+                            const ek_node *e, const ek_node *callee,
+                            const char *family, const char *member,
+                            int has_recv);
 
 /* capwrap.c: the capability channel's wrapping. The runtime's status
    contracts over the file family wrap into the std Result and the

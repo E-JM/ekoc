@@ -38,7 +38,8 @@ typedef struct {
     size_t ldn;
 } lfx;
 
-static inline void lfx_run(lfx *f, const char *src, const char *name)
+static inline void lfx_run_mode(lfx *f, const char *src, const char *name,
+                                ek_lower_mode mode)
 {
     const ek_diagnostic *drain;
     size_t n;
@@ -62,13 +63,24 @@ static inline void lfx_run(lfx *f, const char *src, const char *name)
     }
     f->chk = ek_check(f->res, f->arena, f->diag);
     f->cds = ek_diag_drain(f->diag, &f->cdn);
-    f->low = ek_lower(f->res, f->chk, f->arena, f->diag);
+    f->low = ek_lower_with(f->res, f->chk, mode, f->arena, f->diag);
     f->lds = ek_diag_drain(f->diag, &f->ldn);
+}
+
+static inline void lfx_run(lfx *f, const char *src, const char *name)
+{
+    lfx_run_mode(f, src, name, EK_LOWER_PROGRAM);
 }
 
 static inline void lfx_begin(lfx *f, const char *src)
 {
     lfx_run(f, src, "test.eko");
+}
+
+/* The module lowered in TESTS mode: the test bindings are the roots. */
+static inline void lfx_begin_tests(lfx *f, const char *src)
+{
+    lfx_run_mode(f, src, "test.eko", EK_LOWER_TESTS);
 }
 
 static inline void lfx_end(lfx *f)

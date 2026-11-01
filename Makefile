@@ -143,6 +143,7 @@ LOWER_SRC := \
 	src/lower/type.c \
 	src/lower/typeemit.c \
 	src/lower/typewalk.c \
+	src/lower/unwrap.c \
 	src/lower/value.c \
 	src/lower/wrap.c
 
@@ -157,7 +158,9 @@ EMIT_OBJ := $(EMIT_SRC:src/%.c=$(BUILD)/%.o)
 
 CLI_SRC := \
 	src/cli/main.c \
-	src/cli/build.c
+	src/cli/build.c \
+	src/cli/front.c \
+	src/cli/test.c
 
 CLI_OBJ := $(CLI_SRC:src/%.c=$(BUILD)/%.o)
 

@@ -31,8 +31,8 @@ static size_t add_params(lower_ctx *c, lower_scope *ps, const ek_node *ann)
     }
     return params->count;
 }
-/* The body node of one function binding: a plain binding's value, or
-   a namespace member's value. */
+/* The body node of one function binding: a plain binding's value, a
+   namespace member's value, or a test binding's body. */
 static const ek_node *decl_body(const ek_symbol *sym)
 {
     const ek_node *decl = sym->decl;
@@ -45,6 +45,9 @@ static const ek_node *decl_body(const ek_symbol *sym)
     }
     if (decl->kind == EK_N_NAMESPACE) {
         return decl->u.namespace.value;
+    }
+    if (decl->kind == EK_N_TEST_DECL) {
+        return decl->u.decl.body;
     }
     return NULL;
 }
@@ -152,6 +155,28 @@ static int entry_manifest(lower_ctx *c, const ek_node *decl,
     return 1;
 }
 
+/* Records one test binding for the dispatching shim, unless its name
+   was recorded already. */
+static void record_test(lower_ctx *c, const ek_symbol *sym, const char *name)
+{
+    lower_test *slots;
+    size_t i;
+
+    for (i = 0; i < c->ntests; i++) {
+        if (strcmp(c->tests[i].name, sym->name) == 0) {
+            return;
+        }
+    }
+    slots = lower_grow(c, c->tests, &c->ctests, c->ntests + 1,
+                       sizeof *slots);
+    if (slots) {
+        slots[c->ntests].name = sym->name;
+        slots[c->ntests].cname = name;
+        c->tests = slots;
+        c->ntests++;
+    }
+}
+
 /* The declaration of one function: the signature check, the parameter
    scope, the entry bookkeeping, and the stored forward declaration.
    name is the emitted spelling, plain or instantiation-suffixed.
@@ -165,6 +190,20 @@ static const char *declare_function(lower_ctx *c, const ek_symbol *sym,
     const char *sig;
     const char **slot;
 
+    if (decl && decl->kind == EK_N_TEST_DECL) {
+        /* a test binding carries no written signature and takes no
+           parameters; the body's value is discarded by the shim. A
+           test root authorizes the capability channel the way the
+           program's manifest does, so the shared families stamp as
+           one set */
+        memset(ps, 0, sizeof *ps);
+        *nparams = 0;
+        if (c->mode == EK_LOWER_TESTS) {
+            record_test(c, sym, name);
+            lower_cap_families(c, decl);
+        }
+        return signature(c, name, ps);
+    }
     if (!decl || (decl->kind != EK_N_LET && decl->kind != EK_N_NAMESPACE)
         || !ann || ann->kind != EK_N_T_FN) {
         if (decl) {

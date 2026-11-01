@@ -556,6 +556,38 @@ const ek_type *lower_open_call_result(lower_ctx *c, const ek_node *e)
     return strcmp(name, "with") == 0 ? rs : NULL;
 }
 
+/* The free-call form of a declared namespace member: `m(recv, rest)`
+   means `recv.m(rest)`, with the link's reading the receiver form's.
+   A NULL result hands the decision back. */
+static lower_val free_member_call(lower_ctx *c, lower_scope *scope,
+                                  const ek_node *e, const ek_node *callee,
+                                  const call_form *form)
+{
+    const ek_nlist *args = &e->u.call.args;
+    const ek_node *recv = args->count ? args->data[0] : NULL;
+    const ek_type *rt = recv ? lower_row_type(c, recv) : NULL;
+    const ek_symbol *ms;
+    ek_nlist rest;
+    ek_node site;
+    call_form member;
+
+    if (!recv || !rt || form->extra) {
+        return (lower_val){ NULL, 0 };
+    }
+    ms = member_symbol(c, rt, callee->u.path.data[0]);
+    if (!ms) {
+        return (lower_val){ NULL, 0 };
+    }
+    rest.data = args->data + 1;
+    rest.count = args->count - 1;
+    site = *e;
+    site.u.call.args = rest;
+    member = *form;
+    member.has_recv = 1;
+    member.recv = lower_sub(c, scope, recv);
+    return direct_call(c, scope, &site, ms, &member);
+}
+
 /* A receiver-form member call: a function-valued field is the callee
    value, a derived reading lowers to its service, an open receiver the
    instantiation substituted concrete re-routes at the applied type,
@@ -698,6 +730,14 @@ static lower_val emit_call(lower_ctx *c, lower_scope *scope,
            re-routes the same way */
         const ek_ck_row *nrow = lower_row(c, callee);
 
+        if (ref && ref->kind == EK_SYM_MEMBER && nrow
+            && nrow->reading == EK_RD_NAMESPACE && !form->extra) {
+            lower_val v = free_member_call(c, scope, e, callee, form);
+
+            if (v.text) {
+                return v;
+            }
+        }
         if (nrow && nrow->reading == EK_RD_DERIVED && !form->extra) {
             return lower_derived_call(c, scope, e, callee, nrow, CF_FREE);
         }

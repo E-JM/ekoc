@@ -653,11 +653,12 @@ static const char *prog_null =
     "    _\n";
 
 /* The observer derivation: the tee forwards every write through the
-   bundle's own closure and then hands the same string to the observer,
-   so the line lands twice. */
+   bundle's own closure and then hands the written line to the
+   observer, the terminator staying with the transport, so the line
+   lands twice. */
 static const char *prog_tee =
     "main: (out: Out) ! =\n"
-    "    obs: (String) !-> _ = (s): out.print(s)\n"
+    "    obs: (String) !-> _ = (s): out.println(s)\n"
     "    q = out.tee(obs)\n"
     "    q.println(\"both\")\n"
     "    _\n";
@@ -704,7 +705,7 @@ static void null_prints_nothing(void)
 static void tee_prints_twice(void)
 {
     char out[64], err[8];
-    int status = gate_print(prog_tee, "lower_run_tee", 4, out,
+    int status = gate_print(prog_tee, "lower_run_tee", 12, out,
                             sizeof out, err, sizeof err);
 
     if (status >= 0 && WIFEXITED(status)) {

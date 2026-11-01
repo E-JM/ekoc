@@ -6,10 +6,11 @@
 
 #include "cli/internal.h"
 
-/* Writes the one-line usage. */
+/* Writes the usage lines, one per command. */
 static void usage(void)
 {
     fprintf(stderr, "usage: ekoc build <file.eko> [-o <out>]\n");
+    fprintf(stderr, "       ekoc test <file.eko>\n");
 }
 
 /* Resolves the directory holding the compiler's own tree: the running
@@ -40,17 +41,13 @@ static void tree_root(char *buf, size_t cap)
     }
 }
 
-int main(int argc, char **argv)
+/* The build argument walk: -o and one input file. */
+static int run_build(int argc, char **argv, const char *root)
 {
-    char root[4096];
     const char *file = NULL;
     const char *out = NULL;
     int i;
 
-    if (argc < 2 || strcmp(argv[1], "build") != 0) {
-        usage();
-        return 2;
-    }
     for (i = 2; i < argc; i++) {
         if (strcmp(argv[i], "-o") == 0) {
             if (out != NULL || i + 1 >= argc) {
@@ -72,6 +69,48 @@ int main(int argc, char **argv)
         usage();
         return 2;
     }
-    tree_root(root, sizeof root);
     return cli_build(file, out, root);
+}
+
+/* The test argument walk: one input file, no options. */
+static int run_test(int argc, char **argv, const char *root)
+{
+    const char *file = NULL;
+    int i;
+
+    for (i = 2; i < argc; i++) {
+        if (argv[i][0] == '-' && argv[i][1] != '\0') {
+            usage();
+            return 2;
+        } else if (file == NULL) {
+            file = argv[i];
+        } else {
+            usage();
+            return 2;
+        }
+    }
+    if (file == NULL) {
+        usage();
+        return 2;
+    }
+    return cli_test(file, root);
+}
+
+int main(int argc, char **argv)
+{
+    char root[4096];
+
+    if (argc < 2) {
+        usage();
+        return 2;
+    }
+    if (strcmp(argv[1], "build") != 0 && strcmp(argv[1], "test") != 0) {
+        usage();
+        return 2;
+    }
+    tree_root(root, sizeof root);
+    if (strcmp(argv[1], "build") == 0) {
+        return run_build(argc, argv, root);
+    }
+    return run_test(argc, argv, root);
 }

@@ -269,6 +269,19 @@ static const ek_symbol *find_main(const ek_resolve_result *r)
     return NULL;
 }
 
+/* The test bindings of the root module, in declaration order. */
+static void enqueue_tests(lower_ctx *c, const ek_resolve_result *r)
+{
+    const ek_surface *s = &r->modules[0];
+    size_t i;
+
+    for (i = 0; i < s->count; i++) {
+        if (s->syms[i].kind == EK_SYM_TEST) {
+            lower_enqueue(c, &s->syms[i]);
+        }
+    }
+}
+
 static int unit_puts(ek_buf *b, const char *s)
 {
     return ek_buf_append_str(b, s);
@@ -362,8 +375,47 @@ static void emit_main_shim(ek_buf *unit, lower_ctx *c)
     putf(unit, c, "    ek_release(t);\n    return 0;\n}\n");
 }
 
-/* The collected bodies, the derived service bodies, and, when the root
-   module declares `main`, the entry shim. The service bodies stand
+/* The quoted C literal of a test name, escaped the way string
+   literals are. */
+static const char *test_name_lit(lower_ctx *c, const char *name)
+{
+    ek_buf b;
+
+    ek_buf_init(&b);
+    lower_string_literal(c, &b, name, strlen(name));
+    return lower_take(c, &b);
+}
+
+/* The dispatching shim of a TESTS-mode unit: one `argv[1]` match per
+   test, the matched test called and released, and the refusal exit
+   for a missing or unknown name -- the driver always passes a name it
+   collected at compile time, so the exit guards a driver bug only. */
+static void emit_test_shim(ek_buf *unit, lower_ctx *c)
+{
+    size_t i;
+
+    putf(unit, c, "int main(int argc, char **argv) {\n");
+    if (c->ntests == 0) {
+        putf(unit, c, "    (void)argc; (void)argv;\n");
+    } else {
+        putf(unit, c, "    if (argc == 2) {\n");
+        for (i = 0; i < c->ntests; i++) {
+            putf(unit, c, "        if (strcmp(argv[1], %s) == 0) {\n",
+                 test_name_lit(c, c->tests[i].name));
+            putf(unit, c, "            ek_val t = %s();\n",
+                 c->tests[i].cname);
+            putf(unit, c, "            ek_release(t);\n"
+                          "            return 0;\n"
+                          "        }\n");
+        }
+        putf(unit, c, "    }\n");
+    }
+    putf(unit, c, "    return 2;\n}\n");
+}
+
+/* The collected bodies, the derived service bodies, and the entry
+   shim of the mode: the program's main shim when the root module
+   declares `main`, or the test dispatch. The service bodies stand
    after the functions; their forward declarations joined the unit
    already. */
 static void emit_bodies(ek_buf *unit, lower_ctx *c)
@@ -376,7 +428,9 @@ static void emit_bodies(ek_buf *unit, lower_ctx *c)
         && !ek_buf_append_bytes(unit, c->dsvc.data, c->dsvc.len)) {
         c->oom = 1;
     }
-    if (c->has_main) {
+    if (c->mode == EK_LOWER_TESTS) {
+        emit_test_shim(unit, c);
+    } else if (c->has_main) {
         emit_main_shim(unit, c);
     }
 }
@@ -400,8 +454,9 @@ static void unit_finish(ek_buf *unit, lower_ctx *c, ek_lower_result *out,
     }
 }
 
-ek_lower_result ek_lower(ek_resolve_result resolved, ek_check_result checked,
-                         ek_arena *arena, ek_diag *diag)
+ek_lower_result ek_lower_with(ek_resolve_result resolved,
+                              ek_check_result checked, ek_lower_mode mode,
+                              ek_arena *arena, ek_diag *diag)
 {
     ek_lower_result out;
     lower_ctx c;
@@ -414,6 +469,7 @@ ek_lower_result ek_lower(ek_resolve_result resolved, ek_check_result checked,
     c.checked = checked;
     c.arena = arena;
     c.diag = diag;
+    c.mode = mode;
     ek_buf_init(&c.body);
     ek_buf_init(&c.dsvc);
     ek_buf_init(&c.cext);
@@ -422,9 +478,13 @@ ek_lower_result ek_lower(ek_resolve_result resolved, ek_check_result checked,
         c.oom = 1;
     }
     if (resolved.module_count) {
-        entry = find_main(&resolved);
-        c.entry = entry;
-        lower_enqueue(&c, entry);
+        if (mode == EK_LOWER_TESTS) {
+            enqueue_tests(&c, &resolved);
+        } else {
+            entry = find_main(&resolved);
+            c.entry = entry;
+            lower_enqueue(&c, entry);
+        }
     }
     while (c.head < c.nwork && !c.oom) {
         lower_item item = c.work[c.head];
@@ -452,4 +512,10 @@ ek_lower_result ek_lower(ek_resolve_result resolved, ek_check_result checked,
     ek_buf_destroy(&c.dsvc);
     ek_buf_destroy(&c.cext);
     return out;
+}
+
+ek_lower_result ek_lower(ek_resolve_result resolved, ek_check_result checked,
+                         ek_arena *arena, ek_diag *diag)
+{
+    return ek_lower_with(resolved, checked, EK_LOWER_PROGRAM, arena, diag);
 }

@@ -486,7 +486,10 @@ lower_val lower_intrinsic_call(lower_ctx *c, lower_scope *scope,
         return lower_cap_call(c, scope, e, callee, family, has_recv);
     }
     if (!row) {
-        return (lower_val){ NULL, 0 };
+        lower_val v = lower_unwrap_call(c, scope, e, callee, family,
+                                        callee->u.field.name, has_recv);
+
+        return v.text ? v : (lower_val){ NULL, 0 };
     }
     na = strlen(row->args);
     written = na - (size_t)has_recv;
