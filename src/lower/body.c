@@ -190,6 +190,15 @@ static void emit_let(lower_ctx *c, lower_scope *scope, const ek_node *m)
     }
     name = pat->u.path.data[0];
     v = lower_expr(c, scope, m->u.bind.value);
+    if (m->u.bind.type) {
+        /* the annotation's expectation adapts a nominal record value
+           into the anonymous shape it declares */
+        const ek_ck_row *arow = lower_row(c, m->u.bind.type);
+
+        v = lower_shape_adapt(c, scope, v, m,
+                              lower_row_type(c, m->u.bind.value),
+                              arow ? arow->type : NULL);
+    }
     cname = lower_c_name(c, scope, name);
     if (v.is_temp || !mentions_name(m->u.bind.value, name)
         || !scope_find_local(scope, name)) {

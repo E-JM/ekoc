@@ -154,10 +154,13 @@ static void fill_recv(lower_ctx *c, lower_scope *scope, const call_form *form,
     lower_emitf(c, "ek_release(%s);\n", t);
 }
 
-/* The written arguments, the appended callback, and the arity pads. */
+/* The written arguments, the appended callback, and the arity pads.
+   ft is the callee's function type when a row carries it: a nominal
+   record argument adapts into an anonymous record parameter. */
 static void fill_written(lower_ctx *c, lower_scope *scope,
                          const ek_nlist *args, const call_form *form,
-                         const char **argv, size_t n, size_t first)
+                         const char **argv, size_t n, size_t first,
+                         const ek_type *ft)
 {
     size_t written_end = first + args->count;
     int extra_fits = form->extra && n > written_end;
@@ -168,6 +171,12 @@ static void fill_written(lower_ctx *c, lower_scope *scope,
 
         if (i < written_end) {
             a = lower_sub(c, scope, args->data[i - first]);
+            if (ft && ft->kind == EK_T_FN && i < ft->u.fn.count) {
+                a = lower_shape_adapt(
+                    c, scope, a, args->data[i - first],
+                    lower_row_type(c, args->data[i - first]),
+                    ft->u.fn.params[i]);
+            }
         } else if (extra_fits && i == n - 1) {
             argv[i] = form->extra; /* the callback moves in */
             continue;
@@ -249,7 +258,8 @@ static lower_val direct_call(lower_ctx *c, lower_scope *scope,
     if (form->has_recv) {
         fill_recv(c, scope, form, argv, n);
     }
-    fill_written(c, scope, &e->u.call.args, form, argv, n, first);
+    fill_written(c, scope, &e->u.call.args, form, argv, n, first,
+                 inst ? inst : lower_row_type(c, e->u.call.callee));
     if (inst) {
         lower_enqueue_item(c, sym, iargs, ni, inst);
         t = emit_invoke(c, scope, lower_inst_name(c, sym, iargs, ni),

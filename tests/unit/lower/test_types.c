@@ -192,6 +192,34 @@ static void nested_list_shape(void)
     lfx_end(&f);
 }
 
+/* The one-directional shape adaptation: a nominal record flowing into
+   an anonymous record expectation rebuilds through the destination
+   family, reading every field off the source family's slots, at a
+   binding annotation and at a call argument alike. */
+static void shape_adaptation_rebuilds(void)
+{
+    lfx f;
+
+    lfx_begin(&f,
+              "Human: type = [name: String, age: Int]\n"
+              "_age_of: (p: [name: String, age: Int]) -> Int = p.age\n"
+              "main: () -> _ =\n"
+              "    h: Human = {name: \"ada\", age: 36}\n"
+              "    view: [name: String, age: Int] = h\n"
+              "    _ := _age_of(h)\n"
+              "    _ := view.age\n"
+              "    _\n");
+    EK_CHECK(lfx_check_clean(&f));
+    EK_CHECK(lfx_lower_clean(&f));
+    /* the anonymous family births from owned reads of the nominal's
+       slots, both at the binding and at the call */
+    EK_CHECK(lfx_has(&f, "ekn_rec0("));
+    EK_CHECK(lfx_has(&f, "ek_keep(((ekS_test_Human *)"));
+    /* the nominal object never aliases into the anonymous binding */
+    EK_CHECK(lfx_lacks(&f, "ek_val view = ek_keep(h);"));
+    lfx_end(&f);
+}
+
 /* A receiver-form head the resolver bridged reads as the constructor
    it names once check anchors the nominal: the Json Null head lowers
    to its nullary birth. */
@@ -217,6 +245,7 @@ int main(void)
     tuple_shape();
     list_dict_shape();
     nested_list_shape();
+    shape_adaptation_rebuilds();
     bridged_ctor_head_reads();
     return ek_test_report("lower/types");
 }

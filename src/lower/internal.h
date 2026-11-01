@@ -505,6 +505,13 @@ void lower_emit_types(lower_ctx *c, ek_buf *unit);
 
 /* composite.c: constructors and composite literals. */
 lower_val lower_ctor_value(lower_ctx *c, const ek_node *e, const ek_ref *ref);
+
+/* The one-directional shape adaptation of one value: a nominal record
+   flowing into an anonymous record expectation rebuilds field by field;
+   any other pair comes back unchanged. */
+lower_val lower_shape_adapt(lower_ctx *c, lower_scope *scope, lower_val v,
+                            const ek_node *at, const ek_type *from,
+                            const ek_type *to);
 lower_val lower_ctor_apply(lower_ctx *c, lower_scope *scope,
                            const ek_node *e);
 lower_val lower_composite(lower_ctx *c, lower_scope *scope,
