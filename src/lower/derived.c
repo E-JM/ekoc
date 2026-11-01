@@ -149,21 +149,23 @@ static int shape_rows(lower_ctx *c, const ek_type *t, const char ***fnames,
         *nf = n;
         return *g != NULL;
     }
-    names = lower_grow(c, NULL, &ncap, n, sizeof *names);
-    types = lower_grow(c, NULL, &tcap, n, sizeof *types);
-    if (!names || !types) {
-        return 0;
-    }
-    for (i = 0; i < n; i++) {
-        if (t->kind == EK_T_RECORD) {
+    if (t->kind == EK_T_RECORD) {
+        names = lower_grow(c, NULL, &ncap, n, sizeof *names);
+        types = lower_grow(c, NULL, &tcap, n, sizeof *types);
+        if (!names || !types) {
+            return 0;
+        }
+        for (i = 0; i < n; i++) {
             names[i] = t->u.record.fields[i].name;
             types[i] = t->u.record.fields[i].type;
-        } else {
-            types[i] = t->u.tuple.items[i];
         }
+        *fnames = names;
+        *ftypes = types;
+    } else {
+        /* a positional tuple: fnames stays NULL, the items alias in
+           directly, exactly as the nominal GT_TUP branch reports */
+        *ftypes = t->u.tuple.items;
     }
-    *fnames = names;
-    *ftypes = types;
     *nf = n;
     return 1;
 }

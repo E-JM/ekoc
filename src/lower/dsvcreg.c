@@ -209,6 +209,32 @@ const char *lower_spell_apply(lower_ctx *c, const ek_type *const *args,
     return lower_take(c, &b);
 }
 
+/* The capability channel's nine types: std placeholder nominals with
+   no declaration behind them, whose values the entry shim and the
+   runtime's bundle closures build. */
+static int is_cap_type(const ek_type *t)
+{
+    static const char *caps[] = {"Out",   "In",   "Fs",   "Env", "Args",
+                                 "Clock", "Rand", "Proc", "Conc"};
+    const ek_symbol *sym;
+    size_t i;
+
+    if (t->kind != EK_T_NOMINAL || t->u.nominal.argc != 0) {
+        return 0;
+    }
+    sym = t->u.nominal.sym;
+    if (!sym || !sym->module || strcmp(sym->module, "std") != 0
+        || sym->decl) {
+        return 0;
+    }
+    for (i = 0; i < sizeof caps / sizeof *caps; i++) {
+        if (strcmp(sym->name, caps[i]) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 /* Which families a service renders at all. */
 static int supported(lower_dsvc_kind kind, const ek_type *t)
 {
@@ -238,6 +264,12 @@ static int supported(lower_dsvc_kind kind, const ek_type *t)
                form, the endpoint order, and the keying walk. */
             return kind == DSV_SHOW || kind == DSV_INSPECT
                 || kind == DSV_EQ || kind == DSV_ORD || kind == DSV_HASH;
+        }
+        if (is_cap_type(t)) {
+            /* The capability value reads through no structure: the
+               two display channels render the <cap> form, every other
+               family stays unsupported. */
+            return kind == DSV_SHOW || kind == DSV_INSPECT;
         }
         return t->u.nominal.sym && t->u.nominal.sym->decl != NULL;
     default:

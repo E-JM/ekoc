@@ -225,7 +225,12 @@ void lower_dsvc_eq_emit(lower_ctx *c, const char *name, const ek_type *t)
         emit_dict_eq(c, &d, t);
     } else if (t->kind == EK_T_TUPLE || t->kind == EK_T_RECORD) {
         if (lower_shape_of(c, NULL, t, &fnames, &ftypes, &nf, &g) && g) {
-            emit_fields_eq(c, &d, g->stem, fnames, ftypes, nf);
+            /* The struct family spells a record field by its name and
+               a tuple field by its position; the walk reads the same
+               slots the typedef declares. */
+            emit_fields_eq(c, &d, g->stem,
+                           t->kind == EK_T_RECORD ? fnames : NULL, ftypes,
+                           nf);
         } else {
             lower_d_printf(&d, "    return 0;\n");
         }

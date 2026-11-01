@@ -139,6 +139,49 @@ static void ordering_and_display_members(void)
     lfx_end(&f);
 }
 
+/* A tuple payload walks positionally: the eq over a variant's tuple
+   reads the slots the typedef numbers, never a written field name. */
+static void tuple_payload_equality(void)
+{
+    lfx f;
+
+    lfx_begin(&f,
+              "Tree: type t = Leaf t | Node [Tree t, Tree t]\n"
+              "main: (o: Out) ! =\n"
+              "    a: Tree Int = Node {Leaf 1, Leaf 2}\n"
+              "    b: Tree Int = Node {Leaf 1, Leaf 2}\n"
+              "    o.println(a.eq(b).show())\n"
+              "    _\n");
+    EK_CHECK(lfx_check_clean(&f));
+    EK_CHECK(lfx_lower_clean(&f));
+    EK_CHECK(lfx_has(&f, "((ekS_tup_2 *)a.as.ref)->f_0"));
+    EK_CHECK(lfx_has(&f, "((ekS_tup_2 *)b.as.ref)->f_1"));
+    EK_CHECK(lfx_lacks(&f, "f_(null)"));
+    lfx_end(&f);
+}
+
+/* The capability channel answers the two display channels with the
+   <cap> form: the show and inspect requests mint their services, the
+   show body forwards to the inspect body, and the value reads through
+   no structure. */
+static void capability_display(void)
+{
+    lfx f;
+
+    lfx_begin(&f,
+              "main: (o: Out) ! =\n"
+              "    o.println(Out.null().show())\n"
+              "    o.println(show(Fs.null()))\n"
+              "    o.println(inspect(Out.null()))\n"
+              "    _\n");
+    EK_CHECK(lfx_check_clean(&f));
+    EK_CHECK(lfx_lower_clean(&f));
+    EK_CHECK(lfx_has(&f, "static ek_obj *ekd_show_std_Out(ek_val v);\n"));
+    EK_CHECK(lfx_has(&f, "return ekd_inspect_std_Out(v);"));
+    EK_CHECK(lfx_has(&f, "ek_str_from_cstr(\"<cap>\")"));
+    lfx_end(&f);
+}
+
 int main(void)
 {
     specialization_naming();
@@ -146,5 +189,7 @@ int main(void)
     operator_routing();
     with_shape();
     ordering_and_display_members();
+    tuple_payload_equality();
+    capability_display();
     return ek_test_report("lower/derived");
 }

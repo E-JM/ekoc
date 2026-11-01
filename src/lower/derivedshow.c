@@ -253,7 +253,13 @@ static void emit_struct_show(lower_ctx *c, lower_demit *d, const ek_type *t)
         emit_range_show(c, d, t);
     } else if (t->kind == EK_T_TUPLE || t->kind == EK_T_RECORD) {
         if (lower_shape_of(c, NULL, t, &fnames, &ftypes, &nf, &g) && g) {
-            emit_fields_show(c, d, g->stem, fnames, ftypes, nf);
+            /* The struct family spells a record field by its name and
+               a tuple field by its position; the walk reads the same
+               slots the typedef declares, and a tuple renders its
+               components bare. */
+            emit_fields_show(c, d, g->stem,
+                             t->kind == EK_T_RECORD ? fnames : NULL, ftypes,
+                             nf);
         } else {
             lower_d_printf(d, "    return ek_str_from_cstr("
                               "\"<opaque>\");\n");
