@@ -223,7 +223,7 @@ ek_emit_result ek_emit_aot(const char *c_text, const char *out_path,
     if (!prepare(diag, arena, c_text, out_path, tree_root)) {
         return r;
     }
-    cmd = aprintf(arena, "cc -std=c99 -O2 -I%s/rt %s.c %s/build/libekort.a"
+    cmd = aprintf(arena, "cc -std=c99 -I%s/rt %s.c %s/build/libekort.a"
                          " -lm -o %s",
                   tree_root, out_path, tree_root, out_path);
     if (cmd == NULL) {
