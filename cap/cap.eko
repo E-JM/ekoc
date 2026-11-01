@@ -44,10 +44,19 @@ _OutB: type = [write: (String) !]
 Out.print: (o: Out, s: String) ! = _out_unwrap(o).write(s)
 Out.println: (o: Out, s: String) ! = _out_unwrap(o).write(s ++ "\n")
 
+// The report of one write: the written text as a whole line. The
+// terminator belongs to the transport, not to the observer.
+_report_line: (s: String) -> String =
+    cs := s.chars()
+    if s.ends_with("\n"):
+        String.from_chars(cs.take(cs.length() - 1))
+    else:
+        s
+
 // The observer rides along with every write (Clause 9.14.5).
 Out.tee: (o: Out, obs: (String) !-> _) -> Out =
     b := _out_unwrap(o)
-    _out_wrap({write: (s): b.write(s); obs(s)})
+    _out_wrap({write: (s): b.write(s); obs(_report_line(s))})
 
 // The zero-grant derivation: every write lands nowhere (Clause 9.14.5).
 Out.null: () -> Out = _out_wrap({write: (s): _})

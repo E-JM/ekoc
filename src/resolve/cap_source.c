@@ -51,10 +51,19 @@ const char *const ek_cap_source_parts[] = {
     "Out.print: (o: Out, s: String) ! = _out_unwrap(o).write(s)\n",
     "Out.println: (o: Out, s: String) ! = _out_unwrap(o).write(s ++ \"\\n\")\n",
     "\n",
+    "// The report of one write: the written text as a whole line. The\n",
+    "// terminator belongs to the transport, not to the observer.\n",
+    "_report_line: (s: String) -> String =\n",
+    "    cs := s.chars()\n",
+    "    if s.ends_with(\"\\n\"):\n",
+    "        String.from_chars(cs.take(cs.length() - 1))\n",
+    "    else:\n",
+    "        s\n",
+    "\n",
     "// The observer rides along with every write (Clause 9.14.5).\n",
     "Out.tee: (o: Out, obs: (String) !-> _) -> Out =\n",
     "    b := _out_unwrap(o)\n",
-    "    _out_wrap({write: (s): b.write(s); obs(s)})\n",
+    "    _out_wrap({write: (s): b.write(s); obs(_report_line(s))})\n",
     "\n",
     "// The zero-grant derivation: every write lands nowhere (Clause 9.14.5).\n",
     "Out.null: () -> Out = _out_wrap({write: (s): _})\n",
@@ -248,8 +257,8 @@ const char *const ek_cap_source_parts[] = {
     "Rand.int: (r: Rand, bound: UInt) !-> UInt = _rand_unwrap(r).int(bound)\n",
 };
 
-const size_t ek_cap_source_nparts = 241;
-const size_t ek_cap_source_len = 10480;
+const size_t ek_cap_source_nparts = 250;
+const size_t ek_cap_source_len = 10778;
 
 char *ek_cap_source_join(ek_arena *arena)
 {
