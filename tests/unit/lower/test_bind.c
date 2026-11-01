@@ -113,6 +113,30 @@ static void rebind_string(void)
     lfx_end(&f);
 }
 
+/* A lambda-valued function binding beta-reduces: the lambda's own
+   parameter names adopt the ABI slots -- also where the annotation is
+   silent -- and the lambda's body is the function body, so a call runs
+   the lambda instead of returning its closure. */
+static void lambda_valued_binding(void)
+{
+    lfx f;
+
+    lfx_begin(&f, "bar: (String) -> String = (s): \"hi {s}\"\n"
+                  "main: () -> _ =\n"
+                  "    r = bar(\"x\")\n"
+                  "    _ := r\n"
+                  "    _\n");
+    EK_CHECK(lfx_check_clean(&f));
+    EK_CHECK(lfx_lower_clean(&f));
+    /* the call site stays a direct call */
+    EK_CHECK(lfx_has(&f, "ekf_test_bar(t"));
+    /* the lambda's parameter owns the ABI slot by its own name */
+    EK_CHECK(lfx_has(&f, "ek_val s = ek_keep(ek_p0);"));
+    /* no closure is born for the binding's value */
+    EK_CHECK(lfx_lacks(&f, "ek_closure_new"));
+    lfx_end(&f);
+}
+
 int main(void)
 {
     discard_let();
@@ -121,5 +145,6 @@ int main(void)
     rebind_if();
     rebind_if_fresh();
     rebind_string();
+    lambda_valued_binding();
     return ek_test_report("lower/bind");
 }

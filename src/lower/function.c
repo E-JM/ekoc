@@ -31,6 +31,28 @@ static size_t add_params(lower_ctx *c, lower_scope *ps, const ek_node *ann)
     }
     return params->count;
 }
+
+/* The parameter scope of a lambda-valued binding: the lambda's own
+   parameter names adopt the annotation's ABI slots, one per slot --
+   check tied the lambda to the whole arrow, so the counts agree and a
+   named lambda parameter may sit where the annotation is silent. */
+static size_t add_lambda_params(lower_ctx *c, lower_scope *ps,
+                                const ek_node *ann, const ek_node *params)
+{
+    const char **names = NULL;
+    size_t n = 0, cap = 0, i;
+
+    lower_lambda_param_names(c, params, &names, &n, &cap);
+    for (i = 0; i < ann->u.t_fn.params.count; i++) {
+        const char *name = i < n ? names[i] : NULL;
+        const char *cname;
+        const char *abi = lower_str(c, "ek_p%zu", i);
+
+        cname = lower_c_name(c, ps, name ? name : lower_str(c, "a%zu", i));
+        lower_scope_add(c, ps, name ? name : cname, cname, 0, abi);
+    }
+    return ann->u.t_fn.params.count;
+}
 /* The body node of one function binding: a plain binding's value, a
    namespace member's value, or a test binding's body. */
 static const ek_node *decl_body(const ek_symbol *sym)
@@ -50,6 +72,26 @@ static const ek_node *decl_body(const ek_symbol *sym)
         return decl->u.decl.body;
     }
     return NULL;
+}
+
+/* True when the binding's value is a lambda: check read the lambda
+   against the whole arrow, so the binding names the function the
+   lambda itself is, not a function returning a closure. */
+static int lambda_valued(const ek_symbol *sym)
+{
+    const ek_node *body = decl_body(sym);
+
+    return body != NULL && body->kind == EK_N_LAMBDA;
+}
+
+/* The body of one function binding: a lambda value beta-reduces -- the
+   lambda's own body becomes the function body over the ABI slots. */
+static const ek_node *fn_body(const ek_symbol *sym)
+{
+    const ek_node *body = decl_body(sym);
+
+    return body != NULL && body->kind == EK_N_LAMBDA ? body->u.pair.b
+                                                     : body;
 }
 
 /* The C signature of one emitted function, shared by its forward
@@ -213,7 +255,11 @@ static const char *declare_function(lower_ctx *c, const ek_symbol *sym,
         return NULL;
     }
     memset(ps, 0, sizeof *ps);
-    *nparams = add_params(c, ps, ann);
+    if (lambda_valued(sym)) {
+        *nparams = add_lambda_params(c, ps, ann, decl_body(sym)->u.pair.a);
+    } else {
+        *nparams = add_params(c, ps, ann);
+    }
     if (sym == c->entry) {
         c->entry_mangled = name;
         if (*nparams == 0) {
@@ -247,7 +293,7 @@ static void emit_prologue(lower_ctx *c, lower_scope *params,
     }
     c->tce_self = sym;
     c->tce_params = params;
-    c->tce_label = lower_has_self_tail(c, sym, decl_body(sym))
+    c->tce_label = lower_has_self_tail(c, sym, fn_body(sym))
                        ? "retry" : NULL;
     if (c->tce_label) {
         lower_emitf(c, "retry: ;\n");
@@ -320,7 +366,7 @@ void lower_function(lower_ctx *c, const lower_item *item)
     emit_prologue(c, &params, sym);
     saved = c->in_tail;
     c->in_tail = 1;
-    v = lower_block_value(c, &top, decl_body(sym));
+    v = lower_block_value(c, &top, fn_body(sym));
     c->in_tail = saved;
     finish_function(c, &params, &top, v);
     c->depth = d;
