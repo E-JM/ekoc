@@ -3,10 +3,12 @@
 #include <sys/stat.h>
 
 /* Anchored constructors: same-named constructors of different types
-   coexist; an expected type anchors a value reference and the
+   coexist, and the expected type anchors a value reference and the
    scrutinee type anchors a pattern. A reference with no anchor is
    legal only when exactly one constructor of its name is visible and
-   that constructor is non-generic. */
+   that constructor is non-generic. A receiver-form chain spells its
+   head through the type lookup alone, so a sole non-generic
+   constructor of the head's spelling anchors it there too. */
 
 #define CTOR_DIR "build/tmp-check-ctors"
 #define CONF_DIR "tests/conformance"
@@ -565,6 +567,40 @@ static void std_fixed_forms(void)
     cfx_end(&f);
 }
 
+/* A receiver-form chain head spelled like a sole non-generic
+   constructor anchors to it: the head reads as the constructor value
+   and the link reads off that type. A head with no constructor of its
+   spelling keeps the bridge. */
+static void chained_head(void)
+{
+    cfx f;
+
+    /* The std nullable constructor of Json: the member reads off the
+       declared namespace. */
+    cfx_begin(&f, "s := Null.show()\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    EK_CHECK(row_nominal_at(&f, 1, "std", "Json"));
+    EK_CHECK(cfx_reading_at(&f, 1, EK_RD_NAMESPACE));
+    cfx_end(&f);
+
+    /* A user constructor of the current module anchors the same way,
+       and the display service covers its type. */
+    cfx_begin(&f,
+              "W: type = Sole\n"
+              "s := Sole.show()\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    EK_CHECK(row_nominal_at(&f, 2, "test", "W"));
+    EK_CHECK(cfx_reading_at(&f, 2, EK_RD_DERIVED));
+    cfx_end(&f);
+
+    /* A head no constructor of the closure spells keeps the bridged
+       reading: the receiver type stays undetermined. */
+    cfx_begin(&f, "u := Bogus.show()\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    EK_CHECK(cfx_reading_at(&f, 1, EK_RD_UNKNOWN));
+    cfx_end(&f);
+}
+
 int main(void)
 {
     std_only();
@@ -582,5 +618,6 @@ int main(void)
     duplicate_variants();
     undetermined_owner_text();
     std_fixed_forms();
+    chained_head();
     return ek_test_report("check/ctors");
 }

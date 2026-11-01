@@ -42,6 +42,43 @@ static lower_val ctor_expr(lower_ctx *c, const ek_node *e, const ek_ref *ref)
     return lower_ctor_value(c, e, ref);
 }
 
+/* The sole constructor a bridged chain head names, over the nominal
+   check anchored at it: the same sole-candidate rule check applied, read
+   off the closure's surfaces -- check already refused the generic and
+   the ambiguous heads by leaving the row opaque. NULL keeps the plain
+   refusal. */
+static const ek_symbol *bridged_ctor(lower_ctx *c, const ek_node *e)
+{
+    const ek_type *t = lower_row_type(c, e);
+    const ek_symbol *tsym = t && t->kind == EK_T_NOMINAL
+                                ? t->u.nominal.sym : NULL;
+    const char *name = e->u.path.count == 1 ? e->u.path.data[0] : NULL;
+    const ek_symbol *cand = NULL;
+    size_t k, i;
+
+    if (!tsym || !name) {
+        return NULL;
+    }
+    for (k = 0; k < c->resolved.module_count; k++) {
+        const ek_surface *s = &c->resolved.modules[k];
+
+        for (i = 0; i < s->count; i++) {
+            const ek_symbol *m = &s->syms[i];
+
+            if (m->kind != EK_SYM_CONSTRUCTOR || !m->owner
+                || strcmp(m->name, name) != 0
+                || strcmp(m->owner, tsym->name) != 0) {
+                continue;
+            }
+            if (cand && cand != m) {
+                return NULL; /* an ambiguity keeps the refusal */
+            }
+            cand = m;
+        }
+    }
+    return cand;
+}
+
 static lower_val name_expr(lower_ctx *c, lower_scope *scope, const ek_node *e)
 {
     const ek_ref *ref;
@@ -82,6 +119,21 @@ static lower_val name_expr(lower_ctx *c, lower_scope *scope, const ek_node *e)
 
             return (lower_val){ lower_str(c, "ek_closure_new(%s, "
                                              "ek_val_unit())", ekt), 0 };
+        }
+    }
+    if (ref->kind == EK_SYM_EXTERNAL && !ref->ncands) {
+        /* a receiver-form head the resolver bridged: check anchored a
+           sole constructor's nominal over it, so the head reads as that
+           constructor's own value */
+        const ek_symbol *ctor = bridged_ctor(c, e);
+
+        if (ctor) {
+            ek_ref cons = *ref;
+
+            cons.kind = EK_SYM_CONSTRUCTOR;
+            cons.station = EK_ST_CONS;
+            cons.symbol = ctor;
+            return ctor_expr(c, e, &cons);
         }
     }
     lower_error(c, e, "the reference to `%s` is not supported by this "

@@ -175,7 +175,11 @@ static const ek_type *name_type(ck_ctx *c, const ek_node *n,
             if (ref->ncands) {
                 return ck_ctor_type(c, n, ref, expected);
             }
-            return ck_opaque(c);
+            {
+                const ek_type *head = ck_ctor_head(c, n);
+
+                return head ? head : ck_opaque(c);
+            }
         case EK_SYM_CONSTRUCTOR:
             return ck_ctor_type(c, n, ref, expected);
         default:

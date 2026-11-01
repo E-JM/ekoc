@@ -257,6 +257,7 @@ const ek_symbol *ck_ctor_pick(const ek_ref *ref, const ek_type *expected);
 /* ctor.c: constructor candidate selection in value position. */
 const ek_type *ck_ctor_type(ck_ctx *c, const ek_node *n, const ek_ref *ref,
                             const ek_type *expected);
+const ek_type *ck_ctor_head(ck_ctx *c, const ek_node *n);
 
 /* literal.c: literal placement and composite literals. */
 int ck_is_numeric(const ek_type *t);      /* Int, UInt, Float */

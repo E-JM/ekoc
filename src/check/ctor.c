@@ -164,6 +164,53 @@ ck_ctorsel ck_ctor_select(ck_ctx *c, const ek_node *n, const ek_ref *ref,
     return out;
 }
 
+/* The value type of a chain head the resolver bridged: a
+   receiver-form chain spells its head through the type lookup alone,
+   so a constructor of the same spelling reaches check as the bare
+   external bridge, without a candidate set. The current module's
+   constructors and the public std and cap ones are the visible set; a
+   sole non-generic candidate anchors the value the way a
+   value-position reference does. NULL when the spelling names none,
+   several, or a generic one: an expected type or the resolver's own
+   candidate set decides those. */
+const ek_type *ck_ctor_head(ck_ctx *c, const ek_node *n)
+{
+    const char *name = n->u.path.count == 1 ? n->u.path.data[0] : NULL;
+    const ek_symbol *cand = NULL;
+    const ck_ctor *ct;
+    size_t k, i;
+
+    if (!name) {
+        return NULL;
+    }
+    for (k = 0; k < c->in->module_count; k++) {
+        const ek_surface *s = &c->in->modules[k];
+        int own = s == c->cur;
+
+        if (!own && strcmp(s->module, "std") != 0
+            && strcmp(s->module, "cap") != 0) {
+            continue;
+        }
+        for (i = 0; i < s->count; i++) {
+            const ek_symbol *m = &s->syms[i];
+
+            if (m->kind != EK_SYM_CONSTRUCTOR || strcmp(m->name, name) != 0
+                || (!own && !m->public)) {
+                continue;
+            }
+            if (cand && cand != m) {
+                return NULL;
+            }
+            cand = m;
+        }
+    }
+    ct = cand ? ck_ctor_of(c, cand) : NULL;
+    if (!ct || !ct->owner || ck_ctor_generic(c, cand)) {
+        return NULL;
+    }
+    return ck_nominal(c, ct->owner, NULL, 0);
+}
+
 /* A constructor in value position: the expected nominal type selects
    among the candidates, a sole non-generic constructor self-anchors,
    and a std placeholder stays the opaque bridge. */

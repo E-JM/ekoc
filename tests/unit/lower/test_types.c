@@ -192,6 +192,24 @@ static void nested_list_shape(void)
     lfx_end(&f);
 }
 
+/* A receiver-form head the resolver bridged reads as the constructor
+   it names once check anchors the nominal: the Json Null head lowers
+   to its nullary birth. */
+static void bridged_ctor_head_reads(void)
+{
+    lfx f;
+
+    lfx_begin(&f,
+              "main: () -> _ =\n"
+              "    s = Null.show()\n"
+              "    _ := s\n"
+              "    _\n");
+    EK_CHECK(lfx_check_clean(&f));
+    EK_CHECK(lfx_lower_clean(&f));
+    EK_CHECK(lfx_has(&f, "ekn_std_Json_Null()"));
+    lfx_end(&f);
+}
+
 int main(void)
 {
     record_shape();
@@ -199,5 +217,6 @@ int main(void)
     tuple_shape();
     list_dict_shape();
     nested_list_shape();
+    bridged_ctor_head_reads();
     return ek_test_report("lower/types");
 }
