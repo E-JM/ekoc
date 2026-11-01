@@ -686,6 +686,34 @@ static lower_val c_ns_call(lower_ctx *c, lower_scope *scope,
     return discard_call(c, scope, e, form);
 }
 
+/* The receiver of a module-path call (`x.Mod.f(a)`): the chain's
+   module and type segments carry no value, so the walk peels them
+   innermost first, mirroring check's chain walk that fixed the
+   reading. NULL when no value segment remains: the plain qualified
+   form. */
+static const ek_node *module_path_recv(lower_ctx *c, const ek_node *recv)
+{
+    const ek_ref *r;
+
+    while (recv && recv->kind == EK_N_FIELD) {
+        r = lower_ref(c, recv);
+        if (!r || (r->kind != EK_SYM_MODULE
+                   && !(r->kind == EK_SYM_TYPE
+                        && r->station == EK_ST_MODULE_PATH))) {
+            break;
+        }
+        recv = recv->u.field.recv;
+    }
+    if (recv == NULL) {
+        return NULL;
+    }
+    if (recv->kind == EK_N_NAME && (r = lower_ref(c, recv)) != NULL
+        && r->kind == EK_SYM_MODULE) {
+        return NULL; /* the chain heads at a module: qualified */
+    }
+    return recv;
+}
+
 /* One call: the callee's reading decides the form. */
 static lower_val emit_call(lower_ctx *c, lower_scope *scope,
                            const ek_node *e, const call_form *form)
@@ -703,6 +731,20 @@ static lower_val emit_call(lower_ctx *c, lower_scope *scope,
         && (ref->kind == EK_SYM_FUNC || ref->kind == EK_SYM_NAMESPACE)) {
         if (ref->kind == EK_SYM_FUNC && is_injected(ref->symbol)) {
             return identity_call(c, scope, e, ref->symbol, form);
+        }
+        if (ref->station == EK_ST_MODULE_PATH && !form->has_recv
+            && callee && callee->kind == EK_N_FIELD) {
+            const ek_node *rv = module_path_recv(c, callee->u.field.recv);
+
+            if (rv) {
+                call_form modpath = *form;
+
+                /* `x.Mod.f(a)` passes the receiver first, exactly as
+                   the member form does */
+                modpath.has_recv = 1;
+                modpath.recv = lower_sub(c, scope, rv);
+                return direct_call(c, scope, e, ref->symbol, &modpath);
+            }
         }
         if (!form->has_recv && !form->extra && c->in_tail && c->tce_self
             && c->tce_label && ref->symbol == c->tce_self) {
