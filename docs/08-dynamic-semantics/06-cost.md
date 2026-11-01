@@ -20,8 +20,9 @@ the length of the list.
 
 Dictionary merge magnitude is implementation-defined, because dictionaries are
 persistent structures (Clause 2.5). Index-based access keeps the same
-accounting: `List.get` and `Dict.get` are O(1), while `String.at` and
-`String.slice` are O(n) because UTF-8 is variable-width (Clause 9.4.2).
+accounting: `Dict.get` is O(1), while `List.get` is O(n) because a list is
+an inductive sequence, and `String.at` and `String.slice` are O(n) because
+UTF-8 is variable-width (Clause 9.4.2).
 
 The cost model constrains asymptotic magnitude; it does not constrain constant
 factors, register allocation, or the machine code generated for a construct.

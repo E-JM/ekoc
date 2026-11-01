@@ -26,7 +26,7 @@ their signature carries a world-bit marker.
 | `List.join` | `([]t, String) -> String` | Clause 9.10.1 |
 | `List.slice` | `([]t, Int, Int) -> Option []t` | Clause 9.10.1 |
 
-`get` is O(1); index syntax does not exist for any structure (Clause 6.10).
+`get` is O(n); index syntax does not exist for any structure (Clause 6.10).
 `append` is the body of `++` (Clause 7.8.6). `map`, `filter`, `fold`, `each`,
 `each_with_index`, `any`, `all`, `find_by`, `sort_by`, `zip_with`,
 `take_while`, and `drop_while` are open-bit dispatchers (Clause 7.9.6).

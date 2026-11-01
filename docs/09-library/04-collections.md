@@ -5,7 +5,7 @@
 ### 9.10.1 List
 
 A list is a homogeneous, immutable sequence with structural sharing. Patterns
-are inductive (`{h, ..t}`), and `List.get` is O(1). `List.append` is O(|xs|)
+are inductive (`{h, ..t}`), and `List.get` is O(n). `List.append` is O(|xs|)
 new nodes with the right operand shared (Clause 8.10). `List.map` preserves
 order and length, `List.filter` preserves order, and `List.fold` proceeds left
 to right. `List.each` and `List.each_with_index` visit in order, and

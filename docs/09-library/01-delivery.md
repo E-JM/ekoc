@@ -188,8 +188,11 @@ Option: type t = Some t | None
 `None` answers a domain question negatively and carries no reason. A domain
 check MUST be represented as `Option`; it MUST NOT be converted to `Result`
 without an explicit reason at the conversion site. Every index-based accessor
-yields `Option`. `List.get` is O(1) and `String.at` is O(n) (Clause 8.10);
-out-of-range access yields `None` and never panics. The same rule covers
+yields `Option`. `List.get` and `String.at` are O(n) (Clause 8.10);
+out-of-range access yields `None` and never panics. Indexed access walks the
+sequence, so repeated access is quadratic in the length; `fold`, `map`, and
+the `{h, ..t}` pattern are the iteration vocabulary (Clause 8.8). The same
+rule covers
 `String.slice`, `List.slice`, `Bytes.get`, `Char.from_code`,
 `Bytes.from_ints`, `Env.get`, and `Dict.get`. Conversions that can fail on
 range yield `Option` (Clause 9.6.2). Consumption is explicit. A `case`
