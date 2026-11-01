@@ -36,6 +36,7 @@ otherwise it names the rejection and the normative clause.
 | N28 | opened free name and a top-level binding share a name | `E-name-conflict` |
 | N29 | two imports open the same free name | `E-name-conflict` |
 | N30 | non-terminating generic instantiation | `E-instantiation-depth` |
+| N31 | record right-hand side on its own indented line | parse error |
 
 ## N01 — nominal mismatch
 
@@ -388,3 +389,18 @@ Expected: `E-instantiation-depth`, at the recursive call. A conforming
 program has a finite set of generic instances (`Clause 8.7.3`); expansion
 follows the call graph, so a diverging generic with no ground use is not
 an error and leaves no instance to expand.
+
+## N31 — record right-hand side on its own indented line
+
+A value binding admits its right-hand side on the following lines; a `type`
+right-hand side after `=` and a newline is a vertical variant list, and every
+indented line leads with `|` (Annex A.3.2). The record stands on the `=` line.
+
+```eko
+R: type =
+    [name: String]
+```
+
+Expected: parse error, at `[`. A record or tuple right-hand side follows `=`
+on the same line (Clause 6.3.5); the same rejection covers a parenthesized
+form and a composite type such as `[]String` on the indented line.

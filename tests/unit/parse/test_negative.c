@@ -68,6 +68,35 @@ static void n17_index_syntax(void)
     pfx_end(&f);
 }
 
+/* N31: a record right-hand side on its own indented line. A value
+   binding admits its right-hand side on the following lines; a `type`
+   right-hand side after a newline is a vertical variant list, so every
+   indented line leads with `|` (Annex A.3.2). */
+static void n31_indented_record_rhs(void)
+{
+    parse_fixture f;
+
+    pfx_begin(&f, "R: type =\n    [name: String]\n");
+    EK_CHECK(pfx_errors(&f) >= 1);
+    pfx_collect(&f);
+    EK_CHECK(pfx_has_code(&f, "E-type-decl-form"));
+    EK_CHECK(pfx_msg_has(&f, "6.3.5"));
+    EK_CHECK(f.ast.module != NULL);
+    pfx_end(&f);
+
+    pfx_begin(&f, "R: type =\n    (a: String, b: Int)\n");
+    EK_CHECK(pfx_errors(&f) >= 1);
+    pfx_collect(&f);
+    EK_CHECK(pfx_has_code(&f, "E-type-decl-form"));
+    pfx_end(&f);
+
+    pfx_begin(&f, "R: type =\n    []String\n");
+    EK_CHECK(pfx_errors(&f) >= 1);
+    pfx_collect(&f);
+    EK_CHECK(pfx_has_code(&f, "E-type-decl-form"));
+    pfx_end(&f);
+}
+
 /* A comma inside a parenthesized group: the group holds one expression
    and the tuple literal is a brace form. The rejection is one
    diagnostic at the first comma, and the recovery keeps the group's
@@ -115,6 +144,7 @@ int main(void)
     n04_bare_panic_arm();
     n16_chained_comparison();
     n17_index_syntax();
+    n31_indented_record_rhs();
     paren_comma_group();
     return ek_test_report("parse/negative");
 }

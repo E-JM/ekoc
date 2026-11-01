@@ -73,7 +73,10 @@ ek_node *p_variant(p_ctx *c)
 }
 
 /* NEWLINE INDENT VariantLine { VariantLine } DEDENT; every line leads
-   with `|`. */
+   with `|`. A bracketed line is the record or tuple form, which stands
+   on the `=` line, so it is diagnosed whole and skipped. Every
+   iteration consumes at least one token: recovery that stops on a
+   closing bracket falls back to taking it. */
 static void variant_lines(p_ctx *c, ek_node *n)
 {
     while (!c->oom) {
@@ -88,11 +91,22 @@ static void variant_lines(p_ctx *c, ek_node *n)
             continue;
         }
         if (!p_at(c, EK_TOK_PIPE)) {
-            p_error_tok(c, "E-syntax", p_peek(c),
-                        "a vertical variant line begins with `|` "
-                        "(Clause 6.3.5)");
+            if (p_at(c, EK_TOK_LBRACKET) || p_at(c, EK_TOK_LPAREN)) {
+                p_error_tok(c, "E-type-decl-form", p_peek(c),
+                            "a record or tuple right-hand side follows `=` "
+                            "on the same line; an indented right-hand side "
+                            "is a vertical variant list (Clause 6.3.5)");
+                p_type(c);
+            } else {
+                p_error_tok(c, "E-syntax", p_peek(c),
+                            "a vertical variant line begins with `|` "
+                            "(Clause 6.3.5)");
+            }
             p_sync(c);
             p_got_layout(c, EK_LTOK_NEWLINE);
+            if (c->pos == before) {
+                p_take(c);
+            }
             continue;
         }
         p_take(c);

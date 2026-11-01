@@ -259,6 +259,27 @@ static void type_decls(void)
     pfx_collect(&f);
     EK_CHECK(pfx_has_code(&f, "E-type-decl-form"));
     pfx_end(&f);
+
+    /* A bracket line inside a vertical block is the misplaced record
+       form; the variant lines around it still parse. */
+    pfx_begin(&f, "T: type =\n    | A\n    [x: Int]\n    | B\n");
+    EK_CHECK(pfx_errors(&f) > 0);
+    pfx_collect(&f);
+    EK_CHECK(pfx_has_code(&f, "E-type-decl-form"));
+    n = pfx_item(&f, 0);
+    EK_CHECK_U64(n->u.type_decl.variants.count, 2);
+    EK_CHECK_STR(n->u.type_decl.variants.data[0]->u.variant.name, "A");
+    EK_CHECK_STR(n->u.type_decl.variants.data[1]->u.variant.name, "B");
+    pfx_end(&f);
+
+    /* Recovery consumes at least one token per rejected line, so a
+       line that stops it on a closing bracket cannot repeat. */
+    pfx_begin(&f, "T: type =\n    | A\n    ]\n");
+    EK_CHECK(pfx_errors(&f) > 0);
+    n = pfx_item(&f, 0);
+    EK_CHECK_U64(n->u.type_decl.variants.count, 1);
+    EK_CHECK(f.ast.module != NULL);
+    pfx_end(&f);
 }
 
 static void ctype_decl(void)
