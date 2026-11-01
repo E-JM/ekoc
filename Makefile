@@ -159,6 +159,7 @@ EMIT_OBJ := $(EMIT_SRC:src/%.c=$(BUILD)/%.o)
 CLI_SRC := \
 	src/cli/main.c \
 	src/cli/build.c \
+	src/cli/check.c \
 	src/cli/front.c \
 	src/cli/test.c
 

@@ -49,6 +49,32 @@ static const char *t_crashing =
     "explodes: test =\n"
     "    loop(1)\n";
 
+/* A program root without `main` is refused before anything compiles. */
+static const char *t_no_main =
+    "x: Int = 3\n";
+
+/* A clean program whose local binding is unused: the build succeeds and
+   the warning still reports. */
+static const char *t_unused =
+    "main: () -> _ =\n"
+    "    a = 1\n"
+    "    _\n";
+
+/* A lambda-valued module member and a module-path receiver call: the
+   member runs the lambda, and `n.foo.add()` passes n first. */
+static const char *t_member_foo =
+    "bar: (String) -> String = (s): \"hello: {s}\"\n"
+    "add: (num: Int) -> Int = num + 2\n";
+
+static const char *t_member_main =
+    "import foo\n"
+    "\n"
+    "first: test =\n"
+    "    assert_eq(foo.bar(\"Erxat\"), \"hello: Erxat\")\n"
+    "    n := 4\n"
+    "    assert_eq(foo.add(n), 6)\n"
+    "    assert_eq(n.foo.add(), 6)\n";
+
 /* Runs one ekoc command line; standard output and standard error land
    in the two files. Returns the wait status. */
 static int run_cli(const char *args, const char *out_path,
@@ -192,6 +218,100 @@ static void crashed_test(void)
     EK_CHECK(strncmp(buf, "FAIL explodes: crashed (signal ", 31) == 0);
 }
 
+/* A program root that declares no `main` is refused with the entry
+   diagnostic, before anything compiles. */
+static void build_missing_main(void)
+{
+    char buf[512];
+    int status;
+
+    EK_CHECK(write_file("build/cli_t_nomain.eko", t_no_main));
+    status = run_cli("build build/cli_t_nomain.eko -o build/cli_t_nomain",
+                     "build/cli_t_nomain.out", "build/cli_t_nomain.err");
+    EK_CHECK(exited(status, 2));
+    EK_CHECK(read_file("build/cli_t_nomain.out", buf, sizeof buf) == 0);
+    EK_CHECK(read_file("build/cli_t_nomain.err", buf, sizeof buf) > 0);
+    EK_CHECK(strstr(buf, ": E-entry-point: the entry module declares no "
+                         "`main`") != NULL);
+}
+
+/* A warning over a clean build still reports; the build succeeds. */
+static void build_reports_warnings(void)
+{
+    char buf[256];
+    int status;
+
+    EK_CHECK(write_file("build/cli_t_unused.eko", t_unused));
+    status = run_cli("build build/cli_t_unused.eko -o build/cli_t_unused",
+                     "build/cli_t_unused.out", "build/cli_t_unused.err");
+    EK_CHECK(exited(status, 0));
+    EK_CHECK(read_file("build/cli_t_unused.out", buf, sizeof buf) > 0);
+    EK_CHECK_STR(buf, "wrote build/cli_t_unused\n");
+    EK_CHECK(read_file("build/cli_t_unused.err", buf, sizeof buf) > 0);
+    EK_CHECK(strstr(buf, ": W-unused: the binding `a` is never used")
+                 != NULL);
+}
+
+/* The check command: every diagnostic reports and nothing compiles --
+   no binary is written; a test root is exempt from `main`. */
+static void check_command(void)
+{
+    char buf[512];
+    int status;
+
+    EK_CHECK(write_file("build/cli_t_chk_unused.eko", t_unused));
+    status = run_cli("check build/cli_t_chk_unused.eko",
+                     "build/cli_t_chk.out", "build/cli_t_chk.err");
+    EK_CHECK(exited(status, 0));
+    EK_CHECK(read_file("build/cli_t_chk.out", buf, sizeof buf) == 0);
+    EK_CHECK(read_file("build/cli_t_chk.err", buf, sizeof buf) > 0);
+    EK_CHECK(strstr(buf, ": W-unused:") != NULL);
+
+    EK_CHECK(write_file("build/cli_t_chk_bad.eko", t_broken_code));
+    status = run_cli("check build/cli_t_chk_bad.eko",
+                     "build/cli_t_chk.out", "build/cli_t_chk.err");
+    EK_CHECK(exited(status, 2));
+    EK_CHECK(read_file("build/cli_t_chk.out", buf, sizeof buf) == 0);
+    EK_CHECK(read_file("build/cli_t_chk.err", buf, sizeof buf) > 0);
+    EK_CHECK(strstr(buf, ": E-") != NULL);
+
+    EK_CHECK(write_file("build/cli_t_chk_nomain.eko", t_no_main));
+    status = run_cli("check build/cli_t_chk_nomain.eko",
+                     "build/cli_t_chk.out", "build/cli_t_chk.err");
+    EK_CHECK(exited(status, 2));
+    EK_CHECK(read_file("build/cli_t_chk.err", buf, sizeof buf) > 0);
+    EK_CHECK(strstr(buf, "E-entry-point") != NULL);
+
+    EK_CHECK(write_file("build/cli_t_chk_root.eko", t_passing));
+    status = run_cli("check build/cli_t_chk_root.eko",
+                     "build/cli_t_chk.out", "build/cli_t_chk.err");
+    EK_CHECK(exited(status, 0));
+
+    status = run_cli("check", "build/cli_t_chk.out",
+                     "build/cli_t_chk.err");
+    EK_CHECK(exited(status, 2));
+    EK_CHECK(read_file("build/cli_t_chk.err", buf, sizeof buf) > 0);
+    EK_CHECK(strncmp(buf, "usage:", 6) == 0);
+}
+
+/* A lambda-valued module member called cross-module runs the lambda, and
+   the receiver-form module path passes its receiver as the first
+   argument. */
+static void module_member_calls(void)
+{
+    char buf[256];
+    int status;
+
+    EK_CHECK(write_file("build/foo.eko", t_member_foo));
+    EK_CHECK(write_file("build/cli_t_member.eko", t_member_main));
+    status = run_cli("test build/cli_t_member.eko",
+                     "build/cli_t_member.out", "build/cli_t_member.err");
+    EK_CHECK(exited(status, 0));
+    EK_CHECK(read_file("build/cli_t_member.out", buf, sizeof buf) > 0);
+    EK_CHECK_STR(buf, "ok first\n1/1 passed\n");
+    EK_CHECK(read_file("build/cli_t_member.err", buf, sizeof buf) == 0);
+}
+
 static void bad_usage(void){
     char buf[64];
     int status;
@@ -227,6 +347,10 @@ int main(void)
     crashed_test();
     refusal_no_tests();
     compile_error();
+    build_missing_main();
+    build_reports_warnings();
+    check_command();
+    module_member_calls();
     bad_usage();
     return ek_test_report("cli/test");
 }

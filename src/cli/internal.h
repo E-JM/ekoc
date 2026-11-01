@@ -67,6 +67,13 @@ size_t cli_test_names(const ek_resolve_result *res, const char **names);
    build/. */
 int cli_build(const char *file, const char *out, const char *tree_root);
 
+/* The check command: the pipeline through the lowerer over one Eko
+   file, every diagnostic reported and nothing compiled. A root that
+   declares test bindings takes the test root's rules -- no `main`
+   requirement; a program root must declare `main`, exactly as build
+   enforces it. Returns the process exit status, 0 when the only
+   diagnostics are warnings. */
+int cli_check(const char *file);
 
 /* The test command: compiles one Eko file's test bindings into a
    driver binary under tree_root's build/ and runs it once per test,
