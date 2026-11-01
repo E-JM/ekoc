@@ -300,7 +300,7 @@ static void emit_to_adt(lower_ctx *c, lower_demit *d, lower_variant *vs,
                 lower_d_printf(d, "        ek_release(%s);\n", k);
                 lower_d_printf(d, "        ek_release(%s);\n", dd);
                 lower_d_printf(d, "        %s = %s;\n", dd, e);
-                lower_d_printf(d, "        %s = %s(%s);\n", r,
+                lower_d_printf(d, "        ek_val %s = %s(%s);\n", r,
                                lower_json_ctor(c, "Obj"), dd);
                 lower_d_printf(d, "        ek_release(%s);\n", dd);
                 lower_d_printf(d, "        return %s;\n", r);
