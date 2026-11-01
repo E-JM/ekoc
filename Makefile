@@ -1,6 +1,6 @@
 CC     := cc
 AR     := ar
-CFLAGS := -std=c99 -Wall -Wextra -Wpedantic -Werror -O2
+CFLAGS := -std=c99 -Wall -Wextra -Wpedantic -Werror
 
 BUILD  := build
 
