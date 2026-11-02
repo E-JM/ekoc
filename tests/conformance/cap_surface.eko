@@ -20,6 +20,15 @@ derivation_types: test =
     t := o.tee((s): o.println("echo: {s}"))
     t.println("done")
 
+// The error channel constructs purely over the compiler row (Clause
+// 10.8) and carries the same surface as any Out. A test writes nothing
+// through it: the runner reads the child's error stream as panic
+// capture (Clause 9.14.6), so the derived channels stay the only
+// writers a test uses (Clause 9.14.5).
+error_channel_constructs: test =
+    e: Out = Out.err()
+    assert_eq(e.show(), "<cap>")
+
 in_reads_lines: test =
     empty: In = In.empty()
     case empty.read_line():

@@ -256,7 +256,7 @@ ek_bit ck_body_bit(ck_ctx *c, const ek_node *e)
 static int is_combinator(const char *member)
 {
     static const char *pure[] = {"null",   "tee",      "empty",
-                                 "from_lines", "frozen", "with_seed",
+                                 "from_lines", "err", "frozen", "with_seed",
                                  "root",  "join",     "cancel"};
     size_t i;
 

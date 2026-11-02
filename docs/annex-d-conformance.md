@@ -130,7 +130,10 @@ order, and parallelism.
 Test bindings have no parameter table, and capability construction is a host
 right (Clauses 7.9.1, 9.14.5). A test therefore cannot obtain a real
 capability. The derived constructors of Clause 9.14.5 are the only world-facing
-values a test may use.
+values a test may write through. `Out.err` constructs the session's error
+channel and is not one of them: under the runner its writes land in the
+runner's own panic capture (Clause 9.14.6), so a test keeps its output on the
+derived channels of its row.
 
 | World state | Prohibited dependency | Permitted substitute |
 |---|---|---|
@@ -176,7 +179,7 @@ number of test bindings. `geolib.eko` is a fixture and has none.
 |---|---|---|---|---|
 | `access_drilling.eko` | yes | 5 | 6.10, 7.4.3, 9.2.2, 9.2.3, 9.4.2, 9.10.1, 9.10.2 | `Option`-returning access on list, dictionary, and string; nested access; slice |
 | `bindings.eko` | yes | 6 | 6.3.1, 6.3.2, 6.3.3, 6.3.4, 6.8.1, 8.2.1, 8.2.2, 8.2.3, 8.2.4, 9.2.1, 9.6.3 | initial and rebound bindings; capture snapshot; tuple split; discard; inverted chain |
-| `cap_surface.eko` | yes | 7 | 9.1.1, 9.12, 9.14.5, 10.8 | capability handle types; derivations construct and forward; compiler-provided declarations; `File` family at a handle parameter |
+| `cap_surface.eko` | yes | 8 | 9.1.1, 9.12, 9.14.5, 10.8 | capability handle types; derivations construct and forward; compiler-provided declarations; `File` family at a handle parameter |
 | `case_patterns.eko` | yes | 8 | 6.7.1, 6.7.2, 6.7.3, 6.7.5, 6.8.2, 6.8.3, 6.8.4, 6.8.5, 7.7.2, 7.7.3, 8.3.1, 8.3.3, 8.3.4, 9.8.1 | guards; or-patterns; list and record patterns; literals; multiple scrutinees; single-line form |
 | `ctor_anchor.eko` | yes | 1 | 7.4.6, 7.5.2 | same-named constructors of different types; the expected type selects one |
 | `ctor_anchor_std.eko` | yes | 1 | 7.4.6, 7.6 | self-anchoring through the single visible constructor |

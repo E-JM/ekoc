@@ -119,14 +119,18 @@ is the injected pair, and operating-system code lives in the host-constructed
 bundles. It carries one ordinary import, `std/time`, for the time types in
 `FileInfo.mtime`, the `_ClockB` bundle, and `Clock.sleep`; it imports nothing
 else (Clause 9.1.3). The compiler-provided declarations of the capability
-namespaces are fifteen. `Proc.exit` and the four concurrency members — `Conc.scope`,
+namespaces are sixteen. `Proc.exit` and the four concurrency members — `Conc.scope`,
 `Scope.spawn`, `Task.join`, `Task.cancel` — are not source-expressible: an
 open-bit dispatcher over a runtime scheduler and the observation of runtime
 task values have no source form (Clauses 7.9.6, 8.9). The eight `File` members
 reach the runtime's handle table directly; a handle admits no bundle pair,
 so no source form carries them. `In.from_lines` and `Rand.with_seed` are
 derivations whose sequences advance across calls; the language has no
-stateless closure expression of an advancing sequence. Each of the fifteen
+stateless closure expression of an advancing sequence. `Out.err` is the
+error-channel constructor: the process's error stream has no bundle pair and
+no manifest entry of its own, so the compiler injects a constructor whose
+bundle writes there, and the channel rides the Out session as host wiring
+(Clause 7.9.1). Each of the sixteen
 carries the signature and the bit of its Annex C.9 row, its body is an extern
 symbol the compiler injects, and no declaration form names it.
 

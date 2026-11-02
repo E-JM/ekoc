@@ -61,7 +61,7 @@
  * through an unknown callee contributes world-touching when its
  * receiver has a capability type other than `Conc`, which sets no bit,
  * and the member is not one of the pure derivation combinators
- * (Out.null/tee, In.empty/from_lines, Fs.null/root, Env/Args/
+ * (Out.null/tee/err, In.empty/from_lines, Fs.null/root, Env/Args/
  * Clock.frozen, Rand.with_seed, Task.join/cancel), or when an argument
  * is a lambda whose body is world-touching (the open-bit
  * instantiation applied at opaque dispatchers); it contributes pure

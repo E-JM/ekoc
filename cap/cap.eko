@@ -1,7 +1,7 @@
 // The capability module: the handles and data types of the capability
 // surfaces, and the members of the capability namespaces (Clause
 // 9.1.1). The channel to the operating system is the injected pair of
-// each capability (Clause 10.8); the fifteen compiler-provided
+// each capability (Clause 10.8); the sixteen compiler-provided
 // declarations arrive as compiler rows, not source.
 
 // The time vocabulary of the signatures below (FileInfo.mtime, the

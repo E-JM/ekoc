@@ -12,15 +12,17 @@ through a capability member. The capability module carries one ordinary
 import, `std/time`, for the time types in `FileInfo.mtime`, the `_ClockB`
 bundle, and `Clock.sleep`; it imports nothing else (Clause 9.1.3).
 Every member in this section is capability-module source (Clause 9.1.1), except
-the fifteen compiler-provided declarations (Clause 10.8): `Proc.exit`, the four
-concurrency members, the eight `File` members, and the two advancing derivations
-`In.from_lines` and `Rand.with_seed`.
+the sixteen compiler-provided declarations (Clause 10.8): `Proc.exit`, the four
+concurrency members, the eight `File` members, the two advancing derivations
+`In.from_lines` and `Rand.with_seed`, and the error-channel constructor
+`Out.err`.
 
 | Capability | Member | Signature | Clause |
 |---|---|---|---|
 | `Out` | `Out.print`, `Out.println` | `(Out, String) !-> _` | Clause 7.9.1 |
 | `Out` | `Out.tee` | `(Out, (String) !-> _) -> Out` | Clause 9.14.5 |
 | `Out` | `Out.null` | `() -> Out` | Clause 9.14.5 |
+| `Out` | `Out.err` | `() -> Out` | Clause 9.14.5 |
 | `In` | `In.read_line` | `(In) !-> Result (Option String) IoError` | Clause 7.9.1 |
 | `In` | `In.empty` | `() -> In` | Clause 9.14.5 |
 | `In` | `In.from_lines` | `([]String) -> In` | Clause 9.14.5 |
@@ -67,8 +69,11 @@ concurrency members, the eight `File` members, and the two advancing derivations
 (Clause 9.2.4). `Out.tee` writes once and reports once, invoking its observer
 on each write. `Out.null` swallows every write, `In.empty` reports EOF
 immediately, and `In.from_lines` yields the given lines in order and then EOF
-(Clause 9.14.5). `with_file` closes the handle on both the value path and the
-error path (Clause 9.12.4). `read` keeps the text gate and reports invalid
+(Clause 9.14.5). `Out.err` constructs the session's error channel over host
+wiring; construction is pure, and the writes through the value land on the
+process's error stream (Clauses 9.14.5, 10.8). `with_file` closes the handle
+on both the value path and the error path (Clause 9.12.4). `read` keeps the
+text gate and reports invalid
 UTF-8 as `Err InvalidData`; `read_bytes` never reports `InvalidData`
 (Clause 9.12.2). `list_dir` returns names, not paths, in lexicographic order
 and excludes `.` and `..` (Clause 9.12.6). `Fs.null` is a pure derivation that

@@ -193,10 +193,10 @@ lower_val lower_wrap_exit(lower_ctx *c, lower_scope *scope, const char *sym,
 
 /* The compiler-provided rows of the capability channel (Clause 10.8):
    the eight File members over the runtime's handle table, the process
-   exit, and the two advancing derivations. The file reads keep the
-   text gate; a stale handle reports Err Closed on every operation, a
-   second close included. The argument letters follow the intrinsic
-   discipline: v the value slot, o the object. */
+   exit, the two advancing derivations, and the error channel. The file
+   reads keep the text gate; a stale handle reports Err Closed on every
+   operation, a second close included. The argument letters follow the
+   intrinsic discipline: v the value slot, o the object. */
 typedef enum {
     CAP_PLAIN, /* the call value is the result */
     CAP_IO_REF,
@@ -224,6 +224,7 @@ static const cap_row cap_rows[] = {
     {"File", "close", "ek_file_close", "v", CAP_IO_UNIT},
     {"In", "from_lines", "ek_in_from_lines", "o", CAP_PLAIN},
     {"Rand", "with_seed", "ek_rand_with_seed", "v", CAP_PLAIN},
+    {"Out", "err", "ek_cap_out_stderr", "", CAP_PLAIN},
     {"Proc", "exit", "ek_proc_exit", "vv", CAP_EXIT},
 };
 

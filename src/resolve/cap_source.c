@@ -8,7 +8,7 @@ const char *const ek_cap_source_parts[] = {
     "// The capability module: the handles and data types of the capability\n",
     "// surfaces, and the members of the capability namespaces (Clause\n",
     "// 9.1.1). The channel to the operating system is the injected pair of\n",
-    "// each capability (Clause 10.8); the fifteen compiler-provided\n",
+    "// each capability (Clause 10.8); the sixteen compiler-provided\n",
     "// declarations arrive as compiler rows, not source.\n",
     "\n",
     "// The time vocabulary of the signatures below (FileInfo.mtime, the\n",

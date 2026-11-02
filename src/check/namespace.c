@@ -616,18 +616,21 @@ static const ns_row rows[] = {
                                     SIG_STD("String"))},
 
     /* The capability surface the source does not declare (Clause 10.8):
-       the two advancing derivations, the process exit, the four
-       concurrency members, and the File family. `Never` is the bottom
-       type, and the open arrows are the dispatchers. The
+       the two advancing derivations, the error channel, the process
+       exit, the four concurrency members, and the File family. `Never`
+       is the bottom type, and the open arrows are the dispatchers. The
        capability-module source declares every other member (Clause
        9.1.1), so the namespaces are complete (Clause 7.9.1). The
        advancing derivations land on the std placeholders -- the same
        nominals the injected pairs wrap -- because the capability module
-       declares no In or Rand type for the capability build to find. */
+       declares no In or Rand type for the capability build to find.
+       Constructing the error channel is pure: the writes through the
+       value still carry the world bit of the Out members. */
     {"In", "from_lines", SIG_FN(EK_ARROW_PURE, SIG_STD("In"),
                                 SIG_LIST(SIG_STD("String")))},
     {"Rand", "with_seed", SIG_FN(EK_ARROW_PURE, SIG_STD("Rand"),
                                  SIG_STD("Int"))},
+    {"Out", "err", SIG_FN0(EK_ARROW_PURE, SIG_STD("Out"))},
     {"Proc", "exit", SIG_FN(EK_ARROW_WORLD, SIG_STD("Never"),
                             SIG_STD("Proc"), SIG_STD("Int"))},
     {"Conc", "scope", SIG_FN(EK_ARROW_OPEN, SIG_VAR(0), SIG_STD("Conc"),

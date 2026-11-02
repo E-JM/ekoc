@@ -246,12 +246,14 @@ static const intrinsic_row rows[] = {
     {"Float", "is_finite", "ek_num_is_finite", "v", W_BOOL, OUT_I64, 0},
 };
 
-/* The capability channel owns the File, In, Rand, and Proc families:
-   the compiler-provided rows of Clause 10.8 route through capwrap.c. */
+/* The capability channel owns the File, In, Out, Rand, and Proc
+   families: the compiler-provided rows of Clause 10.8 route through
+   capwrap.c. */
 static int cap_family(const char *family)
 {
     return strcmp(family, "File") == 0 || strcmp(family, "In") == 0
-        || strcmp(family, "Rand") == 0 || strcmp(family, "Proc") == 0;
+        || strcmp(family, "Out") == 0 || strcmp(family, "Rand") == 0
+        || strcmp(family, "Proc") == 0;
 }
 
 /* The row of one family and member spelling. */

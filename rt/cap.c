@@ -43,6 +43,22 @@ static ek_val out_write(ek_val env, ek_val *args, size_t argc)
     return ek_val_unit();
 }
 
+/* The write closure of the error bundle: the same bytes on stderr, so
+   a program's diagnostics never mix into its data stream. */
+static ek_val err_write(ek_val env, ek_val *args, size_t argc)
+{
+    ek_obj *s;
+
+    (void)env;
+    if (argc != 1 || !ek_val_is_ref(args[0])
+        || args[0].as.ref->info->kind != EK_KIND_STR) {
+        return ek_val_unit();
+    }
+    s = args[0].as.ref;
+    fwrite(ek_str_cstr(s), 1, ek_str_len(s), stderr);
+    return ek_val_unit();
+}
+
 /* The Out bundle over the process's standard output. The caller owns
    the returned value; releasing it releases the write closure. */
 ek_val ek_cap_out_stdout(void)
@@ -52,6 +68,20 @@ ek_val ek_cap_out_stdout(void)
     out->obj.info = &ek_typeinfo_cap_out;
     out->obj.rc = 1;
     out->write = ek_closure_new(out_write, ek_val_unit());
+    return ek_val_ref(&out->obj);
+}
+
+/* The Out bundle over the process's standard error, the constructor
+   behind the compiler's Out.err row: the same bundle shape as the
+   standard output, whose write closure lands on fd 2. The caller owns
+   the returned value; releasing it releases the write closure. */
+ek_val ek_cap_out_stderr(void)
+{
+    ek_cap_out *out = ek_rt_alloc_zeroed(sizeof *out);
+
+    out->obj.info = &ek_typeinfo_cap_out;
+    out->obj.rc = 1;
+    out->write = ek_closure_new(err_write, ek_val_unit());
     return ek_val_ref(&out->obj);
 }
 

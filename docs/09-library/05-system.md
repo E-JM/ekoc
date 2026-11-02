@@ -254,12 +254,16 @@ The derivation combinators of this subsection are members of the capability
 namespaces and are declared by the capability module (Clause 9.1.1), except
 `In.from_lines` and `Rand.with_seed`: their sequences advance across calls,
 which has no stateless expression, so both are compiler-provided declarations
-over injected extern symbols (Clause 10.8).
+over injected extern symbols (Clause 10.8). The error-channel constructor
+`Out.err` is likewise compiler-provided over an injected extern: the process's
+error stream has no bundle pair of its own, so the compiler injects its
+construction, and the writes through the value land there.
 
 | Derivation | Behavior |
 |---|---|
 | `Out.null` | swallows every write |
 | `Out.tee` | writes once and reports once; assertions ride along with the stream |
+| `Out.err` | constructs the session's error channel; construction is pure, and the writes through the value still carry `!` |
 | `In.empty` | every read is end of input (`read_line` yields `Ok None`) |
 | `In.from_lines` | yields the given lines in order, then end of input |
 | `Fs.null` | every path yields `Err NotFound` |
@@ -273,7 +277,14 @@ The observer fires once per write, and its bit is absorbed by the `!` of the
 bundle's write closure (Clause 7.9.5). A pure observer flows in by adaptation.
 Tests cannot obtain real capabilities. Construction right belongs to the host,
 and `main`'s parameter table is the only entrance (Clause 7.9.1); a test has
-no parameter table. Derived combinators are the test's entire world.
+no parameter table. The error channel is the one exception to that entrance,
+and it grants nothing new: `Out.err` rides the Out session as host wiring
+beside it, names no manifest entry, and yields no channel outside the
+sessions `main` already declares. What the test runtime hands a test that
+constructs `Out.err` is the runner's own side of the child's error stream,
+which the runner reads as panic capture (Clause 9.14.6) and never the user's,
+so a test keeps its written output on the derived combinators. Derived
+combinators are the test's entire world.
 Integration tests against real input and output belong to the host. The world
 bits of the functions under test are unchanged. A test feeds a real capability
 value; it relaxes no check and uses the same compiler and the same rules as

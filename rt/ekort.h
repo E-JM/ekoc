@@ -713,6 +713,13 @@ ek_val ek_closure_env(ek_obj *closure);
    and returns the unit value. The caller owns the returned bundle. */
 ek_val ek_cap_out_stdout(void);
 
+/* The Out bundle over the process's standard error, the constructor
+   behind the compiler's Out.err row: the same bundle shape whose write
+   closure writes the String argument's bytes to stderr without a
+   terminator and returns the unit value. The caller owns the returned
+   bundle. */
+ek_val ek_cap_out_stderr(void);
+
 /* The remaining session bundles, over the same shape: one closure per
    member of the compiler's bundle record, in the record's field
    order. Each constructor returns a bundle the caller owns.
