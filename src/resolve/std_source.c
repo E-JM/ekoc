@@ -349,9 +349,14 @@ const char *const ek_std_source_parts[] = {
     "// is source over the scalar sequence.\n",
     "String.at: (s: String, i: Int) -> Option Char = List.get(s.chars(), i)\n",
     "\n",
+    "// The empty text has no lines; any other text yields the fields of the\n",
+    "// newline split, less the empty one a trailing newline leaves.\n",
     "String.lines: (s: String) -> []String =\n",
-    "    parts := s.split(\"\\n\")\n",
-    "    if s.ends_with(\"\\n\"): _drop_last(parts) else: parts\n",
+    "    if s == \"\":\n",
+    "        {}\n",
+    "    else:\n",
+    "        parts := s.split(\"\\n\")\n",
+    "        if s.ends_with(\"\\n\"): _drop_last(parts) else: parts\n",
     "\n",
     "_drop_last: (xs: []t) -> []t =\n",
     "    List.reverse(_drop_first(List.reverse(xs)))\n",
@@ -509,8 +514,8 @@ const char *const ek_std_source_parts[] = {
     "        False -> _\n",
 };
 
-const size_t ek_std_source_nparts = 502;
-const size_t ek_std_source_len = 15969;
+const size_t ek_std_source_nparts = 507;
+const size_t ek_std_source_len = 16150;
 
 char *ek_std_source_join(ek_arena *arena)
 {

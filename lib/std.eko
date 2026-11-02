@@ -342,9 +342,14 @@ _json_char: (c: Char) -> String =
 // is source over the scalar sequence.
 String.at: (s: String, i: Int) -> Option Char = List.get(s.chars(), i)
 
+// The empty text has no lines; any other text yields the fields of the
+// newline split, less the empty one a trailing newline leaves.
 String.lines: (s: String) -> []String =
-    parts := s.split("\n")
-    if s.ends_with("\n"): _drop_last(parts) else: parts
+    if s == "":
+        {}
+    else:
+        parts := s.split("\n")
+        if s.ends_with("\n"): _drop_last(parts) else: parts
 
 _drop_last: (xs: []t) -> []t =
     List.reverse(_drop_first(List.reverse(xs)))

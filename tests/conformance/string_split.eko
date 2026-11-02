@@ -1,8 +1,8 @@
-// String.split keeps every field, empty or not, and String.lines drops
-// only the final empty element a trailing newline leaves (Clause
-// 9.11.1). The large inputs hold the split to a linear walk: a build
-// that copied the accumulated pieces at every step would take minutes
-// at this size.
+// String.split keeps every field, empty or not; String.lines drops
+// only the final empty element a trailing newline leaves, and the
+// empty text has no lines (Clause 9.11.1). The large inputs hold the
+// split to a linear walk: a build that copied the accumulated pieces
+// at every step would take minutes at this size.
 
 split_fields: test =
     assert_eq("a,b".split(","), {"a", "b"})
@@ -22,7 +22,7 @@ lines_fields: test =
     assert_eq("a\n".lines(), {"a"})
     assert_eq("\n".lines(), {""})
     assert_eq("\n\n".lines(), {"", ""})
-    assert_eq("".lines(), {""})
+    assert_eq("".lines(), {})
 
 // The inputs are built by prepending to a []Char and reversing once,
 // so constructing them costs linear time as well.

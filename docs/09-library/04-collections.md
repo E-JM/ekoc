@@ -100,12 +100,15 @@ is O(n). `List.take` and `List.drop` truncate; `String.slice` does not.
 occurrence of `sep` and keeps empty fields, whether leading, trailing, or
 between adjacent separators. The separator MUST be non-empty; an empty
 separator is a panic (Clause 9.2.3). `String.lines` splits on `'\n'` and drops
-the final empty element when the input ends with `'\n'`.
+the final empty element when the input ends with `'\n'`. The empty string has
+no lines and yields the empty list; `"\n"` is one empty line.
 
 ```eko
 "a,b".split(",")       // {"a", "b"}
 ",,x,".split(",")      // {"", "", "x", ""}
 "a\nb\n".lines()       // {"a", "b"}
+"".lines()             // {}
+"\n".lines()           // {""}
 ```
 
 Unicode case mapping and regular expressions are not part of the standard
