@@ -32,8 +32,10 @@ implementation-defined order (Clause 2.5).
 A dictionary is an immutable, persistent mapping from a key domain to values
 (Clause 9.10.4). `Dict.get` is O(1) and yields `Option v`; `Dict.length`
 counts keys. `Dict.insert` and `Dict.remove` return a new dictionary; removing
-an absent key returns the original. `Dict.merge` and `++` return a dictionary
-in which the right operand wins on duplicate keys. `Dict.map`, `Dict.filter`,
+an absent key returns the original. The new dictionary is a copy, O(n) in the
+number of entries, so building a dictionary by n successive inserts costs
+O(n²) (Clause 8.10). `Dict.merge` and `++` return a dictionary in which the
+right operand wins on duplicate keys. `Dict.map`, `Dict.filter`,
 `Dict.fold`, and `Dict.each` dispatch on the key and value in insertion order.
 Iteration over a dictionary follows insertion order; this order is part of the
 observable result of `to_list`, `show`, and JSON rendering of a string-keyed
