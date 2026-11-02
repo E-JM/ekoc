@@ -1,0 +1,53 @@
+// String.split keeps every field, empty or not, and String.lines drops
+// only the final empty element a trailing newline leaves (Clause
+// 9.11.1). The large inputs hold the split to a linear walk: a build
+// that copied the accumulated pieces at every step would take minutes
+// at this size.
+
+split_fields: test =
+    assert_eq("a,b".split(","), {"a", "b"})
+    assert_eq(",,x,".split(","), {"", "", "x", ""})
+    assert_eq("abc".split(","), {"abc"})
+    assert_eq("".split(","), {""})
+
+split_multichar_separator: test =
+    assert_eq("a--b--".split("--"), {"a", "b", ""})
+    assert_eq("abc".split("abc"), {"", ""})
+    assert_eq("a-b".split("--"), {"a-b"})
+
+lines_fields: test =
+    assert_eq("a\nb".lines(), {"a", "b"})
+    assert_eq("a\nb\n".lines(), {"a", "b"})
+    assert_eq("a".lines(), {"a"})
+    assert_eq("a\n".lines(), {"a"})
+    assert_eq("\n".lines(), {""})
+    assert_eq("\n\n".lines(), {"", ""})
+    assert_eq("".lines(), {""})
+
+// The inputs are built by prepending to a []Char and reversing once,
+// so constructing them costs linear time as well.
+_repeat_chars: (c: Char, n: Int, acc: []Char) -> []Char =
+    if n <= 0: acc
+    else: _repeat_chars(c, n - 1, {c} ++ acc)
+
+_comma_fields: (n: Int, acc: []Char) -> []Char =
+    if n <= 0: acc
+    else: _comma_fields(n - 1, {'a', ','} ++ acc)
+
+split_many_fields: test =
+    s := String.from_chars(List.reverse(_comma_fields(100000, {'a'})))
+    parts := s.split(",")
+    assert_eq(parts.length(), 100001)
+    assert(parts.all((p): p == "a"))
+
+split_long_field: test =
+    s := String.from_chars(_repeat_chars('x', 100000, {}))
+    parts := s.split(",")
+    assert_eq(parts.length(), 1)
+    assert_eq(parts.get(0).map((p): p.length()), Some 100000)
+
+lines_many: test =
+    s := String.from_chars(_repeat_chars('\n', 100000, {}))
+    ls := s.lines()
+    assert_eq(ls.length(), 100000)
+    assert(ls.all((l): l == ""))

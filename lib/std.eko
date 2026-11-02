@@ -360,14 +360,17 @@ String.split: (s: String, sep: String) -> []String =
     else:
         _split_chars(s.chars(), sep.chars(), {}, {})
 
+// `cur` holds the current piece's scalars reversed and `acc` the finished
+// pieces reversed, so every step is a prepend; each piece is reversed
+// once when it closes and the result once when the input is exhausted.
 _split_chars: (cs: []Char, sep: []Char, cur: []Char, acc: []String) -> []String =
     if _starts_with_chars(cs, sep):
         _split_chars(_drop_chars(cs, sep.length()), sep, {},
-                     acc ++ {String.from_chars(cur)})
+                     {String.from_chars(cur.reverse())} ++ acc)
     else:
         case cs:
-            {} -> acc ++ {String.from_chars(cur)}
-            {c, ..rest} -> _split_chars(rest, sep, cur ++ {c}, acc)
+            {} -> List.reverse({String.from_chars(cur.reverse())} ++ acc)
+            {c, ..rest} -> _split_chars(rest, sep, {c} ++ cur, acc)
 
 String.contains: (s: String, sub: String) -> Bool =
     _chars_contains(s.chars(), sub.chars())

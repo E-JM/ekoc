@@ -367,14 +367,17 @@ const char *const ek_std_source_parts[] = {
     "    else:\n",
     "        _split_chars(s.chars(), sep.chars(), {}, {})\n",
     "\n",
+    "// `cur` holds the current piece's scalars reversed and `acc` the finished\n",
+    "// pieces reversed, so every step is a prepend; each piece is reversed\n",
+    "// once when it closes and the result once when the input is exhausted.\n",
     "_split_chars: (cs: []Char, sep: []Char, cur: []Char, acc: []String) -> []String =\n",
     "    if _starts_with_chars(cs, sep):\n",
     "        _split_chars(_drop_chars(cs, sep.length()), sep, {},\n",
-    "                     acc ++ {String.from_chars(cur)})\n",
+    "                     {String.from_chars(cur.reverse())} ++ acc)\n",
     "    else:\n",
     "        case cs:\n",
-    "            {} -> acc ++ {String.from_chars(cur)}\n",
-    "            {c, ..rest} -> _split_chars(rest, sep, cur ++ {c}, acc)\n",
+    "            {} -> List.reverse({String.from_chars(cur.reverse())} ++ acc)\n",
+    "            {c, ..rest} -> _split_chars(rest, sep, {c} ++ cur, acc)\n",
     "\n",
     "String.contains: (s: String, sub: String) -> Bool =\n",
     "    _chars_contains(s.chars(), sub.chars())\n",
@@ -506,8 +509,8 @@ const char *const ek_std_source_parts[] = {
     "        False -> _\n",
 };
 
-const size_t ek_std_source_nparts = 499;
-const size_t ek_std_source_len = 15717;
+const size_t ek_std_source_nparts = 502;
+const size_t ek_std_source_len = 15969;
 
 char *ek_std_source_join(ek_arena *arena)
 {
