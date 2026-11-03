@@ -299,16 +299,13 @@ static ek_val parse_result(int ok, ek_val value, ek_val reason)
 }
 
 /* The Err side of a failed value scan: the kind decides the ParseError
-   variant, and an owned detail rides the Invalid one. */
+   variant, and the owned detail moves into the Invalid one, whose
+   wrapping releases it. */
 static ek_val parse_failed(json_status st, ek_obj *detail)
 {
-    ek_val reason;
-
     if (st == JSON_RANGE)
         return parse_error_range();
-    reason = parse_error_invalid(ek_val_ref(detail));
-    ek_release(ek_val_ref(detail));
-    return reason;
+    return parse_error_invalid(ek_val_ref(detail));
 }
 
 /* The parse family's Json entry: the whole text as one document. The
