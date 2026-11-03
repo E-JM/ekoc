@@ -648,6 +648,34 @@ const char *lower_borrow_local(lower_ctx *c, lower_scope *scope,
                                const ek_node *e);
 int lower_arg_may_rebind(const ek_node *e);
 
+/* callargs.c: the call site's shape and argument placement. The form
+   carries the receiver slot and the appended trailing argument; the
+   injected identities of the capability module read as their
+   argument; set_recv decides the receiver slot before the receiver
+   lowers. */
+typedef struct {
+    int has_recv;
+    lower_val recv;
+    const char *recv_borrow;
+    const char *extra;
+} call_form;
+
+int is_injected(const ek_symbol *sym);
+const char *injected_identity(lower_ctx *c, const ek_symbol *sym);
+void set_recv(lower_ctx *c, lower_scope *scope, call_form *member,
+              const ek_node *recv, const ek_nlist *args, const ek_type *ft);
+int args_rebind_from(const ek_nlist *args, size_t i);
+const ek_type *fn_param(const ek_type *ft, size_t i);
+
+/* callinv.c: the invocations over the filled argument slots -- the
+   direct call of a known function, which a generic callee
+   instantiates at the applied type, and the closure call of a
+   function value. */
+lower_val direct_call(lower_ctx *c, lower_scope *scope, const ek_node *e,
+                      const ek_symbol *sym, const call_form *form);
+lower_val value_call(lower_ctx *c, lower_scope *scope, const ek_node *e,
+                     lower_val callee, const char *extra);
+
 /* borrow.c: the parameter-borrow analysis over one function body.
    lower_param_rebinds is true when the body rebinds the parameter of
    that written name -- the rebind releases the local's own reference
