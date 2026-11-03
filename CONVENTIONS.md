@@ -49,7 +49,7 @@ conflict, the spec governs.
   numbers, no spec quotations.
 - No pipeline-stage or milestone labels ("Stage 2", "M6"), no history
   ("was X, now Y"), no bug or fix narration, no notes to reviewers. The
-  code states what holds; history lives in git.
+  code states what holds; history lives in git. no refrence labels ("Clause ...")
 - A public header states each function's contract in a few lines —
   inputs, ownership, failure behavior — and nothing else.
 - No banner comments, no commented-out code, no license headers per file
@@ -73,5 +73,5 @@ conflict, the spec governs.
 - Subject: `<area>: <imperative summary>` under 50 chars. Areas:
   `support`, `lex`, `layout`, `parse`, `resolve`, `check`, `lower`,
   `emit`, `cli`, `rt`, `cap`, `lib`, `build`, `test`, `docs`, `spec`,
-  `conv`. Body paragraphs are 1–2 sentences each, English, and explain
+  `conv`. Body paragraphs are 1 sentences each, English, and explain
   why, not what.
