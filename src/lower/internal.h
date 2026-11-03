@@ -673,6 +673,22 @@ const ek_type *fn_param(const ek_type *ft, size_t i);
    function value. */
 lower_val direct_call(lower_ctx *c, lower_scope *scope, const ek_node *e,
                       const ek_symbol *sym, const call_form *form);
+/* callmember.c: the member-call readings -- the namespace scan, the
+   open-receiver re-route, and the receiver, free-call, and
+   current-module forms. lower_discard_call keeps the unsupported-call
+   balance. */
+lower_val lower_discard_call(lower_ctx *c, lower_scope *scope, const ek_node *e,
+                       const call_form *form);
+lower_val member_call(lower_ctx *c, lower_scope *scope, const ek_node *e,
+                      const ek_node *callee, const call_form *form);
+lower_val c_ns_call(lower_ctx *c, lower_scope *scope, const ek_node *e,
+                    const ek_node *callee, const call_form *form);
+lower_val identity_call(lower_ctx *c, lower_scope *scope, const ek_node *e,
+                        const ek_symbol *sym, const call_form *form);
+lower_val free_member_call(lower_ctx *c, lower_scope *scope,
+                           const ek_node *e, const ek_node *callee,
+                           const call_form *form);
+
 lower_val value_call(lower_ctx *c, lower_scope *scope, const ek_node *e,
                      lower_val callee, const char *extra);
 
