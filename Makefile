@@ -61,6 +61,8 @@ RESOLVE_SRC := \
 CHECK_SRC := \
 	src/check/bind.c \
 	src/check/call.c \
+	src/check/callchain.c \
+	src/check/apply.c \
 	src/check/check.c \
 	src/check/composite.c \
 	src/check/ctor.c \

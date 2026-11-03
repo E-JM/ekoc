@@ -450,6 +450,32 @@ void ck_exhaust(ck_ctx *c, const ek_node *cs, const ek_type **scrut,
 
 /* member.c: receiver-station selection. call.c: calls, lambdas,
    constructor application. */
+/* call.c: the shared call machinery. callee_expr types the callee of
+   an unknown-head call; call_fn checks one call against a function
+   type, receiver first. */
+const ek_type *callee_expr(ck_ctx *c, const ek_node *callee,
+                           const ek_node *call);
+const ek_type *callee_symbol_type(ck_ctx *c, const ek_symbol *sym,
+                                  const ek_node *call);
+const ek_type *call_fn(ck_ctx *c, const ek_node *e, const ek_type *fntype,
+                       const char *member, const ek_type *recv,
+                       const ek_type *bit_recv, const ek_nlist *args,
+                       int synthesize, int implicit);
+const ek_type *arg_conform(ck_ctx *c, const ek_node *arg,
+                           const ek_type *ptype);
+
+/* callchain.c: the receiver-chain dispatch. type_head reads a
+   PascalCase callee head as a type namespace; the member, service,
+   and constructor walks type one link. */
+int type_head(ck_ctx *c, const ek_node *recv, const ek_type **out);
+const ek_type *call_member(ck_ctx *c, const ek_node *e,
+                           const ek_node *callee, int implicit);
+const ek_type *call_service(ck_ctx *c, const ek_node *e,
+                            const ek_node *callee, int implicit);
+const ek_type *call_ctor(ck_ctx *c, const ek_node *e, const ek_node *callee,
+                         const ek_ref *ref, const ek_type *expected,
+                         int implicit);
+
 const ek_type *ck_call(ck_ctx *c, const ek_node *e, const ek_type *expected);
 const ek_type *ck_field(ck_ctx *c, const ek_node *e);
 const ek_type *ck_link(ck_ctx *c, const ek_node *link, const ek_type *recv,
@@ -460,6 +486,9 @@ const ek_type *ck_link_mod(ck_ctx *c, const ek_node *link,
 const ek_type *ck_field_of(ck_ctx *c, const ek_type *r, const char *name);
 const ek_type *ck_lambda(ck_ctx *c, const ek_node *e, const ek_type *expected);
 const ek_type *ck_apply(ck_ctx *c, const ek_node *e, const ek_type *expected);
+const ek_type *ctor_apply(ck_ctx *c, const ek_node *e, const ck_ctor *ct,
+                          const ek_type *expected, ek_node *const *args,
+                          size_t nargs);
 int ck_ref_at(const ck_ctx *c, const ek_node *n, ek_sym_kind kind,
               const ek_ref **out);
 
