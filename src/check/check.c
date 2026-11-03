@@ -241,6 +241,46 @@ static void ck_undetermined(ck_ctx *c, size_t from)
     }
 }
 
+/* The sorted row of one node, by address. */
+static const ek_ck_row *row_of(const ck_ctx *c, const ek_node *n)
+{
+    size_t lo = 0, hi = c->nrows;
+
+    while (lo < hi) {
+        size_t mid = lo + (hi - lo) / 2;
+
+        if ((size_t)c->rows[mid].node < (size_t)n) {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+    return lo < c->nrows && c->rows[lo].node == n ? &c->rows[lo] : NULL;
+}
+
+/* The composite literals placed under an undetermined expectation:
+   substitution had its chance, and one whose family stayed undecided
+   has no lowering, so the checker rejects it here, in its own
+   file. */
+static void sweep_literals(ck_ctx *c)
+{
+    size_t i;
+
+    for (i = 0; i < c->npend; i++) {
+        const ek_node *n = c->pend_lits[i].node;
+        const ek_ck_row *row = row_of(c, n);
+        const ek_type *t = row ? ck_prune(row->type) : NULL;
+
+        if (!t || t->kind == EK_T_IVAR || t->kind == EK_T_TVAR) {
+            ek_diag_emit(c->diag, EK_SEV_ERROR, "E-literal-expected",
+                         c->pend_lits[i].file, n->line, n->col, "%s",
+                         "a composite literal never stands alone; it "
+                         "requires an expected type or an annotation "
+                         "(Clause 7.5.3)");
+        }
+    }
+}
+
 ek_check_result ek_check(ek_resolve_result in, ek_arena *arena,
                          ek_diag *diag)
 {
@@ -305,6 +345,7 @@ ek_check_result ek_check(ek_resolve_result in, ek_arena *arena,
         }
         ck_fill_bits(&c);
     }
+    sweep_literals(&c);
     r.rows = c.rows;
     r.count = c.nrows;
     return r;

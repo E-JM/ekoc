@@ -66,8 +66,12 @@ static const ek_type *call_opaque(ck_ctx *c, const ek_node *e,
         for (i = 0; i < args->count; i++) {
             /* A fresh expectation per argument: literals and
                composites stay opaque under it (the opacity rule). */
+            int saved = c->opaque_arg;
+
             nodes[off + i] = args->data[i];
+            c->opaque_arg = 1;
             ps[off + i] = ck_expr(c, args->data[i], ck_opaque(c));
+            c->opaque_arg = saved;
             types[off + i] = ps[off + i];
         }
         if (implicit) {
@@ -633,8 +637,11 @@ static const ek_type *apply_opaque(ck_ctx *c, const ek_node *e,
                                    const ek_type *expected)
 {
     const ek_type *iv = ck_opaque(c);
+    int saved = c->opaque_arg;
 
+    c->opaque_arg = 1;
     ck_expr(c, e->u.pair.b, ck_opaque(c));
+    c->opaque_arg = saved;
     if (expected) {
         ck_conforms(c, iv, expected, 1);
     }

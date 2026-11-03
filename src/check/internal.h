@@ -74,6 +74,13 @@ typedef struct ck_scope {
     size_t count, cap;
 } ck_scope;
 
+/* One composite literal awaiting its family: the node and the file it
+   was checked in. */
+typedef struct {
+    const ek_node *node;
+    const char *file;
+} ck_pend_lit;
+
 typedef struct {
     ek_arena *arena;
     ek_diag *diag;
@@ -117,8 +124,16 @@ typedef struct {
     int partial_ok;  /* inside a `with` argument: the partial-literal
                         permission extends layer by layer through the
                         record field values it contains */
+    int opaque_arg;  /* inside an argument the callee cannot type: its
+                        literals take the opaque reading without a
+                        pending sweep entry */
     ek_ck_row *rows;
     size_t nrows, crows;
+    /* Composite literals placed under an undetermined expectation: the
+       node with the file it was checked in, reported by the final
+       sweep when substitution left the family undecided. */
+    ck_pend_lit *pend_lits;
+    size_t npend, cpend;
     /* The instantiation graph: the body being checked, its rigid
        variables, the call marked as the current callee's, and the
        instantiate capture of its scheme variables. */
@@ -269,6 +284,7 @@ const ek_type *ck_place(ck_ctx *c, const ek_node *lit, const ek_type *expected,
                         int neg);
 const ek_type *ck_composite(ck_ctx *c, const ek_node *e,
                             const ek_type *expected, int allow_partial);
+void ck_pending_literal(ck_ctx *c, const ek_node *e);
 
 /* op.c: operator typing. */
 const ek_type *ck_unary(ck_ctx *c, const ek_node *e, const ek_type *expected);

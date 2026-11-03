@@ -149,12 +149,20 @@ static const ek_type *record_lit(ck_ctx *c, const ek_node *e,
 /* The opaque placements: no expected type, or one the bridge leaves
    undetermined. Values are still checked; a bare name key
    stays unread (record field or dictionary key is not decidable under
-   opacity, and resolve resolved no such key). */
+   opacity, and resolve resolved no such key). A literal placed under
+   an undetermined expectation is remembered: unification may still
+   anchor it, and the sweep after substitution rejects the ones that
+   stayed family-less. */
 static const ek_type *composite_opaque(ck_ctx *c, const ek_node *e,
                                        const ek_type *exp)
 {
     size_t i;
+    int saved = c->opaque_arg;
 
+    /* Opacity is contagious: an item of a family-less literal is as
+       unplaceable as the literal itself, and the sweep reports the
+       outermost point. */
+    c->opaque_arg = 1;
     for (i = 0; i < e->u.kids.count; i++) {
         const ek_node *item = e->u.kids.data[i];
 
@@ -165,11 +173,16 @@ static const ek_type *composite_opaque(ck_ctx *c, const ek_node *e,
             ck_expr(c, item->u.pair.b, ck_opaque(c));
         }
     }
+    c->opaque_arg = saved;
     if (!exp) {
         ck_error(c, e, "E-literal-expected",
                  "a composite literal never stands alone; it requires "
                  "an expected type or an annotation (Clause 7.5.3)");
         return ck_opaque(c);
+    }
+    if ((exp->kind == EK_T_IVAR || exp->kind == EK_T_TVAR)
+        && !c->opaque_arg) {
+        ck_pending_literal(c, e);
     }
     return exp;
 }
@@ -354,6 +367,22 @@ static const ek_type *composite_comma(ck_ctx *c, const ek_node *e,
         }
     }
     return exp;
+}
+
+/* Remembers a literal placed under an undetermined expectation; the
+   final sweep rejects it when substitution left it family-less. */
+void ck_pending_literal(ck_ctx *c, const ek_node *e)
+{
+    ck_pend_lit *grown = ck_grow(c, c->pend_lits, c->npend + 1, &c->cpend,
+                                 sizeof *c->pend_lits);
+
+    if (c->oom) {
+        return;
+    }
+    c->pend_lits = grown;
+    c->pend_lits[c->npend].node = e;
+    c->pend_lits[c->npend].file = ck_file(c);
+    c->npend++;
 }
 
 const ek_type *ck_composite(ck_ctx *c, const ek_node *e,

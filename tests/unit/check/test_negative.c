@@ -329,6 +329,31 @@ static void alias_cascade(void)
     cfx_end(&f);
 }
 
+/* A composite literal an undetermined expectation never places: the
+   family stays undecided through substitution, so the checker rejects
+   what the lowerer could not build. A literal the surrounding
+   annotation anchors later stays legal. */
+static void unanchored_literal(void)
+{
+    cfx f;
+
+    cfx_begin(&f,
+              "_keys: (d: [String]Int) -> []String =\n"
+              "    d.fold({}, (acc, k, _): {k} ++ acc).reverse()\n");
+    EK_CHECK(cfx_code_at_line(&f, "E-literal-expected", 2));
+    EK_CHECK(cfx_errors(&f) >= 1);
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "_sum: (d: [String]Int) -> Int =\n"
+              "    d.fold(0, (acc, k, v): acc + v)\n"
+              "_bound: (d: [String]Int) -> []String =\n"
+              "    d.fold(_empty(), (acc, k, _): {k} ++ acc).reverse()\n"
+              "_empty: () -> []String = (): {}\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+}
+
 int main(void)
 {
     n01();
@@ -348,5 +373,6 @@ int main(void)
     n29();
     n30();
     alias_cascade();
+    unanchored_literal();
     return ek_test_report("check/negative");
 }
