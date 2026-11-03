@@ -739,6 +739,40 @@ static const ek_type *apply_candidates(ck_ctx *c, const ek_node *e,
     return t ? t : apply_opaque(c, e, expected);
 }
 
+/* The constructor a type-qualified application head names: the head's
+   receiver resolved as the owner type and the link as one of its
+   variants. NULL outside the form or when the spelling names none. */
+static const ek_symbol *qualified_head_ctor(ck_ctx *c, const ek_node *head)
+{
+    const ek_ref *tr = NULL;
+    const ek_symbol *tsym;
+    size_t k, i;
+
+    if (!head || head->kind != EK_N_FIELD
+        || !ck_ref_at(c, head->u.field.recv, EK_SYM_TYPE, &tr)
+        || !tr->symbol) {
+        return NULL;
+    }
+    tsym = tr->symbol;
+    for (k = 0; k < c->in->module_count; k++) {
+        const ek_surface *s = &c->in->modules[k];
+
+        if (strcmp(s->module, tsym->module) != 0) {
+            continue;
+        }
+        for (i = 0; i < s->count; i++) {
+            const ek_symbol *m = &s->syms[i];
+
+            if (m->kind == EK_SYM_CONSTRUCTOR && m->owner
+                && strcmp(m->owner, tsym->name) == 0
+                && strcmp(m->name, head->u.field.name) == 0) {
+                return m;
+            }
+        }
+    }
+    return NULL;
+}
+
 /* Constructor application by juxtaposition is check-only: it takes
    its instantiation from the expected type. */
 const ek_type *ck_apply(ck_ctx *c, const ek_node *e, const ek_type *expected)
@@ -752,6 +786,16 @@ const ek_type *ck_apply(ck_ctx *c, const ek_node *e, const ek_type *expected)
     }
     if (head && ck_ref_at(c, head, 0, &ref) && ref->ncands) {
         return apply_candidates(c, e, ref, expected);
+    }
+    if (head && head->kind == EK_N_FIELD) {
+        const ek_symbol *cs = qualified_head_ctor(c, head);
+
+        if (cs) {
+            t = apply_known(c, e, ck_ctor_of(c, cs), expected);
+            if (t) {
+                return t;
+            }
+        }
     }
     (void)ck_ref_at(c, head, EK_SYM_CONSTRUCTOR, &ref);
     t = ref && ref->symbol ? apply_known(c, e, ck_ctor_of(c, ref->symbol),
