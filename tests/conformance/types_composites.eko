@@ -51,6 +51,35 @@ dicts: test =
     assert_eq(ages.get("ada"), Some 36)
     assert_eq(ages.length(), 2)
 
+structural_keys: test =
+    d: [[Int, Int]]String = {}
+    d = d.insert({1, 2}, "one")
+    d = d.insert({3, 4}, "three")
+    k: [Int, Int] = {1, 2}
+    assert_eq(d.get(k), Some "one")
+    assert_eq(d.get({3, 4}), Some "three")
+    assert_eq(d.get({9, 9}), None)
+    points: [[x: Int, y: Int]]String = {}
+    points = points.insert({x: 5, y: 6}, "center")
+    assert_eq(points.get({x: 5, y: 6}), Some "center")
+
+dict_order: test =
+    base: [String]Int = {"a": 1, "b": 2, "c": 3}
+    hit: [String]Int = base.insert("a", 9)
+    spelled: [String]Int = {"a": 1, "a": 2}
+    assert_eq(hit.fold("", (acc, k, _v): if acc == "": k else: acc ++ k),
+              "abc")
+    assert_eq(spelled.get("a"), Some 2)
+    assert_eq(spelled.length(), 1)
+    left: [String]Int = {"a": 1, "b": 2}
+    right: [String]Int = {"b": 20, "c": 30}
+    merged: [String]Int = left ++ right
+    assert_eq(merged.get("b"), Some 20)
+    assert_eq(merged.fold("", (acc, k, _v): if acc == "": k else: acc ++ k),
+              "abc")
+    reordered: [String]Int = {"b": 2, "a": 1}
+    assert_eq(left.eq(reordered), True)
+
 composites: test =
     empty: []Int = {}
     pair: [String, Int] = {"first", 2}

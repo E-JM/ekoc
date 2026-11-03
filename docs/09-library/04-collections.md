@@ -32,14 +32,21 @@ implementation-defined order (Clause 2.5).
 A dictionary is an immutable, persistent mapping from a key domain to values
 (Clause 9.10.4). `Dict.get` is O(1) and yields `Option v`; `Dict.length`
 counts keys. `Dict.insert` and `Dict.remove` return a new dictionary; removing
-an absent key returns the original. The new dictionary is a copy, O(n) in the
+an absent key returns the original. An insert whose key is present updates the
+value and keeps the key's position; a literal naming a key twice follows the
+same rule, the later value winning at the first position. The new dictionary
+is a copy, O(n) in the
 number of entries, so building a dictionary by n successive inserts costs
 O(n²) (Clause 8.10). `Dict.merge` and `++` return a dictionary in which the
-right operand wins on duplicate keys. `Dict.map`, `Dict.filter`,
-`Dict.fold`, and `Dict.each` dispatch on the key and value in insertion order.
+right operand wins on duplicate keys; the result keeps the left operand's
+order and appends the right operand's new keys in right order. `Dict.map`,
+`Dict.filter`, `Dict.fold`, and `Dict.each` dispatch on the key and value in
+insertion order.
 Iteration over a dictionary follows insertion order; this order is part of the
 observable result of `to_list`, `show`, and JSON rendering of a string-keyed
-dictionary. Dictionaries are persistent structures. The magnitude of
+dictionary. `Dict.eq` compares entries, not insertion order: two dictionaries
+whose entries are equal are equal whatever order each was built in.
+Dictionaries are persistent structures. The magnitude of
 `Dict.merge` is implementation-defined (Clause 8.10).
 
 ### 9.10.3 Set
@@ -68,6 +75,13 @@ Capabilities and functions are excluded; their equality derivation halts
 `NaN` key always misses. `0.0` and `-0.0` compare equal and are the same key.
 The element domain of `Set` is the same key domain. A dictionary with a
 non-string key domain has no default JSON mapping (`E-json-shape`, Annex B).
+
+The O(1) promise of `Dict.get` and the `Set` domain check rest on a derived
+hash: for every admissible key type, the compiler derives a hash function
+alongside the derived `eq`, over the same structure `eq` compares. Entries
+equal under key equality hash equally, in every run of every binary; a hash
+may observe nothing but the entry's structure. A type outside the derived-hash
+domain is not a legal key, by the same exclusion as Clause 9.8.4.
 
 ### 9.10.5 Range
 
