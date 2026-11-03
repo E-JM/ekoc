@@ -99,8 +99,9 @@ All paths resolve against the project root: the directory containing the entry
 module, or the common ancestor of the test roots under test compilation
 (Clause 9.14.6). The path `std` and every path under `std/` are reserved; they
 never resolve against the project root. A user module MUST NOT be named `std`
-(Clause 9.1.2), and a user module MUST NOT bear the stem of a shipped
-companion (`time` today; Clause 9.1.3).
+(Clause 9.1.2), MUST NOT bear the stem of a shipped companion (`time` today;
+Clause 9.1.3), and MUST NOT bear the stem of an embedded module (`sys`,
+`cap`; Clause 9.1.1).
 
 The final segment's stem is the module's name in code. Importing `csv/lex`
 opens module `lex` only, not module `csv`. A path that resolves to no file is

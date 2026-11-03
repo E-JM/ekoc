@@ -75,7 +75,9 @@ Annex C.5, Annex C.7, Annex C.8, and Annex C.9. `Set` and `Range` are
 compiler-supplied (Clause 9.1.1). `Range` has no constructor and no pattern
 form; `..` and `..=` are its only construction (Clause 6.5.6). `ParseError`
 and `IoError` are closed and are not extended by programs (Clause 9.6.3,
-Clause 9.12.2).
+Clause 9.12.2). `IoError`, `OpenMode`, `File`, and `FileInfo`, with `Scope`
+and `Task t` of Annex C.9, are declared by the system vocabulary module
+(Clause 9.1.1).
 
 **Derived type-namespace members.** Every type namespace carries the services
 below. The availability column restricts the types that carry the member.

@@ -41,7 +41,8 @@ CLI, FFI shims. Everything else is colonizable by Eko over time
     src/emit/     C text            -> objects (cc) / in-memory (MIR)
     src/cli/      commands: build, test, doc, where
     rt/           ekort: the runtime library
-    cap/          the capability module (Eko source, embedded at build)
+    cap/          the embedded modules: sys.eko, the system vocabulary, and
+                  cap.eko, the capability module (Eko source, embedded at build)
     lib/          std.eko and companions (Eko source, release files)
     docs/         the specification
     tests/        the conformance suite (Annex D) and unit tests

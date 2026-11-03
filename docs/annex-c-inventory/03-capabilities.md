@@ -8,9 +8,12 @@ capability namespace takes its capability as the first parameter; `Scope.spawn`,
 `File` do. A member marked `!` sets the world bit;
 a derivation is pure. `File`, `Scope`, and `Task t` are handles rather than
 capabilities; their namespaces are included here because each is reached only
-through a capability member. The capability module carries one ordinary
-import, `std/time`, for the time types in `FileInfo.mtime`, the `_ClockB`
-bundle, and `Clock.sleep`; it imports nothing else (Clause 9.1.3).
+through a capability member. The handle and data types (`File`, `OpenMode`,
+`FileInfo`, `IoError`, `Scope`, `Task t`) are declared by the system
+vocabulary module, whose one import, `std/time`, serves `FileInfo.mtime`
+(Clause 9.1.1). The capability module carries one ordinary import,
+`std/time`, for the time types in the `_ClockB` bundle and `Clock.sleep`; it
+imports nothing else (Clause 9.1.3).
 Every member in this section is capability-module source (Clause 9.1.1), except
 the sixteen compiler-provided declarations (Clause 10.8): `Proc.exit`, the four
 concurrency members, the eight `File` members, the two advancing derivations

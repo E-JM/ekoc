@@ -6,13 +6,20 @@
 
 The compiler release carries three surfaces.
 
-The **capability module** is compiler-embedded Eko source. It declares the
-members of the capability namespaces and the types of their signatures:
-`File`, `OpenMode`, `FileInfo`, `IoError`, `Scope`, and `Task t`. It is part
-of the language definition, it is versioned with the compiler, it has no
-import path, and no tool replaces it. Its channel to the operating system is
-the injected primitives of Clause 10.8. It carries one ordinary import,
-`std/time`, for the time types in its declarations (Clause 9.1.3).
+The **embedded modules** are compiler-embedded Eko source, two of them. The
+**system vocabulary module** declares the types of the capability signatures:
+`File`, `OpenMode`, `FileInfo`, `IoError`, `Scope`, and `Task t`; it carries
+one ordinary import, `std/time`, for the time type in `FileInfo` (Clause
+9.1.3), and nothing of it touches the world. The **capability module**
+declares the members of the capability namespaces and composes the derived
+capabilities over the bundle records; its channel to the operating system is
+the injected primitives of Clause 10.8, and it carries one ordinary import,
+`std/time`, for the time types of the clock surface. Both modules are part of
+the language definition, are versioned with the compiler, have no import
+path, and are replaced by no tool; each reaches a file beneath `std` (Clause
+9.1.2). The runtime builds its `IoError`, `OpenMode`, and `FileInfo` values
+over the vocabulary module's declarations and names nothing of the capability
+module.
 
 The **standard library root** is source-delivered: an ordinary Eko module
 named `std`, whose source is `lib/std.eko`. It is versioned with the compiler
@@ -61,21 +68,22 @@ constant of the language definition, independent of the file's contents.
 Adding or removing a name is a language revision, not a library update. An
 explicit `import std` — bare, or with a list whose names are all opened
 already — is redundant and reports W-redundant-import (Annex B). The stem
-`std`, the path prefix `std/`, and the stems of the shipped companions
-(`time` today; Clause 9.1.3) are reserved. A user module MUST NOT be named
-`std` or a reserved companion stem (Clause 7.2.2).
+`std`, the path prefix `std/`, the stems of the shipped companions (`time`
+today; Clause 9.1.3), and the stems of the embedded modules (`sys` and `cap`;
+Clause 9.1.1) are reserved. A user module MUST NOT be named `std`, a reserved
+companion stem, or an embedded module's stem (Clause 7.2.2).
 
 The implicit import opens no time name: `Time`, `Mono`, and `Duration` enter
 scope only through `std/time` (Clause 9.7.1).
 
-The capability module's names resolve in every file without import: its
-namespaces through the type namespaces, as `List.map` does, and its types
-(`File`, `OpenMode`, `FileInfo`, `IoError`, `Scope`, `Task t`, and the
-capability types) as bare names. No import path names that module (Clause
-9.1.1), and its type names have no `std.` spelling: `std.File` is
-`E-unbound-name`, because the standard library carries no capability content.
-The capability module is itself an ordinary importer of `std/time` (Clause
-9.1.3).
+The embedded modules' names resolve in every file without import: the
+capability namespaces through the type namespaces, as `List.map` does, and
+the vocabulary types (`File`, `OpenMode`, `FileInfo`, `IoError`, `Scope`,
+`Task t`) and the capability types as bare names. No import path names either
+module (Clause 9.1.1), and their type names have no `std.` spelling:
+`std.File` is `E-unbound-name`, because the standard library carries no
+capability content. Each embedded module is itself an ordinary importer of
+`std/time` (Clause 9.1.3).
 
 `show`, `inspect`, and `panic` are not opened names: the first two are
 compiler-generated services attached to every type namespace (Clause 9.8.1)

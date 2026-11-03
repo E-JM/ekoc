@@ -117,8 +117,9 @@ admits derivation: `Out`, `In`, `Fs`, `Env`, `Args`, `Clock`, and `Rand`.
 The capability module declares no extern declaration; its only native contact
 is the injected pair, and operating-system code lives in the host-constructed
 bundles. It carries one ordinary import, `std/time`, for the time types in
-`FileInfo.mtime`, the `_ClockB` bundle, and `Clock.sleep`; it imports nothing
-else (Clause 9.1.3). The compiler-provided declarations of the capability
+the `_ClockB` bundle and `Clock.sleep`; the handle and data types of its
+signatures are the system vocabulary module's, reached beneath `std` with no
+import line (Clause 9.1.1); it imports nothing else (Clause 9.1.3). The compiler-provided declarations of the capability
 namespaces are sixteen. `Proc.exit` and the four concurrency members — `Conc.scope`,
 `Scope.spawn`, `Task.join`, `Task.cancel` — are not source-expressible: an
 open-bit dispatcher over a runtime scheduler and the observation of runtime

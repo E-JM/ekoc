@@ -16,8 +16,12 @@ A compiler release MUST contain:
 - the standard library source `lib/std.eko`;
 - the companion sources `lib/std/*.eko` (Clause 9.1.3).
 
-The capability module (Clause 9.1.1) is embedded in the compiler binary; it is
-not a release file. Each companion source is both a release file and
+The embedded modules (Clause 9.1.1), the system vocabulary and the capability
+module, are embedded in the compiler binary; neither is a release file. The bundle records the capability module
+declares are built by the runtime over a slot order the runtime's public
+header publishes, one enumeration per capability; every generated unit
+carries compile-time checks tying its own record layout to that order
+(Clause 10.8). Each companion source is both a release file and
 compiler-embedded source: `lib/std/time.eko` is the shipped companion, and
 `import std/time` answers even where the release directories are absent
 (Clause 9.1.3).
@@ -37,8 +41,8 @@ presented to the compiler has a different content hash, the compiler MUST
 refuse it with a diagnostic.
 
 The standard library root and its companions have no override, and the
-content-hash refusal above is the whole rule for them. The capability module
-is inseparable from the compiler binary and has no distribution file to
+content-hash refusal above is the whole rule for them. The embedded modules
+are inseparable from the compiler binary and have no distribution file to
 override.
 
 ## 11.2 Derived Cache
@@ -47,7 +51,7 @@ The interface of `std` is derived from its source and the compiler-supplied
 rows on first use. It MUST be cached per machine and keyed by the compiler
 build identifier and the content hash of `std.eko`. Each companion's interface
 is derived and cached in the same way, keyed by the compiler build identifier
-and the content hash of its source. The interface of the capability module is
+and the content hash of its source. The interfaces of the embedded modules are
 keyed by the compiler build identifier alone. The default cache directory is
 `~/.cache/eko/`. An implementation MAY choose another directory; the choice is
 implementation-defined and MUST be documented (Clause 2.5).
@@ -111,7 +115,7 @@ rendering belong to the documentation toolchain.
 
 ## 11.4 Version Discipline
 
-The standard library root, its companions, and the capability module are
+The standard library root, its companions, and the embedded modules are
 versioned with the compiler (Clause 9.1.4).
 
 The interface diff between two compiler versions, over all shipped surfaces, is
