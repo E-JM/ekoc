@@ -24,6 +24,11 @@ interface and are absent from ordinary compilation. A module with no `test`
 binding is an ordinary dependency under a test root, which is exactly how
 `geolib.eko` serves `geolib_use.eko`.
 
+`make conformance` runs the whole directory through the real pipeline and
+fails on any rejection or failing test. It also fails outright on an
+`E-lower` diagnostic: a program `check` accepted must lower, so a front-back
+gap is a gate failure, not a suite failure.
+
 Tests use the std assertions. `assert(c)` panics when `c` is `False`;
 `assert_eq(a, b)` locks both arguments to one type, compares with derived
 `==`, and reports failure through `inspect` (`Clause 9.14.3`). A
