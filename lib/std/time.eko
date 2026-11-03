@@ -128,7 +128,7 @@ Duration.to_ns: (d: Duration) -> Int =
 // The fractional nanosecond digits, shared by the time displays: a
 // trailing zero of the remainder drops one digit and one place
 // together, so the padding never refills it.
-_nanos_frac: (r: Int, width: UInt) -> String =
+_nanos_frac: (r: Int, width: Int) -> String =
     if r != 0 && r % 10 == 0:
         _nanos_frac(r / 10, width - 1)
     else:

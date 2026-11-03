@@ -22,3 +22,10 @@ json_show: test =
     assert_eq((Str "hi").show(), "\"hi\"")
     assert_eq((Arr {Int 1, Float 2.5}).show(), "[1,2.5]")
     assert_eq((Obj {"a": Int 1}).show(), "\{\"a\":1}")
+
+padding_width: test =
+    assert_eq("7".pad_left(3, '0'), "007")
+    assert_eq("7".pad_right(3, '.'), "7..")
+    assert_eq("abc".pad_left(2, '0'), "abc")
+    assert_eq("abc".pad_left(-1, '0'), "abc")
+    assert_eq("abc".pad_right(-4, ' '), "abc")

@@ -251,7 +251,7 @@ static void json_round_trip_run(void)
         "        Ok j -> out.println(Json.show(j))\n"
         "        Err _ -> out.println(\"no\")\n";
     char out[64], err[8];
-    int status = gate(src, "lower_rows_json", 16, out, sizeof out,
+    int status = gate(src, "lower_rows_json", 15, out, sizeof out,
                       err, sizeof err);
 
     if (status >= 0 && WIFEXITED(status)) {
@@ -297,7 +297,7 @@ static void store_round_trip_run(void)
         "        Ok s -> out.println(Json.show(s.to_json()))\n"
         "        Err e -> out.println(e)\n";
     char out[128], err[8];
-    int status = gate(src, "lower_rows_store", 30, out, sizeof out,
+    int status = gate(src, "lower_rows_store", 29, out, sizeof out,
                       err, sizeof err);
 
     if (status >= 0 && WIFEXITED(status)) {

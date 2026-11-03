@@ -135,7 +135,7 @@ const char *const ek_time_source_parts[] = {
     "// The fractional nanosecond digits, shared by the time displays: a\n",
     "// trailing zero of the remainder drops one digit and one place\n",
     "// together, so the padding never refills it.\n",
-    "_nanos_frac: (r: Int, width: UInt) -> String =\n",
+    "_nanos_frac: (r: Int, width: Int) -> String =\n",
     "    if r != 0 && r % 10 == 0:\n",
     "        _nanos_frac(r / 10, width - 1)\n",
     "    else:\n",
@@ -143,7 +143,7 @@ const char *const ek_time_source_parts[] = {
 };
 
 const size_t ek_time_source_nparts = 135;
-const size_t ek_time_source_len = 4299;
+const size_t ek_time_source_len = 4298;
 
 char *ek_time_source_join(ek_arena *arena)
 {

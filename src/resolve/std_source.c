@@ -452,15 +452,13 @@ const char *const ek_std_source_parts[] = {
     "_trim_end_chars: (cs: []Char) -> []Char =\n",
     "    _list_rev(_trim_start_chars(_list_rev(cs, {})), {})\n",
     "\n",
-    "String.pad_left: (s: String, width: UInt, c: Char) -> String =\n",
-    "    w := width.to_int().unwrap_or(0)\n",
+    "String.pad_left: (s: String, width: Int, c: Char) -> String =\n",
     "    n := s.length()\n",
-    "    if n >= w: s else: _repeat_char(c, w - n) ++ s\n",
+    "    if n >= width: s else: _repeat_char(c, width - n) ++ s\n",
     "\n",
-    "String.pad_right: (s: String, width: UInt, c: Char) -> String =\n",
-    "    w := width.to_int().unwrap_or(0)\n",
+    "String.pad_right: (s: String, width: Int, c: Char) -> String =\n",
     "    n := s.length()\n",
-    "    if n >= w: s else: s ++ _repeat_char(c, w - n)\n",
+    "    if n >= width: s else: s ++ _repeat_char(c, width - n)\n",
     "\n",
     "_repeat_char: (c: Char, n: Int) -> String = _repeat_into(c, n, \"\")\n",
     "\n",
@@ -514,8 +512,8 @@ const char *const ek_std_source_parts[] = {
     "        False -> _\n",
 };
 
-const size_t ek_std_source_nparts = 507;
-const size_t ek_std_source_len = 16150;
+const size_t ek_std_source_nparts = 505;
+const size_t ek_std_source_len = 16090;
 
 char *ek_std_source_join(ek_arena *arena)
 {

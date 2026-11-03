@@ -147,7 +147,8 @@ nearest decimal rounding with ties away from zero. Both are total: `NaN` and
 the infinities render as themselves, and formatting never returns `Result`.
 `String.pad_left` and `String.pad_right` pad to a requested width with the
 given `Char` and never truncate; the width counts Unicode scalar values, and a
-string already at the requested width is returned unchanged. Fixed
+string already at the requested width is returned unchanged. The width is an
+`Int`; a negative width pads nothing. Fixed
 width hexadecimal is `T.to_hex_pad` on machine words; it zero-pads to at least
 the requested number of digits and never truncates.
 
