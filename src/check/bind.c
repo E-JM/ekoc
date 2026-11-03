@@ -541,21 +541,8 @@ static const ek_type *ck_annotated_decl(ck_ctx *c, const ek_node *m,
             c->inst_nvars = gen->nvars;
         }
     }
-    if (body && ann->kind == EK_N_T_FN) {
-        size_t i, n = ann->u.t_fn.params.count;
-
-        ck_scope_push(c);
-        for (i = 0; i < n; i++) {
-            const ek_node *p = ann->u.t_fn.params.data[i];
-
-            if (p->u.t_field.name && strcmp(p->u.t_field.name, "_") != 0) {
-                ck_scope_bind(c, p->u.t_field.name,
-                              t && t->kind == EK_T_FN && i < t->u.fn.count
-                                  ? t->u.fn.params[i] : ck_opaque(c));
-            }
-        }
-        ck_expr(c, body, t && t->kind == EK_T_FN ? t->u.fn.result : t);
-        ck_scope_pop(c);
+    if (body && ann->kind == EK_N_T_FN && t && t->kind == EK_T_FN) {
+        annotated_fn_body(c, ann, body, t);
     } else if (body) {
         ck_expr(c, body, t);
     }

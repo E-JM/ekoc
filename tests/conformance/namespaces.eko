@@ -29,3 +29,12 @@ out_row_bits: test =
     out.println("checked")
     tee: Out = out.tee((s): out.println(s))
     tee.print("via tee")
+
+Pair: type = [f: Int, s: Int]
+Pair.make: ([Int, Int]) -> Pair = (t):
+    (f, s) = t
+    {f: f, s: s}
+
+namespace_lambda_body: test =
+    assert_eq(Pair.make({3, 4}), {f: 3, s: 4})
+
