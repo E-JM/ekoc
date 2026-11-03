@@ -217,6 +217,63 @@ typedef struct {
 extern const ns_pair_row ck_ns_pair_rows[];
 extern const size_t ck_ns_pair_rows_len;
 
+/* A soft walk-depth guard: pattern structure is finite, and a state
+   this deep is pathological input. */
+#define EXH_MAX_DEPTH 512
+
+typedef struct {
+    const ek_type **cols;
+    size_t ncols;
+    const ek_node ***rows; /* one contribution vector per row */
+    size_t nrows;
+} ex_state;
+
+typedef struct {
+    ex_state snap; /* the copied pointer arrays; vectors are shared */
+    int covered;
+} ex_entry;
+
+typedef struct {
+    ex_entry *entries;
+    size_t count, cap;
+} ex_memo;
+
+/* A scratch buffer of flattened alternatives, grown to fit. */
+typedef struct {
+    const ek_node **v;
+    size_t cap;
+} ex_buf;
+
+/* The derived rows of one branch. */
+typedef struct {
+    const ek_node ***v;
+    size_t n, cap;
+} ex_rows;
+
+/* exhaust_prod.c: the exhaustiveness walk's shared state. The branch
+   functions split one column; the growth helpers build the child
+   state's rows and vectors. */
+size_t ex_flat_into(ck_ctx *c, const ek_node *p, ex_buf *b);
+const ek_node **ex_vec_at(ck_ctx *c, const ek_node **v, size_t ncols,
+                          size_t pos, const ek_node *const *ins,
+                          size_t nins);
+const ek_type **ex_cols_at(ck_ctx *c, const ek_type **cols, size_t ncols,
+                           size_t pos, const ek_type *const *ins,
+                           size_t nins);
+void ex_rows_add(ck_ctx *c, ex_rows *r, const ek_node **vec);
+/* exhaust_prod.c: one walk step, recursive into the branches. */
+int covers_walk(ck_ctx *c, ex_state *st, size_t pos, ex_memo *memo,
+                int depth);
+
+int ex_ctor_branch(ck_ctx *c, ex_state *st, size_t pos, ex_memo *memo,
+                   int depth, const ck_ctor *ct);
+int ex_shape_branch(ck_ctx *c, ex_state *st, size_t pos, ex_memo *memo,
+                    int depth, const ek_type *t);
+int ex_list_branch(ck_ctx *c, ex_state *st, size_t pos, ex_memo *memo,
+                   int depth);
+int ex_scalar_branch(ck_ctx *c, ex_state *st, size_t pos, ex_memo *memo,
+                     int depth);
+
 const ek_type *ck_ns_row(ck_ctx *c, const ek_type *recv, const char *name,
                          int *owned); /* a compiler namespace row, or NULL */
 int ck_ns_owned(const ek_type *recv); /* the namespace has compiler rows */

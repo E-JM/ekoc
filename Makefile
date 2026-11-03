@@ -69,6 +69,9 @@ CHECK_SRC := \
 	src/check/elab.c \
 	src/check/entry.c \
 	src/check/exhaust.c \
+	src/check/exhaust_branch.c \
+	src/check/exhaust_leaf.c \
+	src/check/exhaust_prod.c \
 	src/check/exhaust_prod.c \
 	src/check/extern.c \
 	src/check/expr.c \
