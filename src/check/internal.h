@@ -172,6 +172,51 @@ int ck_ivar_opaque(const ck_ctx *c, const ek_type *t);
 const ek_type *ck_unit(ck_ctx *c);
 const ek_type *ck_never(ck_ctx *c);
 int ck_is_bottom(const ek_type *t); /* the `Never` leaf */
+/* nsrows.c: the compiler-provided member rows of the std namespaces,
+   consumed by the consult machinery below. A row signature is a type
+   tree: a fresh variable slot, a std nominal or one of an embedded
+   module, a list, an Option or Result application, a function, or the
+   unit type. Slots are per-consultation: every use of a row
+   instantiates its own variables. */
+typedef struct ns_sig ns_sig;
+
+struct ns_sig {
+    int kind;
+    const char *std;       /* NS_STD, NS_EMB*: the type's name */
+    const char *mod;       /* NS_EMB*: the embedded module's stem */
+    int slot;              /* NS_VAR: the variable's slot */
+    const ns_sig **params; /* NS_FN */
+    size_t nparams;
+    const ns_sig *result;
+    int arrow;             /* NS_FN: the arrow form */
+    const ns_sig *arg;     /* NS_LIST, NS_OPTION, NS_RESULT, NS_APP*,
+                              NS_EMB1, NS_DICT */
+    const ns_sig *arg2;    /* NS_APP2, NS_DICT: the second argument */
+};
+
+enum { NS_VAR, NS_STD, NS_EMB, NS_EMB1, NS_FN, NS_UNIT, NS_LIST,
+       NS_OPTION, NS_RESULT, NS_APP1, NS_APP2, NS_DICT };
+
+typedef struct {
+    const char *ns;
+    const char *name; /* NULL marks the namespace's row set complete */
+    const ns_sig *sig;
+} ns_row;
+
+extern const ns_row ck_ns_rows[];
+extern const size_t ck_ns_rows_len;
+
+/* One injected pair of the capability module: the unwrap and wrap of
+   one session bundle, by the `_`-prefixed name the cap source
+   references without declaring. */
+typedef struct {
+    const char *name;
+    const ns_sig *sig;
+} ns_pair_row;
+
+extern const ns_pair_row ck_ns_pair_rows[];
+extern const size_t ck_ns_pair_rows_len;
+
 const ek_type *ck_ns_row(ck_ctx *c, const ek_type *recv, const char *name,
                          int *owned); /* a compiler namespace row, or NULL */
 int ck_ns_owned(const ek_type *recv); /* the namespace has compiler rows */

@@ -77,6 +77,7 @@ CHECK_SRC := \
 	src/check/literal.c \
 	src/check/member.c \
 	src/check/namespace.c \
+	src/check/nsrows.c \
 	src/check/op.c \
 	src/check/patbind.c \
 	src/check/pattern.c \
@@ -110,6 +111,8 @@ LOWER_SRC := \
 	src/lower/borrow.c \
 	src/lower/bundle.c \
 	src/lower/call.c \
+	src/lower/callargs.c \
+	src/lower/callinv.c \
 	src/lower/capfam.c \
 	src/lower/capwrap.c \
 	src/lower/capture.c \
