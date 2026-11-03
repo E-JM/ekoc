@@ -24,6 +24,20 @@ scalar_rows: test =
     d: Float = Float.neg(0.5).mul(2.0)
     assert_eq(d, -1.0)
 
+ring_arithmetic: test =
+    a: UInt = 12
+    b: UInt = 10
+    wide: UInt = 70
+    assert_eq(a.bxor(b), 6)
+    assert_eq(a.band(b), 8)
+    assert_eq(a.bor(b), 14)
+    assert_eq(a.bnot(), 18446744073709551603)
+    assert_eq(a.shl(wide), 0)
+    assert_eq(a.shr(wide), 0)
+    assert_eq(Int.max.wrapping_add(1), Int.min)
+    assert_eq(Int.min.wrapping_neg(), Int.min)
+    assert_eq(Int.max.wrapping_mul(2), -2)
+
 out_row_bits: test =
     out: Out = Out.null()
     out.println("checked")

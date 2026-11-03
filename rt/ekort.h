@@ -192,6 +192,24 @@ ek_val ek_num_fmod(ek_val a, ek_val b);
    and panics like the arithmetic above. */
 ek_val ek_num_neg(ek_val a);
 
+/* The bitwise family over UInt and the wrapping forms over Int and
+   UInt: arithmetic on the integers modulo 2^64 with no panic, and a
+   shift count of 64 or more yielding zero. */
+ek_val ek_uint_band(ek_val a, ek_val b);
+ek_val ek_uint_bor(ek_val a, ek_val b);
+ek_val ek_uint_bxor(ek_val a, ek_val b);
+ek_val ek_uint_bnot(ek_val a);
+ek_val ek_uint_shl(ek_val a, ek_val b);
+ek_val ek_uint_shr(ek_val a, ek_val b);
+ek_val ek_int_wrap_add(ek_val a, ek_val b);
+ek_val ek_int_wrap_sub(ek_val a, ek_val b);
+ek_val ek_int_wrap_mul(ek_val a, ek_val b);
+ek_val ek_int_wrap_neg(ek_val a);
+ek_val ek_uint_wrap_add(ek_val a, ek_val b);
+ek_val ek_uint_wrap_sub(ek_val a, ek_val b);
+ek_val ek_uint_wrap_mul(ek_val a, ek_val b);
+ek_val ek_uint_wrap_neg(ek_val a);
+
 /* The absolute value; the Int minimum has none and panics with the
    overflow code, the unsigned word is its own, and the Float value
    drops its sign. */

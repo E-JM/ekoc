@@ -222,6 +222,24 @@ static const intrinsic_row rows[] = {
     {"Int", "pow", "ek_int_pow", "vv", W_PLAIN, OUT_I64, 0},
     {"Float", "abs", "ek_num_abs", "v", W_PLAIN, OUT_I64, 0},
 
+    /* The ring arithmetic of the machine word: the bitwise family over
+       the unsigned domain and the wrapping forms over both, total and
+       never panicking. */
+    {"UInt", "band", "ek_uint_band", "vv", W_PLAIN, OUT_U64, 0},
+    {"UInt", "bor", "ek_uint_bor", "vv", W_PLAIN, OUT_U64, 0},
+    {"UInt", "bxor", "ek_uint_bxor", "vv", W_PLAIN, OUT_U64, 0},
+    {"UInt", "bnot", "ek_uint_bnot", "v", W_PLAIN, OUT_U64, 0},
+    {"UInt", "shl", "ek_uint_shl", "vv", W_PLAIN, OUT_U64, 0},
+    {"UInt", "shr", "ek_uint_shr", "vv", W_PLAIN, OUT_U64, 0},
+    {"Int", "wrapping_add", "ek_int_wrap_add", "vv", W_PLAIN, OUT_I64, 0},
+    {"Int", "wrapping_sub", "ek_int_wrap_sub", "vv", W_PLAIN, OUT_I64, 0},
+    {"Int", "wrapping_mul", "ek_int_wrap_mul", "vv", W_PLAIN, OUT_I64, 0},
+    {"Int", "wrapping_neg", "ek_int_wrap_neg", "v", W_PLAIN, OUT_I64, 0},
+    {"UInt", "wrapping_add", "ek_uint_wrap_add", "vv", W_PLAIN, OUT_U64, 0},
+    {"UInt", "wrapping_sub", "ek_uint_wrap_sub", "vv", W_PLAIN, OUT_U64, 0},
+    {"UInt", "wrapping_mul", "ek_uint_wrap_mul", "vv", W_PLAIN, OUT_U64, 0},
+    {"UInt", "wrapping_neg", "ek_uint_wrap_neg", "v", W_PLAIN, OUT_U64, 0},
+
     /* The floating-point mathematics surface: libm under the names the
        standard pins, and the three predicates. */
     {"Float", "floor", "ek_num_floor", "v", W_PLAIN, OUT_I64, 0},
