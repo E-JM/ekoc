@@ -129,6 +129,23 @@ static void call_args(ck_ctx *c, const ek_type *f, const ek_nlist *args,
     }
 }
 
+/* True when any written argument failed to parse: the site is already
+   reported, and no arity or type claim about it lands. A failed
+   argument parses to an empty paren. */
+static int args_broken(const ek_nlist *args)
+{
+    size_t i;
+
+    for (i = 0; i < args->count; i++) {
+        const ek_node *arg = args->data[i];
+
+        if (!arg || (arg->kind == EK_N_PAREN && !arg->u.wrap.inner)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static const ek_type *call_fn(ck_ctx *c, const ek_node *e,
                               const ek_type *fntype, const char *member,
                               const ek_type *recv, const ek_type *bit_recv,
@@ -157,6 +174,12 @@ static const ek_type *call_fn(ck_ctx *c, const ek_node *e,
     if (!f || f->kind != EK_T_FN) {
         return call_opaque(c, e, f, member, recv, bit_recv, args, nodes,
                            types, nargs, off, synthesize, implicit);
+    }
+    if (args_broken(args)) {
+        /* The site is already reported; the call reads as opacity, and
+           no claim about the callee lands. */
+        return call_opaque(c, e, f, member, recv, bit_recv, args, nodes,
+                           types, nargs, off, 1, implicit);
     }
     if (implicit) {
         c->invert_fn = f;

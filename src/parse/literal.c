@@ -225,6 +225,24 @@ ek_node *p_paren_primary(p_ctx *c)
         if (p_at(c, EK_TOK_COMMA)) {
             paren_comma(c, open, close);
         }
+        if (p_at(c, EK_TOK_COLON) && !c->operand_pos) {
+            /* An inline annotation is not a form; the group becomes an
+               empty paren so the enclosing list keeps its argument
+               count and parses on at its own separators. */
+            ek_node *n;
+
+            p_error_tok(c, "E-syntax", p_peek(c),
+                        "an expression carries no annotation; bind the "
+                        "value with an annotation and pass the binding "
+                        "(Clause 6.3.2)");
+            c->pos = close;
+            p_take(c);
+            n = p_node(c, EK_N_PAREN, open_tok->line, open_tok->col);
+            if (n) {
+                n->u.wrap.inner = NULL;
+            }
+            return n;
+        }
         if (!p_expect(c, EK_TOK_RPAREN, "')'")) {
             return NULL;
         }
