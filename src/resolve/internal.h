@@ -90,6 +90,8 @@ typedef struct {
                                          its injected pairs */
     r_local *locals; /* local binding sites, in declaration order */
     size_t nlocals, clocals;
+    const ek_symbol **forced; /* functions a receiver-form call named */
+    size_t nforced, cforced;
     const ek_node *pat_group; /* the pattern whose binds are running */
     const ek_node *binding_node; /* the binding that owns the binds */
     int oom;

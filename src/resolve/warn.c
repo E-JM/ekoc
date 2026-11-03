@@ -89,6 +89,9 @@ static void mark_refs(r_ctx *c, r_used *u)
         }
         used_put(c, u, r->symbol);
     }
+    for (i = 0; i < c->nforced; i++) {
+        used_put(c, u, c->forced[i]);
+    }
 }
 
 static void warn_binding(r_ctx *c, const char *file, const ek_symbol *sym)

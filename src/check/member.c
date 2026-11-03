@@ -117,8 +117,8 @@ static const ek_symbol *module_fn(ck_ctx *c, const char *name,
 {
     size_t i;
 
-    for (i = 0; i < c->root->count; i++) {
-        const ek_symbol *m = &c->root->syms[i];
+    for (i = 0; i < c->cur->count; i++) {
+        const ek_symbol *m = &c->cur->syms[i];
         const ek_type *ft;
 
         if (m->kind != EK_SYM_FUNC || strcmp(m->name, name) != 0) {

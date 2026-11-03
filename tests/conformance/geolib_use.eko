@@ -9,6 +9,8 @@ _kind: (s: Shape) -> String =
         Circle _ -> "circle"
         Rect {w, h} -> if w > h: "wide" else: "tall"
 
+_bump: (p: Point) -> Point = (p): {x: p.x + 1.0, y: p.y}
+
 area_calls: test =
     c: Shape = Circle 2.0
     r: Shape = Rect {2.0, 3.0}
@@ -20,6 +22,7 @@ point_ufcs: test =
     assert_eq(geolib.coord_sum(p), 7.0)
     assert_eq(p.geolib.coord_sum(), 7.0)
     assert_eq(p.geolib.move(1.0), {x: 4.0, y: 4.0})
+    assert_eq(p._bump(), {x: 4.0, y: 4.0})
 
 kinds: test =
     xs: []Shape = {Circle 1.0, Rect {2.0, 3.0}}

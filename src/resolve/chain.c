@@ -128,14 +128,29 @@ static void external_link(r_ctx *c, r_head *cur, const ek_node *link)
     r_add_ref(c, link, cur->kind, cur->st, NULL);
 }
 
-static void member_link(r_ctx *c, r_head *cur, const ek_node *link, int last,
-                        int is_call)
+static void member_link(r_ctx *c, r_file *f, r_head *cur, const ek_node *link,
+                        int last, int is_call)
 {
     cur->sym = NULL;
     cur->kind = EK_SYM_MEMBER;
     cur->st = last ? (is_call ? EK_ST_RECEIVER : EK_ST_FIELD)
                    : EK_ST_RECEIVER;
     r_add_ref(c, link, cur->kind, cur->st, NULL);
+    if (last && is_call) {
+        /* The current module may answer this call with a free function;
+           the name is used whichever reading check selects. */
+        const ek_symbol *fn = r_module_member(f->mod, link->u.field.name);
+
+        if (fn && fn->kind == EK_SYM_FUNC) {
+            const ek_symbol **grown = r_grow(c, c->forced, c->nforced,
+                                             &c->cforced, sizeof *c->forced);
+
+            if (grown) {
+                grown[c->nforced++] = fn;
+                c->forced = grown;
+            }
+        }
+    }
 }
 
 /* Pascal chain head: the type-namespace reading. */
@@ -361,7 +376,7 @@ static void walk_links(r_ctx *c, r_file *f, const r_links *l, int is_call,
             *walk_mod = r_module_find(c, msym->name);
             *from_receiver = 1;
         } else {
-            member_link(c, cur, link, last, is_call);
+            member_link(c, f, cur, link, last, is_call);
         }
     }
 }

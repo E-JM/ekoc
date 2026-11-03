@@ -839,6 +839,35 @@ static lower_val free_member_call(lower_ctx *c, lower_scope *scope,
     return direct_call(c, scope, &site, ms, &member);
 }
 
+/* The current-module free function a receiver-form link selected: the
+   function of the name in the module whose body is being lowered, the
+   same module check searched. */
+static const ek_symbol *root_module_fn(lower_ctx *c, const char *name)
+{
+    const ek_surface *owner = NULL;
+    size_t i;
+
+    for (i = 0; i < c->resolved.module_count; i++) {
+        const ek_surface *s = &c->resolved.modules[i];
+
+        if (s->file == c->file || strcmp(s->file, c->file) == 0) {
+            owner = s;
+            break;
+        }
+    }
+    if (!owner) {
+        return NULL;
+    }
+    for (i = 0; i < owner->count; i++) {
+        const ek_symbol *m = &owner->syms[i];
+
+        if (m->kind == EK_SYM_FUNC && strcmp(m->name, name) == 0) {
+            return m;
+        }
+    }
+    return NULL;
+}
+
 /* A receiver-form member call: a function-valued field is the callee
    value, a derived reading lowers to its service, an open receiver the
    instantiation substituted concrete re-routes at the applied type,
@@ -866,6 +895,17 @@ static lower_val member_call(lower_ctx *c, lower_scope *scope,
         }
         return lower_derived_call(c, scope, e, callee, frow,
                                   rt ? CF_MEMBER : CF_QUALIFIED);
+    }
+    if (frow && frow->reading == EK_RD_MODULE_FN && recv && !form->extra) {
+        const ek_symbol *fn = root_module_fn(c, callee->u.field.name);
+
+        if (fn) {
+            call_form member = *form;
+
+            set_recv(c, scope, &member, recv, &e->u.call.args,
+                     lower_row_type(c, callee));
+            return direct_call(c, scope, e, fn, &member);
+        }
     }
     if (frow && frow->reading == EK_RD_UNKNOWN && !form->extra && rt) {
         lower_val v = open_call(c, scope, e, callee, rt, form);
