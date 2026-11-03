@@ -5,7 +5,9 @@
 /* The emission of the generated struct families: the typedefs, the
    drop and typeinfo pair, the construction helpers, and the list fold.
    The families register while the bodies lower; this text joins the
-   unit before the functions. */
+   unit before the functions. A family without payload fields holds no
+   child references, so its typeinfo carries the NULL drop ekort.h
+   documents and no drop function stands. */
 
 /* Appends to the unit, recording exhaustion on the context. */
 static int uputs(lower_ctx *c, ek_buf *u, const char *s)
@@ -34,8 +36,8 @@ static int uprintf(lower_ctx *c, ek_buf *u, const char *fmt, ...)
 /* The C spelling of a struct field: a record field carries its
    written name, a tuple field its position, a constructor payload its
    position without the value-layer prefix. */
-static const char *field_c_name(lower_ctx *c, const lower_gtype *g,
-                                size_t i)
+const char *lower_field_c_name(lower_ctx *c, const lower_gtype *g,
+                               size_t i)
 {
     if (g->shape == GT_REC) {
         return lower_str(c, "f_%s", g->fnames[i]);
@@ -75,26 +77,33 @@ static void emit_typedef(lower_ctx *c, ek_buf *u, const lower_gtype *g)
         return;
     }
     for (i = 0; i < g->nf; i++) {
-        if (!uprintf(c, u, " ek_val %s;", field_c_name(c, g, i))) {
+        if (!uprintf(c, u, " ek_val %s;", lower_field_c_name(c, g, i))) {
             return;
         }
     }
-    uprintf(c, u, " } ekS_%s;\n\n", g->stem);
+    uprintf(c, u, " } ekS_%s;\n", g->stem);
+    lower_bundle_checks(c, u, g);
+    uprintf(c, u, "\n");
 }
 
+/* The drop of one family that holds payload fields: every field is a
+   child reference and releases with the object. A field-less family
+   holds no child references and never reaches here from
+   lower_emit_types; the guard keeps a future caller from emitting a
+   body that would leave its parameter unused. */
 static void emit_drop(lower_ctx *c, ek_buf *u, const lower_gtype *g)
 {
     size_t i;
 
-    if (!uprintf(c, u, "static void drop_%s(ek_obj *o)\n{\n", g->stem)) {
+    if (g->nf == 0) {
         return;
     }
-    if (g->nf == 0 && !uputs(c, u, "    (void)o;\n")) {
+    if (!uprintf(c, u, "static void drop_%s(ek_obj *o)\n{\n", g->stem)) {
         return;
     }
     for (i = 0; i < g->nf; i++) {
         if (!uprintf(c, u, "    ek_release(((ekS_%s *)o)->%s);\n", g->stem,
-                     field_c_name(c, g, i))) {
+                     lower_field_c_name(c, g, i))) {
             return;
         }
     }
@@ -103,12 +112,17 @@ static void emit_drop(lower_ctx *c, ek_buf *u, const lower_gtype *g)
 
 static void emit_typeinfo(lower_ctx *c, ek_buf *u, const lower_gtype *g)
 {
+    const char *drop = g->nf > 0 ? lower_str(c, "drop_%s", g->stem) : "NULL";
+
     /* External linkage and const: the runtime's bundle closures build
        values over the unit's own typeinfo identity, so the symbol is
        shared with rt exactly as a generated struct shares it with the
        patterns that read it. A family carrying the structural keying
        hooks names them in the initializer, with their signatures
-       ahead of it: the definitions stand in the service buffer. */
+       ahead of it: the definitions stand in the service buffer. The
+       drop slot is NULL over a field-less family: the object holds no
+       child references, and the release path reclaims it without a
+       call. */
     if (g->eq_name) {
         uprintf(c, u, "static int %s(ek_val a, ek_val b);\n", g->eq_name);
     }
@@ -116,7 +130,7 @@ static void emit_typeinfo(lower_ctx *c, ek_buf *u, const lower_gtype *g)
         uprintf(c, u, "static unsigned long %s(ek_val v);\n", g->hash_name);
     }
     uprintf(c, u, "const ek_typeinfo ekT_%s = { EK_KIND_STRUCT, "
-                  "drop_%s, %s, %s };\n\n", g->stem, g->stem,
+                  "%s, %s, %s };\n\n", g->stem, drop,
                   g->eq_name ? g->eq_name : "NULL",
                   g->hash_name ? g->hash_name : "NULL");
 }
@@ -149,7 +163,7 @@ static void emit_helper(lower_ctx *c, ek_buf *u, const lower_gtype *g)
     }
     for (i = 0; i < g->nf; i++) {
         if (!uprintf(c, u, "    o->%s = ek_keep(%s);\n",
-                     field_c_name(c, g, i), param_c_name(c, i))) {
+                     lower_field_c_name(c, g, i), param_c_name(c, i))) {
             return;
         }
     }
@@ -180,7 +194,8 @@ static void emit_list_helper(lower_ctx *c, ek_buf *u)
    references, and typeinfo, drop, and helper of everything a body
    constructs, in an order the C compiler reads top to bottom. A family
    the runtime shares keeps its typeinfo and drop without the helper:
-   the runtime builds its values directly over the identity. */
+   the runtime builds its values directly over the identity. A
+   field-less family stands as the typeinfo alone, over the NULL drop. */
 void lower_emit_types(lower_ctx *c, ek_buf *unit)
 {
     int constructed = 0;
@@ -202,7 +217,9 @@ void lower_emit_types(lower_ctx *c, ek_buf *unit)
     }
     for (i = 0; i < c->ngt; i++) {
         if (c->gtypes[i].constructed || c->gtypes[i].shared) {
-            emit_drop(c, unit, &c->gtypes[i]);
+            if (c->gtypes[i].nf > 0) {
+                emit_drop(c, unit, &c->gtypes[i]);
+            }
             emit_typeinfo(c, unit, &c->gtypes[i]);
         }
     }

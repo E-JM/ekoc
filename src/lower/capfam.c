@@ -13,7 +13,118 @@
    through lower_ctor_of_symbol): the runtime builds the values itself,
    the unit only defines the identity. A family a call site also
    constructs keeps its helper, and one registration per capability
-   keeps the set idempotent. */
+   keeps the set idempotent.
+
+   Registration follows the manifest: the shim builds one bundle per
+   capability parameter, and that call pulls the runtime's own object
+   files in through archive resolution, so the families the pulled
+   members name are the capability's to define. The Out and Proc
+   bundles stay runtime-typed and name no generated identity; the
+   other bundle constructors live beside capval.c's value builders,
+   which name the status, reason, stat, and time identities, and the
+   Fs bundle's mode dispatch names the OpenMode identities besides.
+   The table lists one row per manifest capability, so a future
+   interface mechanism extends it in place. */
+
+/* One family registration step: a constructor family, or a record
+   representation when repr is set. */
+typedef struct {
+    const char *module;
+    const char *owner;
+    const char *name;
+    int repr;
+} fam_step;
+
+/* One group of steps, and one capability's row over its own group
+   list: the groups register in order, each family once. */
+typedef struct {
+    const fam_step *steps;
+    size_t nsteps;
+} fam_group;
+
+typedef struct {
+    const char *cap;
+    const fam_group *const *groups;
+    size_t ngroups;
+} cap_row;
+
+static const fam_step steps_status[] = {
+    {"std", "Result", "Ok", 0},
+    {"std", "Result", "Err", 0},
+    {"std", "Option", "Some", 0},
+    {"std", "Option", "None", 0},
+};
+
+static const fam_step steps_ioerr[] = {
+    {"sys", "IoError", "NotFound", 0},
+    {"sys", "IoError", "Permission", 0},
+    {"sys", "IoError", "Exists", 0},
+    {"sys", "IoError", "NotFile", 0},
+    {"sys", "IoError", "Closed", 0},
+    {"sys", "IoError", "InvalidData", 0},
+    {"sys", "IoError", "Other", 0},
+};
+
+static const fam_step steps_finfo[] = {
+    {"sys", NULL, "FileInfo", 1},
+};
+
+static const fam_step steps_time[] = {
+    {"time", "Time", "Time", 0},
+    {"time", "Mono", "Mono", 0},
+};
+
+static const fam_step steps_modes[] = {
+    {"sys", "OpenMode", "Read", 0},
+    {"sys", "OpenMode", "Write", 0},
+    {"sys", "OpenMode", "Append", 0},
+    {"sys", "OpenMode", "New", 0},
+    {"sys", "OpenMode", "Update", 0},
+};
+
+/* The groups over the shared builders: everything the bundle
+   constructors beside capval.c name, with the OpenMode identities
+   last, so the Fs row is the whole list and every other bundle row
+   takes the prefix the value builders name. */
+static const fam_group group_status = {
+    steps_status, sizeof steps_status / sizeof *steps_status
+};
+static const fam_group group_ioerr = {
+    steps_ioerr, sizeof steps_ioerr / sizeof *steps_ioerr
+};
+static const fam_group group_finfo = {
+    steps_finfo, sizeof steps_finfo / sizeof *steps_finfo
+};
+static const fam_group group_time = {
+    steps_time, sizeof steps_time / sizeof *steps_time
+};
+static const fam_group group_modes = {
+    steps_modes, sizeof steps_modes / sizeof *steps_modes
+};
+
+/* The shared set: the groups capval.c's builders name, one per bundle
+   row but Fs. Each row names its own list, so a reordering of the
+   groups cannot silently attach or detach a registration. */
+static const fam_group *const groups_shared[] = {
+    &group_status, &group_ioerr, &group_finfo, &group_time,
+};
+
+/* The Fs row's list: the shared set plus the OpenMode identities the
+   mode dispatch names. */
+static const fam_group *const groups_fs[] = {
+    &group_status, &group_ioerr, &group_finfo, &group_time, &group_modes,
+};
+
+static const cap_row cap_table[] = {
+    {"Out",   NULL, 0},
+    {"In",    groups_shared, sizeof groups_shared / sizeof *groups_shared},
+    {"Fs",    groups_fs, sizeof groups_fs / sizeof *groups_fs},
+    {"Env",   groups_shared, sizeof groups_shared / sizeof *groups_shared},
+    {"Args",  groups_shared, sizeof groups_shared / sizeof *groups_shared},
+    {"Clock", groups_shared, sizeof groups_shared / sizeof *groups_shared},
+    {"Rand",  groups_shared, sizeof groups_shared / sizeof *groups_shared},
+    {"Proc",  NULL, 0},
+};
 
 /* The constructor symbol of one module's namespace, or NULL. */
 static const ek_symbol *ctor_sym(lower_ctx *c, const char *module,
@@ -87,45 +198,102 @@ static void register_repr(lower_ctx *c, const char *module,
     }
 }
 
-void lower_cap_families(lower_ctx *c, const ek_node *at)
+/* Registers one step: the constructor family, or the record
+   representation. */
+static void register_step(lower_ctx *c, const ek_node *at,
+                          const fam_step *s)
 {
-    static const char *io[] = {"NotFound",    "Permission", "Exists",
-                               "NotFile",     "Closed",     "InvalidData",
-                               "Other"};
-    static const char *modes[] = {"Read", "Write", "Append", "New",
-                                  "Update"};
+    if (s->repr) {
+        register_repr(c, s->module, s->name);
+    } else {
+        register_ctor(c, at, s->module, s->owner, s->name);
+    }
+}
+
+static void register_groups(lower_ctx *c, const ek_node *at,
+                            const fam_group *const *groups, size_t ngroups)
+{
+    size_t g, i;
+
+    for (g = 0; g < ngroups; g++) {
+        for (i = 0; i < groups[g]->nsteps; i++) {
+            register_step(c, at, &groups[g]->steps[i]);
+        }
+    }
+}
+
+/* The families of one capability of the manifest: the set the
+   capability's bundle pull names. A capability outside the table has
+   no bundle behind it and is a diagnostic. */
+void lower_cap_families_of(lower_ctx *c, const ek_node *at, const char *cap)
+{
     size_t i;
 
-    register_ctor(c, at, "std", "Result", "Ok");
-    register_ctor(c, at, "std", "Result", "Err");
-    register_ctor(c, at, "std", "Option", "Some");
-    register_ctor(c, at, "std", "Option", "None");
-    for (i = 0; i < sizeof io / sizeof *io; i++) {
-        register_ctor(c, at, "cap", "IoError", io[i]);
+    for (i = 0; i < sizeof cap_table / sizeof *cap_table; i++) {
+        if (strcmp(cap_table[i].cap, cap) == 0) {
+            register_groups(c, at, cap_table[i].groups,
+                            cap_table[i].ngroups);
+            return;
+        }
     }
-    for (i = 0; i < sizeof modes / sizeof *modes; i++) {
-        register_ctor(c, at, "cap", "OpenMode", modes[i]);
+    lower_error(c, at, "the capability `%s` is not supported by this "
+                       "lowerer", cap);
+}
+
+/* The full set, every capability row at once: for the roots whose
+   family needs no manifest bounds -- the test binaries accept the
+   size, and their injected constructors are harder to bound. */
+void lower_cap_families(lower_ctx *c, const ek_node *at)
+{
+    size_t i;
+
+    for (i = 0; i < sizeof cap_table / sizeof *cap_table; i++) {
+        register_groups(c, at, cap_table[i].groups, cap_table[i].ngroups);
     }
-    register_repr(c, "cap", "FileInfo");
-    register_ctor(c, at, "time", "Time", "Time");
-    register_ctor(c, at, "time", "Mono", "Mono");
+}
+
+/* The seven Json variant shapes the decode side reads: the typedefs
+   and typeinfo identities join the unit as one set, without the
+   construction helpers the decode never calls. */
+void lower_json_shapes(lower_ctx *c, const ek_node *at)
+{
+    static const fam_step steps_json[] = {
+        {"std", "Json", "Null", 0},
+        {"std", "Json", "Bool", 0},
+        {"std", "Json", "Int", 0},
+        {"std", "Json", "Float", 0},
+        {"std", "Json", "Str", 0},
+        {"std", "Json", "Arr", 0},
+        {"std", "Json", "Obj", 0},
+    };
+    static const fam_group group_json = {
+        steps_json, sizeof steps_json / sizeof *steps_json
+    };
+    static const fam_group *const groups[] = {&group_json};
+
+    register_groups(c, at, groups, sizeof groups / sizeof *groups);
 }
 
 /* The seven Json and three ParseError constructor families the
-   runtime's document reader builds values over. A program that never
-   routes the parse row references no identity of theirs, so the
-   stamping fires exactly at the routing. */
+   runtime's document reader builds values over. The routing pulls the
+   reader's own object file and, with it, the shared value builders
+   its constructors stand on, so the stamping covers both sets and
+   fires exactly at the routing. */
 void lower_json_families(lower_ctx *c, const ek_node *at)
 {
-    static const char *json[] = {"Null", "Bool", "Int",  "Float",
-                                 "Str",  "Arr",  "Obj"};
-    static const char *errs[] = {"Empty", "Invalid", "OutOfRange"};
-    size_t i;
+    static const fam_step steps_parse[] = {
+        {"std", "ParseError", "Empty", 0},
+        {"std", "ParseError", "Invalid", 0},
+        {"std", "ParseError", "OutOfRange", 0},
+    };
+    static const fam_group group_parse = {
+        steps_parse, sizeof steps_parse / sizeof *steps_parse
+    };
+    static const fam_group *const groups_reader[] = {&group_parse};
 
-    for (i = 0; i < sizeof json / sizeof *json; i++) {
-        register_ctor(c, at, "std", "Json", json[i]);
-    }
-    for (i = 0; i < sizeof errs / sizeof *errs; i++) {
-        register_ctor(c, at, "std", "ParseError", errs[i]);
-    }
+    register_groups(c, at, groups_shared,
+                    sizeof groups_shared / sizeof *groups_shared);
+    lower_json_shapes(c, at);
+    register_groups(c, at, groups_reader,
+                    sizeof groups_reader / sizeof *groups_reader);
 }

@@ -130,10 +130,93 @@ static void lambda_valued_binding(void)
     EK_CHECK(lfx_lower_clean(&f));
     /* the call site stays a direct call */
     EK_CHECK(lfx_has(&f, "ekf_test_bar(t"));
-    /* the lambda's parameter owns the ABI slot by its own name */
-    EK_CHECK(lfx_has(&f, "ek_val s = ek_keep(ek_p0);"));
+    /* the lambda's parameter stays borrowed: no prologue keep, the
+       body reads the ABI slot through the alias, and the show slot
+       keeps its own copy of it */
+    EK_CHECK(lfx_lacks(&f, "ek_val s = "));
+    EK_CHECK(lfx_has(&f, "ek_val t1 = ek_keep(ek_p0);"));
     /* no closure is born for the binding's value */
     EK_CHECK(lfx_lacks(&f, "ek_closure_new"));
+    lfx_end(&f);
+}
+
+/* A same-scope re-let: a read before the second binding resolves to
+   the first one, a read after it resolves to the latest one, and both
+   bindings release at the scope's close. */
+static void relet_lookup(void)
+{
+    lfx f;
+
+    lfx_begin(&f, "main: () -> _ =\n"
+                  "    v: Int = 1\n"
+                  "    u: Int = v + 1\n"
+                  "    v: Int = u + 1\n"
+                  "    _ := v\n"
+                  "    _ := u\n"
+                  "    _\n");
+    EK_CHECK(lfx_check_clean(&f));
+    EK_CHECK(lfx_lower_clean(&f));
+    /* the two bindings carry distinct C names, and each read lands on
+       the binding live where it stands */
+    EK_CHECK(lfx_has(&f, "ek_val v = ek_val_int((int64_t)1ULL);"));
+    EK_CHECK(lfx_has(&f, "ek_val t0 = ek_keep(v);"));
+    EK_CHECK(lfx_has(&f, "ek_val v_ = t5;"));
+    EK_CHECK(lfx_has(&f, "ek_val t6 = ek_keep(v_);"));
+    /* both bindings release at the close, most recent first */
+    EK_CHECK(lfx_has(&f, "ek_release(v_);\n"
+                         "    ek_release(u);\n"
+                         "    ek_release(v);"));
+    lfx_end(&f);
+}
+
+/* A same-scope re-let of a heap value: the earlier binding keeps
+   holding its own object until the scope's close releases it exactly
+   once, and the later binding serves the reads. */
+static void relet_string(void)
+{
+    lfx f;
+
+    lfx_begin(&f, "main: () -> _ =\n"
+                  "    s: String = \"first\"\n"
+                  "    t: String = s\n"
+                  "    s: String = \"second\"\n"
+                  "    _ := s\n"
+                  "    _ := t\n"
+                  "    _\n");
+    EK_CHECK(lfx_check_clean(&f));
+    EK_CHECK(lfx_lower_clean(&f));
+    /* the read before the re-let keeps the first binding's object,
+       the read after it reads the later one */
+    EK_CHECK(lfx_has(&f, "ek_val t = ek_keep(s);"));
+    EK_CHECK(lfx_has(&f, "ek_val s_ = ek_keep(ekc1);"));
+    EK_CHECK(lfx_has(&f, "ek_val t0 = ek_keep(s_);"));
+    /* both bindings release exactly once, at the close */
+    EK_CHECK(lfx_has(&f, "ek_release(s_);\n"
+                         "    ek_release(t);\n"
+                         "    ek_release(s);"));
+    lfx_end(&f);
+}
+
+/* A rebind whose value opens a case, an arm body rebinding the
+   parameter: the parameter needs its own reference, so the prologue
+   keeps it however deeply the rebind sits. */
+static void nested_rebind_keeps_param(void)
+{
+    lfx f;
+
+    lfx_begin(&f, "pick: (c: Bool, o: Out) ! =\n"
+                  "    x := case c:\n"
+                  "        True ->\n"
+                  "            o := Out.null()\n"
+                  "            1\n"
+                  "        False -> 2\n"
+                  "    o.println(\"done\")\n"
+                  "\n"
+                  "main: (o: Out) ! =\n"
+                  "    pick(True, o)\n");
+    EK_CHECK(lfx_check_clean(&f));
+    EK_CHECK(lfx_lower_clean(&f));
+    EK_CHECK(lfx_has(&f, "ek_val o = ek_keep(ek_p1);"));
     lfx_end(&f);
 }
 
@@ -146,5 +229,8 @@ int main(void)
     rebind_if_fresh();
     rebind_string();
     lambda_valued_binding();
+    relet_lookup();
+    relet_string();
+    nested_rebind_keeps_param();
     return ek_test_report("lower/bind");
 }

@@ -38,14 +38,10 @@ static void record_shape(void)
        declaration order while the temps were minted in source order */
     EK_CHECK(lfx_has(&f, "ek_val t2 = ekn_test_Person_rec(t1, t0);"));
     /* the literal transfers into the binding; the access is an owned
-       copy out of the struct and the receiver temp dies */
+       copy out of the struct, read through the borrowed local */
     EK_CHECK(lfx_has(&f, "ek_val p = t2;"));
-    EK_CHECK(lfx_has(&f, "ek_val t4 = ek_keep(((ekS_test_Person *)"
-                         "t3.as.ref)->f_age);"));
-    EK_CHECK(lfx_has(&f, "ek_val t3 = ek_keep(p);\n"
-                         "    ek_val t4 = ek_keep(((ekS_test_Person *)"
-                         "t3.as.ref)->f_age);\n"
-                         "    ek_release(t3);"));
+    EK_CHECK(lfx_has(&f, "ek_val t3 = ek_keep(((ekS_test_Person *)"
+                         "p.as.ref)->f_age);"));
     lfx_end(&f);
 }
 
@@ -66,14 +62,16 @@ static void adt_shape(void)
     EK_CHECK(lfx_check_clean(&f));
     EK_CHECK(lfx_lower_clean(&f));
     /* each constructor carries its own struct, drop, and typeinfo; a
-       payload constructor stores p0, a nullary one is the bare header */
+       payload constructor stores p0, a nullary one is the bare header
+       with the NULL drop of a family that holds no child references */
     EK_CHECK(lfx_has(&f, "typedef struct { ek_obj obj; ek_val p0; } "
                          "ekS_std_Option_Some;"));
     EK_CHECK(lfx_has(&f, "typedef struct { ek_obj obj; } "
                          "ekS_std_Option_None;"));
     EK_CHECK(lfx_has(&f, "ek_release(((ekS_std_Option_Some *)o)->p0);"));
-    EK_CHECK(lfx_has(&f, "static void drop_std_Option_None(ek_obj *o)\n"
-                         "{\n    (void)o;"));
+    EK_CHECK(lfx_has(&f, "const ek_typeinfo ekT_std_Option_None = "
+                         "{ EK_KIND_STRUCT, NULL, NULL, NULL };"));
+    EK_CHECK(lfx_lacks(&f, "drop_std_Option_None"));
     EK_CHECK(lfx_has(&f, "const ek_typeinfo ekT_std_Option_Some = "
                          "{ EK_KIND_STRUCT, drop_std_Option_Some, "
                          "NULL, NULL };"));

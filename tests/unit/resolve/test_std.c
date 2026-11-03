@@ -78,7 +78,7 @@ static void std_module_surface(void)
 
     rfx_begin(&f, "v: Int = 1\n");
     EK_CHECK_U64(rfx_errors(&f), 0);
-    EK_CHECK_U64(f.res.module_count, 4); /* root, std, cap, time */
+    EK_CHECK_U64(f.res.module_count, 5); /* root, std, sys, cap, time */
     if (f.res.module_count < 2) {
         rfx_end(&f);
         return;
@@ -226,7 +226,7 @@ static void std_body_resolved(void)
 
     rfx_begin(&f, "v: Int = 1\n");
     EK_CHECK_U64(rfx_errors(&f), 0);
-    EK_CHECK_U64(f.res.module_count, 4);
+    EK_CHECK_U64(f.res.module_count, 5); /* root, std, sys, cap, time */
     if (f.res.module_count < 2) {
         rfx_end(&f);
         return;
@@ -366,9 +366,19 @@ static void qualified_std_types(void)
     EK_CHECK(r->station == EK_ST_TYPE);
     rfx_end(&f);
 
-    /* The capability names are no std content; the qualified spelling
-       is refused while the unqualified opening stays. */
+    /* The embedded modules' names are no std content; the qualified
+       spelling is refused while the unqualified opening stays. */
     rfx_begin(&f, "z: std.Out = 1\n");
+    EK_CHECK_U64(rfx_errors(&f), 1);
+    EK_CHECK(rfx_code_at_line(&f, "E-unbound-name", 1));
+    rfx_end(&f);
+
+    rfx_begin(&f, "z: std.File = 1\n");
+    EK_CHECK_U64(rfx_errors(&f), 1);
+    EK_CHECK(rfx_code_at_line(&f, "E-unbound-name", 1));
+    rfx_end(&f);
+
+    rfx_begin(&f, "z: std.IoError = 1\n");
     EK_CHECK_U64(rfx_errors(&f), 1);
     EK_CHECK(rfx_code_at_line(&f, "E-unbound-name", 1));
     rfx_end(&f);
@@ -410,7 +420,7 @@ static void time_diamond(void)
         "\n"
         "t: Time = Time 5\n");
     EK_CHECK_U64(rfx_errors(&f), 0);
-    EK_CHECK_U64(f.res.module_count, 4); /* root, std, cap, time */
+    EK_CHECK_U64(f.res.module_count, 5); /* root, std, sys, cap, time */
     rfx_end(&f);
 }
 

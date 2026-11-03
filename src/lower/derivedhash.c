@@ -37,7 +37,7 @@ static void emit_mix_helper(lower_ctx *c, lower_demit *d)
 
 /* The mixing statements over one slot read through the given
    expression: the tag first, then the payload in the slot's own form. */
-static void emit_slot_mix(lower_demit *d, const ek_type *t,
+static void emit_slot_mix(lower_ctx *c, lower_demit *d, const ek_type *t,
                    const char *slot)
 {
     lower_scalar sk = lower_scalar_kind(t);
@@ -59,6 +59,7 @@ static void emit_slot_mix(lower_demit *d, const ek_type *t,
                        slot);
         return;
     case EKSC_FLOAT:
+        c->uses_string_h = 1;
         lower_d_printf(d, "    {\n");
         lower_d_printf(d, "        double x = %s.as.f;\n", slot);
         lower_d_printf(d, "        unsigned long b;\n\n");
@@ -106,7 +107,7 @@ static void emit_fields_hash(lower_ctx *c, lower_demit *d, const char *stem,
         const char *slot = fnames ? lower_str(c, "f_%s", fnames[i])
                                   : lower_str(c, "f_%zu", i);
 
-        emit_slot_mix(d, ftypes[i],
+        emit_slot_mix(c, d, ftypes[i],
                       lower_str(c, "((ekS_%s *)v.as.ref)->%s", stem, slot));
     }
     lower_d_printf(d, "    return h;\n");
@@ -123,7 +124,7 @@ static void emit_adt_hash(lower_ctx *c, lower_demit *d, lower_variant *vs,
         lower_d_printf(d, "    if (v.as.ref->info == &ekT_%s) {\n",
                        vs[i].stem);
         if (vs[i].payload) {
-            emit_slot_mix(d, vs[i].payload,
+            emit_slot_mix(c, d, vs[i].payload,
                           lower_str(c, "((ekS_%s *)v.as.ref)->p0",
                                     vs[i].stem));
         }
@@ -149,7 +150,7 @@ static void emit_range_hash(lower_ctx *c, lower_demit *d, const ek_type *t)
         return;
     }
     for (i = 0; i < 3; i++) {
-        emit_slot_mix(d, i < 2 ? elem : NULL,
+        emit_slot_mix(c, d, i < 2 ? elem : NULL,
                       lower_str(c, "((ekS_%s *)v.as.ref)->%s", g->stem,
                                 slots[i]));
     }
@@ -195,18 +196,18 @@ void lower_dsvc_hash_emit(lower_ctx *c, const char *name, const ek_type *t)
     } else if (t->kind == EK_T_LIST) {
         emit_list_hash(c, &d, t);
     } else if (lower_scalar_kind(t) != EKSC_OTHER) {
-        emit_slot_mix(&d, t, "v");
+        emit_slot_mix(c, &d, t, "v");
         lower_d_printf(&d, "    return h;\n");
     } else if (t->kind == EK_T_TUPLE || t->kind == EK_T_RECORD) {
         if (lower_shape_of(c, NULL, t, &fnames, &ftypes, &nf, &g) && g) {
             emit_identity_mix(&d);
             emit_fields_hash(c, &d, g->stem, fnames, ftypes, nf);
         } else {
-            emit_slot_mix(&d, NULL, "v");
+            emit_slot_mix(c, &d, NULL, "v");
             lower_d_printf(&d, "    return h;\n");
         }
     } else if (t->kind == EK_T_NOMINAL
-               && (lower_variants_of(c, NULL, t, &vs, &nv)
+               && (lower_variants_of(c, NULL, t, &vs, &nv, 0)
                    || lower_shape_of(c, NULL, t, &fnames, &ftypes, &nf,
                                      &g))) {
         emit_identity_mix(&d);
@@ -220,7 +221,7 @@ void lower_dsvc_hash_emit(lower_ctx *c, const char *name, const ek_type *t)
             lower_d_printf(&d, "    return h;\n");
         }
     } else {
-        emit_slot_mix(&d, NULL, "v");
+        emit_slot_mix(c, &d, NULL, "v");
         lower_d_printf(&d, "    return h;\n");
     }
     lower_d_printf(&d, "}\n\n");
@@ -273,7 +274,7 @@ static int stamp_nominal(lower_ctx *c, const ek_type *t)
         stamp_family(c, g, t);
         return 1;
     }
-    if (lower_variants_of(c, NULL, t, &vs, &nv)) {
+    if (lower_variants_of(c, NULL, t, &vs, &nv, 0)) {
         for (i = 0; i < nv; i++) {
             stamp_family(c, lower_gtype_of_stem(c, vs[i].stem), t);
         }

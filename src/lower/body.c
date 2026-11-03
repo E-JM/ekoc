@@ -26,33 +26,40 @@ void lower_scope_add(lower_ctx *c, lower_scope *s, const char *eko,
         s->locs[s->nloc].cname = cname;
         s->locs[s->nloc].is_param = is_param;
         s->locs[s->nloc].abi = abi;
+        s->locs[s->nloc].aliased = 0;
         s->nloc++;
     }
 }
 
-/* The innermost visible binding of a written name. */
+/* The innermost visible binding of a written name: the latest binding
+   of the name in the first scope that carries one. A re-let of the
+   name in the same scope replaces the earlier entry's reads while
+   both entries release at the scope's close. */
 const lower_local *scope_find_local(lower_scope *scope, const char *name)
 {
     size_t i;
 
     for (; scope; scope = scope->parent) {
-        for (i = 0; i < scope->nloc; i++) {
-            if (strcmp(scope->locs[i].eko, name) == 0) {
-                return &scope->locs[i];
+        for (i = scope->nloc; i > 0; i--) {
+            if (strcmp(scope->locs[i - 1].eko, name) == 0) {
+                return &scope->locs[i - 1];
             }
         }
     }
     return NULL;
 }
 
-/* Releases the block's own owned bindings, most recent first. */
+/* Releases the block's own owned bindings, most recent first. A
+   borrowed binding (a capture read) and a parameter local that
+   aliases its ABI slot hold no reference of their own and release
+   nothing. */
 void lower_release_scope(lower_ctx *c, lower_scope *s)
 {
     size_t i = s->nloc;
 
     while (i > 0) {
         i--;
-        if (!s->locs[i].is_param) {
+        if (!s->locs[i].is_param && !s->locs[i].aliased) {
             lower_pad(c);
             lower_emitf(c, "ek_release(%s);\n", s->locs[i].cname);
         }

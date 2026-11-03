@@ -8,7 +8,8 @@
 
 /* The parameter scope of one signature: the written names, the
    unnamed ones numbered. Each parameter keeps its borrowed ABI slot
-   into an owned local of the visible name. */
+   into a local of the visible name; the keep itself is decided at the
+   prologue, from the body's usage. */
 static size_t add_params(lower_ctx *c, lower_scope *ps, const ek_node *ann)
 {
     const ek_nlist *params = &ann->u.t_fn.params;
@@ -171,9 +172,9 @@ static const char *shim_ctor_of(const char *cap)
 }
 
 /* The authorization manifest: every parameter is a capability the shim
-   supplies by position, and the runtime's shared families register
-   once for the manifest. A parameter outside the table keeps the
-   no-shim balance. */
+   supplies by position, and each capability registers the shared
+   families its bundle pull names. A parameter outside the table keeps
+   the no-shim balance. */
 static int entry_manifest(lower_ctx *c, const ek_node *decl,
                           const ek_node *ann)
 {
@@ -192,8 +193,8 @@ static int entry_manifest(lower_ctx *c, const ek_node *decl,
             return 0;
         }
         c->shim[c->nshim++] = ctor;
+        lower_cap_families_of(c, decl, cap);
     }
-    lower_cap_families(c, decl);
     return 1;
 }
 
@@ -235,9 +236,9 @@ static const char *declare_function(lower_ctx *c, const ek_symbol *sym,
     if (decl && decl->kind == EK_N_TEST_DECL) {
         /* a test binding carries no written signature and takes no
            parameters; the body's value is discarded by the shim. A
-           test root authorizes the capability channel the way the
-           program's manifest does, so the shared families stamp as
-           one set */
+           test root's derived constructors can build values over any
+           capability row -- no manifest bounds them -- so every
+           family registers and the test binary accepts the size */
         memset(ps, 0, sizeof *ps);
         *nparams = 0;
         if (c->mode == EK_LOWER_TESTS) {
@@ -280,21 +281,38 @@ static const char *declare_function(lower_ctx *c, const ek_symbol *sym,
     return sig;
 }
 
-/* The entry text of one function: the owned-parameter prologue and,
-   when the body has a tail self-call, the retry label. */
+/* The entry text of one function: the parameter prologue and, when
+   the body has a tail self-call, the retry label. A parameter the
+   body only reads stays borrowed -- the local aliases its ABI slot,
+   the prologue keeps nothing, and the scope close releases nothing.
+   The retry transform rebinds every parameter and a rebind consumes
+   the local's own reference, so both keep the prologue keep. A body
+   that never names the parameter still consumes the slot, so the C
+   parameter stays used. The two body scans live in borrow.c. */
 static void emit_prologue(lower_ctx *c, lower_scope *params,
                           const ek_symbol *sym)
 {
+    const ek_node *body = fn_body(sym);
+    int retry = lower_has_self_tail(c, sym, body);
     size_t i;
 
     for (i = 0; i < params->nloc; i++) {
-        lower_emitf(c, "    ek_val %s = ek_keep(%s);\n",
-                    params->locs[i].cname, params->locs[i].abi);
+        lower_local *p = &params->locs[i];
+
+        if (retry || lower_param_rebinds(body, p->eko)) {
+            lower_emitf(c, "    ek_val %s = ek_keep(%s);\n",
+                        p->cname, p->abi);
+        } else {
+            p->cname = p->abi;
+            p->aliased = 1;
+            if (!lower_param_mentions(body, p->eko)) {
+                lower_emitf(c, "    (void)%s;\n", p->abi);
+            }
+        }
     }
     c->tce_self = sym;
     c->tce_params = params;
-    c->tce_label = lower_has_self_tail(c, sym, fn_body(sym))
-                       ? "retry" : NULL;
+    c->tce_label = retry ? "retry" : NULL;
     if (c->tce_label) {
         lower_emitf(c, "retry: ;\n");
     }

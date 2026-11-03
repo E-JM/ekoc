@@ -443,11 +443,13 @@ static void load_import(r_ctx *c, r_mod *from, const ek_node *imp)
         }
         return;
     }
-    if (strcmp(imp->u.imports.path.data[0], "cap") == 0) {
-        /* The capability module is compiler-embedded and has no import
-           path; its names resolve without one (Clauses 9.1.1, 9.1.2). */
+    if (strcmp(imp->u.imports.path.data[0], "cap") == 0
+        || strcmp(imp->u.imports.path.data[0], "sys") == 0) {
+        /* The embedded modules are compiler-embedded and have no import
+           path; their names resolve without one (Clauses 9.1.1,
+           9.1.2). */
         r_error(c, file, imp->line, imp->col, "E-module-name",
-                "no import path names the capability module (Clauses "
+                "no import path names an embedded module (Clauses "
                 "9.1.1, 9.1.2)");
         return;
     }

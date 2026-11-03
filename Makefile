@@ -41,9 +41,9 @@ PARSE_SRC := \
 
 RESOLVE_SRC := \
 	src/resolve/body.c \
-	src/resolve/cap.c \
 	src/resolve/cap_source.c \
 	src/resolve/chain.c \
+	src/resolve/embedded.c \
 	src/resolve/expr.c \
 	src/resolve/module.c \
 	src/resolve/opens.c \
@@ -53,6 +53,7 @@ RESOLVE_SRC := \
 	src/resolve/std.c \
 	src/resolve/std_source.c \
 	src/resolve/surface.c \
+	src/resolve/sys_source.c \
 	src/resolve/time_source.c \
 	src/resolve/type.c \
 	src/resolve/warn.c
@@ -106,6 +107,8 @@ CHECK_OBJ := $(CHECK_SRC:src/%.c=$(BUILD)/%.o)
 
 LOWER_SRC := \
 	src/lower/body.c \
+	src/lower/borrow.c \
+	src/lower/bundle.c \
 	src/lower/call.c \
 	src/lower/capfam.c \
 	src/lower/capwrap.c \
@@ -143,6 +146,7 @@ LOWER_SRC := \
 	src/lower/type.c \
 	src/lower/typeemit.c \
 	src/lower/typewalk.c \
+	src/lower/unit.c \
 	src/lower/unwrap.c \
 	src/lower/value.c \
 	src/lower/wrap.c

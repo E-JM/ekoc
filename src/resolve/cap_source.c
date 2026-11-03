@@ -5,44 +5,18 @@
 #include "resolve/cap_source.h"
 
 const char *const ek_cap_source_parts[] = {
-    "// The capability module: the handles and data types of the capability\n",
-    "// surfaces, and the members of the capability namespaces (Clause\n",
-    "// 9.1.1). The channel to the operating system is the injected pair of\n",
-    "// each capability (Clause 10.8); the sixteen compiler-provided\n",
-    "// declarations arrive as compiler rows, not source.\n",
+    "// The capability module: the members of the capability namespaces,\n",
+    "// the bundle records they forward through, and the pure derivations\n",
+    "// (Clause 9.1.1). The channel to the operating system is the injected\n",
+    "// pair of each capability (Clause 10.8); the sixteen compiler-provided\n",
+    "// declarations arrive as compiler rows, not source. The handle and\n",
+    "// data types of the signatures below (File, OpenMode, FileInfo,\n",
+    "// IoError, Scope, Task) are the system vocabulary module's (sys.eko),\n",
+    "// reached as every file reaches them: bare, with no import path.\n",
     "\n",
-    "// The time vocabulary of the signatures below (FileInfo.mtime, the\n",
-    "// Clock bundle) is the std/time companion's (Clause 9.1.3).\n",
+    "// The time vocabulary of the Clock bundle and Clock.sleep is the\n",
+    "// std/time companion's (Clause 9.1.3).\n",
     "import std/time\n",
-    "\n",
-    "// The file-open modes (Clause 9.12.1).\n",
-    "OpenMode: type = Read | Write | Append | New | Update\n",
-    "\n",
-    "// What `stat` reports (Clause 9.12.6).\n",
-    "FileInfo: type = [size: UInt, mtime: Time, is_dir: Bool]\n",
-    "\n",
-    "// The closed failure reason of the file family (Clause 9.12.2).\n",
-    "IoError: type =\n",
-    "    | NotFound\n",
-    "    | Permission\n",
-    "    | Exists\n",
-    "    | NotFile\n",
-    "    | Closed\n",
-    "    | InvalidData String\n",
-    "    | Other String\n",
-    "\n",
-    "// An open file, as a runtime handle-table index; the constructor is\n",
-    "// private, so no other form exists and the handle stays unforgeable\n",
-    "// (Clauses 7.9.1, 9.12.2).\n",
-    "File: type = _File [raw: UInt]\n",
-    "\n",
-    "// A concurrency scope, the same runtime handle (Clause 8.9.1).\n",
-    "Scope: type = _Scope [raw: UInt]\n",
-    "\n",
-    "// A spawned task over its result type, the same runtime handle\n",
-    "// (Clause 8.9.1). The private second field carries the binder, which\n",
-    "// names no storage (Clause 7.6.2).\n",
-    "Task: type t = _Task [raw: UInt, _as: t]\n",
     "\n",
     "// The session-write bundle the injected pair unwraps to (Clause 10.8).\n",
     "_OutB: type = [write: (String) !]\n",
@@ -257,8 +231,8 @@ const char *const ek_cap_source_parts[] = {
     "Rand.int: (r: Rand, bound: UInt) !-> UInt = _rand_unwrap(r).int(bound)\n",
 };
 
-const size_t ek_cap_source_nparts = 250;
-const size_t ek_cap_source_len = 10778;
+const size_t ek_cap_source_nparts = 224;
+const size_t ek_cap_source_len = 10081;
 
 char *ek_cap_source_join(ek_arena *arena)
 {

@@ -137,29 +137,22 @@ const char *lower_pat_slot_tail(lower_ctx *c, const char *slot)
     return lower_str(c, "ek_cons_tail(%s.as.ref)", slot);
 }
 
-/* A string literal pattern: the object to compare hoists into the
-   arm's own temps, so the condition itself stays pure. */
+/* A string literal pattern: the cached literal is kept into the arm's
+   own temps, so the condition itself stays pure. */
 static const char *str_lit_cond(lower_pat *pat, const char *slot,
                                 const ek_node *lit)
 {
-    ek_buf b;
+    const char *bytes = "";
+    size_t len = 0;
     const char *t = lower_temp(pat->c, pat->scope);
 
-    ek_buf_init(&b);
-    if (!ek_buf_append_str(&b, "ek_val_ref(ek_str_from_cstr(")) {
-        pat->c->oom = 1;
-    }
     if (lit->u.str.count == 1) {
-        lower_string_literal(pat->c, &b, lit->u.str.segs[0].text,
-                             lit->u.str.segs[0].text_len);
-    } else {
-        lower_string_literal(pat->c, &b, "", 0);
-    }
-    if (!ek_buf_append_str(&b, "))")) {
-        pat->c->oom = 1;
+        bytes = lit->u.str.segs[0].text;
+        len = lit->u.str.segs[0].text_len;
     }
     lower_pad(pat->c);
-    lower_emitf(pat->c, "ek_val %s = %s;\n", t, lower_take(pat->c, &b));
+    lower_emitf(pat->c, "ek_val %s = ek_keep(%s);\n", t,
+                lower_str_cache(pat->c, bytes, len));
     lower_clean_push(pat->c, t);
     return lower_str(pat->c, "(%s.tag == EK_VAL_REF && %s.as.ref != 0"
                              " && %s.as.ref->info->kind == EK_KIND_STR"

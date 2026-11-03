@@ -196,6 +196,20 @@ static int module_walk(r_ctx *c, r_file *f, r_head *cur, const ek_node *link,
     }
     m = r_module_member(*walk_mod, name);
     if (!m) {
+        if ((*walk_mod)->surf == c->std
+            && r_embedded_type_name(c, name)) {
+            /* An embedded module's type has no `std.` spelling, on the
+               chain path as on the type path (Clause 9.1.2). */
+            r_error(c, f->mod->file, link->line, link->col,
+                    "E-unbound-name",
+                    "the type `%s` belongs to an embedded module; it "
+                    "has no `std.` spelling and opens unqualified "
+                    "(Clauses 9.1.1, 9.1.2)", name);
+            external_link(c, cur, link);
+            *state = 0;
+            *walk_mod = NULL;
+            return 1;
+        }
         if ((*walk_mod)->surf == c->std || from_receiver) {
             /* The std placeholder keeps its bridge, and a receiver-form
                miss defers to check: a record field of the same spelling

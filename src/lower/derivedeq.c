@@ -39,7 +39,7 @@ static const char *ord_call(lower_ctx *c, const ek_type *t, const char *x,
     }
 }
 
-static void emit_scalar_eq(lower_demit *d, lower_scalar sk)
+static void emit_scalar_eq(lower_ctx *c, lower_demit *d, lower_scalar sk)
 {
     switch (sk) {
     case EKSC_UINT:
@@ -55,6 +55,7 @@ static void emit_scalar_eq(lower_demit *d, lower_scalar sk)
         lower_d_printf(d, "    return ek_str_eq(a.as.ref, b.as.ref);\n");
         break;
     case EKSC_BYTES:
+        c->uses_string_h = 1;
         lower_d_printf(d, "    if (ek_bytes_len(a.as.ref) != "
                           "ek_bytes_len(b.as.ref))\n");
         lower_d_printf(d, "        return 0;\n");
@@ -216,8 +217,12 @@ void lower_dsvc_eq_emit(lower_ctx *c, const char *name, const ek_type *t)
     if (lower_is_range(t)) {
         emit_range_eq(c, &d, t);
     } else if (lower_scalar_kind(t) != EKSC_OTHER) {
-        emit_scalar_eq(&d, lower_scalar_kind(t));
+        emit_scalar_eq(c, &d, lower_scalar_kind(t));
     } else if (t->kind == EK_T_UNIT) {
+        /* every unit value is equal; the signature's slots stay
+           unread */
+        lower_d_printf(&d, "    (void)a;\n");
+        lower_d_printf(&d, "    (void)b;\n");
         lower_d_printf(&d, "    return 1;\n");
     } else if (t->kind == EK_T_LIST) {
         emit_list_eq(c, &d, t);
@@ -235,7 +240,7 @@ void lower_dsvc_eq_emit(lower_ctx *c, const char *name, const ek_type *t)
             lower_d_printf(&d, "    return 0;\n");
         }
     } else if (t->kind == EK_T_NOMINAL
-               && (lower_variants_of(c, NULL, t, &vs, &nv)
+               && (lower_variants_of(c, NULL, t, &vs, &nv, 0)
                    || lower_shape_of(c, NULL, t, &fnames, &ftypes, &nf, &g))) {
         if (vs) {
             emit_adt_eq(c, &d, vs, nv);
@@ -339,11 +344,12 @@ void lower_dsvc_ord_emit(lower_ctx *c, const char *name, const ek_type *t)
     if (lower_is_range(t)) {
         emit_range_ord(c, &d, t);
     } else if (t->kind == EK_T_NOMINAL
-               && lower_variants_of(c, NULL, t, &vs, &nv)) {
+               && lower_variants_of(c, NULL, t, &vs, &nv, 0)) {
         emit_adt_ord(c, &d, vs, nv);
     } else if (lower_scalar_kind(t) == EKSC_STRING) {
         lower_d_printf(&d, "    return ek_str_cmp(a.as.ref, b.as.ref);\n");
     } else if (lower_scalar_kind(t) == EKSC_BYTES) {
+        c->uses_string_h = 1;
         lower_d_printf(&d, "    size_t la = ek_bytes_len(a.as.ref);\n");
         lower_d_printf(&d, "    size_t lb = ek_bytes_len(b.as.ref);\n");
         lower_d_printf(&d, "    size_t m = la < lb ? la : lb;\n");

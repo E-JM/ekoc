@@ -1,4 +1,3 @@
-#include <stdio.h>
 #include <string.h>
 
 #include "lower/internal.h"
@@ -102,20 +101,199 @@ static const char *injected_identity(lower_ctx *c, const ek_symbol *sym)
 }
 
 /* The shape of one call site: an optional receiver argument and one
-   appended trailing argument (the callback of a `<-` chain). */
+   appended trailing argument (the callback of a `<-` chain). The
+   receiver borrows the frame local it reads when the written
+   arguments cannot rebind it, and lowers only when it keeps. */
 typedef struct {
     int has_recv;
     lower_val recv;
+    const char *recv_borrow;
     const char *extra;
 } call_form;
 
-/* Releases the argument temps, most recent first. */
-static void release_args(lower_ctx *c, const char **argv, size_t n)
+/* The frame-owned local the argument expression reads, when the call
+   may pass it borrowed: a name read of a binding the emitting frame
+   owns -- a capture-environment read never borrows, the scope does
+   not own it -- and the same reading through an injected identity
+   call, whose result is its argument. NULL keeps the kept-temp
+   shape. */
+const char *lower_borrow_local(lower_ctx *c, lower_scope *scope,
+                               const ek_node *e)
+{
+    const ek_ref *ref;
+    const lower_local *loc;
+
+    if (!e) {
+        return NULL;
+    }
+    if (e->kind == EK_N_CALL) {
+        const ek_node *callee = e->u.call.callee;
+        const ek_node *arg = NULL;
+
+        ref = lower_ref(c, e);
+        if (!ref && callee) {
+            ref = lower_ref(c, callee);
+        }
+        if (!ref || ref->kind != EK_SYM_FUNC
+            || !is_injected(ref->symbol)) {
+            return NULL;
+        }
+        if (callee && callee->kind == EK_N_FIELD
+            && e->u.call.args.count == 0) {
+            arg = callee->u.field.recv; /* the member form */
+        } else if (e->u.call.args.count == 1
+                   && (!callee || callee->kind != EK_N_FIELD)) {
+            arg = e->u.call.args.data[0]; /* the free-call form */
+        }
+        return arg ? lower_borrow_local(c, scope, arg) : NULL;
+    }
+    if (e->kind == EK_N_NAME && e->u.path.count == 1
+        && strcmp(e->u.path.data[0], "_") != 0) {
+        ref = lower_ref(c, e);
+        if (ref && (ref->kind == EK_SYM_LOCAL || ref->kind == EK_SYM_PARAM)
+            && ref->symbol) {
+            loc = scope_find_local(scope, ref->symbol->name);
+            if (loc && !loc->is_param) {
+                return loc->cname;
+            }
+        }
+    }
+    return NULL;
+}
+
+/* The kid lists one argument kind carries: any element may rebind. */
+static int rebind_kids(ek_node *const *data, size_t count)
+{
+    size_t i;
+
+    for (i = 0; i < count; i++) {
+        if (lower_arg_may_rebind(data[i])) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* True when evaluating the expression can rebind a local of the
+   emitting frame: the block forms and the chain form run statements
+   of an enclosing scope, and any of them may carry a rebind. A
+   lambda's body runs later and never rebinds a capture, so the walk
+   stops there. */
+int lower_arg_may_rebind(const ek_node *e)
+{
+    size_t i;
+
+    if (!e) {
+        return 0;
+    }
+    switch (e->kind) {
+    case EK_N_REBIND:
+        return 1;
+    case EK_N_BLOCK:
+    case EK_N_IF:
+    case EK_N_CASE:
+    case EK_N_INVERT:
+        return 1; /* the statements of an enclosing scope may rebind */
+    case EK_N_LAMBDA:
+        return 0; /* the body runs later */
+    case EK_N_PAREN:
+    case EK_N_UNARY:
+        return lower_arg_may_rebind(e->u.wrap.inner);
+    case EK_N_BINARY:
+        return lower_arg_may_rebind(e->u.binary.lhs)
+            || lower_arg_may_rebind(e->u.binary.rhs);
+    case EK_N_FIELD:
+        return lower_arg_may_rebind(e->u.field.recv);
+    case EK_N_CALL:
+        return lower_arg_may_rebind(e->u.call.callee)
+            || rebind_kids(e->u.call.args.data, e->u.call.args.count);
+    case EK_N_APPLY:
+        return lower_arg_may_rebind(e->u.pair.a)
+            || lower_arg_may_rebind(e->u.pair.b);
+    case EK_N_COMPOSITE:
+        return rebind_kids(e->u.kids.data, e->u.kids.count);
+    case EK_N_COMPOSITE_ITEM:
+        return lower_arg_may_rebind(e->u.pair.b);
+    case EK_N_STRING_LIT:
+        for (i = 0; i < e->u.str.count; i++) {
+            if (e->u.str.segs[i].expr
+                && lower_arg_may_rebind(e->u.str.segs[i].expr)) {
+                return 1;
+            }
+        }
+        return 0;
+    default:
+        return 0;
+    }
+}
+
+/* True when any written argument from index i on rebinds a local of
+   the emitting frame when evaluated: a borrow taken before it would
+   read the rebound value at the call. */
+static int args_rebind_from(const ek_nlist *args, size_t i)
+{
+    size_t k;
+
+    for (k = i; k < args->count; k++) {
+        if (lower_arg_may_rebind(args->data[k])) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* The parameter type of one written position: the arrow's parameter,
+   NULL past it or where no row carries the arrow. */
+static const ek_type *fn_param(const ek_type *ft, size_t i)
+{
+    return ft && ft->kind == EK_T_FN && i < ft->u.fn.count
+        ? ft->u.fn.params[i] : NULL;
+}
+
+/* The receiver slot of a member call, decided before the receiver
+   lowers: the frame local it reads borrows, and the receiver lowers
+   only when it keeps. A receiver whose parameter is an anonymous
+   record adapts -- the adaptation rebuilds the value, so the read is
+   no longer a bare local read and travels as an owned temp. ft is the
+   callee's function type: its first parameter is the receiver's
+   expected type, exactly the type the argument positions adapt
+   against. */
+static void set_recv(lower_ctx *c, lower_scope *scope, call_form *member,
+                     const ek_node *recv, const ek_nlist *args,
+                     const ek_type *ft)
+{
+    const ek_type *pt = fn_param(ft, 0);
+
+    member->has_recv = 1;
+    if (!pt || pt->kind != EK_T_RECORD) {
+        member->recv_borrow = lower_borrow_local(c, scope, recv);
+        if (member->recv_borrow && args_rebind_from(args, 0)) {
+            member->recv_borrow = NULL;
+        }
+    }
+    if (member->recv_borrow) {
+        member->recv = lower_val_unit(); /* the read is pure */
+        return;
+    }
+    member->recv = lower_sub(c, scope, recv);
+    if (pt) {
+        member->recv = lower_shape_adapt(c, scope, member->recv, recv,
+                                         lower_row_type(c, recv), pt);
+    }
+}
+
+/* Releases the argument temps, most recent first; a borrowed
+   argument holds no reference and releases nothing. */
+static void release_args(lower_ctx *c, const char **argv, const int *owned,
+                         size_t n)
 {
     size_t i = n;
 
     while (i > 0) {
         i--;
+        if (!owned[i]) {
+            continue;
+        }
         lower_pad(c);
         lower_emitf(c, "ek_release(%s);\n", argv[i]);
     }
@@ -140,26 +318,60 @@ static const char *emit_invoke(lower_ctx *c, lower_scope *scope,
 
 /* The receiver slot of a member call, in source order. */
 static void fill_recv(lower_ctx *c, lower_scope *scope, const call_form *form,
-                      const char **argv, size_t n)
+                      const char **argv, int *owned, size_t n)
 {
     lower_val recv = form->recv;
-    const char *t;
 
     if (n) {
+        if (form->recv_borrow) {
+            argv[0] = form->recv_borrow;
+            owned[0] = 0;
+            return;
+        }
         argv[0] = lower_as_temp(c, scope, &recv);
+        owned[0] = 1;
         return;
     }
-    t = lower_as_temp(c, scope, &recv); /* a malformed arity */
-    lower_pad(c);
-    lower_emitf(c, "ek_release(%s);\n", t);
+    /* a malformed arity: a borrowed read is pure and dies with
+       nothing, a kept receiver still evaluates and dies */
+    if (!form->recv_borrow) {
+        const char *t = lower_as_temp(c, scope, &recv);
+
+        lower_pad(c);
+        lower_emitf(c, "ek_release(%s);\n", t);
+    }
+}
+
+/* The borrowed reading of one written argument: the frame local it
+   names, when the position's parameter is not an anonymous record --
+   the shape adaptation rebuilds the value, so the position keeps the
+   temp -- and no later argument's evaluation can rebind it. */
+static const char *arg_borrow(lower_ctx *c, lower_scope *scope,
+                              const ek_nlist *args, size_t i,
+                              const ek_type *pt)
+{
+    const char *bn;
+
+    if (pt && pt->kind == EK_T_RECORD) {
+        return NULL;
+    }
+    bn = lower_borrow_local(c, scope, args->data[i]);
+    if (bn && args_rebind_from(args, i + 1)) {
+        return NULL;
+    }
+    return bn;
 }
 
 /* The written arguments, the appended callback, and the arity pads.
-   ft is the callee's function type when a row carries it: a nominal
-   record argument adapts into an anonymous record parameter. */
+   An argument reading a frame-owned local passes the local's own
+   name -- the caller's frame keeps it alive across the whole call --
+   unless a later argument's evaluation can rebind it, or the callee's
+   type adapts the argument's shape. ft is the callee's function type
+   when a row carries it: a nominal record argument adapts into an
+   anonymous record parameter. */
 static void fill_written(lower_ctx *c, lower_scope *scope,
                          const ek_nlist *args, const call_form *form,
-                         const char **argv, size_t n, size_t first,
+                         const char **argv, int *owned, size_t n, size_t first,
                          const ek_type *ft)
 {
     size_t written_end = first + args->count;
@@ -170,20 +382,29 @@ static void fill_written(lower_ctx *c, lower_scope *scope,
         lower_val a;
 
         if (i < written_end) {
-            a = lower_sub(c, scope, args->data[i - first]);
-            if (ft && ft->kind == EK_T_FN && i < ft->u.fn.count) {
-                a = lower_shape_adapt(
-                    c, scope, a, args->data[i - first],
-                    lower_row_type(c, args->data[i - first]),
-                    ft->u.fn.params[i]);
+            const ek_node *an = args->data[i - first];
+            const ek_type *pt = fn_param(ft, i);
+            const char *bn = arg_borrow(c, scope, args, i - first, pt);
+
+            if (bn) {
+                argv[i] = bn;
+                owned[i] = 0;
+                continue;
+            }
+            a = lower_sub(c, scope, an);
+            if (pt) {
+                a = lower_shape_adapt(c, scope, a, an, lower_row_type(c, an),
+                                      pt);
             }
         } else if (extra_fits && i == n - 1) {
             argv[i] = form->extra; /* the callback moves in */
+            owned[i] = 1;
             continue;
         } else {
             a = lower_val_unit(); /* a malformed arity check diagnosed */
         }
         argv[i] = lower_as_temp(c, scope, &a);
+        owned[i] = 1;
     }
     for (i = n; i < written_end; i++) {
         lower_val a = lower_sub(c, scope, args->data[i - first]);
@@ -239,7 +460,8 @@ static lower_val direct_call(lower_ctx *c, lower_scope *scope,
     const ek_type **iargs = NULL;
     size_t ni = 0;
     const char **argv = NULL;
-    size_t cap = 0;
+    int *owned = NULL;
+    size_t cap = 0, ocap = 0;
     const char *t;
 
     if (inst) {
@@ -250,15 +472,16 @@ static lower_val direct_call(lower_ctx *c, lower_scope *scope,
     }
     if (n) {
         argv = lower_grow(c, NULL, &cap, n, sizeof *argv);
-        if (!argv) {
+        owned = lower_grow(c, NULL, &ocap, n, sizeof *owned);
+        if (!argv || !owned) {
             c->oom = 1;
             return lower_val_unit();
         }
     }
     if (form->has_recv) {
-        fill_recv(c, scope, form, argv, n);
+        fill_recv(c, scope, form, argv, owned, n);
     }
-    fill_written(c, scope, &e->u.call.args, form, argv, n, first,
+    fill_written(c, scope, &e->u.call.args, form, argv, owned, n, first,
                  inst ? inst : lower_row_type(c, e->u.call.callee));
     if (inst) {
         lower_enqueue_item(c, sym, iargs, ni, inst);
@@ -268,12 +491,14 @@ static lower_val direct_call(lower_ctx *c, lower_scope *scope,
         lower_enqueue(c, sym);
         t = emit_invoke(c, scope, lower_mangled(c, sym), argv, n);
     }
-    release_args(c, argv, n);
+    release_args(c, argv, owned, n);
     return (lower_val){ t, 1 };
 }
 
 /* A call on a function value: the closure ABI over the argument
-   array. */
+   array. The entries are borrowed -- the runtime callee retains
+   whatever it stores -- so an argument reading a frame-owned local
+   passes the local's own name. */
 static lower_val value_call(lower_ctx *c, lower_scope *scope,
                             const ek_node *e, lower_val callee,
                             const char *extra)
@@ -281,25 +506,41 @@ static lower_val value_call(lower_ctx *c, lower_scope *scope,
     const ek_nlist *args = &e->u.call.args;
     size_t n = args->count + (extra ? 1 : 0);
     const char **argv = NULL;
-    size_t cap = 0, i, k = 0;
+    int *owned = NULL;
+    size_t cap = 0, ocap = 0, i, k = 0;
     const char *ft = lower_as_temp(c, scope, &callee);
     const char *av = NULL;
     const char *r = lower_temp(c, scope);
 
     if (n) {
         argv = lower_grow(c, NULL, &cap, n, sizeof *argv);
-        if (!argv) {
+        owned = lower_grow(c, NULL, &ocap, n, sizeof *owned);
+        if (!argv || !owned) {
             c->oom = 1;
             return lower_val_unit();
         }
     }
     for (i = 0; i < args->count; i++) {
-        lower_val a = lower_sub(c, scope, args->data[i]);
+        const char *bn = lower_borrow_local(c, scope, args->data[i]);
 
-        argv[k++] = lower_as_temp(c, scope, &a);
+        if (bn && args_rebind_from(args, i + 1)) {
+            bn = NULL;
+        }
+        if (bn) {
+            argv[k] = bn;
+            owned[k] = 0;
+        } else {
+            lower_val a = lower_sub(c, scope, args->data[i]);
+
+            argv[k] = lower_as_temp(c, scope, &a);
+            owned[k] = 1;
+        }
+        k++;
     }
     if (extra) {
-        argv[k++] = extra;
+        argv[k] = extra;
+        owned[k] = 1;
+        k++;
     }
     if (n) {
         av = lower_temp(c, scope);
@@ -313,7 +554,7 @@ static lower_val value_call(lower_ctx *c, lower_scope *scope,
     lower_pad(c);
     lower_emitf(c, "ek_val %s = ek_closure_call(%s, %s, %zu);\n", r, ft,
                 n ? av : "(ek_val *)0", n);
-    release_args(c, argv, n);
+    release_args(c, argv, owned, n);
     lower_pad(c);
     lower_emitf(c, "ek_release(%s);\n", ft);
     return (lower_val){ r, 1 };
@@ -470,6 +711,7 @@ static lower_val intrinsic_member(lower_ctx *c, lower_scope *scope,
         has_recv = 1;
     } else if (head && head->symbol && head->symbol->module
                && (strcmp(head->symbol->module, "std") == 0
+                   || strcmp(head->symbol->module, "sys") == 0
                    || strcmp(head->symbol->module, "cap") == 0)) {
         family = head->symbol->name;
     }
@@ -495,8 +737,8 @@ static lower_val open_call(lower_ctx *c, lower_scope *scope,
     if (ms) {
         call_form member = *form;
 
-        member.has_recv = 1;
-        member.recv = lower_sub(c, scope, callee->u.field.recv);
+        set_recv(c, scope, &member, callee->u.field.recv,
+                 &e->u.call.args, lower_row_type(c, callee));
         return direct_call(c, scope, e, ms, &member);
     }
     if (strcmp(name, "with") == 0) {
@@ -593,8 +835,7 @@ static lower_val free_member_call(lower_ctx *c, lower_scope *scope,
     site = *e;
     site.u.call.args = rest;
     member = *form;
-    member.has_recv = 1;
-    member.recv = lower_sub(c, scope, recv);
+    set_recv(c, scope, &member, recv, &rest, lower_row_type(c, callee));
     return direct_call(c, scope, &site, ms, &member);
 }
 
@@ -649,8 +890,8 @@ static lower_val member_call(lower_ctx *c, lower_scope *scope,
         if (rt) {
             call_form member = *form;
 
-            member.has_recv = 1;
-            member.recv = lower_sub(c, scope, recv);
+            set_recv(c, scope, &member, recv, &e->u.call.args,
+                     lower_row_type(c, callee));
             return direct_call(c, scope, e, ms, &member);
         }
         /* the head supplies namespace context, not a receiver value:
@@ -751,8 +992,8 @@ static lower_val emit_call(lower_ctx *c, lower_scope *scope,
 
                 /* `x.Mod.f(a)` passes the receiver first, exactly as
                    the member form does */
-                modpath.has_recv = 1;
-                modpath.recv = lower_sub(c, scope, rv);
+                set_recv(c, scope, &modpath, rv, &e->u.call.args,
+                         lower_row_type(c, callee));
                 return direct_call(c, scope, e, ref->symbol, &modpath);
             }
         }

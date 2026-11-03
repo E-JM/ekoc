@@ -26,6 +26,10 @@ static void cap_out_drop(ek_obj *obj)
 static const ek_typeinfo ek_typeinfo_cap_out = { EK_KIND_STRUCT,
                                                  cap_out_drop, NULL, NULL };
 
+typedef char cap_out_slot_check
+    [(offsetof(ek_cap_out, write)
+      == sizeof(ek_obj) + EK_OUT_WRITE * sizeof(ek_val)) ? 1 : -1];
+
 /* The write closure of the standard output bundle: the argument's
    bytes, without the stored terminator, land on stdout; the stream
    keeps its default buffering. */

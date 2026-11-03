@@ -82,16 +82,20 @@ static void pat_tail_keeps(lower_pat *pat, size_t k, const char *wn,
 }
 
 /* The second pass of a prefix rest: the prefix rebuilds while the
-   fixed tail keeps into per-item temps. */
+   fixed tail keeps into per-item temps. The rebuilt-prefix temp lives
+   only when the rest binds a name. */
 static void pat_prefix_walk(lower_pat *pat, const ek_node *p,
                             const char *slot, const char *wn,
                             const char **ht, size_t k)
 {
-    const char *wp = lower_temp(pat->c, pat->scope);
+    const char *wp = p->u.p_brace.rest_name
+                         ? lower_temp(pat->c, pat->scope) : NULL;
     const char *wc = lower_temp(pat->c, pat->scope);
     size_t j;
 
-    lower_pat_line(pat, "ek_val %s = ek_nil_val();", wp);
+    if (wp) {
+        lower_pat_line(pat, "ek_val %s = ek_nil_val();", wp);
+    }
     lower_pat_line(pat, "ek_val %s = ek_keep(%s);", wc, slot);
     lower_pat_line(pat, "size_t wi = 0;");
     lower_pat_line(pat, "while (wi < %s) {", wn);

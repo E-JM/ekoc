@@ -68,7 +68,10 @@ static ek_val clock_sleep(ek_val env, ek_val *args, size_t argc)
 
 ek_val ek_cap_clock_wall(void)
 {
-    return ek_bundle3_new(ek_closure_new(clock_now, ek_val_unit()),
-                          ek_closure_new(clock_mono, ek_val_unit()),
-                          ek_closure_new(clock_sleep, ek_val_unit()));
+    ek_val slots[EK_CLOCK_SLOTS];
+
+    slots[EK_CLOCK_NOW] = ek_closure_new(clock_now, ek_val_unit());
+    slots[EK_CLOCK_MONO] = ek_closure_new(clock_mono, ek_val_unit());
+    slots[EK_CLOCK_SLEEP] = ek_closure_new(clock_sleep, ek_val_unit());
+    return ek_bundle3_new(slots);
 }

@@ -176,18 +176,11 @@ static void emit_parse_miss(lower_ctx *c, lower_scope *scope, unsigned d,
     lower_pad(c);
     lower_emitf(c, "} else if (%s == EK_PARSE_EMPTY) {\n", s);
     c->depth = d + 1;
-    lower_pad(c);
-    lower_emitf(c, "%s = %s(%s());\n", t, err, empty);
-    c->depth = d;
-    lower_pad(c);
-    lower_emitf(c, "} else if (%s == EK_PARSE_INVALID) {\n", s);
-    c->depth = d + 1;
     {
         const char *p = lower_temp(c, scope);
 
         lower_pad(c);
-        lower_emitf(c, "ek_val %s = %s(ek_val_ref(ek_str_from_cstr(\"\"))"
-                       ");\n", p, inv);
+        lower_emitf(c, "ek_val %s = %s();\n", p, empty);
         lower_pad(c);
         lower_emitf(c, "%s = %s(%s);\n", t, err, p);
         lower_pad(c);
@@ -195,10 +188,38 @@ static void emit_parse_miss(lower_ctx *c, lower_scope *scope, unsigned d,
     }
     c->depth = d;
     lower_pad(c);
+    lower_emitf(c, "} else if (%s == EK_PARSE_INVALID) {\n", s);
+    c->depth = d + 1;
+    {
+        const char *k = lower_temp(c, scope);
+        const char *p = lower_temp(c, scope);
+
+        lower_pad(c);
+        lower_emitf(c, "ek_val %s = ek_keep(%s);\n", k,
+                    lower_str_cache(c, "", 0));
+        lower_pad(c);
+        lower_emitf(c, "ek_val %s = %s(%s);\n", p, inv, k);
+        lower_pad(c);
+        lower_emitf(c, "%s = %s(%s);\n", t, err, p);
+        lower_pad(c);
+        lower_emitf(c, "ek_release(%s);\n", p);
+        lower_pad(c);
+        lower_emitf(c, "ek_release(%s);\n", k);
+    }
+    c->depth = d;
+    lower_pad(c);
     lower_emitf(c, "} else {\n");
     c->depth = d + 1;
-    lower_pad(c);
-    lower_emitf(c, "%s = %s(%s());\n", t, err, range);
+    {
+        const char *p = lower_temp(c, scope);
+
+        lower_pad(c);
+        lower_emitf(c, "ek_val %s = %s();\n", p, range);
+        lower_pad(c);
+        lower_emitf(c, "%s = %s(%s);\n", t, err, p);
+        lower_pad(c);
+        lower_emitf(c, "ek_release(%s);\n", p);
+    }
     c->depth = d;
     lower_pad(c);
     lower_emitf(c, "}\n");

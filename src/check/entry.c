@@ -109,6 +109,8 @@ void ck_entry_rules(ck_ctx *c)
     for (k = 0; k < c->in->module_count; k++) {
         const ek_surface *s = &c->in->modules[k];
 
+        c->cur = s; /* the rules below diagnose in the module that
+                       carries the entry name */
         for (i = 0; i < s->count; i++) {
             const ek_symbol *sym = &s->syms[i];
             int is_main = strcmp(sym->name, "main") == 0;

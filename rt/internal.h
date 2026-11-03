@@ -14,13 +14,14 @@
    with the emitted unit. A constructor pattern in generated code tests
    pointer equality against the unit's own typeinfo, so every value the
    bundles hand back carries the unit's typeinfo, never a runtime one.
-   The names are the lowerer's stems, one per std, capability, and time
-   constructor the bundle closures build; the emitted unit defines each
-   of them whenever the main manifest requests the capability whose
-   bundle builds it (the compiler registers the set), so the references
-   resolve at link time. The bundle records themselves stay
-   runtime-typed: they are only field-read and dropped, never
-   pattern-matched.
+   The names are the lowerer's stems, one per std, system-vocabulary,
+   and time constructor the bundle closures build; the emitted unit
+   defines each of them whenever the main manifest requests the
+   capability whose bundle builds it (the compiler registers the set),
+   so the references resolve at link time. The runtime names the system
+   vocabulary's identities (sys) and never the capability module's: the
+   bundle records themselves stay runtime-typed, only field-read and
+   dropped, never pattern-matched.
 
    The layout contract, the same one range.c reads generated structs
    through: a family is the object header followed by the payload slots
@@ -42,19 +43,19 @@ extern const ek_typeinfo ekT_std_Json_Float;
 extern const ek_typeinfo ekT_std_Json_Str;
 extern const ek_typeinfo ekT_std_Json_Arr;
 extern const ek_typeinfo ekT_std_Json_Obj;
-extern const ek_typeinfo ekT_cap_IoError_NotFound;
-extern const ek_typeinfo ekT_cap_IoError_Permission;
-extern const ek_typeinfo ekT_cap_IoError_Exists;
-extern const ek_typeinfo ekT_cap_IoError_NotFile;
-extern const ek_typeinfo ekT_cap_IoError_Closed;
-extern const ek_typeinfo ekT_cap_IoError_InvalidData;
-extern const ek_typeinfo ekT_cap_IoError_Other;
-extern const ek_typeinfo ekT_cap_OpenMode_Read;
-extern const ek_typeinfo ekT_cap_OpenMode_Write;
-extern const ek_typeinfo ekT_cap_OpenMode_Append;
-extern const ek_typeinfo ekT_cap_OpenMode_New;
-extern const ek_typeinfo ekT_cap_OpenMode_Update;
-extern const ek_typeinfo ekT_cap_FileInfo;
+extern const ek_typeinfo ekT_sys_IoError_NotFound;
+extern const ek_typeinfo ekT_sys_IoError_Permission;
+extern const ek_typeinfo ekT_sys_IoError_Exists;
+extern const ek_typeinfo ekT_sys_IoError_NotFile;
+extern const ek_typeinfo ekT_sys_IoError_Closed;
+extern const ek_typeinfo ekT_sys_IoError_InvalidData;
+extern const ek_typeinfo ekT_sys_IoError_Other;
+extern const ek_typeinfo ekT_sys_OpenMode_Read;
+extern const ek_typeinfo ekT_sys_OpenMode_Write;
+extern const ek_typeinfo ekT_sys_OpenMode_Append;
+extern const ek_typeinfo ekT_sys_OpenMode_New;
+extern const ek_typeinfo ekT_sys_OpenMode_Update;
+extern const ek_typeinfo ekT_sys_FileInfo;
 extern const ek_typeinfo ekT_time_Time_Time;
 extern const ek_typeinfo ekT_time_Mono_Mono;
 
@@ -125,8 +126,8 @@ ek_val ek_fs_realpath(void);
    compiler's field order. One shared family per arity, runtime-typed;
    the drop releases every member closure with the record. */
 ek_val ek_bundle1_new(ek_val a);
-ek_val ek_bundle3_new(ek_val a, ek_val b, ek_val c);
-ek_val ek_bundle16_new(const ek_val *fields);
+ek_val ek_bundle3_new(const ek_val *slots);
+ek_val ek_bundle16_new(const ek_val *slots);
 
 /* Reads one line from the stream, without its terminating newline: a
    fresh String object, or NULL at end of input with *eof set, or NULL

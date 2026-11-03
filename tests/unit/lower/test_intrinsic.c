@@ -41,12 +41,23 @@ static void parse_wraps_result(void)
     EK_CHECK(lfx_lower_clean(&f));
     EK_CHECK(lfx_has(&f, "ek_parse_int("));
     EK_CHECK(lfx_has(&f, "ekn_std_Result_Ok(ek_val_int("));
-    /* the parse kinds map onto the ParseError variants */
-    EK_CHECK(lfx_has(&f, "ekn_std_Result_Err(ekn_std_ParseError_Empty());"));
-    EK_CHECK(lfx_has(&f, "ekn_std_Result_Err(ekn_std_ParseError_"
-                         "OutOfRange());"));
-    EK_CHECK(lfx_has(&f, "ekn_std_ParseError_Invalid(ek_val_ref("
-                         "ek_str_from_cstr(\"\")));"));
+    /* the parse kinds map onto the ParseError variants; each miss arm
+       binds the error to its own named temp and releases it, and the
+       empty detail is the interned empty literal, kept and released
+       beside the Invalid it lands in */
+    EK_CHECK(lfx_has(&f, "        ek_val t4 = ekn_std_ParseError_Empty();\n"
+                         "        t1 = ekn_std_Result_Err(t4);\n"
+                         "        ek_release(t4);"));
+    EK_CHECK(lfx_has(&f, "        ek_val t7 = ekn_std_ParseError_"
+                         "OutOfRange();\n"
+                         "        t1 = ekn_std_Result_Err(t7);\n"
+                         "        ek_release(t7);"));
+    EK_CHECK(lfx_has(&f, "        ek_val t5 = ek_keep(ekc"));
+    EK_CHECK(lfx_has(&f, "        ek_val t6 = ekn_std_ParseError_Invalid("
+                         "t5);\n"
+                         "        t1 = ekn_std_Result_Err(t6);\n"
+                         "        ek_release(t6);\n"
+                         "        ek_release(t5);"));
     lfx_end(&f);
 }
 

@@ -492,14 +492,19 @@ static lower_val ns_constant_read(lower_ctx *c, const ek_node *e)
 }
 
 /* A field access: the receiver lowers to a temp, the read is an owned
-   copy out of the generated struct, and the receiver temp dies. */
+   copy out of the generated struct, and the receiver temp dies. The
+   receiver borrows the frame local it reads -- the slot read is
+   immediate and keeps nothing but the field's own copy -- so a local
+   receiver costs no keep and no release. */
 static lower_val field_expr(lower_ctx *c, lower_scope *scope,
                             const ek_node *e)
 {
     const ek_ck_row *row = lower_row(c, e);
     const ek_type *rt = lower_row_type(c, e->u.field.recv);
+    const char *bn;
     lower_val v;
     const char *t, *r, *slot;
+    int owned;
 
     if (!row || row->reading != EK_RD_FIELD || !rt) {
         lower_val q = qualified_read(c, e);
@@ -514,19 +519,30 @@ static lower_val field_expr(lower_ctx *c, lower_scope *scope,
                     lower_construct(e));
         return lower_val_unit();
     }
-    v = lower_sub(c, scope, e->u.field.recv);
-    t = lower_as_temp(c, scope, &v);
+    bn = lower_borrow_local(c, scope, e->u.field.recv);
+    if (bn) {
+        t = bn;
+        owned = 0;
+    } else {
+        v = lower_sub(c, scope, e->u.field.recv);
+        t = lower_as_temp(c, scope, &v);
+        owned = 1;
+    }
     slot = lower_field_slot(c, e, rt, t, e->u.field.name);
     if (!slot) {
-        lower_pad(c);
-        lower_emitf(c, "ek_release(%s);\n", t);
+        if (owned) {
+            lower_pad(c);
+            lower_emitf(c, "ek_release(%s);\n", t);
+        }
         return lower_val_unit();
     }
     r = lower_temp(c, scope);
     lower_pad(c);
     lower_emitf(c, "ek_val %s = ek_keep(%s);\n", r, slot);
-    lower_pad(c);
-    lower_emitf(c, "ek_release(%s);\n", t);
+    if (owned) {
+        lower_pad(c);
+        lower_emitf(c, "ek_release(%s);\n", t);
+    }
     return (lower_val){ r, 1 };
 }
 

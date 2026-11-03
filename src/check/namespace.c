@@ -8,26 +8,28 @@
    default of a name no declaration owns. A namespace the table owns
    is complete: a name no station answers is absent, not bridged. */
 
-/* A row signature is a type tree: a fresh variable slot, a std or
-   capability nominal, a list, an Option or Result application, a
-   function, or the unit type. Slots are per-consultation: every use of
-   a row instantiates its own variables. */
+/* A row signature is a type tree: a fresh variable slot, a std nominal
+   or one of an embedded module (the system vocabulary or the capability
+   module), a list, an Option or Result application, a function, or the
+   unit type. Slots are per-consultation: every use of a row
+   instantiates its own variables. */
 typedef struct ns_sig ns_sig;
 
 struct ns_sig {
     int kind;
-    const char *std;       /* NS_STD, NS_CAP: the type's name */
+    const char *std;       /* NS_STD, NS_EMB*: the type's name */
+    const char *mod;       /* NS_EMB*: the embedded module's stem */
     int slot;              /* NS_VAR: the variable's slot */
     const ns_sig **params; /* NS_FN */
     size_t nparams;
     const ns_sig *result;
     int arrow;             /* NS_FN: the arrow form */
     const ns_sig *arg;     /* NS_LIST, NS_OPTION, NS_RESULT, NS_APP*,
-                              NS_CAP1, NS_DICT */
+                              NS_EMB1, NS_DICT */
     const ns_sig *arg2;    /* NS_APP2, NS_DICT: the second argument */
 };
 
-enum { NS_VAR, NS_STD, NS_CAP, NS_CAP1, NS_FN, NS_UNIT, NS_LIST,
+enum { NS_VAR, NS_STD, NS_EMB, NS_EMB1, NS_FN, NS_UNIT, NS_LIST,
        NS_OPTION, NS_RESULT, NS_APP1, NS_APP2, NS_DICT };
 
 typedef struct {
@@ -37,7 +39,11 @@ typedef struct {
 } ns_row;
 
 #define SIG_STD(n)  &(ns_sig){.kind = NS_STD, .std = (n)}
-#define SIG_CAP(n)  &(ns_sig){.kind = NS_CAP, .std = (n)}
+/* A nominal of the system vocabulary module (the handles and the data
+   types of the capability surfaces) or of the capability module (the
+   private bundle records of the injected pairs). */
+#define SIG_SYS(n)  &(ns_sig){.kind = NS_EMB, .std = (n), .mod = "sys"}
+#define SIG_CAP(n)  &(ns_sig){.kind = NS_EMB, .std = (n), .mod = "cap"}
 #define SIG_VAR(i)  &(ns_sig){.kind = NS_VAR, .slot = (i)}
 #define SIG_UNIT    &(ns_sig){.kind = NS_UNIT}
 #define SIG_LIST(a) &(ns_sig){.kind = NS_LIST, .arg = (a)}
@@ -55,10 +61,12 @@ typedef struct {
 #define SIG_DICT(k, v)                                                \
     &(ns_sig){.kind = NS_DICT, .arg = (k), .arg2 = (v)}
 
-/* A capability nominal applied to one type argument: `Task b` of the
-   concurrency surface. */
+/* An embedded module's nominal applied to one type argument: `Task b`
+   of the concurrency surface, the generic file bundle. */
+#define SIG_SYS1(n, a)                                                \
+    &(ns_sig){.kind = NS_EMB1, .std = (n), .mod = "sys", .arg = (a)}
 #define SIG_CAP1(n, a)                                                \
-    &(ns_sig){.kind = NS_CAP1, .std = (n), .arg = (a)}
+    &(ns_sig){.kind = NS_EMB1, .std = (n), .mod = "cap", .arg = (a)}
 
 /* (params...) arrow result */
 #define SIG_FN(ar, res, ...)                                          \
@@ -75,17 +83,18 @@ typedef struct {
 static const ek_type *build(ck_ctx *c, const ns_sig *s, const ek_type **slots,
                             size_t nslots);
 
-/* The capability module's type symbol of one name, or NULL: the
-   private bundle type of the injected pair lives only there (Clause
-   10.8). */
-static const ek_symbol *cap_sym(ck_ctx *c, const char *name)
+/* An embedded module's type symbol of one name, or NULL: the handles
+   and data types live in the system vocabulary, the private bundle
+   type of an injected pair only in the capability module. */
+static const ek_symbol *module_sym(ck_ctx *c, const char *module,
+                                   const char *name)
 {
     size_t k, i;
 
     for (k = 0; k < c->in->module_count; k++) {
         const ek_surface *s = &c->in->modules[k];
 
-        if (strcmp(s->module, "cap") != 0) {
+        if (strcmp(s->module, module) != 0) {
             continue;
         }
         for (i = 0; i < s->count; i++) {
@@ -132,11 +141,11 @@ static const ek_type *build(ck_ctx *c, const ns_sig *s, const ek_type **slots,
             return ck_never(c); /* the bottom type is no lookup */
         }
         return ck_std_type(c, s->std);
-    case NS_CAP:
-        sym = cap_sym(c, s->std);
+    case NS_EMB:
+        sym = module_sym(c, s->mod, s->std);
         return sym ? ck_nominal(c, sym, NULL, 0) : ck_opaque(c);
-    case NS_CAP1:
-        sym = cap_sym(c, s->std);
+    case NS_EMB1:
+        sym = module_sym(c, s->mod, s->std);
         {
             const ek_type **args = ek_arena_alloc(c->arena, sizeof *args);
 
@@ -216,8 +225,8 @@ static const ek_type *build(ck_ctx *c, const ns_sig *s, const ek_type **slots,
 /* The namespace a receiver or head type carries: the structural list
    is List; a nominal is named by its std or capability symbol -- the
    capability placeholders stay std rows, and the handles are
-   declarations of the capability module (Clause 9.1.1). NULL names a
-   namespace the table does not own. */
+   declarations of the system vocabulary module (Clause 9.1.1). NULL
+   names a namespace the table does not own. */
 static const char *namespace_of(const ek_type *t)
 {
     if (t->kind == EK_T_LIST) {
@@ -229,6 +238,7 @@ static const char *namespace_of(const ek_type *t)
     if (t->kind == EK_T_NOMINAL && t->u.nominal.sym
         && t->u.nominal.sym->module
         && (strcmp(t->u.nominal.sym->module, "std") == 0
+            || strcmp(t->u.nominal.sym->module, "sys") == 0
             || strcmp(t->u.nominal.sym->module, "cap") == 0
             || strcmp(t->u.nominal.sym->module, "time") == 0)) {
         return t->u.nominal.sym->name;
@@ -635,47 +645,47 @@ static const ns_row rows[] = {
                             SIG_STD("Proc"), SIG_STD("Int"))},
     {"Conc", "scope", SIG_FN(EK_ARROW_OPEN, SIG_VAR(0), SIG_STD("Conc"),
                              SIG_FN(EK_ARROW_OPEN, SIG_VAR(0),
-                                    SIG_CAP("Scope")))},
-    {"Scope", "spawn", SIG_FN(EK_ARROW_OPEN, SIG_CAP1("Task", SIG_VAR(0)),
-                              SIG_CAP("Scope"),
+                                    SIG_SYS("Scope")))},
+    {"Scope", "spawn", SIG_FN(EK_ARROW_OPEN, SIG_SYS1("Task", SIG_VAR(0)),
+                              SIG_SYS("Scope"),
                               SIG_FN0(EK_ARROW_OPEN, SIG_VAR(0)))},
     {"Task", "join", SIG_FN(EK_ARROW_PURE, SIG_OPTION(SIG_VAR(0)),
-                            SIG_CAP1("Task", SIG_VAR(0)))},
+                            SIG_SYS1("Task", SIG_VAR(0)))},
     {"Task", "cancel", SIG_FN(EK_ARROW_PURE, SIG_UNIT,
-                              SIG_CAP1("Task", SIG_VAR(0)))},
+                              SIG_SYS1("Task", SIG_VAR(0)))},
     {"File", "read", SIG_FN(EK_ARROW_WORLD,
                             SIG_APP2("Result", SIG_STD("String"),
-                                     SIG_CAP("IoError")),
-                            SIG_CAP("File"), SIG_STD("Int"))},
+                                     SIG_SYS("IoError")),
+                            SIG_SYS("File"), SIG_STD("Int"))},
     {"File", "read_bytes", SIG_FN(EK_ARROW_WORLD,
                                   SIG_APP2("Result", SIG_STD("Bytes"),
-                                           SIG_CAP("IoError")),
-                                  SIG_CAP("File"), SIG_STD("Int"))},
+                                           SIG_SYS("IoError")),
+                                  SIG_SYS("File"), SIG_STD("Int"))},
     {"File", "read_line", SIG_FN(EK_ARROW_WORLD,
                                  SIG_APP2("Result",
                                           SIG_OPTION(SIG_STD("String")),
-                                          SIG_CAP("IoError")),
-                                 SIG_CAP("File"))},
+                                          SIG_SYS("IoError")),
+                                 SIG_SYS("File"))},
     {"File", "seek", SIG_FN(EK_ARROW_WORLD,
                             SIG_APP2("Result", SIG_UNIT,
-                                     SIG_CAP("IoError")),
-                            SIG_CAP("File"), SIG_STD("UInt"))},
+                                     SIG_SYS("IoError")),
+                            SIG_SYS("File"), SIG_STD("UInt"))},
     {"File", "write", SIG_FN(EK_ARROW_WORLD,
                              SIG_APP2("Result", SIG_UNIT,
-                                      SIG_CAP("IoError")),
-                             SIG_CAP("File"), SIG_STD("String"))},
+                                      SIG_SYS("IoError")),
+                             SIG_SYS("File"), SIG_STD("String"))},
     {"File", "write_bytes", SIG_FN(EK_ARROW_WORLD,
                                    SIG_APP2("Result", SIG_UNIT,
-                                            SIG_CAP("IoError")),
-                                   SIG_CAP("File"), SIG_STD("Bytes"))},
+                                            SIG_SYS("IoError")),
+                                   SIG_SYS("File"), SIG_STD("Bytes"))},
     {"File", "flush", SIG_FN(EK_ARROW_WORLD,
                              SIG_APP2("Result", SIG_UNIT,
-                                      SIG_CAP("IoError")),
-                             SIG_CAP("File"))},
+                                      SIG_SYS("IoError")),
+                             SIG_SYS("File"))},
     {"File", "close", SIG_FN(EK_ARROW_WORLD,
                              SIG_APP2("Result", SIG_UNIT,
-                                      SIG_CAP("IoError")),
-                             SIG_CAP("File"))},
+                                      SIG_SYS("IoError")),
+                             SIG_SYS("File"))},
 
     /* The unsigned scalar namespace: arithmetic without negation. */
     {"UInt", "add", SIG_FN(EK_ARROW_PURE, SIG_STD("UInt"),

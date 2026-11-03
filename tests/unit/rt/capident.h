@@ -38,31 +38,31 @@ const ek_typeinfo ekT_std_Option_Some = { EK_KIND_STRUCT,
                                           capident_drop1, NULL, NULL };
 const ek_typeinfo ekT_std_Option_None = { EK_KIND_STRUCT,
                                           capident_drop0, NULL, NULL };
-const ek_typeinfo ekT_cap_IoError_NotFound = { EK_KIND_STRUCT,
+const ek_typeinfo ekT_sys_IoError_NotFound = { EK_KIND_STRUCT,
                                                capident_drop0, NULL, NULL };
-const ek_typeinfo ekT_cap_IoError_Permission = { EK_KIND_STRUCT,
+const ek_typeinfo ekT_sys_IoError_Permission = { EK_KIND_STRUCT,
                                                  capident_drop0, NULL, NULL };
-const ek_typeinfo ekT_cap_IoError_Exists = { EK_KIND_STRUCT,
+const ek_typeinfo ekT_sys_IoError_Exists = { EK_KIND_STRUCT,
                                              capident_drop0, NULL, NULL };
-const ek_typeinfo ekT_cap_IoError_NotFile = { EK_KIND_STRUCT,
+const ek_typeinfo ekT_sys_IoError_NotFile = { EK_KIND_STRUCT,
                                               capident_drop0, NULL, NULL };
-const ek_typeinfo ekT_cap_IoError_Closed = { EK_KIND_STRUCT,
+const ek_typeinfo ekT_sys_IoError_Closed = { EK_KIND_STRUCT,
                                              capident_drop0, NULL, NULL };
-const ek_typeinfo ekT_cap_IoError_InvalidData = { EK_KIND_STRUCT,
+const ek_typeinfo ekT_sys_IoError_InvalidData = { EK_KIND_STRUCT,
                                                   capident_drop1, NULL, NULL };
-const ek_typeinfo ekT_cap_IoError_Other = { EK_KIND_STRUCT,
+const ek_typeinfo ekT_sys_IoError_Other = { EK_KIND_STRUCT,
                                             capident_drop1, NULL, NULL };
-const ek_typeinfo ekT_cap_OpenMode_Read = { EK_KIND_STRUCT,
+const ek_typeinfo ekT_sys_OpenMode_Read = { EK_KIND_STRUCT,
                                             capident_drop0, NULL, NULL };
-const ek_typeinfo ekT_cap_OpenMode_Write = { EK_KIND_STRUCT,
+const ek_typeinfo ekT_sys_OpenMode_Write = { EK_KIND_STRUCT,
                                              capident_drop0, NULL, NULL };
-const ek_typeinfo ekT_cap_OpenMode_Append = { EK_KIND_STRUCT,
+const ek_typeinfo ekT_sys_OpenMode_Append = { EK_KIND_STRUCT,
                                               capident_drop0, NULL, NULL };
-const ek_typeinfo ekT_cap_OpenMode_New = { EK_KIND_STRUCT,
+const ek_typeinfo ekT_sys_OpenMode_New = { EK_KIND_STRUCT,
                                            capident_drop0, NULL, NULL };
-const ek_typeinfo ekT_cap_OpenMode_Update = { EK_KIND_STRUCT,
+const ek_typeinfo ekT_sys_OpenMode_Update = { EK_KIND_STRUCT,
                                               capident_drop0, NULL, NULL };
-const ek_typeinfo ekT_cap_FileInfo = { EK_KIND_STRUCT,
+const ek_typeinfo ekT_sys_FileInfo = { EK_KIND_STRUCT,
                                        capident_drop3, NULL, NULL };
 const ek_typeinfo ekT_time_Time_Time = { EK_KIND_STRUCT,
                                          capident_drop1, NULL, NULL };

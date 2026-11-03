@@ -70,10 +70,11 @@ size_t r_lookup_type(const r_file *f, const char *name,
         }
     }
     if (n == 0) {
-        /* The capability module is the fallback beneath std: the
-           handle and data types of the capability surfaces live there
-           (Clause 9.1.1). */
-        const ek_symbol *sym = r_std_find(f->cap, EK_SYM_TYPE, name);
+        /* The embedded modules are the fallbacks beneath std: the
+           handle and data types of the capability surfaces live in the
+           system vocabulary, the bundle records in the capability
+           module. */
+        const ek_symbol *sym = r_embedded_find(f, EK_SYM_TYPE, name);
 
         if (sym) {
             *first = sym;
@@ -102,19 +103,19 @@ size_t r_lookup_ctor(r_ctx *c, const r_file *f, const char *name,
                      const ek_symbol *const **cands)
 {
     const ek_symbol *std_ct = r_std_find(f->std, EK_SYM_CONSTRUCTOR, name);
-    const ek_symbol *cap_ct = r_std_find(f->cap, EK_SYM_CONSTRUCTOR, name);
+    const ek_symbol *emb_ct = r_embedded_find(f, EK_SYM_CONSTRUCTOR, name);
     const ek_symbol **out;
-    int std_fb, cap_fb;
+    int std_fb, emb_fb;
     size_t i, n = 0;
 
     *cands = NULL;
-    /* A private std or cap constructor never reaches an unqualified
-       reference: visibility follows the type, and only the declaring
-           module sees it. */
+    /* A private std or embedded constructor never reaches an
+       unqualified reference: visibility follows the type, and only the
+       declaring module sees it. */
     std_fb = std_ct && std_ct->public
              && !ctor_listed(f->ctors, f->nctors, std_ct);
-    cap_fb = cap_ct && cap_ct->public
-             && !ctor_listed(f->ctors, f->nctors, cap_ct);
+    emb_fb = emb_ct && emb_ct->public
+             && !ctor_listed(f->ctors, f->nctors, emb_ct);
     for (i = 0; i < f->nctors; i++) {
         if (strcmp(f->ctors[i].name, name) == 0) {
             n++;
@@ -123,7 +124,7 @@ size_t r_lookup_ctor(r_ctx *c, const r_file *f, const char *name,
     if (std_fb) {
         n++;
     }
-    if (cap_fb) {
+    if (emb_fb) {
         n++;
     }
     if (n == 0) {
@@ -143,8 +144,8 @@ size_t r_lookup_ctor(r_ctx *c, const r_file *f, const char *name,
     if (std_fb) {
         out[n++] = std_ct;
     }
-    if (cap_fb) {
-        out[n++] = cap_ct;
+    if (emb_fb) {
+        out[n++] = emb_ct;
     }
     *cands = out;
     return n;
@@ -173,21 +174,22 @@ void r_cons_head(r_ctx *c, r_file *f, const ek_node *n, r_head *out)
     }
     if (k == 0) {
         /* A private constructor is unreferenceable rather than
-           unknown: std's and cap's `_` spellings diagnose, and the
-           handle stays unforgeable (Clause 7.3.3). */
+           unknown: the `_` spellings of std and the embedded modules
+           diagnose, and the handle stays unforgeable (Clause 7.3.3). */
         const ek_symbol *priv = r_std_find(f->std, EK_SYM_CONSTRUCTOR,
                                            name);
 
         if (!priv) {
-            priv = r_std_find(f->cap, EK_SYM_CONSTRUCTOR, name);
+            priv = r_embedded_find(f, EK_SYM_CONSTRUCTOR, name);
         }
         if (priv && !priv->public) {
             r_error(c, f->mod->file, n->line, n->col, "E-private-name",
                     "the constructor `%s` is private in module `%s` "
                     "(Clause 7.3.3)", name, priv->module);
         }
-        /* Unknown to the file, std, and cap: an unbound name, not the
-           unresolved-external bridge (resolve.h). */
+        /* Unknown to the file, std, and the embedded modules: an
+           unbound name, not the unresolved-external bridge
+           (resolve.h). */
         r_error(c, f->mod->file, n->line, n->col, "E-unbound-name",
                 "`%s` names no visible constructor (Clause 7.4.2)", name);
         out->kind = EK_SYM_EXTERNAL;

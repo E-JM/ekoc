@@ -128,11 +128,11 @@ static void open_read_missing(void)
 {
     ek_val b = ek_cap_fs_cwd();
     ek_val r = call2(member(b, 0), s("build/no_such_file_here"),
-                     capident_mode(&ekT_cap_OpenMode_Read));
+                     capident_mode(&ekT_sys_OpenMode_Read));
 
     EK_CHECK(ek_val_is_ref(r));
     EK_CHECK(!is_ok(r));
-    EK_CHECK(err_kind(r) == &ekT_cap_IoError_NotFound);
+    EK_CHECK(err_kind(r) == &ekT_sys_IoError_NotFound);
     ek_release(r);
     ek_release(b);
 }
@@ -179,13 +179,13 @@ static void append_and_new_modes(void)
     got = read_text(r = call1(member(b, 3), path));
     EK_CHECK_STR(got, "one two");
     ek_release(r);
-    r = call2(member(b, 0), path, capident_mode(&ekT_cap_OpenMode_New));
+    r = call2(member(b, 0), path, capident_mode(&ekT_sys_OpenMode_New));
     EK_CHECK(!is_ok(r));
-    EK_CHECK(err_kind(r) == &ekT_cap_IoError_Exists);
+    EK_CHECK(err_kind(r) == &ekT_sys_IoError_Exists);
     ek_release(r);
     unlink("build/rt_fs_new.txt");
     r = call2(member(b, 0), s("build/rt_fs_new.txt"),
-              capident_mode(&ekT_cap_OpenMode_New));
+              capident_mode(&ekT_sys_OpenMode_New));
     EK_CHECK(is_ok(r));
     drop(ok_payload(r).as.ref);
     ek_release(r);
@@ -199,7 +199,7 @@ static void handle_read_write_seek(void)
     ek_val b = ek_cap_fs_cwd();
     ek_val path = s("build/rt_fs_handle.txt");
     ek_val r = call2(member(b, 0), path,
-                     capident_mode(&ekT_cap_OpenMode_Write));
+                     capident_mode(&ekT_sys_OpenMode_Write));
     ek_val f;
     ek_obj *out = NULL;
     int err = 0;
@@ -217,7 +217,7 @@ static void handle_read_write_seek(void)
     ek_release(f);
 
     /* the reads go through a handle reopened for update */
-    r = call2(member(b, 0), path, capident_mode(&ekT_cap_OpenMode_Update));
+    r = call2(member(b, 0), path, capident_mode(&ekT_sys_OpenMode_Update));
     EK_CHECK(is_ok(r));
     f = owned_payload(r);
     ek_release(r);
@@ -249,7 +249,7 @@ static void handle_lines(void)
     ek_val b = ek_cap_fs_cwd();
     ek_val path = s("build/rt_fs_lines.txt");
     ek_val r = call2(member(b, 0), path,
-                     capident_mode(&ekT_cap_OpenMode_Write));
+                     capident_mode(&ekT_sys_OpenMode_Write));
     ek_val f;
     ek_obj *out = NULL;
     int err = 0;
@@ -263,7 +263,7 @@ static void handle_lines(void)
                  1);
     EK_CHECK_U64(ek_file_close(f, &err, &detail), 1);
 
-    r = call2(member(b, 0), path, capident_mode(&ekT_cap_OpenMode_Read));
+    r = call2(member(b, 0), path, capident_mode(&ekT_sys_OpenMode_Read));
     EK_CHECK(is_ok(r));
     f = owned_payload(r);
     ek_release(r);
@@ -305,7 +305,7 @@ static void text_gate(void)
               ek_val_ref(ek_bytes_new("\xed\xa0\x80", 3)));
     EK_CHECK(is_ok(r));
     ek_release(r);
-    r = call2(member(b, 0), path, capident_mode(&ekT_cap_OpenMode_Read));
+    r = call2(member(b, 0), path, capident_mode(&ekT_sys_OpenMode_Read));
     EK_CHECK(is_ok(r));
     f = owned_payload(r);
     ek_release(r);
@@ -313,7 +313,7 @@ static void text_gate(void)
     EK_CHECK_U64(err, EK_IO_INVALID_DATA);
     EK_CHECK_U64(ek_file_close(f, &err, &detail), 1);
     ek_release(f);
-    r = call2(member(b, 0), path, capident_mode(&ekT_cap_OpenMode_Read));
+    r = call2(member(b, 0), path, capident_mode(&ekT_sys_OpenMode_Read));
     EK_CHECK(is_ok(r));
     f = owned_payload(r);
     ek_release(r);
@@ -335,7 +335,7 @@ static void generations(void)
     ek_val b = ek_cap_fs_cwd();
     ek_val path = s("build/rt_fs_gen.txt");
     ek_val r = call2(member(b, 0), path,
-                     capident_mode(&ekT_cap_OpenMode_Write));
+                     capident_mode(&ekT_sys_OpenMode_Write));
     ek_val f;
     ek_val f2;
     int err = 0;
@@ -351,7 +351,7 @@ static void generations(void)
     EK_CHECK_U64(ek_file_read_line(f, &out, &err, &detail), 0);
     EK_CHECK_U64(err, EK_IO_CLOSED);
 
-    r = call2(member(b, 0), path, capident_mode(&ekT_cap_OpenMode_Write));
+    r = call2(member(b, 0), path, capident_mode(&ekT_sys_OpenMode_Write));
     EK_CHECK(is_ok(r));
     f2 = owned_payload(r);
     ek_release(r);
@@ -396,7 +396,7 @@ static void with_file_closes(void)
     ek_val out;
 
     args[0] = path;
-    args[1] = capident_mode(&ekT_cap_OpenMode_Write);
+    args[1] = capident_mode(&ekT_sys_OpenMode_Write);
     args[2] = cb;
     out = ek_closure_call(member(b, 1), args, 3);
     EK_CHECK(is_ok(out));
@@ -440,7 +440,7 @@ static void directory_family(void)
     ek_release(r);
     r = call1(member(b, 9), dir);
     EK_CHECK(!is_ok(r));
-    EK_CHECK(err_kind(r) == &ekT_cap_IoError_Exists);
+    EK_CHECK(err_kind(r) == &ekT_sys_IoError_Exists);
     ek_release(r);
     r = call1(member(b, 10), s("build/rt_fs_dir/a/b"));
     EK_CHECK(is_ok(r));
@@ -462,7 +462,7 @@ static void directory_family(void)
 
     r = call1(member(b, 8), s("build/rt_fs_dir/x.txt"));
     EK_CHECK(!is_ok(r));
-    EK_CHECK(err_kind(r) == &ekT_cap_IoError_NotFile);
+    EK_CHECK(err_kind(r) == &ekT_sys_IoError_NotFile);
     ek_release(r);
 
     r = call2(member(b, 13), s("build/rt_fs_dir/x.txt"),
@@ -484,14 +484,14 @@ static void removal_family(void)
 
     r = call1(member(b, 11), dir);
     EK_CHECK(!is_ok(r));
-    EK_CHECK(err_kind(r) == &ekT_cap_IoError_NotFile);
+    EK_CHECK(err_kind(r) == &ekT_sys_IoError_NotFile);
     ek_release(r);
     r = call1(member(b, 12), s("build/rt_fs_dir/a/b"));
     EK_CHECK(is_ok(r));
     ek_release(r);
     r = call1(member(b, 12), dir);
     EK_CHECK(!is_ok(r)); /* still non-empty */
-    EK_CHECK(err_kind(r) == &ekT_cap_IoError_Other);
+    EK_CHECK(err_kind(r) == &ekT_sys_IoError_Other);
     ek_release(r);
     ek_release(dir);
     ek_release(b);
@@ -511,7 +511,7 @@ static void stat_file_info(void)
     EK_CHECK(is_ok(r2));
     if (is_ok(r2)) {
         info = ok_payload(r2);
-        EK_CHECK(info.as.ref->info == &ekT_cap_FileInfo);
+        EK_CHECK(info.as.ref->info == &ekT_sys_FileInfo);
         EK_CHECK_U64(((ek_val *)info.as.ref)[1].as.u, 5);
         EK_CHECK_U64(((ek_val *)info.as.ref)[2].as.ref->info,
                      (unsigned long)&ekT_time_Time_Time);
@@ -521,7 +521,7 @@ static void stat_file_info(void)
     ek_release(r2);
     unlink("build/rt_fs_stat.txt");
     r = call1(member(b, 14), s("build/rt_fs_stat.txt"));
-    EK_CHECK(!is_ok(r) && err_kind(r) == &ekT_cap_IoError_NotFound);
+    EK_CHECK(!is_ok(r) && err_kind(r) == &ekT_sys_IoError_NotFound);
     ek_release(r);
     r = call1(member(b, 14), s("build"));
     EK_CHECK(is_ok(r));

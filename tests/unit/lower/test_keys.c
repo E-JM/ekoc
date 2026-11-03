@@ -172,9 +172,10 @@ static void set_elements_stamp_too(void)
     EK_CHECK(lfx_check_clean(&f));
     EK_CHECK(lfx_lower_clean(&f));
     /* the element domain stamps through Set.of the way a key domain
-       stamps through the dictionary */
+       stamps through the dictionary; the field-less variant carries
+       the NULL drop beside its hooks */
     EK_CHECK(lfx_has(&f, "const ek_typeinfo ekT_test_V_N = "
-                         "{ EK_KIND_STRUCT, drop_test_V_N, "
+                         "{ EK_KIND_STRUCT, NULL, "
                          "ekq_test_V, ekh_test_V };"));
     EK_CHECK(lfx_has(&f, "const ek_typeinfo ekT_test_V_S = "
                          "{ EK_KIND_STRUCT, drop_test_V_S, "

@@ -708,6 +708,63 @@ ek_val ek_closure_env(ek_obj *closure);
    one-field records, so generated code reads the closures through its
    own layout and the release path reclaims the bundle's closures. */
 
+/* The slot order of each bundle record: a bundle is the object header
+   followed by one ek_val per member, in this order, one enumeration per
+   capability. The host fills its slots by these names, the generated
+   unit lays its bundle record out to match, and the unit checks the two
+   agree at compile time, so neither side can drift silently. */
+typedef enum {
+    EK_OUT_WRITE,
+    EK_OUT_SLOTS
+} ek_out_slot;
+
+typedef enum {
+    EK_IN_READ_LINE,
+    EK_IN_SLOTS
+} ek_in_slot;
+
+typedef enum {
+    EK_FS_OPEN,
+    EK_FS_WITH_FILE,
+    EK_FS_EXISTS,
+    EK_FS_READ,
+    EK_FS_WRITE,
+    EK_FS_APPEND,
+    EK_FS_READ_BYTES,
+    EK_FS_APPEND_BYTES,
+    EK_FS_LIST_DIR,
+    EK_FS_MKDIR,
+    EK_FS_MKDIR_ALL,
+    EK_FS_RM,
+    EK_FS_RM_DIR,
+    EK_FS_RENAME,
+    EK_FS_STAT,
+    EK_FS_REALPATH,
+    EK_FS_SLOTS
+} ek_fs_slot;
+
+typedef enum {
+    EK_ENV_GET,
+    EK_ENV_SLOTS
+} ek_env_slot;
+
+typedef enum {
+    EK_ARGS_ALL,
+    EK_ARGS_SLOTS
+} ek_args_slot;
+
+typedef enum {
+    EK_CLOCK_NOW,
+    EK_CLOCK_MONO,
+    EK_CLOCK_SLEEP,
+    EK_CLOCK_SLOTS
+} ek_clock_slot;
+
+typedef enum {
+    EK_RAND_INT,
+    EK_RAND_SLOTS
+} ek_rand_slot;
+
 /* The Out bundle over the process's standard output: its write closure
    writes the String argument's bytes to stdout without a terminator
    and returns the unit value. The caller owns the returned bundle. */

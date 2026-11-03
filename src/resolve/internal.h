@@ -49,10 +49,14 @@ typedef struct {
     const ek_node *at;
 } r_open;
 
+/* The compiler-embedded modules beneath std, in lookup order: the
+   system vocabulary module, then the capability module. */
+enum { R_SYS, R_CAP, R_EMBEDDED };
+
 /* The per-file name layers, in lookup order. Top-level bindings and
    the free names the imports opened share one layer; the parsed std
    module's surface supplies the type and constructor fallback below
-   it, and the parsed capability module's surface the one below that. */
+   it, and the embedded modules' surfaces the ones below that. */
 typedef struct {
     r_mod *mod;
     scope *locals; /* innermost lexical scope, NULL at top level */
@@ -67,7 +71,7 @@ typedef struct {
     r_var *mods;   /* module layer: own stem + imports + std */
     size_t nmods, cmods;
     const ek_surface *std; /* the implicit import, the bottom layer */
-    const ek_surface *cap; /* the capability module, beneath std */
+    const ek_surface *embedded[R_EMBEDDED]; /* beneath std, in order */
 } r_file;
 
 typedef struct {
@@ -81,8 +85,9 @@ typedef struct {
     size_t nrefs, crefs;
     ek_surface *std; /* the parsed std surface and its
                         placeholder rows */
-    ek_surface *cap; /* the parsed cap surface and its
-                        injected pair */
+    ek_surface *embedded[R_EMBEDDED]; /* the parsed embedded surfaces,
+                                         the capability module's with
+                                         its injected pairs */
     r_local *locals; /* local binding sites, in declaration order */
     size_t nlocals, clocals;
     const ek_node *pat_group; /* the pattern whose binds are running */
@@ -126,12 +131,17 @@ int r_is_placeholder(const ek_symbol *sym);
 int r_std_cap_name(const char *name);
 int r_std_type_name(const char *name);
 
-/* cap.c: the capability module, parsed from the embedded cap/cap.eko
-   source. r_cap_boot parses the embedded source into the closure and
-   appends the injected pair; r_cap_open binds the per-file fallback
-   beneath std. */
-void r_cap_boot(r_ctx *c);
-void r_cap_open(r_ctx *c, r_file *f);
+/* embedded.c: the compiler-embedded modules beneath std, parsed from
+   their embedded sources in lookup order -- the system vocabulary, then
+   the capability module with its injected pairs. r_embedded_boot parses
+   them into the closure; r_embedded_open binds the per-file fallbacks;
+   r_embedded_find answers the first surface carrying the kind and name,
+   or NULL. */
+void r_embedded_boot(r_ctx *c);
+void r_embedded_open(r_ctx *c, r_file *f);
+const ek_symbol *r_embedded_find(const r_file *f, ek_sym_kind kind,
+                                 const char *name);
+int r_embedded_type_name(r_ctx *c, const char *name);
 
 /* opens.c: the per-file opened free-name table. One import's list is
    validated against the target surface and each eligible name enters

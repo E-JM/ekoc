@@ -41,7 +41,7 @@ static void emit_from_scalar(lower_ctx *c, lower_demit *d, lower_scalar sk,
     if (sk == EKSC_INT && !word) {
         lower_d_printf(d, "    if (v.as.ref->info == &ekT_std_Json_Int)\n");
         lower_json_ok_emit(d, "        ", lower_json_slot(c, "Int", "v"));
-        lower_json_err_lit(d, "    ", "\"\"");
+        lower_json_err_lit(d, "    ", "");
         return;
     }
     lower_d_printf(d, "    if (v.as.ref->info == &ekT_std_Json_Int) {\n");
@@ -62,7 +62,7 @@ static void emit_from_scalar(lower_ctx *c, lower_demit *d, lower_scalar sk,
         lower_d_printf(d, "        (void)p;\n");
     }
     lower_d_printf(d, "    }\n");
-    lower_json_err_lit(d, "    ", "\"\"");
+    lower_json_err_lit(d, "    ", "");
 }
 
 static void emit_from_simple(lower_ctx *c, lower_demit *d, lower_scalar sk)
@@ -105,10 +105,10 @@ static void emit_from_simple(lower_ctx *c, lower_demit *d, lower_scalar sk)
         lower_d_printf(d, "    }\n");
         break;
     default:
-        lower_json_err_lit(d, "    ", "\"\"");
+        lower_json_err_lit(d, "    ", "");
         return;
     }
-    lower_json_err_lit(d, "    ", "\"\"");
+    lower_json_err_lit(d, "    ", "");
 }
 
 /* The recursive cell decode behind an Arr: the walk answers the std
@@ -125,7 +125,7 @@ static void emit_from_list_aux(lower_ctx *c, const char *aux,
     lower_push_sig(c, lower_str(c, "static ek_val %s(ek_val cell)", aux));
     lower_d_printf(&d, "static ek_val %s(ek_val cell)\n{\n", aux);
     if (!f) {
-        lower_json_err_lit(&d, "    ", "\"\"");
+        lower_json_err_lit(&d, "    ", "");
     } else {
         lower_d_printf(&d, "    ek_val r, t, out, w;\n\n");
         lower_d_printf(&d, "    if (!ek_val_is_cons(cell))\n");
@@ -161,7 +161,7 @@ static void emit_from_list(lower_ctx *c, lower_demit *d, const char *name,
     lower_d_printf(d, "    if (v.as.ref->info == &ekT_std_Json_Arr)\n");
     lower_d_printf(d, "        return %s(%s);\n", aux,
                    lower_json_slot(c, "Arr", "v"));
-    lower_json_err_lit(d, "    ", "\"\"");
+    lower_json_err_lit(d, "    ", "");
 }
 
 static void emit_from_dict(lower_ctx *c, lower_demit *d, const ek_type *t)
@@ -169,11 +169,11 @@ static void emit_from_dict(lower_ctx *c, lower_demit *d, const ek_type *t)
     const char *f = lower_fromj_of(c, t->u.dict.val);
 
     if (!f) {
-        lower_json_err_lit(d, "    ", "\"\"");
+        lower_json_err_lit(d, "    ", "");
         return;
     }
     lower_d_printf(d, "    if (v.as.ref->info != &ekT_std_Json_Obj)\n");
-    lower_json_err_lit(d, "    ", "\"\"");
+    lower_json_err_lit(d, "    ", "");
     lower_d_printf(d, "    {\n");
     lower_d_printf(d, "        ek_val src = %s;\n", lower_json_slot(c, "Obj",
                                                                    "v"));
@@ -214,9 +214,13 @@ static void emit_from_adt(lower_ctx *c, lower_demit *d, lower_variant *vs,
         }
         lower_d_printf(d, "        if (");
         lower_obj_text_is(d, "s", vs[i].name);
-        lower_d_printf(d, ")\n");
-        lower_d_printf(d, "            return %s(ekn_%s());\n",
-                       lower_result_ctor(c, "Ok"), vs[i].stem);
+        lower_d_printf(d, ") {\n");
+        lower_d_printf(d, "            ek_val q = ekn_%s();\n", vs[i].stem);
+        lower_d_printf(d, "            ek_val w = %s(q);\n",
+                       lower_result_ctor(c, "Ok"));
+        lower_d_printf(d, "            ek_release(q);\n");
+        lower_d_printf(d, "            return w;\n");
+        lower_d_printf(d, "        }\n");
     }
     for (i = 0; i < nv; i++) {
         if (!vs[i].payload) {
@@ -225,18 +229,17 @@ static void emit_from_adt(lower_ctx *c, lower_demit *d, lower_variant *vs,
         lower_d_printf(d, "        if (");
         lower_obj_text_is(d, "s", vs[i].name);
         lower_d_printf(d, ")\n");
-        lower_json_err_lit(d, "            ",
-                           lower_d_cstr(c, vs[i].name));
+        lower_json_err_lit(d, "            ", vs[i].name);
     }
     lower_json_err_obj(d, "        ", "ek_keep(ek_val_ref(s))");
     lower_d_printf(d, "    }\n");
     lower_d_printf(d, "    if (v.as.ref->info == &ekT_std_Json_Obj) {\n");
     lower_d_printf(d, "        ek_val d = %s;\n", lower_json_slot(c, "Obj",
                                                                  "v"));
-    lower_d_printf(d, "        ek_val k, x, r, w;\n");
+    lower_d_printf(d, "        ek_val k, x;\n");
     lower_d_printf(d, "        size_t cur = 0;\n\n");
     lower_d_printf(d, "        if (ek_dict_len(d) != 1)\n");
-    lower_json_err_lit(d, "            ", "\"\"");
+    lower_json_err_lit(d, "            ", "");
     lower_d_printf(d, "        (void)ek_dict_next(d, &cur, &k, &x);\n");
     for (i = 0; i < nv; i++) {
         if (vs[i].payload) {
@@ -245,8 +248,7 @@ static void emit_from_adt(lower_ctx *c, lower_demit *d, lower_variant *vs,
         lower_d_printf(d, "        if (");
         lower_val_text_is(d, "k", vs[i].name);
         lower_d_printf(d, ")\n");
-        lower_json_err_lit(d, "            ",
-                           lower_d_cstr(c, vs[i].name));
+        lower_json_err_lit(d, "            ", vs[i].name);
     }
     for (i = 0; i < nv; i++) {
         const char *f = vs[i].payload ? lower_fromj_of(c, vs[i].payload) : NULL;
@@ -258,25 +260,28 @@ static void emit_from_adt(lower_ctx *c, lower_demit *d, lower_variant *vs,
             lower_d_printf(d, "        if (");
             lower_val_text_is(d, "k", vs[i].name);
             lower_d_printf(d, ")\n");
-            lower_json_err_lit(d, "            ", "\"\"");
+            lower_json_err_lit(d, "            ", "");
             continue;
         }
         lower_d_printf(d, "        if (");
         lower_val_text_is(d, "k", vs[i].name);
         lower_d_printf(d, ") {\n");
-        lower_d_printf(d, "            r = %s(x);\n", f);
+        lower_d_printf(d, "            ek_val r = %s(x);\n", f);
         lower_d_printf(d, "            if (r.as.ref->info != %s)\n", LOWER_OK_INFO);
         lower_d_printf(d, "                return r;\n");
-        lower_d_printf(d, "            w = %s(ekn_%s(((ekS_std_Result_Ok *)"
-                          "r.as.ref)->p0));\n",
-                       lower_result_ctor(c, "Ok"), vs[i].stem);
+        lower_d_printf(d, "            ek_val q = ekn_%s("
+                          "((ekS_std_Result_Ok *)r.as.ref)->p0);\n",
+                       vs[i].stem);
         lower_d_printf(d, "            ek_release(r);\n");
+        lower_d_printf(d, "            ek_val w = %s(q);\n",
+                       lower_result_ctor(c, "Ok"));
+        lower_d_printf(d, "            ek_release(q);\n");
         lower_d_printf(d, "            return w;\n");
         lower_d_printf(d, "        }\n");
     }
     lower_json_err_obj(d, "        ", "ek_keep(k)");
     lower_d_printf(d, "    }\n");
-    lower_json_err_lit(d, "    ", "\"\"");
+    lower_json_err_lit(d, "    ", "");
 }
 
 /* The shape dispatch of the decode side, after the scalar slots. */
@@ -292,7 +297,7 @@ static void emit_from_shape(lower_ctx *c, lower_demit *d, const char *name,
     if (t->kind == EK_T_UNIT) {
         lower_d_printf(d, "    if (v.as.ref->info == &ekT_std_Json_Null)\n");
         lower_json_ok_emit(d, "        ", "ek_val_unit()");
-        lower_json_err_lit(d, "    ", "\"\"");
+        lower_json_err_lit(d, "    ", "");
         return;
     }
     if (t->kind == EK_T_LIST) {
@@ -313,11 +318,15 @@ static void emit_from_shape(lower_ctx *c, lower_demit *d, const char *name,
         }
         return;
     }
-    if (t->kind == EK_T_NOMINAL && lower_variants_of(c, NULL, t, &vs, &nv)) {
+    if (t->kind == EK_T_NOMINAL
+        && lower_variants_of(c, NULL, t, &vs, &nv, 1)) {
+        /* The decode body constructs each variant it answers, so the
+           families register as constructed even when the source never
+           builds one: the helpers join the unit beside the typeinfo. */
         emit_from_adt(c, d, vs, nv);
         return;
     }
-    lower_json_err_lit(d, "    ", "\"\"");
+    lower_json_err_lit(d, "    ", "");
 }
 
 void lower_dsvc_from_emit(lower_ctx *c, const char *name, const ek_type *t)
@@ -326,6 +335,8 @@ void lower_dsvc_from_emit(lower_ctx *c, const char *name, const ek_type *t)
     ek_buf b;
     lower_scalar sk = lower_scalar_kind(t);
 
+    /* the body reads the std Json shapes it tests and unwraps */
+    lower_json_shapes(c, NULL);
     lower_d_begin(c, &d, &b);
     lower_d_printf(&d, "static ek_val %s(ek_val v)\n{\n", name);
     if (sk == EKSC_INT || sk == EKSC_UINT) {

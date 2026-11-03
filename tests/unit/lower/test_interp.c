@@ -21,8 +21,13 @@ static void multi_segment(void)
                   "    _\n");
     EK_CHECK(lfx_check_clean(&f));
     EK_CHECK(lfx_lower_clean(&f));
-    EK_CHECK(lfx_has(&f, "ek_str_from_cstr(\"n = \")"));
-    EK_CHECK(lfx_has(&f, "ek_str_from_cstr(\" and s = \")"));
+    /* the segments are interned, and the chain keeps and joins them;
+       the \"ada\" binding declared first takes ekc0 */
+    EK_CHECK(lfx_has(&f, "ekc1 = ek_val_ref(ek_str_from_cstr(\"n = \"));"));
+    EK_CHECK(lfx_has(&f, "ekc2 = ek_val_ref(ek_str_from_cstr("
+                         "\" and s = \"));"));
+    EK_CHECK(lfx_has(&f, "ek_keep(ekc1)"));
+    EK_CHECK(lfx_has(&f, "ek_keep(ekc2)"));
     EK_CHECK(lfx_has(&f, "ekd_show_std_Int("));
     EK_CHECK(lfx_has(&f, "ekd_show_std_String("));
     EK_CHECK(lfx_has(&f, "ek_str_concat("));
@@ -61,7 +66,9 @@ static void escaped_brace(void)
                   "    _\n");
     EK_CHECK(lfx_check_clean(&f));
     EK_CHECK(lfx_lower_clean(&f));
-    EK_CHECK(lfx_has(&f, "ek_str_from_cstr(\"set { is literal\")"));
+    EK_CHECK(lfx_has(&f, "ekc0 = ek_val_ref(ek_str_from_cstr("
+                         "\"set { is literal\"));"));
+    EK_CHECK(lfx_has(&f, "ek_keep(ekc0)"));
     EK_CHECK(lfx_lacks(&f, "ek_str_concat("));
     EK_CHECK_U64(lfx_errors(&f), 0);
     lfx_end(&f);
@@ -84,8 +91,11 @@ static void nested_and_composite(void)
                   "    _\n");
     EK_CHECK(lfx_check_clean(&f));
     EK_CHECK(lfx_lower_clean(&f));
+    /* the nested segments are interned like any literal, and the
+       chain keeps the caches */
     EK_CHECK(lfx_has(&f, "ek_str_from_cstr(\"outer \")"));
     EK_CHECK(lfx_has(&f, "ek_str_from_cstr(\"inner \")"));
+    EK_CHECK(lfx_has(&f, "ek_keep(ekc"));
     EK_CHECK(lfx_has(&f, "ekd_show_test_Money("));
     EK_CHECK_U64(lfx_errors(&f), 0);
     lfx_end(&f);

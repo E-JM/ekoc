@@ -20,9 +20,9 @@
 static int mode_of(ek_val m)
 {
     static const ek_typeinfo *ids[] = {
-        &ekT_cap_OpenMode_Read,   &ekT_cap_OpenMode_Write,
-        &ekT_cap_OpenMode_Append, &ekT_cap_OpenMode_New,
-        &ekT_cap_OpenMode_Update
+        &ekT_sys_OpenMode_Read,   &ekT_sys_OpenMode_Write,
+        &ekT_sys_OpenMode_Append, &ekT_sys_OpenMode_New,
+        &ekT_sys_OpenMode_Update
     };
     size_t i;
 
@@ -289,23 +289,23 @@ static ek_val append_bytes_call(ek_val env, ek_val *args, size_t argc)
 
 ek_val ek_cap_fs_cwd(void)
 {
-    ek_val f[16];
+    ek_val f[EK_FS_SLOTS];
 
-    f[0] = ek_closure_new(open_call, ek_val_unit());
-    f[1] = ek_closure_new(with_file_call, ek_val_unit());
-    f[2] = ek_closure_new(exists_call, ek_val_unit());
-    f[3] = ek_closure_new(read_call, ek_val_unit());
-    f[4] = ek_closure_new(write_call, ek_val_unit());
-    f[5] = ek_closure_new(append_call, ek_val_unit());
-    f[6] = ek_closure_new(read_bytes_call, ek_val_unit());
-    f[7] = ek_closure_new(append_bytes_call, ek_val_unit());
-    f[8] = ek_fs_list_dir();
-    f[9] = ek_fs_mkdir();
-    f[10] = ek_fs_mkdir_all();
-    f[11] = ek_fs_rm();
-    f[12] = ek_fs_rm_dir();
-    f[13] = ek_fs_rename();
-    f[14] = ek_fs_stat();
-    f[15] = ek_fs_realpath();
+    f[EK_FS_OPEN] = ek_closure_new(open_call, ek_val_unit());
+    f[EK_FS_WITH_FILE] = ek_closure_new(with_file_call, ek_val_unit());
+    f[EK_FS_EXISTS] = ek_closure_new(exists_call, ek_val_unit());
+    f[EK_FS_READ] = ek_closure_new(read_call, ek_val_unit());
+    f[EK_FS_WRITE] = ek_closure_new(write_call, ek_val_unit());
+    f[EK_FS_APPEND] = ek_closure_new(append_call, ek_val_unit());
+    f[EK_FS_READ_BYTES] = ek_closure_new(read_bytes_call, ek_val_unit());
+    f[EK_FS_APPEND_BYTES] = ek_closure_new(append_bytes_call, ek_val_unit());
+    f[EK_FS_LIST_DIR] = ek_fs_list_dir();
+    f[EK_FS_MKDIR] = ek_fs_mkdir();
+    f[EK_FS_MKDIR_ALL] = ek_fs_mkdir_all();
+    f[EK_FS_RM] = ek_fs_rm();
+    f[EK_FS_RM_DIR] = ek_fs_rm_dir();
+    f[EK_FS_RENAME] = ek_fs_rename();
+    f[EK_FS_STAT] = ek_fs_stat();
+    f[EK_FS_REALPATH] = ek_fs_realpath();
     return ek_bundle16_new(f);
 }

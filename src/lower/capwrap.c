@@ -20,6 +20,7 @@ static void emit_ok_arm(lower_ctx *c, lower_scope *scope, lower_io_ok ok,
                         const char *some, const char *none)
 {
     const char *p = lower_temp(c, scope);
+    const char *q = lower_temp(c, scope);
 
     if (ok == LOWER_IO_OK_UNIT) {
         lower_pad(c);
@@ -41,7 +42,11 @@ static void emit_ok_arm(lower_ctx *c, lower_scope *scope, lower_io_ok ok,
     lower_pad(c);
     lower_emitf(c, "ek_val %s = ek_val_ref(%s);\n", p, o);
     lower_pad(c);
-    lower_emitf(c, "%s = %s(%s(%s));\n", t, okh, some, p);
+    lower_emitf(c, "ek_val %s = %s(%s);\n", q, some, p);
+    lower_pad(c);
+    lower_emitf(c, "%s = %s(%s);\n", t, okh, q);
+    lower_pad(c);
+    lower_emitf(c, "ek_release(%s);\n", q);
     lower_pad(c);
     lower_emitf(c, "ek_release(%s);\n", p);
     c->depth--;
@@ -49,21 +54,26 @@ static void emit_ok_arm(lower_ctx *c, lower_scope *scope, lower_io_ok ok,
     lower_emitf(c, "} else {\n");
     c->depth++;
     lower_pad(c);
-    lower_emitf(c, "%s = %s(%s());\n", t, okh, none);
+    lower_emitf(c, "ek_val %s = %s();\n", q, none);
+    lower_pad(c);
+    lower_emitf(c, "%s = %s(%s);\n", t, okh, q);
+    lower_pad(c);
+    lower_emitf(c, "ek_release(%s);\n", q);
     c->depth--;
     lower_pad(c);
     lower_emitf(c, "}\n");
 }
 
-/* One payload reason arm: the detail string moves into the value. */
+/* One payload reason arm: the detail string moves into the value, the
+   missing detail falling back to the cached empty literal. */
 static void emit_detail_arm(lower_ctx *c, const char *ioerr,
                             const char *y, const char *helper,
                             const char *dt)
 {
     lower_pad(c);
     lower_emitf(c, "ek_val %s = %s != (ek_obj *)0"
-                   " ? ek_val_ref(%s) : ek_val_ref(ek_str_from_cstr(\"\"));"
-                   "\n", dt, y, y);
+                   " ? ek_val_ref(%s) : ek_keep(%s);\n", dt, y, y,
+                lower_str_cache(c, "", 0));
     lower_pad(c);
     lower_emitf(c, "%s = %s(%s);\n", ioerr, helper, dt);
     lower_pad(c);
@@ -126,9 +136,9 @@ lower_val lower_wrap_io(lower_ctx *c, lower_scope *scope, const ek_node *e,
                                         "NotFile", "Closed"};
     const char *okh = lower_ctor_helper(c, e, "std", "Result", "Ok", &nok);
     const char *errh = lower_ctor_helper(c, e, "std", "Result", "Err", &nerr);
-    const char *inv = lower_ctor_helper(c, e, "cap", "IoError",
+    const char *inv = lower_ctor_helper(c, e, "sys", "IoError",
                                         "InvalidData", &ninv);
-    const char *oth = lower_ctor_helper(c, e, "cap", "IoError", "Other",
+    const char *oth = lower_ctor_helper(c, e, "sys", "IoError", "Other",
                                         &noth);
     const char *zero[5];
     const char *some = NULL;
@@ -136,7 +146,7 @@ lower_val lower_wrap_io(lower_ctx *c, lower_scope *scope, const ek_node *e,
     size_t i;
 
     for (i = 0; i < 5; i++) {
-        zero[i] = lower_ctor_helper(c, e, "cap", "IoError", zero_names[i],
+        zero[i] = lower_ctor_helper(c, e, "sys", "IoError", zero_names[i],
                                     &nz[i]);
     }
     if (ok == LOWER_IO_OK_OPT) {
@@ -196,7 +206,8 @@ lower_val lower_wrap_exit(lower_ctx *c, lower_scope *scope, const char *sym,
    exit, the two advancing derivations, and the error channel. The file
    reads keep the text gate; a stale handle reports Err Closed on every
    operation, a second close included. The argument letters follow the
-   intrinsic discipline: v the value slot, o the object. */
+   intrinsic discipline: v the value slot, o the object, i the raw
+   int64 word the runtime's count parameters read. */
 typedef enum {
     CAP_PLAIN, /* the call value is the result */
     CAP_IO_REF,
@@ -211,32 +222,43 @@ typedef struct {
     const char *sym;
     const char *args;
     cap_shape shape;
+    int registers; /* the call constructs a capability value whose
+                      bundle pull names generated identities */
 } cap_row;
 
 static const cap_row cap_rows[] = {
-    {"File", "read", "ek_file_read", "vv", CAP_IO_REF},
-    {"File", "read_bytes", "ek_file_read_bytes", "vv", CAP_IO_REF},
-    {"File", "read_line", "ek_file_read_line", "v", CAP_IO_OPT},
-    {"File", "seek", "ek_file_seek", "vv", CAP_IO_UNIT},
-    {"File", "write", "ek_file_write", "vo", CAP_IO_UNIT},
-    {"File", "write_bytes", "ek_file_write_bytes", "vo", CAP_IO_UNIT},
-    {"File", "flush", "ek_file_flush", "v", CAP_IO_UNIT},
-    {"File", "close", "ek_file_close", "v", CAP_IO_UNIT},
-    {"In", "from_lines", "ek_in_from_lines", "o", CAP_PLAIN},
-    {"Rand", "with_seed", "ek_rand_with_seed", "v", CAP_PLAIN},
-    {"Out", "err", "ek_cap_out_stderr", "", CAP_PLAIN},
-    {"Proc", "exit", "ek_proc_exit", "vv", CAP_EXIT},
+    {"File", "read", "ek_file_read", "vi", CAP_IO_REF, 0},
+    {"File", "read_bytes", "ek_file_read_bytes", "vi", CAP_IO_REF, 0},
+    {"File", "read_line", "ek_file_read_line", "v", CAP_IO_OPT, 0},
+    {"File", "seek", "ek_file_seek", "vv", CAP_IO_UNIT, 0},
+    {"File", "write", "ek_file_write", "vo", CAP_IO_UNIT, 0},
+    {"File", "write_bytes", "ek_file_write_bytes", "vo", CAP_IO_UNIT, 0},
+    {"File", "flush", "ek_file_flush", "v", CAP_IO_UNIT, 0},
+    {"File", "close", "ek_file_close", "v", CAP_IO_UNIT, 0},
+    {"In", "from_lines", "ek_in_from_lines", "o", CAP_PLAIN, 1},
+    {"Rand", "with_seed", "ek_rand_with_seed", "v", CAP_PLAIN, 1},
+    {"Out", "err", "ek_cap_out_stderr", "", CAP_PLAIN, 1},
+    {"Proc", "exit", "ek_proc_exit", "vv", CAP_EXIT, 0},
 };
 
-/* The runtime's value builders join the unit with the advancing
-   derivation: the closure constructs over the shared identities. */
-static int registers_families(const cap_row *row)
+/* The pure construction of a capability value pulls the constructor's
+   own object file in through archive resolution, so the row's
+   capability registers the families that pull names. The File handle
+   family is no manifest capability and has no bundle behind it, so its
+   rows never register -- the row's own flag carries that decision,
+   whatever shape a future member dispatches over. The handle methods
+   build their Result values over the unit's own helpers and stamp
+   their families through that construction instead. */
+static void register_static_families(lower_ctx *c, const ek_node *e,
+                                     const cap_row *row)
 {
-    return strcmp(row->member, "from_lines") == 0;
+    if (row->registers) {
+        lower_cap_families_of(c, e, row->family);
+    }
 }
 
 /* The joined runtime arguments: object slots pass the reference, the
-   value slots the value. */
+   int64 slots the raw word, the value slots the value. */
 static const char *value_args(lower_ctx *c, const char *letters,
                               const char **as, size_t na)
 {
@@ -245,12 +267,19 @@ static const char *value_args(lower_ctx *c, const char *letters,
 
     ek_buf_init(&b);
     for (i = 0; i < na; i++) {
+        int ok;
+
         if (i && !ek_buf_append_str(&b, ", ")) {
             c->oom = 1;
         }
-        if (letters[i] == 'o'
-            ? !ek_buf_printf(&b, "%s.as.ref", as[i])
-            : !ek_buf_append_str(&b, as[i])) {
+        if (letters[i] == 'o') {
+            ok = ek_buf_printf(&b, "%s.as.ref", as[i]);
+        } else if (letters[i] == 'i') {
+            ok = ek_buf_printf(&b, "%s.as.i", as[i]);
+        } else {
+            ok = ek_buf_append_str(&b, as[i]);
+        }
+        if (!ok) {
             c->oom = 1;
         }
     }
@@ -282,9 +311,7 @@ lower_val lower_cap_call(lower_ctx *c, lower_scope *scope,
                     callee->u.field.name);
         return lower_val_unit();
     }
-    if (registers_families(row)) {
-        lower_cap_families(c, e);
-    }
+    register_static_families(c, e, row);
     as = lower_grow(c, NULL, &cap, na ? na : 1, sizeof *as);
     if (!as) {
         return lower_val_unit();

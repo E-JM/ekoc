@@ -75,9 +75,9 @@ ek_val ek_gen_option_none(void)
 ek_val ek_gen_ioerr(int kind, const char *msg)
 {
     static const ek_typeinfo *kinds[] = {
-        &ekT_cap_IoError_NotFound, &ekT_cap_IoError_Permission,
-        &ekT_cap_IoError_Exists,   &ekT_cap_IoError_NotFile,
-        &ekT_cap_IoError_Closed
+        &ekT_sys_IoError_NotFound, &ekT_sys_IoError_Permission,
+        &ekT_sys_IoError_Exists,   &ekT_sys_IoError_NotFile,
+        &ekT_sys_IoError_Closed
     };
     ek_val d;
     ek_val r;
@@ -86,8 +86,8 @@ ek_val ek_gen_ioerr(int kind, const char *msg)
         return ek_gen_zero(kinds[kind]);
     }
     d = ek_val_ref(ek_str_from_cstr(msg != NULL ? msg : ""));
-    r = ek_gen_one(kind == EK_IO_INVALID_DATA ? &ekT_cap_IoError_InvalidData
-                                           : &ekT_cap_IoError_Other,
+    r = ek_gen_one(kind == EK_IO_INVALID_DATA ? &ekT_sys_IoError_InvalidData
+                                           : &ekT_sys_IoError_Other,
                 d);
     ek_release(d);
     return r;
@@ -107,7 +107,7 @@ ek_val ek_gen_file_info(uint64_t size, ek_val mtime, int is_dir)
 {
     ek_gen_finfo *o = ek_rt_alloc_zeroed(sizeof *o);
 
-    o->obj.info = &ekT_cap_FileInfo;
+    o->obj.info = &ekT_sys_FileInfo;
     o->obj.rc = 1;
     o->f_size = ek_val_uint(size);
     o->f_mtime = mtime;
@@ -125,7 +125,9 @@ int64_t ek_gen_ns(ek_val v)
 }
 
 /* The shared bundle families: the header followed by the member
-   closures. The drops release every member with the record. */
+   closures, in the slot order ekort.h publishes per capability. The
+   drops release every member with the record. Each struct carries its
+   own compile-time tie to the published slot count. */
 
 typedef struct {
     ek_obj obj;
@@ -134,15 +136,20 @@ typedef struct {
 
 typedef struct {
     ek_obj obj;
-    ek_val a;
-    ek_val b;
-    ek_val c;
+    ek_val f[EK_CLOCK_SLOTS];
 } ek_bundle3;
 
 typedef struct {
     ek_obj obj;
-    ek_val f[16];
+    ek_val f[EK_FS_SLOTS];
 } ek_bundle16;
+
+typedef char bundle1_slots
+    [(sizeof(ek_bundle1) == sizeof(ek_obj) + sizeof(ek_val)) ? 1 : -1];
+typedef char bundle3_slots
+    [(sizeof(ek_bundle3) == sizeof(ek_obj) + EK_CLOCK_SLOTS * sizeof(ek_val)) ? 1 : -1];
+typedef char bundle16_slots
+    [(sizeof(ek_bundle16) == sizeof(ek_obj) + EK_FS_SLOTS * sizeof(ek_val)) ? 1 : -1];
 
 static void bundle1_drop(ek_obj *obj)
 {
@@ -152,10 +159,11 @@ static void bundle1_drop(ek_obj *obj)
 static void bundle3_drop(ek_obj *obj)
 {
     ek_bundle3 *b = (ek_bundle3 *)obj;
+    size_t i;
 
-    ek_release(b->a);
-    ek_release(b->b);
-    ek_release(b->c);
+    for (i = 0; i < EK_CLOCK_SLOTS; i++) {
+        ek_release(b->f[i]);
+    }
 }
 
 static void bundle16_drop(ek_obj *obj)
@@ -163,7 +171,7 @@ static void bundle16_drop(ek_obj *obj)
     ek_bundle16 *b = (ek_bundle16 *)obj;
     size_t i;
 
-    for (i = 0; i < sizeof b->f / sizeof *b->f; i++) {
+    for (i = 0; i < EK_FS_SLOTS; i++) {
         ek_release(b->f[i]);
     }
 }
@@ -182,27 +190,32 @@ ek_val ek_bundle1_new(ek_val a)
     return ek_val_ref(&b->obj);
 }
 
-ek_val ek_bundle3_new(ek_val a, ek_val b, ek_val c)
+/* Both multi-slot constructors take the slots as an array indexed by
+   the published order, so the filling site cannot place a closure in
+   the wrong slot without the spelling saying so. */
+
+ek_val ek_bundle3_new(const ek_val *slots)
 {
     ek_bundle3 *r = ek_rt_alloc_zeroed(sizeof *r);
+    size_t i;
 
     r->obj.info = &bundle3_info;
     r->obj.rc = 1;
-    r->a = a;
-    r->b = b;
-    r->c = c;
+    for (i = 0; i < EK_CLOCK_SLOTS; i++) {
+        r->f[i] = slots[i];
+    }
     return ek_val_ref(&r->obj);
 }
 
-ek_val ek_bundle16_new(const ek_val *fields)
+ek_val ek_bundle16_new(const ek_val *slots)
 {
     ek_bundle16 *b = ek_rt_alloc_zeroed(sizeof *b);
     size_t i;
 
     b->obj.info = &bundle16_info;
     b->obj.rc = 1;
-    for (i = 0; i < sizeof b->f / sizeof *b->f; i++) {
-        b->f[i] = fields[i];
+    for (i = 0; i < EK_FS_SLOTS; i++) {
+        b->f[i] = slots[i];
     }
     return ek_val_ref(&b->obj);
 }

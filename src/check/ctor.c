@@ -168,8 +168,8 @@ ck_ctorsel ck_ctor_select(ck_ctx *c, const ek_node *n, const ek_ref *ref,
    receiver-form chain spells its head through the type lookup alone,
    so a constructor of the same spelling reaches check as the bare
    external bridge, without a candidate set. The current module's
-   constructors and the public std and cap ones are the visible set; a
-   sole non-generic candidate anchors the value the way a
+   constructors and the public std, sys, and cap ones are the visible
+   set; a sole non-generic candidate anchors the value the way a
    value-position reference does. NULL when the spelling names none,
    several, or a generic one: an expected type or the resolver's own
    candidate set decides those. */
@@ -188,6 +188,7 @@ const ek_type *ck_ctor_head(ck_ctx *c, const ek_node *n)
         int own = s == c->cur;
 
         if (!own && strcmp(s->module, "std") != 0
+            && strcmp(s->module, "sys") != 0
             && strcmp(s->module, "cap") != 0) {
             continue;
         }

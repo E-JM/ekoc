@@ -472,6 +472,42 @@ lower_val lower_shape_adapt(lower_ctx *c, lower_scope *scope, lower_val v,
     return v;
 }
 
+/* The constructor a type-qualified apply head names: the receiver
+   names the type, the link the variant of that type's own
+   declaration. NULL outside the form. */
+static const ek_symbol *qualified_ctor(lower_ctx *c, const ek_node *head)
+{
+    const ek_ref *tr;
+    const ek_symbol *tsym;
+    size_t k, i;
+
+    if (!head || head->kind != EK_N_FIELD) {
+        return NULL;
+    }
+    tr = head->u.field.recv ? lower_ref(c, head->u.field.recv) : NULL;
+    if (!tr || tr->kind != EK_SYM_TYPE || !tr->symbol) {
+        return NULL;
+    }
+    tsym = tr->symbol;
+    for (k = 0; k < c->resolved.module_count; k++) {
+        const ek_surface *s = &c->resolved.modules[k];
+
+        if (strcmp(s->module, tsym->module) != 0) {
+            continue;
+        }
+        for (i = 0; i < s->count; i++) {
+            const ek_symbol *m = &s->syms[i];
+
+            if (m->kind == EK_SYM_CONSTRUCTOR && m->owner
+                && strcmp(m->owner, tsym->name) == 0
+                && strcmp(m->name, head->u.field.name) == 0) {
+                return m;
+            }
+        }
+    }
+    return NULL;
+}
+
 /* A bare constructor name: the nullary helper call. A payload
    constructor needs an application and stays unsupported. */
 lower_val lower_ctor_value(lower_ctx *c, const ek_node *e, const ek_ref *ref)
@@ -499,30 +535,36 @@ lower_val lower_ctor_value(lower_ctx *c, const ek_node *e, const ek_ref *ref)
 }
 
 /* A constructor application: the payload argument lowers to a temp,
-   the helper retains it into the born object, and the temp dies. */
+   the helper retains it into the born object, and the temp dies. A
+   type-qualified head the resolver bridged names its variant through
+   the type, and the family builds from the constructor's own
+   declaration. */
 lower_val lower_ctor_apply(lower_ctx *c, lower_scope *scope,
                            const ek_node *e)
 {
     const ek_node *head = e->u.pair.a;
     const ek_ref *ref = head ? lower_ref(c, head) : NULL;
     const ek_symbol *tsym = row_nominal(c, e);
+    int qualified = !ref || ref->kind != EK_SYM_CONSTRUCTOR;
+    const ek_symbol *cs = qualified ? qualified_ctor(c, head) : NULL;
     lower_gtype *g;
     lower_val a;
     const char *at, *r;
 
-    if (!ref || ref->kind != EK_SYM_CONSTRUCTOR) {
+    if (qualified && !cs) {
         return lower_val_unit(); /* resolve diagnosed the head */
     }
     a = e->u.pair.b ? lower_sub(c, scope, e->u.pair.b) : lower_val_unit();
     at = lower_as_temp(c, scope, &a);
-    if (!tsym) {
+    if (qualified) {
+        g = lower_ctor_of_symbol(c, e, cs, 1);
+    } else if (!tsym) {
         lower_error(c, e, "the constructor application is not supported "
                           "by this lowerer");
-        lower_pad(c);
-        lower_emitf(c, "ek_release(%s);\n", at);
-        return lower_val_unit();
+        g = NULL;
+    } else {
+        g = lower_ctor_built(c, e, ref, tsym);
     }
-    g = lower_ctor_built(c, e, ref, tsym);
     if (!g) {
         lower_pad(c);
         lower_emitf(c, "ek_release(%s);\n", at);

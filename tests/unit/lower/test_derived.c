@@ -110,8 +110,10 @@ static void with_shape(void)
     EK_CHECK(lfx_check_clean(&f));
     EK_CHECK(lfx_lower_clean(&f));
     EK_CHECK(lfx_has(&f, "ekn_test_Money_rec(t"));
-    EK_CHECK(lfx_has(&f, "ek_keep(((ekS_test_Money *)t"));
-    EK_CHECK(lfx_has(&f, ")->f_cur)"));
+    /* the field reads borrow the frame's own record: the receiver
+       keeps nothing, the slot keeps its own copy */
+    EK_CHECK(lfx_has(&f, "ek_keep(((ekS_test_Money *)(t3).as.ref)->f_cur)"));
+    EK_CHECK(lfx_has(&f, "ek_keep(((ekS_test_Money *)n.as.ref)->f_cents)"));
     lfx_end(&f);
 }
 
@@ -179,6 +181,41 @@ static void capability_display(void)
     EK_CHECK(lfx_has(&f, "static ek_obj *ekd_show_std_Out(ek_val v);\n"));
     EK_CHECK(lfx_has(&f, "return ekd_inspect_std_Out(v);"));
     EK_CHECK(lfx_has(&f, "ek_str_from_cstr(\"<cap>\")"));
+    /* the placeholder arm reads no value, and the body silences the
+       parameter the way the shims silence theirs */
+    EK_CHECK(lfx_has(&f, "ekd_inspect_std_Out(ek_val v)\n"
+                         "{\n"
+                         "    (void)v;\n"));
+    lfx_end(&f);
+}
+
+/* The decode side constructs: from_json over an algebraic type no
+   source site builds registers every variant's family as constructed,
+   so the helpers join the unit, and each decode arm binds the
+   constructor result to its own named temp and releases it. */
+static void from_json_constructs_variants(void)
+{
+    lfx f;
+
+    lfx_begin(&f,
+              "Shape: type = Light | Dark\n"
+              "main: () -> _ =\n"
+              "    j: Json = Json.parse(\"\\\"Dark\\\"\").unwrap()\n"
+              "    s := Shape.from_json(j)\n"
+              "    case s:\n"
+              "        Ok _ -> _\n"
+              "        Err _ -> _\n");
+    EK_CHECK(lfx_check_clean(&f));
+    EK_CHECK(lfx_lower_clean(&f));
+    /* the variant helpers stand although no source site constructs */
+    EK_CHECK(lfx_has(&f, "static ek_val ekn_test_Shape_Light(void)"));
+    EK_CHECK(lfx_has(&f, "static ek_val ekn_test_Shape_Dark(void)"));
+    /* the decode arm builds the variant through its named temp and
+       releases it once the Ok stands */
+    EK_CHECK(lfx_has(&f, "ek_val q = ekn_test_Shape_Dark();\n"
+                         "            ek_val w = ekn_std_Result_Ok(q);\n"
+                         "            ek_release(q);\n"
+                         "            return w;"));
     lfx_end(&f);
 }
 
@@ -191,5 +228,6 @@ int main(void)
     ordering_and_display_members();
     tuple_payload_equality();
     capability_display();
+    from_json_constructs_variants();
     return ek_test_report("lower/derived");
 }

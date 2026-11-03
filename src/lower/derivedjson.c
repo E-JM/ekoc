@@ -21,33 +21,40 @@ const char *lower_result_ctor(lower_ctx *c, const char *name)
     return lower_std_ctor(c, NULL, "Result", name);
 }
 
-/* return Err (Invalid "detail"); */
+/* return Err (Invalid "detail"); the detail bytes are interned like
+   any literal. The Invalid result is a named temp released once Err
+   stands, the way every nested constructor result is owned. */
 void lower_json_err_lit(lower_demit *d, const char *indent,
                         const char *detail)
 {
     const char *inv = lower_std_ctor(d->c, NULL, "ParseError", "Invalid");
 
     lower_d_printf(d, "%s{\n", indent);
-    lower_d_printf(d, "%s    ek_val p = ek_val_ref(ek_str_from_cstr(%s));"
-                      "\n", indent, detail);
-    lower_d_printf(d, "%s    ek_val r = %s(%s(p));\n", indent,
-                   lower_result_ctor(d->c, "Err"), inv);
+    lower_d_printf(d, "%s    ek_val p = ek_keep(%s);\n", indent,
+                   lower_str_cache(d->c, detail, strlen(detail)));
+    lower_d_printf(d, "%s    ek_val q = %s(p);\n", indent, inv);
+    lower_d_printf(d, "%s    ek_val r = %s(q);\n", indent,
+                   lower_result_ctor(d->c, "Err"));
     lower_d_printf(d, "%s    ek_release(p);\n", indent);
+    lower_d_printf(d, "%s    ek_release(q);\n", indent);
     lower_d_printf(d, "%s    return r;\n", indent);
     lower_d_printf(d, "%s}\n", indent);
 }
 
 /* return Err (Invalid detail); the detail expression is an owned
-   ek_val whose one reference moves into the payload. */
+   ek_val whose one reference moves into the payload, and the Invalid
+   result is a named temp released once Err stands. */
 void lower_json_err_obj(lower_demit *d, const char *indent, const char *obj)
 {
     const char *inv = lower_std_ctor(d->c, NULL, "ParseError", "Invalid");
 
     lower_d_printf(d, "%s{\n", indent);
     lower_d_printf(d, "%s    ek_val p = %s;\n", indent, obj);
-    lower_d_printf(d, "%s    ek_val r = %s(%s(p));\n", indent,
-                   lower_result_ctor(d->c, "Err"), inv);
+    lower_d_printf(d, "%s    ek_val q = %s(p);\n", indent, inv);
+    lower_d_printf(d, "%s    ek_val r = %s(q);\n", indent,
+                   lower_result_ctor(d->c, "Err"));
     lower_d_printf(d, "%s    ek_release(p);\n", indent);
+    lower_d_printf(d, "%s    ek_release(q);\n", indent);
     lower_d_printf(d, "%s    return r;\n", indent);
     lower_d_printf(d, "%s}\n", indent);
 }
@@ -172,17 +179,15 @@ static void emit_to_record(lower_ctx *c, lower_demit *d, const char *stem,
         const char *slot = fnames ? lower_str(c, "f_%s", fnames[i])
                                   : lower_str(c, "f_%zu", i);
         const char *svc = lower_dsvc_request(c, NULL, DSV_TOJSON, ftypes[i]);
-        const char *lit = fnames ? lower_d_cstr(c, fnames[i])
-                                 : lower_d_cstr(c, "p");
+        const char *lit = lower_str_cache(c, fnames ? fnames[i] : "p",
+                                          fnames ? strlen(fnames[i]) : 1);
 
         if (!svc) {
             lower_d_printf(d, "    (void)d;\n");
-            lower_json_err_lit(d, "    ", "\"\""); /* check gated the shape */
+            lower_json_err_lit(d, "    ", ""); /* check gated the shape */
             return;
         }
-        emit_obj_entry(c, d, "d",
-                       lower_str(c, "ek_val_ref(ek_str_from_cstr(%s))", lit),
-                       svc,
+        emit_obj_entry(c, d, "d", lower_str(c, "ek_keep(%s)", lit), svc,
                        lower_str(c, "((ekS_%s *)v.as.ref)->%s", stem, slot));
     }
     lower_d_printf(d, "    out = %s(d);\n", lower_json_ctor(c, "Obj"));
@@ -196,7 +201,7 @@ static void emit_to_dict(lower_ctx *c, lower_demit *d, const ek_type *t)
                                          t->u.dict.val);
 
     if (!svc) {
-        lower_json_err_lit(d, "    ", "\"\"");
+        lower_json_err_lit(d, "    ", "");
         return;
     }
     lower_d_printf(d, "    ek_val d = ek_dict_new();\n");
@@ -238,7 +243,7 @@ static void emit_to_tuple(lower_ctx *c, lower_demit *d, const char *stem,
             for (k = 0; k <= i; k++) {
                 lower_d_printf(d, "    (void)%s;\n", parts[k]);
             }
-            lower_json_err_lit(d, "    ", "\"\""); /* check gated the shape */
+            lower_json_err_lit(d, "    ", ""); /* check gated the shape */
             return;
         }
     }
@@ -267,13 +272,12 @@ static void emit_to_adt(lower_ctx *c, lower_demit *d, lower_variant *vs,
     size_t i;
 
     for (i = 0; i < nv; i++) {
-        const char *lit = lower_d_cstr(c, vs[i].name);
+        const char *lit = lower_str_cache(c, vs[i].name, strlen(vs[i].name));
 
         lower_d_printf(d, "    if (v.as.ref->info == &ekT_%s) {\n",
                        vs[i].stem);
         if (!vs[i].payload) {
-            lower_d_printf(d, "        return %s(ek_val_ref("
-                              "ek_str_from_cstr(%s)));\n",
+            lower_d_printf(d, "        return %s(ek_keep(%s));\n",
                            lower_json_ctor(c, "Str"), lit);
         } else {
             const char *svc = lower_dsvc_request(c, NULL, DSV_TOJSON,
@@ -281,7 +285,7 @@ static void emit_to_adt(lower_ctx *c, lower_demit *d, lower_variant *vs,
 
             if (!svc) {
                 lower_d_printf(d, "        (void)v;\n");
-                lower_json_err_lit(d, "    ", "\"\""); /* check gated the shape */
+                lower_json_err_lit(d, "    ", ""); /* check gated the shape */
             } else {
                 const char *dd = lower_d_temp(d);
                 const char *k = lower_d_temp(d);
@@ -290,8 +294,8 @@ static void emit_to_adt(lower_ctx *c, lower_demit *d, lower_variant *vs,
                 const char *r = lower_d_temp(d);
 
                 lower_d_printf(d, "        ek_val %s = ek_dict_new();\n", dd);
-                lower_d_printf(d, "        ek_val %s = ek_val_ref("
-                                  "ek_str_from_cstr(%s));\n", k, lit);
+                lower_d_printf(d, "        ek_val %s = ek_keep(%s);\n", k,
+                               lit);
                 lower_d_printf(d, "        ek_val %s = %s(((ekS_%s *)v.as."
                                   "ref)->p0);\n", p, svc, vs[i].stem);
                 lower_d_printf(d, "        ek_val %s = ek_dict_set(%s, %s, "
@@ -340,13 +344,13 @@ void lower_dsvc_json_emit(lower_ctx *c, const char *name, const ek_type *t,
         if (lower_shape_of(c, NULL, t, &fnames, &ftypes, &nf, &g) && g) {
             emit_to_tuple(c, &d, g->stem, ftypes, nf);
         } else {
-            lower_json_err_lit(&d, "    ", "\"\"");
+            lower_json_err_lit(&d, "    ", "");
         }
     } else if (t->kind == EK_T_RECORD) {
         if (lower_shape_of(c, NULL, t, &fnames, &ftypes, &nf, &g) && g) {
             emit_to_record(c, &d, g->stem, fnames, ftypes, nf);
         } else {
-            lower_json_err_lit(&d, "    ", "\"\"");
+            lower_json_err_lit(&d, "    ", "");
         }
     } else if (t->kind == EK_T_NOMINAL
                && lower_shape_of(c, NULL, t, &fnames, &ftypes, &nf, &g)
@@ -357,10 +361,10 @@ void lower_dsvc_json_emit(lower_ctx *c, const char *name, const ek_type *t,
             emit_to_record(c, &d, g->stem, fnames, ftypes, nf);
         }
     } else if (t->kind == EK_T_NOMINAL
-               && lower_variants_of(c, NULL, t, &vs, &nv)) {
+               && lower_variants_of(c, NULL, t, &vs, &nv, 0)) {
         emit_to_adt(c, &d, vs, nv);
     } else {
-        lower_json_err_lit(&d, "    ", "\"\"");
+        lower_json_err_lit(&d, "    ", "");
     }
     lower_d_printf(&d, "}\n\n");
     lower_d_end(c, &b);

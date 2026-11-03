@@ -473,12 +473,14 @@ const ek_type *lower_repr_type(lower_ctx *c, const ek_type *nom)
     return lower_applied_type(c, dn->u.type_decl.type, dn, nom);
 }
 
-/* The field type of one written field name in a record value type. */
+/* The field type of one written field name in a record value type; a
+   NULL name names no field, so a positional item of an ill-typed
+   literal reads no expectation and check's own rejection stands. */
 const ek_type *lower_record_field(const ek_type *rec, const char *name)
 {
     size_t i;
 
-    if (!rec || rec->kind != EK_T_RECORD) {
+    if (!rec || rec->kind != EK_T_RECORD || !name) {
         return NULL;
     }
     for (i = 0; i < rec->u.record.count; i++) {

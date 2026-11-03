@@ -37,6 +37,15 @@ static int shadows_runtime(const char *name)
     return strncmp(name, "ek_", 3) == 0 || strncmp(name, "EK_", 3) == 0;
 }
 
+/* The file-scope variables of the interned literals share this prefix,
+   so a written binding in its shape would shadow one. */
+static const char cache_prefix[] = "ekc";
+
+static int shadows_cache(const char *name)
+{
+    return strncmp(name, cache_prefix, sizeof cache_prefix - 1) == 0;
+}
+
 static int taken_here(const lower_scope *scope, const char *name)
 {
     size_t i;
@@ -119,15 +128,17 @@ const char *lower_temp(lower_ctx *c, lower_scope *scope)
 }
 
 /* The C spelling of a new binding: names that would collide with the
-   runtime or repeat within the same block are adjusted until free.
-   Shadowing an outer block's binding is the language's own scoping. */
+   runtime, shadow the literal caches, or repeat within the same block
+   are adjusted until free. Shadowing an outer block's binding is the
+   language's own scoping. */
 const char *lower_c_name(lower_ctx *c, lower_scope *scope, const char *name)
 {
     ek_buf b;
     const char *out;
 
     ek_buf_init(&b);
-    if (shadows_runtime(name) && !ek_buf_append_str(&b, "u_")) {
+    if ((shadows_runtime(name) || shadows_cache(name))
+        && !ek_buf_append_str(&b, "u_")) {
         c->oom = 1;
     }
     if (!ek_buf_append_str(&b, name)) {
@@ -180,4 +191,55 @@ void lower_string_literal(lower_ctx *c, ek_buf *b, const char *bytes,
     if (!ek_buf_append_char(b, '"')) {
         c->oom = 1;
     }
+}
+
+/* The cache variable of one interned string literal: identical byte
+   sequences share one unit-level static ek_val, named after the cache
+   prefix in first-use order, and the shim primes each variable once
+   at startup. The names cannot collide by construction: a written
+   identifier in the runtime's ek_ shape or in the cache prefix's own
+   shape is emitted under the u_ prefix (lower_c_name), the temps are
+   t<n> and s<n>, and no runtime or generated family (ekf_, ekT_,
+   ekS_, ekC_, ekn_) spells the bare ekc<digits> shape.
+
+   Interning changes only object identity, and identity is
+   unobservable: strings compare structurally, pattern dispatch tests
+   the family kind, and dictionary and set keying is structural. Each
+   site reads the cache through ek_keep, so the site's own release
+   pairs with that keep; the cache's own reference is never dropped
+   and the runtime never releases the caches -- they live for the
+   process. */
+const char *lower_str_cache(lower_ctx *c, const char *bytes, size_t len)
+{
+    ek_buf b;
+    const char *lit;
+    lower_strlit *slots;
+    const char *name;
+    size_t i;
+
+    ek_buf_init(&b);
+    lower_string_literal(c, &b, bytes, len);
+    lit = lower_take(c, &b);
+    for (i = 0; i < c->nslit; i++) {
+        if (strcmp(c->strlits[i].lit, lit) == 0) {
+            return c->strlits[i].name;
+        }
+    }
+    slots = lower_grow(c, c->strlits, &c->cslit, c->nslit + 1,
+                       sizeof *slots);
+    if (!slots) {
+        return "";
+    }
+    c->strlits = slots;
+    name = lower_str(c, "%s%zu", cache_prefix, c->nslit);
+    if (!name) {
+        return "";
+    }
+    slots[c->nslit].name = name;
+    slots[c->nslit].lit = lit;
+    c->nslit++;
+    if (!ek_buf_printf(&c->strdecls, "static ek_val %s;\n", name)) {
+        c->oom = 1;
+    }
+    return name;
 }

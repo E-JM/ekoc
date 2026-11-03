@@ -77,40 +77,126 @@ static size_t written_args(int family, lower_cmp_form form)
     return form == CF_MEMBER ? n - 1u : n;
 }
 
+/* True when any written argument rebinds a local of the emitting
+   frame when evaluated: a borrow taken before it would read the
+   rebound value at the call. */
+static int args_may_rebind(const ek_nlist *args)
+{
+    size_t i;
+
+    for (i = 0; i < args->count; i++) {
+        if (lower_arg_may_rebind(args->data[i])) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* The receiver slot of a member call: the frame local it reads
+   borrows -- unless the service type adapts a nominal receiver into an
+   anonymous record, whose rebuild is fresh -- and the receiver lowers
+   only when it keeps. Returns the slot after the receiver. */
+static size_t member_recv_temp(lower_ctx *c, lower_scope *scope,
+                               const ek_node *callee, const ek_nlist *args,
+                               const ek_type *recv_pt, const char **argv,
+                               int *ow, size_t k)
+{
+    const ek_node *recv = callee->u.field.recv;
+    const ek_type *from = recv ? lower_row_type(c, recv) : NULL;
+    int adapts = recv_pt && recv_pt->kind == EK_T_RECORD
+        && from && from->kind == EK_T_NOMINAL;
+    const char *bn = NULL;
+
+    if (!adapts) {
+        bn = lower_borrow_local(c, scope, recv);
+        if (bn && args_may_rebind(args)) {
+            bn = NULL;
+        }
+    }
+    if (bn) {
+        argv[k] = bn;
+        ow[k] = 0;
+        return k + 1;
+    }
+    {
+        lower_val r = recv ? lower_sub(c, scope, recv)
+                           : lower_val_unit();
+
+        if (adapts) {
+            r = lower_shape_adapt(c, scope, r, recv, from, recv_pt);
+        }
+        argv[k] = lower_as_temp(c, scope, &r);
+        ow[k] = 1;
+    }
+    return k + 1;
+}
+
 /* The receiver temp and written argument temps of the call, in source
-   order. */
+   order. An argument reading a frame-owned local passes the local's
+   own name -- the caller's frame keeps it alive across the whole call
+   -- unless a later argument's evaluation can rebind it; *owned marks
+   the entries holding references. recv_pt is the receiver's expected
+   type at a member call. */
 static const char **call_temps(lower_ctx *c, lower_scope *scope,
                                const ek_node *e, const ek_node *callee,
-                               lower_cmp_form form, size_t n)
+                               lower_cmp_form form, size_t n, int **owned,
+                               const ek_type *recv_pt)
 {
     const ek_nlist *args = &e->u.call.args;
     const char **argv = NULL;
-    size_t cap = 0, i, k = 0;
+    int *ow = NULL;
+    size_t cap = 0, ocap = 0, i, k = 0;
 
     argv = lower_grow(c, NULL, &cap, n ? n : 1, sizeof *argv);
-    if (!argv) {
+    if (n) {
+        ow = lower_grow(c, NULL, &ocap, n, sizeof *ow);
+    }
+    if (!argv || (n && !ow)) {
         c->oom = 1;
         return NULL;
     }
+    *owned = ow;
     if (form == CF_MEMBER) {
-        lower_val r = lower_sub(c, scope, callee->u.field.recv);
-
-        argv[k++] = lower_as_temp(c, scope, &r);
+        k = member_recv_temp(c, scope, callee, args, recv_pt, argv, ow,
+                             k);
     }
     for (i = 0; i < n - k; i++) {
-        lower_val a = lower_sub(c, scope, args->data[i]);
+        const char *bn = lower_borrow_local(c, scope, args->data[i]);
 
-        argv[k++] = lower_as_temp(c, scope, &a);
+        if (bn) {
+            size_t j;
+
+            for (j = i + 1; j < args->count; j++) {
+                if (lower_arg_may_rebind(args->data[j])) {
+                    bn = NULL;
+                    break;
+                }
+            }
+        }
+        if (bn) {
+            argv[k] = bn;
+            ow[k] = 0;
+        } else {
+            lower_val a = lower_sub(c, scope, args->data[i]);
+
+            argv[k] = lower_as_temp(c, scope, &a);
+            ow[k] = 1;
+        }
+        k++;
     }
     return argv;
 }
 
-static void release_temps(lower_ctx *c, const char **argv, size_t n)
+static void release_temps(lower_ctx *c, const char **argv, const int *owned,
+                          size_t n)
 {
     size_t i = n;
 
     while (i > 0) {
         i--;
+        if (!owned[i]) {
+            continue;
+        }
         lower_pad(c);
         lower_emitf(c, "ek_release(%s);\n", argv[i]);
     }
@@ -196,13 +282,15 @@ static const ek_type *spec_type(lower_ctx *c, const ek_node *e,
 /* The unsupported arity: everything still evaluates and dies. */
 static lower_val discard_all(lower_ctx *c, lower_scope *scope,
                              const ek_node *e, const ek_node *callee,
-                             lower_cmp_form form)
+                             lower_cmp_form form, const ek_type *recv_pt)
 {
     size_t n = (size_t)(form == CF_MEMBER) + e->u.call.args.count;
-    const char **argv = call_temps(c, scope, e, callee, form, n);
+    const char **argv;
+    int *owned = NULL;
 
+    argv = call_temps(c, scope, e, callee, form, n, &owned, recv_pt);
     if (argv) {
-        release_temps(c, argv, n);
+        release_temps(c, argv, owned, n);
     }
     return lower_val_unit();
 }
@@ -219,6 +307,7 @@ lower_val lower_derived_call(lower_ctx *c, lower_scope *scope,
     lower_dsvc_kind kind;
     const char *svc;
     const char **argv;
+    int *owned = NULL;
     size_t n, want;
     int family = cmp_family(name);
     const char *t;
@@ -244,7 +333,7 @@ lower_val lower_derived_call(lower_ctx *c, lower_scope *scope,
     want = written_args(family, form);
     if (e->u.call.args.count != want) {
         lower_error(c, e, "the call of `%s` is malformed", name);
-        return discard_all(c, scope, e, callee, form);
+        return discard_all(c, scope, e, callee, form, spec);
     }
     sk = lower_scalar_kind(spec);
     if (family && num_slot(sk, family == 2)) {
@@ -254,18 +343,19 @@ lower_val lower_derived_call(lower_ctx *c, lower_scope *scope,
         if (!svc) {
             lower_error(c, e, "the derived `%s` has no lowering here",
                         name);
-            return discard_all(c, scope, e, callee, form);
+            return discard_all(c, scope, e, callee, form, spec);
         }
     }
     n = (size_t)(form == CF_MEMBER) + want;
-    argv = call_temps(c, scope, e, callee, form, n);
+    argv = call_temps(c, scope, e, callee, form, n, &owned,
+                      form == CF_MEMBER ? spec : NULL);
     if (!argv) {
         return lower_val_unit();
     }
     if (family) {
         lower_val out = emit_cmp(c, scope, name, svc, sk, argv);
 
-        release_temps(c, argv, n);
+        release_temps(c, argv, owned, n);
         return out;
     }
     t = lower_temp(c, scope);
@@ -275,7 +365,7 @@ lower_val lower_derived_call(lower_ctx *c, lower_scope *scope,
     } else {
         lower_emitf(c, "ek_val %s = %s(%s);\n", t, svc, argv[0]);
     }
-    release_temps(c, argv, n);
+    release_temps(c, argv, owned, n);
     return (lower_val){ t, 1 };
 }
 

@@ -22,8 +22,9 @@ static void cascade_shape(void)
     EK_CHECK(lfx_check_clean(&f));
     EK_CHECK(lfx_lower_clean(&f));
     EK_CHECK_U64(f.low.fn_count, 2);
-    /* the scrutinee temp is borrowed once and released at the join */
-    EK_CHECK(lfx_has(&f, "ek_val t0 = ek_keep(k);\n"
+    /* the scrutinee temp is kept once over the borrowed parameter
+       and released at the join */
+    EK_CHECK(lfx_has(&f, "ek_val t0 = ek_keep(ek_p0);\n"
                          "    ek_val t1 = ek_val_unit();\n"
                          "    do {"));
     /* the constructor identity is the typeinfo pointer */
@@ -70,10 +71,11 @@ static void string_pattern(void)
                   "    _\n");
     EK_CHECK(lfx_check_clean(&f));
     EK_CHECK(lfx_lower_clean(&f));
-    /* the string object hoists into the arm and the comparison is a
-       pure condition over the payload slot read through the cast */
-    EK_CHECK(lfx_has(&f, "ek_val t3 = ek_val_ref(ek_str_from_cstr("
+    /* the interned literal is kept into the arm and the comparison is
+       a pure condition over the payload slot read through the cast */
+    EK_CHECK(lfx_has(&f, "ekc0 = ek_val_ref(ek_str_from_cstr("
                          "\"timeout\"));"));
+    EK_CHECK(lfx_has(&f, "ek_val t3 = ek_keep(ekc0);"));
     EK_CHECK(lfx_has(&f, "ek_str_eq(((ekS_std_Result_Err *)"
                          "t0.as.ref)->p0.as.ref, t3.as.ref)));"));
     EK_CHECK(lfx_has(&f, "ek_release(t3);\n                break;"));
@@ -286,8 +288,10 @@ static void closure_shape(void)
                          "size_t argc)"));
     EK_CHECK(lfx_has(&f, "ek_val x = ek_keep(args[0]);"));
     EK_CHECK(lfx_has(&f, "ek_keep(((ekS_env0 *)env.as.ref)->f_base);"));
-    /* a call on a parameter of function type goes through the ABI */
-    EK_CHECK(lfx_has(&f, "ek_val t3 = ek_closure_call(t2, t5, 1);"));
+    /* a call on a parameter of function type goes through the ABI;
+       the argument is the frame's own local, passed borrowed */
+    EK_CHECK(lfx_has(&f, "ek_val t4[] = {ek_p1};"));
+    EK_CHECK(lfx_has(&f, "ek_val t3 = ek_closure_call(t2, t4, 1);"));
     lfx_end(&f);
 }
 
@@ -330,14 +334,14 @@ static void invert_shape(void)
     EK_CHECK(lfx_check_clean(&f));
     EK_CHECK(lfx_lower_clean(&f));
     /* the continuation is the call's last argument, its parameters
-       owned like any function's; Result.try specializes over its
+       owned like any function's; the receiver is the frame's own
+       local, passed borrowed; Result.try specializes over its
        applied variables t, e, u in first-occurrence order */
     EK_CHECK(lfx_has(&f, "ek_val t1 = ek_closure_new(ekl_0, t0);\n"
                          "    ek_release(t0);\n"
-                         "    ek_val t2 = ek_keep(r);\n"
-                         "    ek_val t3 = ekf_std_Result_try$std_Int_"
-                         "std_String_std_Int(t2, t1);\n"
-                         "    ek_release(t1);\n    ek_release(t2);"));
+                         "    ek_val t2 = ekf_std_Result_try$std_Int_"
+                         "std_String_std_Int(ek_p0, t1);\n"
+                         "    ek_release(t1);"));
     EK_CHECK(lfx_has(&f, "static ek_val ekl_0(ek_val env, ek_val *args, "
                          "size_t argc)"));
     EK_CHECK(lfx_has(&f, "ek_val a = ek_keep(args[0]);"));
@@ -381,11 +385,12 @@ static void logical_or_expansion(void)
     EK_CHECK(lfx_check_clean(&f));
     EK_CHECK(lfx_lower_clean(&f));
     /* `a || b` is `if a: True else: b`; the left value dies with the
-       condition since only the branch values carry the result */
+       condition since only the branch values carry the result, and
+       the branch reads the borrowed parameter through its alias */
     EK_CHECK(lfx_has(&f, "if (t0.as.i) {\n"
                          "        t1 = ek_bool(1);\n"
                          "    } else {\n"
-                         "        t1 = ek_keep(b);\n"
+                         "        t1 = ek_keep(ek_p0);\n"
                          "    }\n"
                          "    ek_release(t0);"));
     lfx_end(&f);

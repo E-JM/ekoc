@@ -4,9 +4,9 @@
 #include "lower/internal.h"
 
 /* Literal placement: the check row's nominal name decides the runtime
-   slot a literal widens into, and a string literal becomes either one
-   escaped C string on the heap or, with interpolation slots, a
-   left-to-right concatenation of the escaped segments and the slots'
+   slot a literal widens into, and a string literal reads its
+   unit-level interned cache variable -- with interpolation slots, a
+   left-to-right concatenation of the cached segments and the slots'
    derived show renderings. */
 
 /* The runtime slot a literal widens into, decided by the check row's
@@ -65,14 +65,11 @@ lower_val lower_char_lit(lower_ctx *c, const ek_node *e)
                                   (unsigned)e->u.char_lit.scalar), 0 };
 }
 
-/* The escaped C string of one literal segment. */
-static const char *seg_cstr(lower_ctx *c, const ek_str_seg *seg)
+/* The segment's cache variable, kept for the site: the keep the site
+   releases balances against the cache's own immortal reference. */
+static const char *seg_cache(lower_ctx *c, const ek_str_seg *seg)
 {
-    ek_buf b;
-
-    ek_buf_init(&b);
-    lower_string_literal(c, &b, seg->text, seg->text_len);
-    return lower_take(c, &b);
+    return lower_str_cache(c, seg->text, seg->text_len);
 }
 
 /* The derived show specialization of one slot's row type; NULL when
@@ -125,8 +122,8 @@ static void emit_first_literal(lower_ctx *c, const ek_str_seg *seg,
                                const char *acc)
 {
     lower_pad(c);
-    lower_emitf(c, "ek_obj *%s = ek_str_from_cstr(%s);\n", acc,
-                seg_cstr(c, seg));
+    lower_emitf(c, "ek_obj *%s = ek_keep(%s).as.ref;\n", acc,
+                seg_cache(c, seg));
 }
 
 static void emit_part_literal(lower_ctx *c, lower_scope *scope,
@@ -135,8 +132,8 @@ static void emit_part_literal(lower_ctx *c, lower_scope *scope,
     const char *s = lower_temp(c, scope);
 
     lower_pad(c);
-    lower_emitf(c, "ek_obj *%s = ek_str_from_cstr(%s);\n", s,
-                seg_cstr(c, seg));
+    lower_emitf(c, "ek_obj *%s = ek_keep(%s).as.ref;\n", s,
+                seg_cache(c, seg));
     emit_concat(c, scope, acc, s);
 }
 
@@ -179,28 +176,18 @@ static lower_val discard_parts(lower_ctx *c, lower_scope *scope,
 }
 
 /* The single-literal path: zero segments or one pure literal segment
-   becomes one escaped C string on the heap. */
+   is a kept read of the segment's cache variable. */
 static lower_val plain_string(lower_ctx *c, const ek_node *e)
 {
-    ek_buf b;
-    lower_val out;
+    const char *bytes = "";
+    size_t len = 0;
 
-    ek_buf_init(&b);
-    if (!ek_buf_append_str(&b, "ek_val_ref(ek_str_from_cstr(")) {
-        c->oom = 1;
-    }
     if (e->u.str.count == 1) {
-        lower_string_literal(c, &b, e->u.str.segs[0].text,
-                             e->u.str.segs[0].text_len);
-    } else {
-        lower_string_literal(c, &b, "", 0);
+        bytes = e->u.str.segs[0].text;
+        len = e->u.str.segs[0].text_len;
     }
-    if (!ek_buf_append_str(&b, "))")) {
-        c->oom = 1;
-    }
-    out.text = lower_take(c, &b);
-    out.is_temp = 0;
-    return out;
+    return (lower_val){ lower_str(c, "ek_keep(%s)",
+                                  lower_str_cache(c, bytes, len)), 0 };
 }
 
 /* One slot opening the accumulator: the value temp dies once its

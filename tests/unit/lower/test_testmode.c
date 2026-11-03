@@ -23,13 +23,12 @@ static void tests_are_roots(void)
     EK_CHECK_U64(f.low.fn_count, 3);
     /* the dispatching shim matches each declared name and calls the
        mangled binding, releasing its value */
-    EK_CHECK(lfx_has(&f, "int main(int argc, char **argv) {\n"
-                         "    if (argc == 2) {\n"));
-    EK_CHECK(lfx_has(&f, "if (strcmp(argv[1], \"adds\") == 0) {\n"
-                         "            ek_val t = ekf_test_adds();\n"
+    EK_CHECK(lfx_has(&f, "int main(int argc, char **argv)\n{\n"));
+    EK_CHECK(lfx_has(&f, "if (argc == 2) {\n"));
+    EK_CHECK(lfx_has(&f, "if (strcmp(argv[1], \"adds\") == 0) {\n"));
+    EK_CHECK(lfx_has(&f, "ek_val t = ekf_test_adds();\n"
                          "            ek_release(t);\n"
-                         "            return 0;\n"
-                         "        }\n"));
+                         "            return 0;\n"));
     EK_CHECK(lfx_has(&f, "if (strcmp(argv[1], \"fails\") == 0) {\n"
                          "            ek_val t = ekf_test_fails();"));
     /* a missing or unknown name is a refused run, never a crash */
@@ -71,8 +70,9 @@ static void program_mode_unchanged(void)
     EK_CHECK(lfx_check_clean(&f));
     EK_CHECK(lfx_lower_clean(&f));
     EK_CHECK_U64(f.low.fn_count, 1);
-    EK_CHECK(lfx_has(&f, "int main(void) { ek_val t = ekf_test_main(); "
-                         "ek_release(t); return 0; }\n"));
+    EK_CHECK(lfx_has(&f, "int main(void)\n{\n"));
+    EK_CHECK(lfx_has(&f, "ek_val t = ekf_test_main();\n"
+                         "    ek_release(t);\n    return 0;\n"));
     EK_CHECK(lfx_lacks(&f, "ekf_test_counts"));
     EK_CHECK(lfx_lacks(&f, "strcmp(argv[1]"));
     lfx_end(&f);

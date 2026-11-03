@@ -104,6 +104,24 @@ static void record_literals(void)
     cfx_begin(&f, "x := {1, 2}\n");
     EK_CHECK(cfx_has_code(&f, "E-literal-expected"));
     cfx_end(&f);
+
+    /* A positional literal resolves as a list or a tuple only: against
+       a record expectation it is rejected, the mirror of the colon
+       literal's own rejection. */
+    cfx_begin(&f, "p: [x: Float, y: Float] = {2.0, 3.0}\n");
+    EK_CHECK(cfx_code_at_line(&f, "E-type-mismatch", 1));
+    cfx_end(&f);
+
+    cfx_begin(&f, "R: type = R [x: Float, y: Float]\n"
+                  "r: R = {2.0, 3.0}\n");
+    EK_CHECK(cfx_code_at_line(&f, "E-type-mismatch", 2));
+    cfx_end(&f);
+
+    /* The mirror: a colon literal against a tuple expectation is
+       rejected the same way. */
+    cfx_begin(&f, "t: [Int, Int] = {a: 1, b: 2}\n");
+    EK_CHECK(cfx_code_at_line(&f, "E-type-mismatch", 1));
+    cfx_end(&f);
 }
 
 static void literal_placement(void)

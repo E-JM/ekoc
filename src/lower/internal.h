@@ -11,15 +11,28 @@
 #include "support/buf.h"
 #include "support/diag.h"
 
+/* The calling convention of the emitted functions and of every
+   runtime entry they call: the caller keeps every argument value alive
+   across the whole call, a parameter is borrowed -- the callee retains
+   only what it stores -- and the caller's own frame releases its
+   arguments' owning references when its scopes close. A call
+   argument the caller's frame already owns therefore travels without
+   a keep, and a parameter the body only reads stays borrowed. Any
+   future indirect-call mechanism must honor the same invariant, or
+   its arguments need explicit keeps again. */
+
 /* One visible binding of an emitted body: the written name, its C
    spelling, and its kind. Owned bindings release at their scope's
    close; borrowed bindings are reads through another owner (the
-   captured environment of a closure) and never release. */
+   captured environment of a closure) and never release. A parameter
+   the body only reads aliases its ABI slot: no keep is born, and the
+   scope close releases nothing. */
 typedef struct {
     const char *eko;
     const char *cname;
     int is_param;         /* borrowed: a read through a closure env */
     const char *abi;      /* the borrowed ABI slot of a parameter */
+    int aliased;          /* the parameter local aliases its ABI slot */
 } lower_local;
 
 /* One C block of an emitted body: its bindings in declaration order,
@@ -140,6 +153,13 @@ typedef struct {
     const ek_symbol *sym;
     const char *name;
 } lower_tramp;
+
+/* One interned string literal of the unit: the cache variable that
+   holds it and the escaped C literal the shim primes it with. */
+typedef struct {
+    const char *name;
+    const char *lit;
+} lower_strlit;
 
 /* One test binding of a TESTS-mode unit: the declared name the
    dispatching shim matches against and the C name it calls. */
@@ -282,8 +302,14 @@ struct lower_ctx {
     size_t ndsvc, cdsvc;
     ek_buf dsvc;       /* the derived service bodies, joined after the
                           functions */
+    lower_strlit *strlits; /* the interned string literals, in
+                              first-use order */
+    size_t nslit, cslit;
+    ek_buf strdecls;   /* the cache variable declarations, joined after
+                          the preamble */
     unsigned anon_rec; /* the anonymous record families so far */
     int uses_list; /* some body folds a list literal */
+    int uses_string_h; /* some body calls a <string.h> function */
     int hash_mix;  /* the hash bodies' mixing helper is emitted */
     int has_main;
     ek_lower_mode mode;  /* what the unit is for: the roots and the
@@ -318,7 +344,7 @@ int lower_shape_of(lower_ctx *c, const ek_node *at, const ek_type *t,
                    const char ***fnames, const ek_type ***ftypes, size_t *nf,
                    lower_gtype **g);
 int lower_variants_of(lower_ctx *c, const ek_node *at, const ek_type *t,
-                      lower_variant **out, size_t *nv);
+                      lower_variant **out, size_t *nv, int construct);
 const char *lower_std_ctor(lower_ctx *c, const ek_node *at,
                            const char *owner, const char *name);
 
@@ -411,6 +437,15 @@ void lower_emitf(lower_ctx *c, const char *fmt, ...);
 void lower_pad(lower_ctx *c);
 const char *lower_str(lower_ctx *c, const char *fmt, ...);
 const char *lower_take(lower_ctx *c, ek_buf *b);
+
+/* typeemit.c: the C spelling of one generated struct field. */
+const char *lower_field_c_name(lower_ctx *c, const lower_gtype *g,
+                               size_t i);
+
+/* bundle.c: the layout checks of one bundle record, after its typedef
+   stands; a record the capability module does not name a bundle of
+   checks nothing. */
+void lower_bundle_checks(lower_ctx *c, ek_buf *u, const lower_gtype *g);
 void *lower_grow(lower_ctx *c, void *data, size_t *cap, size_t need,
                  size_t width);
 void lower_error(lower_ctx *c, const ek_node *at, const char *fmt, ...);
@@ -425,6 +460,15 @@ void lower_clean_push(lower_ctx *c, const char *temp);
 void lower_clean_pop(lower_ctx *c);
 void lower_clean_release(lower_ctx *c, size_t base);
 void lower_pending_add(lower_ctx *c, lower_pending *p);
+
+/* unit.c: the translation-unit assembly. unit_preamble writes the
+   runtime include the unit opens with; unit_assemble joins the front
+   matter, the ctype structs and extern prototypes, the generated
+   struct families, the forward declarations, the bodies, and the
+   mode's shim, and copies the unit into the arena as the result. */
+int unit_preamble(ek_buf *unit);
+void unit_assemble(lower_ctx *c, ek_buf *unit, ek_lower_result *out,
+                   ek_arena *arena);
 
 /* value.c: the top-level value bindings. lower_is_value is true when
    the symbol is a module-level binding whose annotation is not a
@@ -464,6 +508,7 @@ const char *lower_temp(lower_ctx *c, lower_scope *scope);
 const char *lower_c_name(lower_ctx *c, lower_scope *scope, const char *name);
 void lower_string_literal(lower_ctx *c, ek_buf *b, const char *bytes,
                           size_t len);
+const char *lower_str_cache(lower_ctx *c, const char *bytes, size_t len);
 
 /* literal.c: literal placement by the check row's type. */
 lower_val lower_int_lit(lower_ctx *c, const ek_node *e);
@@ -592,6 +637,28 @@ lower_val lower_call_expr(lower_ctx *c, lower_scope *scope,
 lower_val lower_call_extra(lower_ctx *c, lower_scope *scope,
                            const ek_node *e, const char *extra);
 
+/* call.c: the borrowed-argument reading. lower_borrow_local names the
+   frame-owned local the argument expression reads -- a name read of a
+   binding the emitting frame owns, or the same reading through an
+   injected identity call -- and NULL keeps the kept-temp shape.
+   lower_arg_may_rebind is true when evaluating the expression can
+   rebind a local of the emitting frame, so an argument borrowed
+   before it would read the rebound value at the call. */
+const char *lower_borrow_local(lower_ctx *c, lower_scope *scope,
+                               const ek_node *e);
+int lower_arg_may_rebind(const ek_node *e);
+
+/* borrow.c: the parameter-borrow analysis over one function body.
+   lower_param_rebinds is true when the body rebinds the parameter of
+   that written name -- the rebind releases the local's own reference
+   before the new value moves in -- and lower_param_mentions is true
+   when the body names the parameter anywhere, so the prologue knows
+   whether the C parameter stays used. Both scan one shared child
+   walk; the mentions scan enters lambdas, whose captures read the
+   slot. */
+int lower_param_rebinds(const ek_node *e, const char *name);
+int lower_param_mentions(const ek_node *e, const char *name);
+
 /* The out slot a status-returning runtime entry writes: a signed or
    unsigned word, a float, a code point, or a borrowed value. */
 typedef enum {
@@ -629,13 +696,19 @@ lower_val lower_wrap_decode(lower_ctx *c, lower_scope *scope,
                             const ek_node *e, const char *sym,
                             const char *args);
 
-/* capfam.c: the generated families the runtime builds over, registered
-   as one set whenever the program touches the capability channel --
-   the manifest supplies bundles and the advancing derivation builds
-   one, and the archive members pull each other in, so one union covers
-   every identity the runtime may name. The registrations stamp the
-   identities without the construction helpers: the runtime builds the
-   values itself. */
+/* capfam.c: the generated families the runtime builds over. A
+   capability of the manifest registers the families its bundle pull
+   names, and a pure derivation registers the families of the
+   capability it constructs: the shim's bundle call and the
+   derivation's constructor call pull the runtime's object files in
+   through archive resolution, and the pulled members name the unit's
+   identities. The registrations stamp the identities without the
+   construction helpers: the runtime builds the values itself. */
+void lower_cap_families_of(lower_ctx *c, const ek_node *at,
+                           const char *cap);
+
+/* capfam.c: every capability row at once, for the roots whose family
+   needs no manifest bounds -- the test binaries. */
 void lower_cap_families(lower_ctx *c, const ek_node *at);
 
 /* capfam.c: the Json and ParseError constructor families the runtime's
@@ -643,6 +716,10 @@ void lower_cap_families(lower_ctx *c, const ek_node *at);
    the parse row routes -- the rt references stay inside json.o, so a
    unit without the routing links without the identities. */
 void lower_json_families(lower_ctx *c, const ek_node *at);
+
+/* capfam.c: the seven Json variant shapes the derived decode bodies
+   read, stamped as one set without the construction helpers. */
+void lower_json_shapes(lower_ctx *c, const ek_node *at);
 
 /* unwrap.c: the panicking observations of the Option and Result
    namespaces, the compiler rows `unwrap` and `expect`. A NULL result

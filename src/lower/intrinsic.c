@@ -286,6 +286,7 @@ const char *lower_intrinsic_family(const ek_type *t)
     }
     if (t->kind == EK_T_NOMINAL && t->u.nominal.sym && t->u.nominal.sym->module
         && (strcmp(t->u.nominal.sym->module, "std") == 0
+            || strcmp(t->u.nominal.sym->module, "sys") == 0
             || strcmp(t->u.nominal.sym->module, "cap") == 0)) {
         return t->u.nominal.sym->name;
     }

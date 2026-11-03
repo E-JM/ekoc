@@ -94,17 +94,18 @@ const char *lower_d_cstr(lower_ctx *c, const char *s)
 }
 
 /* acc = acc ++ lit; each emitted line carries the block's indent. The
-   old accumulator dies once the join exists. */
+   literal reads its cache variable, kept for the join, and the old
+   accumulator dies once the join exists. */
 void lower_d_concat_lit(lower_demit *d, const char *indent, const char *acc,
                         const char *lit)
 {
     const char *s = lower_d_temp(d);
     const char *n = lower_d_temp(d);
-    const char *q = lower_d_cstr(d->c, lit);
+    const char *v = lower_str_cache(d->c, lit, strlen(lit));
 
     lower_d_printf(d, "%s{\n", indent);
-    lower_d_printf(d, "%s    ek_obj *%s = ek_str_from_cstr(%s);\n", indent,
-                   s, q);
+    lower_d_printf(d, "%s    ek_obj *%s = ek_keep(%s).as.ref;\n", indent,
+                   s, v);
     lower_d_printf(d, "%s    ek_obj *%s = ek_str_concat(%s, %s);\n", indent,
                    n, acc, s);
     lower_d_printf(d, "%s    ek_release_obj(%s);\n", indent, s);
@@ -212,7 +213,6 @@ int lower_shape_of(lower_ctx *c, const ek_node *at, const ek_type *t,
                                            sizeof *types);
         size_t i, k;
 
-
         if (!types) {
             return 0;
         }
@@ -269,10 +269,13 @@ static const ek_symbol *ctor_symbol(lower_ctx *c, const char *mod,
 }
 
 /* The variants of an algebraic receiver, in declaration order, each
-   with its registered family and applied payload. Returns 0 when the
-   receiver is not an algebraic type of this closure. */
+   with its registered family and applied payload. A nonzero construct
+   registers every family as constructed, the way a construction site
+   would: the decode side calls the variants' helpers to build the
+   values it answers. Returns 0 when the receiver is not an algebraic
+   type of this closure. */
 int lower_variants_of(lower_ctx *c, const ek_node *at, const ek_type *t,
-                      lower_variant **out, size_t *nv)
+                      lower_variant **out, size_t *nv, int construct)
 {
     const ek_node *dn;
     lower_variant *vs;
@@ -304,7 +307,7 @@ int lower_variants_of(lower_ctx *c, const ek_node *at, const ek_type *t,
         if (!cs) {
             return 0;
         }
-        g = lower_ctor_of_symbol(c, at, cs, 0);
+        g = lower_ctor_of_symbol(c, at, cs, construct);
         if (!g) {
             return 0;
         }
@@ -375,6 +378,7 @@ void lower_val_text_is(lower_demit *d, const char *k, const char *raw)
     const char *lit = lower_d_cstr(d->c, raw);
     size_t n = strlen(raw);
 
+    d->c->uses_string_h = 1;
     lower_d_printf(d, "(%s.tag == EK_VAL_REF && %s.as.ref != (ek_obj *)0\n",
                    k, k);
     lower_d_printf(d, "    && %s.as.ref->info->kind == EK_KIND_STR\n", k);
@@ -389,6 +393,7 @@ void lower_obj_text_is(lower_demit *d, const char *obj, const char *raw)
     const char *lit = lower_d_cstr(d->c, raw);
     size_t n = strlen(raw);
 
+    d->c->uses_string_h = 1;
     lower_d_printf(d, "(ek_str_len(%s) == %zu\n", obj, n);
     lower_d_printf(d, "    && memcmp(ek_str_cstr(%s), %s, %zu) == 0)", obj,
                    lit, n);

@@ -79,13 +79,15 @@ static void qualified(r_ctx *c, r_file *f, const ek_node *t)
         r_add_ref(c, t, EK_SYM_EXTERNAL, EK_ST_TYPE, NULL);
         return;
     }
-    if (m->surf == c->std && r_std_cap_name(tname)) {
-        /* The capability types are not std content; the placeholder
-           rows open the names unqualified and carry no qualified
+    if (m->surf == c->std
+        && (r_std_cap_name(tname) || r_embedded_type_name(c, tname))) {
+        /* The embedded modules' types are not std content; the names
+           open unqualified in every file and carry no qualified
            spelling. */
         r_error(c, file, t->line, t->col, "E-unbound-name",
-                "the capability type `%s` has no `std.` spelling; it "
-                "opens unqualified (Clause 9.1.1)", tname);
+                "the type `%s` belongs to an embedded module; it has no "
+                "`std.` spelling and opens unqualified (Clauses 9.1.1, "
+                "9.1.2)", tname);
         r_add_ref(c, t, EK_SYM_EXTERNAL, EK_ST_TYPE, NULL);
         return;
     }

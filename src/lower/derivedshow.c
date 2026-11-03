@@ -19,10 +19,18 @@ static const char *show_of(lower_ctx *c, const ek_type *t)
     return lower_dsvc_request(c, NULL, DSV_SHOW, t);
 }
 
+/* The owned object spelling of an interned literal: the keep the body
+   releases balances the cache's own immortal reference. */
+static const char *lit_obj(lower_ctx *c, const char *s)
+{
+    return lower_str(c, "ek_keep(%s).as.ref",
+                     lower_str_cache(c, s, strlen(s)));
+}
+
 static void emit_bytes_show(lower_demit *d)
 {
-    lower_d_printf(d, "    ek_obj *acc = ek_str_from_cstr(%s);\n",
-                   lower_d_cstr(d->c, "Bytes.from_hex(\""));
+    lower_d_printf(d, "    ek_obj *acc = %s;\n",
+                   lit_obj(d->c, "Bytes.from_hex(\""));
     lower_d_printf(d, "    ek_obj *part = ek_bytes_to_hex(v.as.ref);\n\n");
     lower_d_concat_obj(d, "    ", "acc", "part");
     lower_d_concat_lit(d, "    ", "acc", "\")");
@@ -84,11 +92,11 @@ static void emit_list_show(lower_ctx *c, lower_demit *d, const ek_type *t)
     const char *ind = "        ";
 
     if (!elem) {
-        lower_d_printf(d, "    return ek_str_from_cstr(\"<opaque>\");\n");
+        lower_d_printf(d, "    (void)v;\n");
+        lower_d_printf(d, "    return %s;\n", lit_obj(c, "<opaque>"));
         return;
     }
-    lower_d_printf(d, "    ek_obj *acc = ek_str_from_cstr(%s);\n",
-                   lower_d_cstr(d->c, "{"));
+    lower_d_printf(d, "    ek_obj *acc = %s;\n", lit_obj(c, "{"));
     lower_d_printf(d, "    ek_val cell = v;\n");
     lower_d_printf(d, "    int first = 1;\n\n");
     lower_d_printf(d, "    while (ek_val_is_cons(cell)) {\n");
@@ -111,11 +119,11 @@ static void emit_dict_show(lower_ctx *c, lower_demit *d, const ek_type *t)
     const char *ind = "        ";
 
     if (!ks || !vs) {
-        lower_d_printf(d, "    return ek_str_from_cstr(\"<opaque>\");\n");
+        lower_d_printf(d, "    (void)v;\n");
+        lower_d_printf(d, "    return %s;\n", lit_obj(c, "<opaque>"));
         return;
     }
-    lower_d_printf(d, "    ek_obj *acc = ek_str_from_cstr(%s);\n",
-                   lower_d_cstr(d->c, "{"));
+    lower_d_printf(d, "    ek_obj *acc = %s;\n", lit_obj(c, "{"));
     lower_d_printf(d, "    ek_val k, x;\n");
     lower_d_printf(d, "    size_t cur = 0;\n");
     lower_d_printf(d, "    int first = 1;\n\n");
@@ -142,8 +150,10 @@ static void emit_fields_show(lower_ctx *c, lower_demit *d, const char *stem,
 {
     size_t i;
 
-    lower_d_printf(d, "    ek_obj *acc = ek_str_from_cstr(%s);\n",
-                   lower_d_cstr(d->c, "{"));
+    if (nf == 0) {
+        lower_d_printf(d, "    (void)v;\n");
+    }
+    lower_d_printf(d, "    ek_obj *acc = %s;\n", lit_obj(c, "{"));
     for (i = 0; i < nf; i++) {
         const char *slot = fnames ? lower_str(c, "f_%s", fnames[i])
                                   : lower_str(c, "f_%zu", i);
@@ -180,18 +190,18 @@ static void emit_adt_show(lower_ctx *c, lower_demit *d, lower_variant *vs,
         lower_d_printf(d, "    if (v.as.ref->info == &ekT_%s) {\n",
                        vs[i].stem);
         if (!vs[i].payload) {
-            lower_d_printf(d, "        return ek_str_from_cstr(%s);\n",
-                           lower_d_cstr(d->c, vs[i].name));
+            lower_d_printf(d, "        return %s;\n",
+                           lit_obj(c, vs[i].name));
         } else {
             const char *f = insp_of(c, vs[i].payload);
             const char *part = lower_d_temp(d);
 
             if (!f) {
-                lower_d_printf(d, "        return ek_str_from_cstr("
-                                  "\"<opaque>\");\n");
+                lower_d_printf(d, "        return %s;\n",
+                               lit_obj(c, "<opaque>"));
             } else {
-                lower_d_printf(d, "        ek_obj *acc = ek_str_from_cstr("
-                                  "%s);\n", lower_d_cstr(d->c, vs[i].name));
+                lower_d_printf(d, "        ek_obj *acc = %s;\n",
+                               lit_obj(c, vs[i].name));
                 lower_d_printf(d, "        ek_obj *%s = %s(((ekS_%s *)v.as."
                                   "ref)->p0);\n", part, f, vs[i].stem);
                 lower_d_concat_lit(d, "        ", "acc", " ");
@@ -201,7 +211,7 @@ static void emit_adt_show(lower_ctx *c, lower_demit *d, lower_variant *vs,
         }
         lower_d_printf(d, "    }\n");
     }
-    lower_d_printf(d, "    return ek_str_from_cstr(\"<opaque>\");\n");
+    lower_d_printf(d, "    return %s;\n", lit_obj(c, "<opaque>"));
 }
 
 /* The operator form of a range value: the two endpoints in their own
@@ -217,8 +227,8 @@ static void emit_range_show(lower_ctx *c, lower_demit *d, const ek_type *t)
     const char *part;
 
     if (!g || !f) {
-        lower_d_printf(d, "    return ek_str_from_cstr(%s);\n",
-                       lower_d_cstr(d->c, "<range>"));
+        lower_d_printf(d, "    (void)v;\n");
+        lower_d_printf(d, "    return %s;\n", lit_obj(c, "<range>"));
         return;
     }
     lower_d_printf(d, "    ek_obj *acc = %s(((ekS_%s *)v.as.ref)"
@@ -261,18 +271,19 @@ static void emit_struct_show(lower_ctx *c, lower_demit *d, const ek_type *t)
                              t->kind == EK_T_RECORD ? fnames : NULL, ftypes,
                              nf);
         } else {
-            lower_d_printf(d, "    return ek_str_from_cstr("
-                              "\"<opaque>\");\n");
+            lower_d_printf(d, "    (void)v;\n");
+            lower_d_printf(d, "    return %s;\n", lit_obj(c, "<opaque>"));
         }
     } else if (t->kind == EK_T_NOMINAL
                && lower_shape_of(c, NULL, t, &fnames, &ftypes, &nf, &g)
                && g) {
         emit_fields_show(c, d, g->stem, fnames, ftypes, nf);
     } else if (t->kind == EK_T_NOMINAL
-               && lower_variants_of(c, NULL, t, &vs, &nv)) {
+               && lower_variants_of(c, NULL, t, &vs, &nv, 0)) {
         emit_adt_show(c, d, vs, nv);
     } else {
-        lower_d_printf(d, "    return ek_str_from_cstr(\"<cap>\");\n");
+        lower_d_printf(d, "    (void)v;\n");
+        lower_d_printf(d, "    return %s;\n", lit_obj(c, "<cap>"));
     }
 }
 
@@ -304,12 +315,15 @@ void lower_dsvc_show_emit(lower_ctx *c, const char *name, const ek_type *t,
         if (is) {
             lower_d_printf(&d, "    return %s(v);\n", is);
         } else {
-            lower_d_printf(&d, "    return ek_str_from_cstr(\"<cap>\");\n");
+            lower_d_printf(&d, "    (void)v;\n");
+            lower_d_printf(&d, "    return %s;\n", lit_obj(c, "<cap>"));
         }
     } else if (t->kind == EK_T_UNIT) {
-        lower_d_printf(&d, "    return ek_str_from_cstr(\"_\");\n");
+        lower_d_printf(&d, "    (void)v;\n");
+        lower_d_printf(&d, "    return %s;\n", lit_obj(c, "_"));
     } else if (t->kind == EK_T_FN) {
-        lower_d_printf(&d, "    return ek_str_from_cstr(\"<fn>\");\n");
+        lower_d_printf(&d, "    (void)v;\n");
+        lower_d_printf(&d, "    return %s;\n", lit_obj(c, "<fn>"));
     } else {
         emit_struct_show(c, &d, t);
     }

@@ -6,7 +6,7 @@
    fields out of an Obj by key bytes, admitting no extra key and no
    missing field; a tuple reads its components out of an Arr in order,
    admitting no other length. Every failing decode releases the ones
-   decoded before it. */
+   decoded before it, and the kept Json field values beside them. */
 
 /* The component decodes of a tuple, each failing release keeping the
    ones decoded before it. */
@@ -22,7 +22,7 @@ void lower_from_tuple_emit(lower_ctx *c, lower_demit *d, lower_gtype *g,
     }
     g->constructed = 1;
     lower_d_printf(d, "    if (v.as.ref->info != &ekT_std_Json_Arr)\n");
-    lower_json_err_lit(d, "    ", "\"\"");
+    lower_json_err_lit(d, "    ", "");
     lower_d_printf(d, "    {\n");
     lower_d_printf(d, "        ek_val cell = %s;\n",
                    lower_json_slot(c, "Arr", "v"));
@@ -33,7 +33,7 @@ void lower_from_tuple_emit(lower_ctx *c, lower_demit *d, lower_gtype *g,
     lower_d_printf(d, "            probe = ek_cons_tail(probe.as.ref);\n");
     lower_d_printf(d, "        }\n");
     lower_d_printf(d, "        if (n != %zu)\n", nf);
-    lower_json_err_lit(d, "            ", "\"\"");
+    lower_json_err_lit(d, "            ", "");
     for (i = 0; i < nf; i++) {
         const char *f = lower_fromj_of(c, ftypes[i]);
 
@@ -41,7 +41,7 @@ void lower_from_tuple_emit(lower_ctx *c, lower_demit *d, lower_gtype *g,
         lower_d_printf(d, "        ek_val %s = %s(ek_cons_head(cell.as.ref))"
                           ";\n", rs[i], f ? f : "0");
         if (!f) {
-            lower_json_err_lit(d, "            ", "\"\"");
+            lower_json_err_lit(d, "            ", "");
             lower_d_printf(d, "        }\n");
             return;
         }
@@ -85,6 +85,7 @@ static void emit_find_helper(lower_ctx *c, const char *fn)
     lower_demit d;
     ek_buf b;
 
+    c->uses_string_h = 1;
     lower_d_begin(c, &d, &b);
     lower_push_sig(c, lower_str(c, "static int %s(ek_val d, const char *name,"
                                    " ek_val *out)", fn));
@@ -124,7 +125,7 @@ void lower_from_record_emit(lower_ctx *c, lower_demit *d, const char *name,
     emit_find_helper(c, find);
     g->constructed = 1;
     lower_d_printf(d, "    if (v.as.ref->info != &ekT_std_Json_Obj)\n");
-    lower_json_err_lit(d, "    ", "\"\"");
+    lower_json_err_lit(d, "    ", "");
     lower_d_printf(d, "    {\n");
     lower_d_printf(d, "        ek_val d = %s;\n", lower_json_slot(c, "Obj",
                                                                  "v"));
@@ -156,8 +157,12 @@ void lower_from_record_emit(lower_ctx *c, lower_demit *d, const char *name,
         const char *lit = lower_d_cstr(c, fnames ? fnames[i] : "");
 
         lower_d_printf(d, "        hit = %s(d, %s, &x);\n", find, lit);
-        lower_d_printf(d, "        if (!hit)\n");
-        lower_json_err_lit(d, "            ", lit);
+        lower_d_printf(d, "        if (!hit) {\n");
+        for (cap = 0; cap < i; cap++) {
+            lower_d_printf(d, "            ek_release(f%zu);\n", cap);
+        }
+        lower_json_err_lit(d, "            ", fnames ? fnames[i] : "");
+        lower_d_printf(d, "        }\n");
         lower_d_printf(d, "        f%zu = ek_keep(x);\n", i);
     }
     for (i = 0; i < nf; i++) {
@@ -171,7 +176,7 @@ void lower_from_record_emit(lower_ctx *c, lower_demit *d, const char *name,
             for (k2 = 0; k2 < i; k2++) {
                 lower_d_printf(d, "        ek_release(%s);\n", rs[k2]);
             }
-            lower_json_err_lit(d, "            ", "\"\"");
+            lower_json_err_lit(d, "            ", "");
             lower_d_printf(d, "    }\n");
             return;
         }
@@ -179,6 +184,9 @@ void lower_from_record_emit(lower_ctx *c, lower_demit *d, const char *name,
                        LOWER_OK_INFO);
         for (cap = 0; cap < i; cap++) {
             lower_d_printf(d, "            ek_release(%s);\n", rs[cap]);
+        }
+        for (cap = 0; cap < nf; cap++) {
+            lower_d_printf(d, "            ek_release(f%zu);\n", cap);
         }
         lower_d_printf(d, "            return %s;\n", rs[i]);
         lower_d_printf(d, "        }\n");
