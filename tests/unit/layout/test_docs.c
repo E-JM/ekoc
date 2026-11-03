@@ -71,9 +71,12 @@ static void test_block_document(void)
 {
     layout_fixture f;
     char *got;
-    size_t i, indent = fx_count(&f);
+    size_t i, indent;
 
     fx_begin(&f, "f =\n    /// doc\n    x = 1\n    x\n");
+    /* the sentinel stands past the last token, so a missing INDENT
+       skips the position checks below */
+    indent = fx_count(&f);
     EK_CHECK_U64(fx_errors(&f), 0);
     EK_CHECK_U64(doc_count(&f), 1);
     got = fx_skeleton(&f);
