@@ -70,7 +70,9 @@ following rules apply.
   an `Int` or machine-word position is an error.
 - An integer literal in a `Float` position is an error; write `Int.to_float`.
 - A literal in a position with no expected type defaults to `Int` for integers
-  and `Float` for floats.
+  and `Float` for floats. A position whose expected type is a type variable
+  counts as no expected type: the literal places by the default, and each
+  call site where the variable instantiates is a separate instantiation.
 
 ```eko
 mask:  UInt = 0xFF

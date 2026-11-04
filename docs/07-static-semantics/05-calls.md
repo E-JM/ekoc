@@ -135,8 +135,10 @@ and a value outside the target range is `E-literal-overflow` (Clause 5.7.1).
 
 `/` and `%` truncate toward zero and are paired: `-7 / 2` is `-3`, and `-7 %
 2` is `-1`. The floor family is `Int.div` and `Int.mod` (Annex C.8). `UInt`
-values are non-negative, so the distinction vanishes. `Float` `%` uses the
-same truncation basis.
+values are non-negative, so the distinction vanishes. `Float` `%` is the
+remainder of the same pairing — the C `fmod`: truncated toward zero, taking
+the dividend's sign, and paired with `/` the way `rem` pairs with `div` on
+the integers. The IEEE remainder is not part of the language.
 
 Overflow and division by zero panic at run time for the integer types
 (Clause 8.4.2); `Int.min / -1` overflows. A `Float` operation that overflows

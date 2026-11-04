@@ -62,7 +62,10 @@ A function type is a parameter group followed by an arrow and a result type
 | `(a) ?` | elided arrow: `(a) ?-> _` |
 
 `()` is the zero-parameter function type and is an abbreviation of `() -> _`.
-A unit result is written `-> _`, not `-> ()`.
+A unit result is written `-> _`, not `-> ()`. A bare arrow form is a type of
+its own: `?` never applies to a value, so a `?` arrow cannot stand in a
+tuple-component, record-field, or list-element position (Annex A.3.7 writes
+those positions as types, not arrows).
 
 Parentheses are context-sensitive. A parenthesized group in a position where a
 complete type is expected is a parameter group with the arrow elided:

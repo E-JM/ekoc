@@ -241,7 +241,9 @@ printed verbatim and MAY span several lines; a line that begins with `at`
 after the two-space indentation is a frame line.
 
 **Backtrace.** The backtrace is always printed, with the innermost frame first.
-Function names are fully qualified (Clause 7.4.4). Frames eliminated by self
+Function names are fully qualified (Clause 7.4.4) and carry no instantiation
+spelling: a frame names the source-level `module.function`, never the
+specialization that produced the call site. Frames eliminated by self
 tail calls do not appear (Clause 8.8.3). How frames are captured is
 implementation-defined; the frame format is normative, and the textual form of
 the backtrace beyond that format is unspecified (Clause 2.5).

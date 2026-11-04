@@ -39,7 +39,9 @@ An arm is always `PATTERN -> EXPRESSION`. A bare expression is not an arm. A
 guard is written `PATTERN if CONDITION -> EXPRESSION` (Clause 6.7.3).
 
 A `case` that contains a guarded arm MUST end with an unguarded arm. The
-unguarded arm closes the match. Exhaustiveness is specified in Clause 7.7.2.
+unguarded arm closes the match. Exhaustiveness is specified in Clause 7.7.2;
+the closing arm is the price of decidability — coverage over an arbitrary
+`Bool` expression cannot be computed, so the catch-all supplies it.
 
 ### 6.7.2 Multiple Scrutinees
 

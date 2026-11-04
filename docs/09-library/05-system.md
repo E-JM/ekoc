@@ -199,7 +199,9 @@ reside in the module under test. A test shares the module scope with top-level
 bindings, so a private function is directly callable. No binding is made
 public for testing, and the interface is unaffected. A test helper is a
 private top-level binding with a leading `_`. Test bindings are absent from
-non-test compilation; a helper used only by tests raises no warning. A
+non-test compilation, but its body is checked under every compilation:
+a broken test body fails the build of any product that carries it. A
+helper used only by tests raises no warning. A
 cross-file test is an ordinary module plus `import`. Only the public surface
 of the target is reachable there; private names are tested in their own
 module. A test-file suffix is not part of the language.

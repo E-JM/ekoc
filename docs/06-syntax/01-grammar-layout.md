@@ -119,7 +119,8 @@ continuation is licensed.
 2. **Before a chain dot.** A receiver chain MAY continue on the next line when
    the line begins with `.`. Each continuation line begins with `.` and is
    aligned with the first `.` of the chain; a `.` in a different column is an
-   error (Clause 6.5.3).
+   error (Clause 6.5.3). A continuation line that does not begin with `.` is
+   not licensed here; it belongs to license 5 below, which needs no column.
 3. **A trailing callback.** The last argument of a call MAY occupy its own
    line (Clause 6.2.5).
 4. **A continued scrutinee.** The scrutinee of a `case` MAY continue on the
