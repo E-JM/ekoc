@@ -189,6 +189,74 @@ static void capability_display(void)
     lfx_end(&f);
 }
 
+/* The handle types answer the display channels with their own
+   <handle> form, by type and not by typeinfo identity: the runtime
+   builds its File values over private identities, so the branch must
+   stand ahead of the variant walk. */
+static void handle_display(void)
+{
+    lfx f;
+
+    lfx_begin(&f,
+              "main: (o: Out, fs: Fs) ! =\n"
+              "    case fs.open(\"f\", Read):\n"
+              "        Ok h ->\n"
+              "            o.println(h.show())\n"
+              "            o.println(h.inspect())\n"
+              "        Err e -> o.println(\"no\")\n");
+    EK_CHECK(lfx_check_clean(&f));
+    EK_CHECK(lfx_lower_clean(&f));
+    EK_CHECK(lfx_has(&f, "ek_str_from_cstr(\"<handle>\")"));
+    EK_CHECK(lfx_lacks(&f, "\"<cap>\""));
+    lfx_end(&f);
+}
+
+/* The function form renders <fn> on both channels, and a composite
+   forwards the element's own form instead of an opaque placeholder. */
+static void function_display(void)
+{
+    lfx f;
+
+    lfx_begin(&f,
+              "R: type = [cb: (Int) -> Int]\n"
+              "V: type = Wrap ((Int) -> Int) | Done\n"
+              "main: (o: Out) ! =\n"
+              "    g: (Int) -> Int = (x): x\n"
+              "    gs: [](Int) -> Int = {g}\n"
+              "    r: R = {cb: g}\n"
+              "    v: V = Wrap g\n"
+              "    o.println(g.show())\n"
+              "    o.println(gs.show())\n"
+              "    o.println(r.show())\n"
+              "    o.println(v.show())\n");
+    EK_CHECK(lfx_check_clean(&f));
+    EK_CHECK(lfx_lower_clean(&f));
+    EK_CHECK(lfx_has(&f, "static ek_obj *ekd_show_Fn(ek_val v);"));
+    EK_CHECK(lfx_has(&f, "ek_str_from_cstr(\"<fn>\")"));
+    EK_CHECK(lfx_lacks(&f, "ekd_inspect_Opaque"));
+    lfx_end(&f);
+}
+
+/* Equality and the display channels answer over a dictionary whose
+   keys are not String: the key domain gates the checker, the lowering
+   derives the walk, and the keys render quoted like any other. */
+static void dict_key_domain(void)
+{
+    lfx f;
+
+    lfx_begin(&f,
+              "main: (o: Out) ! =\n"
+              "    d: [Int] Int = {1: 10, 2: 20}\n"
+              "    o.println(d.show())\n"
+              "    o.println(show(d.eq(d)))\n");
+    EK_CHECK(lfx_check_clean(&f));
+    EK_CHECK(lfx_lower_clean(&f));
+    EK_CHECK(lfx_has(&f, "static int ekq_D$Int$Int(ek_val a, ek_val b);"));
+    EK_CHECK(lfx_has(&f, "static ek_obj *ekd_show_D$Int$Int(ek_val v);"));
+    EK_CHECK(lfx_lacks(&f, "no lowering"));
+    lfx_end(&f);
+}
+
 /* The decode side constructs: from_json over an algebraic type no
    source site builds registers every variant's family as constructed,
    so the helpers join the unit, and each decode arm binds the
@@ -228,6 +296,9 @@ int main(void)
     ordering_and_display_members();
     tuple_payload_equality();
     capability_display();
+    handle_display();
+    function_display();
+    dict_key_domain();
     from_json_constructs_variants();
     return ek_test_report("lower/derived");
 }

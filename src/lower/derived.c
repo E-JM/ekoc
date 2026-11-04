@@ -46,6 +46,27 @@ int lower_is_range(const ek_type *t)
         && strcmp(t->u.nominal.sym->name, "Range") == 0;
 }
 
+/* True when the nominal is a handle type of the system vocabulary:
+   the closed three-name list the checker's own judgment reads, so the
+   display channels and the halt rules stay one list apart. */
+int lower_is_handle(const ek_type *t)
+{
+    static const char *handles[] = {"File", "Scope", "Task"};
+    size_t i;
+
+    if (!t || t->kind != EK_T_NOMINAL || !t->u.nominal.sym
+        || t->u.nominal.argc > 1 || !t->u.nominal.sym->module
+        || strcmp(t->u.nominal.sym->module, "sys") != 0) {
+        return 0;
+    }
+    for (i = 0; i < sizeof handles / sizeof *handles; i++) {
+        if (strcmp(handles[i], t->u.nominal.sym->name) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 /* Opens one service body's buffer. */
 void lower_d_begin(lower_ctx *c, lower_demit *d, ek_buf *b)
 {

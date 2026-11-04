@@ -132,6 +132,26 @@ static void case_json_keys(void)
     cfx_end(&f);
 }
 
+/* A handle halts JSON directly and through a containing record, while
+   its display channels stay derived. */
+static void case_handle_json(void)
+{
+    cfx f;
+
+    cfx_begin(&f, "f: (h: File) -> Json = h.to_json()\n");
+    EK_CHECK(cfx_has_code(&f, "E-json-shape"));
+    cfx_end(&f);
+
+    cfx_begin(&f, "R: type = [h: File]\n"
+                  "f: (r: R) -> Json = r.to_json()\n");
+    EK_CHECK(cfx_has_code(&f, "E-json-shape"));
+    cfx_end(&f);
+
+    cfx_begin(&f, "f: (h: File) -> String = h.show()\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+}
+
 int main(void)
 {
     case_deep_eq();
@@ -139,5 +159,6 @@ int main(void)
     case_recursive();
     case_generic_payload();
     case_json_keys();
+    case_handle_json();
     return ek_test_report("check/halt");
 }

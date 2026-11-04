@@ -47,8 +47,12 @@ inspect(m)     // {cents: 12500, cur: "USD"}
 | ADT | constructor application: `Man`, `Some 3`, `Err "x"` |
 | `Range` | the operator forms: `0..9`, `0..=9` |
 | `_`, capability, function | `_`, `<cap>`, `<fn>` |
+| handle (`File`, `Scope`, `Task`) | `<handle>` |
 
-Empty containers are `{}`. Record fields appear in declaration order.
+Empty containers are `{}`. The handle row is a closed enumeration tied
+to the system vocabulary (Clause 9.1.1): adding a handle type is a
+language revision. Handle forms forward through composites like any
+other element form. Record fields appear in declaration order.
 Dictionaries appear in insertion order, and iteration follows that order. The
 time types are specified in Clause 9.7.4.
 
@@ -170,7 +174,7 @@ Result t ParseError` by default.
 | `String`, `Char`, `Bytes` | `Str`; `Bytes` in lowercase hexadecimal |
 | `Int`, `Float`, `Bool`, `_` | number, `true` or `false`, `null` |
 | ADT | external tagging (Clause 9.9.4) |
-| non-string-keyed dictionary, capability, function | no default; compile error (`E-json-shape`) |
+| non-string-keyed dictionary, capability, handle, function | no default; compile error (`E-json-shape`) |
 
 Every value whose type participates satisfies `from_json(to_json(v)).eq(Ok
 v)`. A missing field, an extra key, an unknown variant, or a payload type

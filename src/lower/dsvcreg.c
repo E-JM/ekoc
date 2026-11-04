@@ -277,13 +277,17 @@ static int supported(lower_dsvc_kind kind, const ek_type *t)
     }
     switch (t->kind) {
     case EK_T_FN:
+        return kind == DSV_SHOW || kind == DSV_INSPECT;
     case EK_T_NEVER:
         return 0;
     case EK_T_DICT:
         if (kind == DSV_ORD || kind == DSV_HASH) {
             return 0;
         }
-        return lower_scalar_kind(t->u.dict.key) == EKSC_STRING;
+        if (kind == DSV_TOJSON || kind == DSV_FROMJSON) {
+            return lower_scalar_kind(t->u.dict.key) == EKSC_STRING;
+        }
+        return 1;
     case EK_T_NOMINAL:
         sk = lower_scalar_kind(t);
         if (sk != EKSC_OTHER) {
@@ -301,6 +305,12 @@ static int supported(lower_dsvc_kind kind, const ek_type *t)
             /* The capability value reads through no structure: the
                two display channels render the <cap> form, every other
                family stays unsupported. */
+            return kind == DSV_SHOW || kind == DSV_INSPECT;
+        }
+        if (lower_is_handle(t)) {
+            /* A handle renders its own form on the display channels;
+               equality, ordering, keying, and JSON stay derived-free
+               the way the checker's halt rules read them. */
             return kind == DSV_SHOW || kind == DSV_INSPECT;
         }
         return t->u.nominal.sym && t->u.nominal.sym->decl != NULL;

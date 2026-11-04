@@ -40,8 +40,8 @@ static void dict_string_key(void)
     lfx_end(&f);
 }
 
-/* Interpolation lowers; the one slot without a rendering here is the
-   function-typed one, whose show the service registry does not back. */
+/* Interpolation lowers; a function slot renders through its own
+   display service now that the registry backs one. */
 static void interpolated_string(void)
 {
     lfx f;
@@ -51,9 +51,8 @@ static void interpolated_string(void)
                   "    s = \"a{h}\"\n"
                   "    _\n");
     EK_CHECK(lfx_check_clean(&f));
-    EK_CHECK(lfx_has_code(&f, "E-lower"));
-    EK_CHECK(lfx_code_at_line(&f, "E-lower", 3));
-    EK_CHECK_U64(lfx_errors(&f), 1);
+    EK_CHECK(lfx_lower_clean(&f));
+    EK_CHECK(lfx_has(&f, "static ek_obj *ekd_show_Fn(ek_val v);"));
     EK_CHECK(f.low.text != NULL);
     lfx_end(&f);
 }

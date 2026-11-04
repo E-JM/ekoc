@@ -258,6 +258,52 @@ static const ek_type *walk_type(lower_ctx *c, const ek_node *t,
         out->u.record.count = n;
         return out;
     }
+    case EK_N_T_FN: {
+        const ek_type **params;
+        const ek_type *result;
+        ek_type *out;
+        size_t n = t->u.t_fn.params.count, cap = 0, i;
+
+        params = n ? lower_grow(c, NULL, &cap, n, sizeof *params) : NULL;
+        if (n && !params) {
+            return NULL;
+        }
+        for (i = 0; i < n; i++) {
+            const ek_node *pn = t->u.t_fn.params.data[i];
+
+            params[i] = walk_type(c, pn->u.t_field.type, decl, owner);
+            if (!params[i]) {
+                return NULL;
+            }
+        }
+        /* an elided result is the unit type */
+        if (!t->u.t_fn.result) {
+            ek_type *unit = ek_arena_alloc(c->arena, sizeof *unit);
+
+            if (!unit) {
+                c->oom = 1;
+                return NULL;
+            }
+            unit->kind = EK_T_UNIT;
+            result = unit;
+        } else {
+            result = walk_type(c, t->u.t_fn.result, decl, owner);
+            if (!result) {
+                return NULL;
+            }
+        }
+        out = ek_arena_alloc(c->arena, sizeof *out);
+        if (!out) {
+            c->oom = 1;
+            return NULL;
+        }
+        out->kind = EK_T_FN;
+        out->u.fn.params = params;
+        out->u.fn.count = n;
+        out->u.fn.result = result;
+        out->u.fn.arrow = t->u.t_fn.arrow;
+        return out;
+    }
     default:
         return opaque_type(c);
     }

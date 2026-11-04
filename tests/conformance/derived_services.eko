@@ -49,3 +49,21 @@ sort_stability: test =
 
 capability_display: test =
     assert_eq(show(Out.null()), "<cap>")
+
+// The function form renders its own shape on the display channels, and
+// a composite forwards the element's own form (Clause 9.8.3).
+function_display: test =
+    g: (Int) -> Int = (x): x
+    gs: [](Int) -> Int = {g}
+    assert_eq(g.show(), "<fn>")
+    assert_eq(g.inspect(), "<fn>")
+    assert_eq(gs.show(), "\{<fn>}")
+    assert_eq(gs.inspect(), "\{<fn>}")
+
+// Equality and display answer over a dictionary whose keys are not
+// String: the keys render quoted like any other (Clauses 9.8.3, 9.8.4).
+dict_key_domain: test =
+    d: [Int] Int = {1: 10, 2: 20}
+    assert(d.eq(d))
+    assert_eq(d.show(), "\{\"1\": 10, \"2\": 20}")
+    assert_eq(d.inspect(), "\{\"1\": 10, \"2\": 20}")

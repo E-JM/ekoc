@@ -42,7 +42,7 @@ static int halt_stops(const halt_graph *g, const ek_type *t)
             return 1; /* a non-string key has no default form */
         }
     }
-    return ck_is_capability(t);
+    return ck_is_capability(t) || ck_is_handle(t);
 }
 
 static void kid_push(ck_ctx *c, halt_graph *g, size_t row)
@@ -275,6 +275,6 @@ void ck_json_shape_error(ck_ctx *c, const ek_node *at, const ek_type *t)
     }
     ck_error(c, at, "E-json-shape",
              "the type %s has no default JSON form; capabilities, "
-             "functions, and non-string-keyed dictionaries have no "
-             "`to_json` (Clause 9.9.3)", ck_type_name(c, t));
+             "handles, functions, and non-string-keyed dictionaries "
+             "have no `to_json` (Clause 9.9.3)", ck_type_name(c, t));
 }

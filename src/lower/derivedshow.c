@@ -86,12 +86,37 @@ static void emit_quoted(lower_demit *d, const char *indent, const char *acc,
     lower_d_concat_obj(d, indent, acc, q);
 }
 
+/* The literal form a component renders when it carries no service
+   body of its own: a function shows its own shape rather than an
+   opaque placeholder. NULL leaves the defensive arm. */
+static const char *bare_form(const ek_type *t)
+{
+    if (t && t->kind == EK_T_FN) {
+        return "<fn>";
+    }
+    return NULL;
+}
+
+/* Emits one rendered part into a declared temp: through the
+   component's service, or as the component's own literal form when it
+   carries none. */
+static void emit_part(lower_demit *d, const char *ind, const char *part,
+                      const char *val, const char *svc, const char *form)
+{
+    if (svc) {
+        lower_d_printf(d, "%s%s = %s(%s);\n", ind, part, svc, val);
+    } else {
+        lower_d_printf(d, "%s%s = %s;\n", ind, part, lit_obj(d->c, form));
+    }
+}
+
 static void emit_list_show(lower_ctx *c, lower_demit *d, const ek_type *t)
 {
     const char *elem = insp_of(c, t->u.list.elem);
+    const char *form = bare_form(t->u.list.elem);
     const char *ind = "        ";
 
-    if (!elem) {
+    if (!elem && !form) {
         lower_d_printf(d, "    (void)v;\n");
         lower_d_printf(d, "    return %s;\n", lit_obj(c, "<opaque>"));
         return;
@@ -103,7 +128,7 @@ static void emit_list_show(lower_ctx *c, lower_demit *d, const ek_type *t)
     lower_d_printf(d, "        ek_obj *part;\n\n");
     lower_d_printf(d, "%sif (!first)\n", ind);
     lower_d_concat_lit(d, ind, "acc", ", ");
-    lower_d_printf(d, "%spart = %s(ek_cons_head(cell.as.ref));\n", ind, elem);
+    emit_part(d, ind, "part", "ek_cons_head(cell.as.ref)", elem, form);
     lower_d_printf(d, "%sfirst = 0;\n", ind);
     lower_d_concat_obj(d, ind, "acc", "part");
     lower_d_printf(d, "%scell = ek_cons_tail(cell.as.ref);\n", ind);
@@ -116,9 +141,10 @@ static void emit_dict_show(lower_ctx *c, lower_demit *d, const ek_type *t)
 {
     const char *ks = show_of(c, t->u.dict.key);
     const char *vs = insp_of(c, t->u.dict.val);
+    const char *form = bare_form(t->u.dict.val);
     const char *ind = "        ";
 
-    if (!ks || !vs) {
+    if (!ks || (!vs && !form)) {
         lower_d_printf(d, "    (void)v;\n");
         lower_d_printf(d, "    return %s;\n", lit_obj(c, "<opaque>"));
         return;
@@ -135,7 +161,7 @@ static void emit_dict_show(lower_ctx *c, lower_demit *d, const ek_type *t)
     lower_d_printf(d, "%skt = %s(k);\n", ind, ks);
     emit_quoted(d, ind, "acc", "kt");
     lower_d_concat_lit(d, ind, "acc", ": ");
-    lower_d_printf(d, "%spv = %s(x);\n", ind, vs);
+    emit_part(d, ind, "pv", "x", vs, form);
     lower_d_concat_obj(d, ind, "acc", "pv");
     lower_d_printf(d, "%sfirst = 0;\n", ind);
     lower_d_printf(d, "    }\n");
@@ -158,12 +184,13 @@ static void emit_fields_show(lower_ctx *c, lower_demit *d, const char *stem,
         const char *slot = fnames ? lower_str(c, "f_%s", fnames[i])
                                   : lower_str(c, "f_%zu", i);
         const char *f = insp_of(c, ftypes[i]);
+        const char *form = bare_form(ftypes[i]);
         const char *part;
 
         if (i) {
             lower_d_concat_lit(d, "    ", "acc", ", ");
         }
-        if (!f) {
+        if (!f && !form) {
             lower_d_concat_lit(d, "    ", "acc", "<opaque>");
             continue;
         }
@@ -172,8 +199,10 @@ static void emit_fields_show(lower_ctx *c, lower_demit *d, const char *stem,
             lower_d_concat_lit(d, "    ", "acc", ": ");
         }
         part = lower_d_temp(d);
-        lower_d_printf(d, "    ek_obj *%s = %s(((ekS_%s *)v.as.ref)->%s);\n",
-                       part, f, stem, slot);
+        lower_d_printf(d, "    ek_obj *%s;\n", part);
+        emit_part(d, "    ", part,
+                  lower_str(c, "((ekS_%s *)v.as.ref)->%s", stem, slot),
+                  f, form);
         lower_d_concat_obj(d, "    ", "acc", part);
     }
     lower_d_concat_lit(d, "    ", "acc", "}");
@@ -194,16 +223,19 @@ static void emit_adt_show(lower_ctx *c, lower_demit *d, lower_variant *vs,
                            lit_obj(c, vs[i].name));
         } else {
             const char *f = insp_of(c, vs[i].payload);
+            const char *form = bare_form(vs[i].payload);
             const char *part = lower_d_temp(d);
 
-            if (!f) {
+            lower_d_printf(d, "        ek_obj *%s;\n", part);
+            if (!f && !form) {
                 lower_d_printf(d, "        return %s;\n",
                                lit_obj(c, "<opaque>"));
             } else {
                 lower_d_printf(d, "        ek_obj *acc = %s;\n",
                                lit_obj(c, vs[i].name));
-                lower_d_printf(d, "        ek_obj *%s = %s(((ekS_%s *)v.as."
-                                  "ref)->p0);\n", part, f, vs[i].stem);
+                emit_part(d, "        ", part,
+                          lower_str(c, "((ekS_%s *)v.as.ref)->p0",
+                                    vs[i].stem), f, form);
                 lower_d_concat_lit(d, "        ", "acc", " ");
                 lower_d_concat_obj(d, "        ", "acc", part);
                 lower_d_printf(d, "        return acc;\n");
@@ -255,7 +287,10 @@ static void emit_struct_show(lower_ctx *c, lower_demit *d, const ek_type *t)
     lower_variant *vs;
     size_t nf, nv;
 
-    if (t->kind == EK_T_LIST) {
+    if (lower_is_handle(t)) {
+        lower_d_printf(d, "    (void)v;\n");
+        lower_d_printf(d, "    return %s;\n", lit_obj(c, "<handle>"));
+    } else if (t->kind == EK_T_LIST) {
         emit_list_show(c, d, t);
     } else if (t->kind == EK_T_DICT) {
         emit_dict_show(c, d, t);
@@ -316,7 +351,7 @@ void lower_dsvc_show_emit(lower_ctx *c, const char *name, const ek_type *t,
             lower_d_printf(&d, "    return %s(v);\n", is);
         } else {
             lower_d_printf(&d, "    (void)v;\n");
-            lower_d_printf(&d, "    return %s;\n", lit_obj(c, "<cap>"));
+            lower_d_printf(&d, "    return %s;\n", lit_obj(c, "<fn>"));
         }
     } else if (t->kind == EK_T_UNIT) {
         lower_d_printf(&d, "    (void)v;\n");
