@@ -31,7 +31,9 @@ are different nominal types (Clause 7.6.4). Identity is independent of
 representation (Clause 8.5) and of the path by which a type is imported.
 
 The maximum nesting depth of a type is implementation-defined (Clause 2.5); a
-type that exceeds it is rejected with a diagnostic (Annex B).
+type that exceeds it is rejected with a diagnostic (Annex B). A conforming
+implementation MUST accept at least 64 levels of type nesting; the ceiling
+above that is the implementation's own.
 
 ### 7.5.2 Nominal Types
 
@@ -264,7 +266,8 @@ exactly.
 
 A function type's arrow form is part of equality. An open arrow `?->` is equal
 only to an open arrow with the same parameter and result types. The maximum
-nesting depth of a checked type is implementation-defined (Clause 2.5).
+nesting depth of a checked type is implementation-defined (Clause 2.5), with
+the 64-level minimum of Clause 7.5.1.
 
 ## 7.6 Generics
 

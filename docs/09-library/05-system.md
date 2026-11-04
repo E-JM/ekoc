@@ -145,6 +145,9 @@ with a requested number of fractional digits. `Float.to_exp` renders
 scientific notation with a requested number of mantissa digits. Both use
 nearest decimal rounding with ties away from zero. Both are total: `NaN` and
 the infinities render as themselves, and formatting never returns `Result`.
+A requested width past the implementation's own bounds is a named panic,
+not a silent no-op and never a truncation: the allocation the width names is
+a visible cost, and a failed allocation is a panic (Clause 8.4.2).
 `String.pad_left` and `String.pad_right` pad to a requested width with the
 given `Char` and never truncate; the width counts Unicode scalar values, and a
 string already at the requested width is returned unchanged. The width is an

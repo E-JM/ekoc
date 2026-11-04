@@ -74,10 +74,11 @@ constant of the language definition, independent of the file's contents.
 Adding or removing a name is a language revision, not a library update. An
 explicit `import std` — bare, or with a list whose names are all opened
 already — is redundant and reports W-redundant-import (Annex B). The stem
-`std`, the path prefix `std/`, the stems of the shipped companions (`time`
-today; Clause 9.1.3), and the stems of the embedded modules (`sys` and `cap`;
-Clause 9.1.1) are reserved. A user module MUST NOT be named `std`, a reserved
-companion stem, or an embedded module's stem (Clause 7.2.2).
+`std`, the path prefix `std/`, and the stems of the embedded modules (`sys`
+and `cap`; Clause 9.1.1) are reserved, and so is the stem of every companion
+the language ships: the reservation follows the companion itself, and the
+list needs no per-companion sentence here. A user module MUST NOT be named
+`std`, a reserved companion stem, or an embedded module's stem (Clause 7.2.2).
 
 The implicit import opens no time name: `Time`, `Mono`, and `Duration` enter
 scope only through `std/time` (Clause 9.7.1).

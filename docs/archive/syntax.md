@@ -9,6 +9,9 @@ the surface rules.
 four spaces and nothing else, so tab (`E-tab` outside comments) and 2/8-space
 widths are not a configuration axis (`Clauses 6.2.2, 6.2.3`). `case` wraps a
 value flowing outward; `<-` flattens one flowing forward (`Clause 6.3.4`).
+The layout rules are normative and stay normative: a formatter's contract is
+to preserve the token stream exactly, and the layout itself never becomes a
+formatting preference.
 
 ## 2. Operators
 

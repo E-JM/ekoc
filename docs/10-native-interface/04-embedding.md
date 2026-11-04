@@ -21,7 +21,9 @@ layouts are not. `eko_value` is opaque throughout.
 
 A conforming host links against the veneer and nothing else. A fast path that
 calls the compiler's generated C directly exists. It is a compiler detail and is
-not part of the contract.
+not part of the contract. Of `eko_closure_new(fn, ctx)`, the closure manages no
+part of `ctx`: the host keeps `ctx` valid for the closure's lifetime — the
+borrow discipline the language's own call boundary keeps.
 
 ### 10.7.2 Holding Values
 

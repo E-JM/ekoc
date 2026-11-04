@@ -48,8 +48,10 @@ Every extern symbol MUST resolve at link time. An unresolved symbol is a link
 error.
 
 Symbols beginning with `eko_` belong to the host: `eko_retain`, `eko_release`,
-and the veneer entries (Clause 10.7.1). An extern declaration that names a
-reserved symbol is a compile error with code `E-reserved-symbol`. The
-restriction is on the symbol name, not on the Eko binding name.
+and the veneer entries (Clause 10.7.1). The prefixes `ek_` and `EK_` belong
+to the runtime and its generated names, and `eko_`-built names the veneer:
+none of the three is third-party symbol space. An extern declaration that
+names a reserved symbol is a compile error with code `E-reserved-symbol`.
+The restriction is on the symbol name, not on the Eko binding name.
 
 Static linking and dynamic linking are implementation domain.

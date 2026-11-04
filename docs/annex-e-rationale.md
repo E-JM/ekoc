@@ -29,7 +29,7 @@ specification and identifies the clauses that express each property.
 | Visible cost | The cost model is stated rather than inferred; indexing syntax is absent; operations with non-constant cost are named where the surface permits. | 6.10, 8.10 |
 | One mechanism per problem | `case` is the only branching primitive; `if` is sugar; operators are namespace functions; a module is a file; a test uses the annotation slot. | 6.5.2, 6.7.1, 7.2.1, 9.14.1 |
 | Uniform rules across positions | `_` has one family of meanings by position; markers occupy slots; composite literals are resolved by expected type; failure has three words. | 4.8, 6.3.1, 6.6.2, 7.5.5, 9.2 |
-| Compile-time resolution | Type identity, generics, and world bits are resolved before execution; there is no runtime type dictionary and no virtual machine. | 7.5, 7.6, 8.7 |
+| Compile-time resolution | Type identity, generics, and world bits are resolved before execution; there is no runtime type dictionary and no virtual machine — the per-type rows of Clause 10.8 are compile-time monomorphizations, not a runtime table. | 7.5, 7.6, 8.7, 10.8 |
 | Deterministic execution | Immutable values, strict evaluation, an acyclic heap, and reference counting; concurrency adds no observable scheduling. | 8.1, 8.6, 8.9 |
 | Small trusted base | Safe Eko has no undefined behavior; native code is the only source, behind `extern`, `Pure`, `C.In`, and `ctype`. | 2.6, 10.1 |
 | Library surface, not syntax | The library adds functions and types, not grammar; the free-name set is closed. | 9.1, 9.15 |
@@ -170,7 +170,7 @@ table is a summary; the clause states the rule.
 | No warning suppression | The warning list is closed; a warning is fixed by changing the program. | Annex B.4 |
 | No unsafe block | Native code is the only source of undefined behavior; `extern` is the boundary. | 2.6, 10.1 |
 | No cross-function tail-call guarantee | Self tail calls are guaranteed; other tail calls are best-effort. | 8.8.4 |
-| No general-purpose test framework | The `test` slot, assertions, and derived capabilities cover testing. | 9.14 |
+| No general-purpose test framework | No describe/it, hooks, or mock framework exists; the `test` slot, the assertions, the derived capabilities, and the runner's panic capture cover testing. | 9.14 |
 
 Several non-goals are consequences of one decision. The absence of mutation
 and a cycle collector follows from immutable values and strict evaluation

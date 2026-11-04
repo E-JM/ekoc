@@ -93,7 +93,8 @@ The toolchain MUST provide the following commands:
 
 The compiler MUST be built as a library. Parsing, resolution, and checking MUST
 be one implementation, shared by the command line and by language tooling. A
-second parser MUST NOT exist.
+second parser MUST NOT exist. Where this chapter states a MUST, the
+conformance suite of Annex D tracks the delivery status of each requirement.
 
 The semantic query API MUST support:
 
@@ -116,7 +117,9 @@ rendering belong to the documentation toolchain.
 ## 11.4 Version Discipline
 
 The standard library root, its companions, and the embedded modules are
-versioned with the compiler (Clause 9.1.4).
+versioned with the compiler (Clause 9.1.4). The compiler version is the
+language version: the language ships as a whole with each compiler
+release, and a per-feature language-version switch does not exist.
 
 The interface diff between two compiler versions, over all shipped surfaces, is
 the library changelog and the compatibility verdict. The diff MUST report:

@@ -47,8 +47,9 @@ no Eko-side counterpart. Its members are specified in the following table.
 
 `C.Ptr.Void` is not a general pointer type. A program cannot dereference it,
 index it, add to it, or convert it to an integer. It is an opaque value that
-crosses the boundary unchanged. A typed wrapper is an ordinary nominal record
-whose only field is the `C.Ptr.Void`.
+crosses the boundary unchanged, and a crossing transfers no ownership: a
+release call is an ordinary extern against the mirrored library's own
+protocol, never a duty the boundary owes.
 
 `C.Size` is a distinct type. It compares with `==` and `<` and converts to
 `UInt`; it has no arithmetic. A value of type `C.Size` is permitted only in the
