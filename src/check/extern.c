@@ -1,6 +1,7 @@
 #include <string.h>
 
 #include "check/internal.h"
+#include "support/buf.h"
 
 /* The compile-time checks over the root's declarations: the extern
    form and signature rules, the marshalling whitelist, the ctype field
@@ -12,6 +13,39 @@ static int is_word(const ek_type *t)
 {
     return ck_is_machine_word(t) || ck_is_std(t, "F32")
         || ck_is_std(t, "F64");
+}
+
+/* The opaque pointer field spelling (Clause 10.3.3). */
+static int is_c_ptr_void(const ek_node *tn)
+{
+    tn = tn && tn->kind == EK_N_T_PAREN ? tn->u.wrap.inner : tn;
+    return tn && tn->kind == EK_N_T_NAME && tn->u.path.count == 3
+        && strcmp(tn->u.path.data[0], "C") == 0
+        && strcmp(tn->u.path.data[1], "Ptr") == 0
+        && strcmp(tn->u.path.data[2], "Void") == 0;
+}
+
+/* The written spelling of a field's type node, for the field predicate
+   the elaborated form cannot name: the bridge reads as `?`. */
+static const char *written_type(const ek_node *tn)
+{
+    ek_buf b;
+    size_t i;
+
+    tn = tn && tn->kind == EK_N_T_PAREN ? tn->u.wrap.inner : tn;
+    if (!tn || tn->kind != EK_N_T_NAME || tn->u.path.count == 0) {
+        return NULL;
+    }
+    ek_buf_init(&b);
+    for (i = 0; i < tn->u.path.count; i++) {
+        if (i && !ek_buf_append_char(&b, '.')) {
+            break;
+        }
+        if (!ek_buf_append_str(&b, tn->u.path.data[i])) {
+            break;
+        }
+    }
+    return b.data != NULL ? b.data : NULL;
 }
 
 static int is_ctype(const ek_type *t)
@@ -202,11 +236,13 @@ static void check_ctype(ck_ctx *c, const ek_node *d)
     for (i = 0, n = rec->u.kids.count; i < n; i++) {
         const ek_node *tn = rec->u.kids.data[i]->u.t_field.type;
         const ek_type *ft = ck_elaborate(c, tn, NULL);
+        const char *written = written_type(tn);
 
-        if (!is_word(ft) && !is_ctype(ft)) {
+        if (!is_word(ft) && !is_ctype(ft) && !is_c_ptr_void(tn)) {
             ck_error(c, tn, "E-ctype-field",
-                     "`%s` is neither a machine word nor a ctype record "
-                     "(Clause 10.3.3)", ck_type_name(c, ft));
+                     "`%s` is neither a machine word, a ctype record, "
+                     "nor C.Ptr.Void (Clause 10.3.3)",
+                     written ? written : ck_type_name(c, ft));
         }
     }
 }

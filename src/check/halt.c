@@ -24,6 +24,35 @@ typedef struct {
 
 static size_t halt_add(ck_ctx *c, halt_graph *g, const ek_type *t);
 
+/* Whether a ctype declaration carries the opaque pointer field: the
+   field's equality would compare addresses, which the language does
+   not observe (Clause 8.11). Nested ctypes need no walk of their own
+   -- their own declaration stops through this same test. */
+static int ctype_carries_ptr(const ek_type *t)
+{
+    const ek_node *dn = t->u.nominal.sym ? t->u.nominal.sym->decl : NULL;
+    const ek_node *rec;
+    size_t i;
+
+    if (!dn || dn->kind != EK_N_CTYPE_DECL
+        || !dn->u.decl.body || dn->u.decl.body->kind != EK_N_T_RECORD) {
+        return 0;
+    }
+    rec = dn->u.decl.body;
+    for (i = 0; i < rec->u.kids.count; i++) {
+        const ek_node *tn = rec->u.kids.data[i]->u.t_field.type;
+
+        tn = tn && tn->kind == EK_N_T_PAREN ? tn->u.wrap.inner : tn;
+        if (tn && tn->kind == EK_N_T_NAME && tn->u.path.count == 3
+            && strcmp(tn->u.path.data[0], "C") == 0
+            && strcmp(tn->u.path.data[1], "Ptr") == 0
+            && strcmp(tn->u.path.data[2], "Void") == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 /* Whether the service stops at the node itself. */
 static int halt_stops(const halt_graph *g, const ek_type *t)
 {
@@ -31,6 +60,10 @@ static int halt_stops(const halt_graph *g, const ek_type *t)
 
     if (t->kind == EK_T_FN) {
         return 1;
+    }
+    if (t->kind == EK_T_NOMINAL && t->u.nominal.sym
+        && ctype_carries_ptr(t)) {
+        return 1; /* the pointer's equality observes an address */
     }
     if (!g->json) {
         return ck_is_capability(t) || ck_is_handle(t);
@@ -264,7 +297,8 @@ void ck_no_eq_error(ck_ctx *c, const ek_node *at, const ek_type *t)
     }
     ck_error(c, at, "E-no-eq",
              "equality over %s has no derivation; capabilities, "
-             "handles, and functions have no `eq` (Clause 9.8.4)",
+             "handles, functions, and ctypes carrying C.Ptr.Void have "
+             "no `eq` (Clause 9.8.4)",
              ck_type_name(c, t));
 }
 

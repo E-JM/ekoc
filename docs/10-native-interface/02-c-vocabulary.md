@@ -74,15 +74,23 @@ C's `div_t` exactly.
 
 The field predicate is checked at the declaration line:
 
-- every field type MUST be a machine word (Clause 10.3.1) or another `ctype`
-  record;
+- every field type MUST be a machine word (Clause 10.3.1), another
+  `ctype` record, or `C.Ptr.Void`;
 - a field of any other type, including `Int`, `String`, a list, or a
   capability, is a compile error with code `E-ctype-field` at that line.
 
 ```eko
 Stat: ctype = [size: I64, label: String]
-// error: E-ctype-field: `String` is not a machine word or a ctype
+// error: E-ctype-field: `String` is neither a machine word, a ctype
+//        record, nor C.Ptr.Void
 ```
+
+A pointer field carries an alias, not an owned value: a `ctype` with a
+`C.Ptr.Void` field is an alias value whose release protocol belongs to the
+mirrored library's own rules — the boundary transfers no ownership
+(Clause 10.3.2). Equality and ordering halt over such a `ctype`, and the
+pointer field renders the opaque form; its address never prints (Clauses
+9.8.4, 9.8.3).
 
 The widths are exactly the widths of the C header, field for field. Declaration
 order is C order. C alignment and padding apply.

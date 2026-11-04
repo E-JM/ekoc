@@ -290,6 +290,11 @@ static void emit_struct_show(lower_ctx *c, lower_demit *d, const ek_type *t)
     if (lower_is_handle(t)) {
         lower_d_printf(d, "    (void)v;\n");
         lower_d_printf(d, "    return %s;\n", lit_obj(c, "<handle>"));
+    } else if (t->kind == EK_T_IVAR) {
+        /* the bridge: an opaque crossing whose shape the walk could not
+           name -- the pointer family, whose address never prints */
+        lower_d_printf(d, "    (void)v;\n");
+        lower_d_printf(d, "    return %s;\n", lit_obj(c, "<opaque>"));
     } else if (t->kind == EK_T_LIST) {
         emit_list_show(c, d, t);
     } else if (t->kind == EK_T_DICT) {

@@ -58,19 +58,35 @@ static const char *typedef_name(lower_ctx *c, const ek_symbol *tsym)
    order, emitted once per declaration beside the preamble. The value
    family registers with it, so the pack and unpack walks see both
    shapes. */
-/* Every field is a machine word or a nested ctype, and a nested one
-   registers first, so its struct text precedes the outer's. */
+/* The opaque pointer field spelling, the one multi-segment name a
+   field may carry. */
+static int ptr_field(const ek_node *tn)
+{
+    return tn && tn->kind == EK_N_T_NAME && tn->u.path.count == 3
+        && strcmp(tn->u.path.data[0], "C") == 0
+        && strcmp(tn->u.path.data[1], "Ptr") == 0
+        && strcmp(tn->u.path.data[2], "Void") == 0;
+}
+
+/* The field node without its parenthesization. */
+static const ek_node *bare_field(const ek_node *tn)
+{
+    return tn && tn->kind == EK_N_T_PAREN ? tn->u.wrap.inner : tn;
+}
+
+/* Every field is a machine word, a nested ctype, or the opaque
+   pointer, and a nested one registers first, so its struct text
+   precedes the outer's. */
 static int fields_register(lower_ctx *c, const ek_nlist *kids)
 {
     size_t i;
 
     for (i = 0; i < kids->count; i++) {
-        const ek_node *tn = kids->data[i]->u.t_field.type;
+        const ek_node *tn = bare_field(kids->data[i]->u.t_field.type);
         const char *w;
 
-        tn = tn && tn->kind == EK_N_T_PAREN ? tn->u.wrap.inner : tn;
         if (!tn || tn->kind != EK_N_T_NAME || tn->u.path.count != 1) {
-            return 0;
+            return ptr_field(tn);
         }
         w = lower_word_ctype(tn->u.path.data[0]);
         if (w) {
@@ -95,13 +111,17 @@ static void emit_ctype_typedef(lower_ctx *c, const ek_symbol *tsym,
         c->oom = 1;
     }
     for (i = 0; i < kids->count; i++) {
-        const ek_node *tn = kids->data[i]->u.t_field.type;
-        const char *w = lower_word_ctype(tn->u.path.data[0]);
+        const ek_node *tn = bare_field(kids->data[i]->u.t_field.type);
+        const char *w = tn && tn->kind == EK_N_T_NAME
+                            && tn->u.path.count == 1
+                            ? lower_word_ctype(tn->u.path.data[0]) : NULL;
         const char *ct;
         const ek_symbol *nested = NULL;
 
         if (w) {
             ct = w;
+        } else if (ptr_field(tn)) {
+            ct = "void *";
         } else {
             nested = lower_ctype_of_node(c, tn);
             ct = nested ? typedef_name(c, nested) : NULL;
@@ -174,11 +194,13 @@ static const char *pack_fields(lower_ctx *c, const ek_symbol *tsym,
         const char *field = lower_str(c, "%s->f_%s", base, name);
         const char *piece;
 
-        tn = tn && tn->kind == EK_N_T_PAREN ? tn->u.wrap.inner : tn;
+        tn = bare_field(tn);
         w = tn && tn->kind == EK_N_T_NAME && tn->u.path.count == 1
                 ? lower_word_ctype(tn->u.path.data[0]) : NULL;
         if (w) {
             piece = lower_word_out(c, tn->u.path.data[0], field);
+        } else if (ptr_field(tn)) {
+            piece = lower_str(c, "ek_ptr_unwrap(%s)", field);
         } else {
             const ek_symbol *nested = lower_ctype_of_node(c, tn);
 
@@ -233,11 +255,13 @@ static const char *unpack_fields(lower_ctx *c, const ek_symbol *tsym,
         const char *field = lower_str(c, "(%s).f_%s", src, name);
         const char *piece;
 
-        tn = tn && tn->kind == EK_N_T_PAREN ? tn->u.wrap.inner : tn;
+        tn = bare_field(tn);
         w = tn && tn->kind == EK_N_T_NAME && tn->u.path.count == 1
                 ? lower_word_ctype(tn->u.path.data[0]) : NULL;
         if (w) {
             piece = lower_word_in(c, tn->u.path.data[0], field);
+        } else if (ptr_field(tn)) {
+            piece = lower_str(c, "ek_ptr_wrap(%s)", field);
         } else {
             const ek_symbol *nested = lower_ctype_of_node(c, tn);
 
