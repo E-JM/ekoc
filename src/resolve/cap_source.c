@@ -18,12 +18,15 @@ const char *const ek_cap_source_parts[] = {
     "// std/time companion's (Clause 9.1.3).\n",
     "import std/time\n",
     "\n",
-    "// The session-write bundle the injected pair unwraps to (Clause 10.8).\n",
-    "_OutB: type = [write: (String) !]\n",
+    "// The session-write bundle the injected pair unwraps to (Clause 10.8):\n",
+    "// one closure per transport form, the bytes as given and the line the\n",
+    "// terminator belongs to.\n",
+    "_OutB: type = [write: (String) !, write_line: (String) !]\n",
     "\n",
-    "// Printing writes through the bundle's own closure (Clause 10.8).\n",
+    "// Printing writes through the bundle's own line closure, so a printed\n",
+    "// line pays no concatenation (Clause 10.8).\n",
     "Out.print: (o: Out, s: String) ! = _out_unwrap(o).write(s)\n",
-    "Out.println: (o: Out, s: String) ! = _out_unwrap(o).write(s ++ \"\\n\")\n",
+    "Out.println: (o: Out, s: String) ! = _out_unwrap(o).write_line(s)\n",
     "\n",
     "// The report of one write: the written text as a whole line. The\n",
     "// terminator belongs to the transport, not to the observer.\n",
@@ -34,13 +37,17 @@ const char *const ek_cap_source_parts[] = {
     "    else:\n",
     "        s\n",
     "\n",
-    "// The observer rides along with every write (Clause 9.14.5).\n",
+    "// The observer rides along with every write (Clause 9.14.5); a line\n",
+    "// write reports its own text, which already carries no terminator.\n",
     "Out.tee: (o: Out, obs: (String) !-> _) -> Out =\n",
     "    b := _out_unwrap(o)\n",
-    "    _out_wrap({write: (s): b.write(s); obs(_report_line(s))})\n",
+    "    _out_wrap({\n",
+    "        write: (s): b.write(s); obs(_report_line(s)),\n",
+    "        write_line: (s): b.write_line(s); obs(s)\n",
+    "    })\n",
     "\n",
     "// The zero-grant derivation: every write lands nowhere (Clause 9.14.5).\n",
-    "Out.null: () -> Out = _out_wrap({write: (s): _})\n",
+    "Out.null: () -> Out = _out_wrap({write: (s): _, write_line: (s): _})\n",
     "\n",
     "// The session-read bundle the injected pair unwraps to (Clause 10.8).\n",
     "_InB: type = [read_line: () !-> Result (Option String) IoError]\n",
@@ -231,8 +238,8 @@ const char *const ek_cap_source_parts[] = {
     "Rand.int: (r: Rand, bound: UInt) !-> UInt = _rand_unwrap(r).int(bound)\n",
 };
 
-const size_t ek_cap_source_nparts = 224;
-const size_t ek_cap_source_len = 10081;
+const size_t ek_cap_source_nparts = 231;
+const size_t ek_cap_source_len = 10407;
 
 char *ek_cap_source_join(ek_arena *arena)
 {

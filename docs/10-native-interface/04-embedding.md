@@ -87,16 +87,22 @@ corresponding constructors, Clause 10.7.1). The capability module composes
 derived bundles from two compiler-provided bindings per capability:
 
 ```eko
-_OutB: type = [write: (String) !]
+_OutB: type = [write: (String) !, write_line: (String) !]
 _out_unwrap: (Out) -> _OutB
 _out_wrap: (_OutB) -> Out
 
-Out.println: (o: Out, s: String) ! = _out_unwrap(o).write(s)
-Out.null: () -> Out = _out_wrap({write: (s): _})
+Out.println: (o: Out, s: String) ! = _out_unwrap(o).write_line(s)
+Out.null: () -> Out = _out_wrap({write: (s): _, write_line: (s): _})
 Out.tee: (o: Out, obs: (String) !-> _) -> Out =
     b := _out_unwrap(o)
-    _out_wrap({write: (s): b.write(s); obs(s)})
+    _out_wrap({write: (s): b.write(s); obs(_report_line(s)),
+               write_line: (s): b.write_line(s); obs(s)})
 ```
+
+The line closure appends the terminator itself, so a printed line pays
+no concatenation on the Eko side; the terminator belongs to the
+transport, and an observer of a line write reports the line's own text
+(Clause 9.14.5).
 
 The two bindings are compiler-provided: they are injected into the capability
 module, they are pure, and they are visible nowhere else. No declaration form

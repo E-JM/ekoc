@@ -733,6 +733,7 @@ ek_val ek_closure_env(ek_obj *closure);
    agree at compile time, so neither side can drift silently. */
 typedef enum {
     EK_OUT_WRITE,
+    EK_OUT_WRITE_LINE,
     EK_OUT_SLOTS
 } ek_out_slot;
 

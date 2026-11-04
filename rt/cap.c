@@ -11,16 +11,20 @@
    through its own layout. The shared bundle families and the value
    builders over the emitted unit's identities live in capval.c. */
 
-/* The session-write bundle of Out: the single write closure. The
-   typeinfo's drop releases the closure with the record. */
+/* The session-write bundle of Out: one write closure per transport
+   form, the bytes as given and the bytes with the line terminator
+   appended. The typeinfo's drop releases both closures with the
+   record. */
 typedef struct {
     ek_obj obj;
     ek_val write;
+    ek_val write_line;
 } ek_cap_out;
 
 static void cap_out_drop(ek_obj *obj)
 {
     ek_release(((ek_cap_out *)obj)->write);
+    ek_release(((ek_cap_out *)obj)->write_line);
 }
 
 static const ek_typeinfo ek_typeinfo_cap_out = { EK_KIND_STRUCT,
@@ -29,6 +33,9 @@ static const ek_typeinfo ek_typeinfo_cap_out = { EK_KIND_STRUCT,
 typedef char cap_out_slot_check
     [(offsetof(ek_cap_out, write)
       == sizeof(ek_obj) + EK_OUT_WRITE * sizeof(ek_val)) ? 1 : -1];
+typedef char cap_out_line_slot_check
+    [(offsetof(ek_cap_out, write_line)
+      == sizeof(ek_obj) + EK_OUT_WRITE_LINE * sizeof(ek_val)) ? 1 : -1];
 
 /* The write closure of the standard output bundle: the argument's
    bytes, without the stored terminator, land on stdout; the stream
@@ -63,6 +70,38 @@ static ek_val err_write(ek_val env, ek_val *args, size_t argc)
     return ek_val_unit();
 }
 
+/* The line closures append the terminator the transport owns, so a
+   printed line never pays a concatenation on the Eko side. */
+static ek_val out_write_line(ek_val env, ek_val *args, size_t argc)
+{
+    ek_obj *s;
+
+    (void)env;
+    if (argc != 1 || !ek_val_is_ref(args[0])
+        || args[0].as.ref->info->kind != EK_KIND_STR) {
+        return ek_val_unit();
+    }
+    s = args[0].as.ref;
+    fwrite(ek_str_cstr(s), 1, ek_str_len(s), stdout);
+    fputc('\n', stdout);
+    return ek_val_unit();
+}
+
+static ek_val err_write_line(ek_val env, ek_val *args, size_t argc)
+{
+    ek_obj *s;
+
+    (void)env;
+    if (argc != 1 || !ek_val_is_ref(args[0])
+        || args[0].as.ref->info->kind != EK_KIND_STR) {
+        return ek_val_unit();
+    }
+    s = args[0].as.ref;
+    fwrite(ek_str_cstr(s), 1, ek_str_len(s), stderr);
+    fputc('\n', stderr);
+    return ek_val_unit();
+}
+
 /* The Out bundle over the process's standard output. The caller owns
    the returned value; releasing it releases the write closure. */
 ek_val ek_cap_out_stdout(void)
@@ -72,13 +111,14 @@ ek_val ek_cap_out_stdout(void)
     out->obj.info = &ek_typeinfo_cap_out;
     out->obj.rc = 1;
     out->write = ek_closure_new(out_write, ek_val_unit());
+    out->write_line = ek_closure_new(out_write_line, ek_val_unit());
     return ek_val_ref(&out->obj);
 }
 
 /* The Out bundle over the process's standard error, the constructor
    behind the compiler's Out.err row: the same bundle shape as the
-   standard output, whose write closure lands on fd 2. The caller owns
-   the returned value; releasing it releases the write closure. */
+   standard output, whose closures land on fd 2. The caller owns the
+   returned value; releasing it releases both closures. */
 ek_val ek_cap_out_stderr(void)
 {
     ek_cap_out *out = ek_rt_alloc_zeroed(sizeof *out);
@@ -86,6 +126,7 @@ ek_val ek_cap_out_stderr(void)
     out->obj.info = &ek_typeinfo_cap_out;
     out->obj.rc = 1;
     out->write = ek_closure_new(err_write, ek_val_unit());
+    out->write_line = ek_closure_new(err_write_line, ek_val_unit());
     return ek_val_ref(&out->obj);
 }
 
