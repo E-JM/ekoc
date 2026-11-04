@@ -91,6 +91,7 @@ CHECK_SRC := \
 	src/check/scheme.c \
 	src/check/store.c \
 	src/check/subst.c \
+	src/check/typename.c \
 	src/check/unify.c \
 	src/check/worlds.c
 
