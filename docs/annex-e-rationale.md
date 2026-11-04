@@ -190,7 +190,7 @@ bibliography; Annex G lists the works.
 | Tradition or source | Mechanism compared | Eko position | Clauses |
 |---|---|---|---|
 | ML-family variants and pattern matching | Nominal variants, exhaustive `case`, guards | Adopted; `case` is the only branching primitive | 6.7, 7.7 |
-| Constraint-directed overloading | Type-class-style constraints on generic functions | Rejected; UFCS and namespace members; no constraint syntax | 6.5.2, 7.4.3 |
+| Constraint-directed overloading | Type-class-style constraints on generic functions | Rejected; UFCS and namespace members. User-defined or open constraint syntax and solving are rejected: the language carries the closed, compiler-owned derived service set | 6.5.2, 7.4.3, 7.6.6 |
 | `IO` monads and handler-based I/O | I/O tracking in the type | Rejected; capabilities plus one world bit | 7.9 |
 | Ownership and borrowing | Lifetime-annotated signatures and move semantics | Rejected; immutable values, O(1) sharing, reference counting | 8.5, 8.6 |
 | Saturating numeric casts | Silent clamp of out-of-range conversions | Rejected; checked conversions return `Option` | 9.6.2 |

@@ -429,7 +429,7 @@ parameter, or give the composite its concrete type at the binding — `ys: []Int
 ### 7.6.6 Operations on Type Variables
 
 A value whose type is a type variable supports exactly the following
-operations.
+operations — the derived service set.
 
 | Operation | Form | Basis |
 |---|---|---|
@@ -438,9 +438,17 @@ operations.
 | JSON | `to_json`, `from_json` | derived mapping (Clause 9.9.3) |
 | binding, passing, storing, destructuring | language forms | representation (Clause 8.5) |
 
+The set's membership rule: a service belongs to the set when it is
+derivable for every data type. `eq`/`ne`, `show`, the JSON pair, and
+`hash` qualify — `hash` dispatching over the key domain `eq` covers
+(Clause 9.10.4); ordering does not, since a record has no declaration
+order to compare under. The rule answers every "will X join the set"
+question before it is asked.
+
 Ordering is not available. `<` and `T.lt` are not defined on a type variable;
 sorting requires an explicit comparator (Clause 9.10.1). There are no bounds,
-traits, or constraint solving; the table is closed.
+traits, or constraint solving; the table is closed. Growing the set is a
+language revision (Clause 9.1.4); no user-defined constraint syntax exists.
 
 At an instantiation, each operation resolves to the concrete derived service
 or declaration for the substituted type (Clause 8.7.2). An instantiation with
