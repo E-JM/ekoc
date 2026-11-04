@@ -179,6 +179,16 @@ static const ek_type *elab_apply(ck_ctx *c, const ek_node *t, ck_tvars *tv)
             args[i] = ck_elaborate(c, t->u.t_apply.args.data[i], tv);
         }
     }
+    /* the boundary's element-array row keeps the list it reads: the
+     * elaborated form is the list of the element, so a literal places */
+    if (!sym && head && head->kind == EK_N_T_NAME
+        && head->u.path.count == 2 && n == 1
+        && strcmp(head->u.path.data[0], "C") == 0
+        && strcmp(head->u.path.data[1], "In") == 0
+        && t->u.t_apply.args.data[0]
+        && t->u.t_apply.args.data[0]->kind == EK_N_T_LIST) {
+        return args ? args[0] : ck_opaque(c);
+    }
     return sym ? ck_nominal(c, sym, args, n) : ck_opaque(c);
 }
 

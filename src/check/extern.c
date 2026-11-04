@@ -171,6 +171,45 @@ static void check_arrow(ck_ctx *c, const ek_node *dn, const ek_node *ann,
 
 /* The whitelist over the annotation, so the diagnostic lands on the
    offending type. */
+/* The machine-word names, the boundary's element domain. */
+static int is_word_name(const char *n)
+{
+    static const char *words[] = {"U8", "U16", "U32", "U64",
+                                  "I8", "I16", "I32", "I64", "F32", "F64"};
+    size_t i;
+
+    for (i = 0; i < sizeof words / sizeof *words; i++) {
+        if (strcmp(n, words[i]) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* The element-array row of the whitelist: C.In []T with T a machine
+   word, parameter-only (Clause 10.3.5). */
+static int is_cin_list(const ek_node *tn, int result)
+{
+    const ek_node *arg;
+
+    if (result || !tn || tn->kind != EK_N_T_APPLY
+        || !tn->u.t_apply.head
+        || tn->u.t_apply.head->kind != EK_N_T_NAME
+        || tn->u.t_apply.head->u.path.count != 2
+        || strcmp(tn->u.t_apply.head->u.path.data[0], "C") != 0
+        || strcmp(tn->u.t_apply.head->u.path.data[1], "In") != 0
+        || tn->u.t_apply.args.count != 1) {
+        return 0;
+    }
+    arg = tn->u.t_apply.args.data[0];
+    arg = arg && arg->kind == EK_N_T_PAREN ? arg->u.wrap.inner : arg;
+    return arg && arg->kind == EK_N_T_LIST
+        && arg->u.wrap.inner
+        && arg->u.wrap.inner->kind == EK_N_T_NAME
+        && arg->u.wrap.inner->u.path.count == 1
+        && is_word_name(arg->u.wrap.inner->u.path.data[0]);
+}
+
 static void check_type(ck_ctx *c, const ek_node *t, int result)
 {
     const ek_type *et;
@@ -197,6 +236,9 @@ static void check_type(ck_ctx *c, const ek_node *t, int result)
         return;
     case EK_N_T_NAME:
     case EK_N_T_APPLY:
+        if (is_cin_list(t, result)) {
+            return;
+        }
         et = ck_elaborate(c, t, NULL);
         if (!marshals(c, et, result)) {
             ck_error(c, t, "E-extern-type",

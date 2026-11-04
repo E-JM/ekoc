@@ -163,8 +163,8 @@ static void arg_atom(p_ctx *c, ek_node *owner)
     ek_nlist *args = &owner->u.t_apply.args;
     ek_node *a = p_type_atom(c);
 
-    if (a && (a->kind == EK_N_T_LIST || a->kind == EK_N_T_DICT
-              || a->kind == EK_N_T_TUPLE || a->kind == EK_N_T_RECORD)) {
+    if (a && (a->kind == EK_N_T_DICT || a->kind == EK_N_T_TUPLE
+              || a->kind == EK_N_T_RECORD)) {
         p_error(c, "E-syntax", a->line, a->col,
                 "a composite argument of a generic application is "
                 "parenthesized (Clause 6.9.4)");

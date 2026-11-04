@@ -179,12 +179,26 @@ lower_mshape lower_ms_of(lower_ctx *c, const ek_node *tn)
     }
     if (tn->kind == EK_N_T_APPLY) {
         const ek_node *head = tn->u.t_apply.head;
+        const ek_node *arg0;
         const ek_symbol *inner;
 
         if (!head || head->kind != EK_N_T_NAME || head->u.path.count != 2
             || strcmp(head->u.path.data[0], "C") != 0
             || strcmp(head->u.path.data[1], "In") != 0
             || tn->u.t_apply.args.count != 1) {
+            return s;
+        }
+        arg0 = tn->u.t_apply.args.data[0];
+        arg0 = arg0 && arg0->kind == EK_N_T_PAREN ? arg0->u.wrap.inner
+                                                  : arg0;
+        /* C.In []T over a machine word: the copy-in element array */
+        if (arg0 && arg0->kind == EK_N_T_LIST
+            && arg0->u.wrap.inner
+            && arg0->u.wrap.inner->kind == EK_N_T_NAME
+            && arg0->u.wrap.inner->u.path.count == 1
+            && lower_word_ctype(arg0->u.wrap.inner->u.path.data[0])) {
+            s.kind = MS_CIN_LIST;
+            s.word = arg0->u.wrap.inner->u.path.data[0];
             return s;
         }
         inner = lower_ctype_of_node(c, tn->u.t_apply.args.data[0]);
@@ -238,6 +252,8 @@ const char *lower_ms_param_type(lower_ctx *c, const lower_mshape *s)
                    ? lower_str(c, "const ekC_%s$%s *", s->ctype->module,
                                s->ctype->name)
                    : NULL;
+    case MS_CIN_LIST:
+        return lower_str(c, "const %s *", lower_word_ctype(s->word));
     default:
         return NULL;
     }
@@ -251,6 +267,7 @@ const char *lower_cbr_param_type(lower_ctx *c, const lower_mshape *s)
     switch (s->kind) {
     case MS_BYTES:
     case MS_CIN:
+    case MS_CIN_LIST:
     case MS_CLOSURE:
     case MS_UNIT:
         return NULL;
@@ -271,6 +288,7 @@ const char *lower_cbr_ret_type(lower_ctx *c, const lower_mshape *s)
     case MS_BYTES:
         return "const void *";
     case MS_CIN:
+    case MS_CIN_LIST:
     case MS_CLOSURE:
         return NULL;
     default:

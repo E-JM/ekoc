@@ -306,6 +306,41 @@ static void c_in_read_borrow(void)
     EK_CHECK_STR(err, "");
 }
 
+/* The element-array row: the caller's list copies into a C element
+   array valid for the call, and the callee reads it element by
+   element. */
+static void c_in_element_array(void)
+{
+    static const char *src =
+        "_sum: (xs: C.In []I32, n: I64) -> I64 = extern \"shim_sum\" "
+        "Pure\n"
+        "main: () -> _ =\n"
+        "    xs: []I32 = {10, 20, 30}\n"
+        "    r = Int.from_i64(_sum(xs, 3))\n"
+        "    w = 0\n"
+        "    if r == 60:\n"
+        "        w := 1\n"
+        "        _\n"
+        "    d = 1 / w\n"
+        "    _ := d\n"
+        "    _\n";
+    static const char *shim =
+        "int64_t shim_sum(const int32_t *xs, int64_t n)\n"
+        "{\n"
+        "    int64_t acc = 0;\n"
+        "    int64_t i;\n"
+        "    for (i = 0; i < n; i++) {\n"
+        "        acc += xs[i];\n"
+        "    }\n"
+        "    return acc;\n"
+        "}\n";
+    char err[8];
+
+    expect_clean("cin list", gate(src, shim, "ext_cin_list", err,
+                                   sizeof err));
+    EK_CHECK_STR(err, "");
+}
+
 /* The opaque pointer crosses, returns, and still unwraps to the same
    storage through both values. */
 static void ptr_round_trip(void)
@@ -345,6 +380,45 @@ static void ptr_round_trip(void)
     char err[8];
 
     expect_clean("ptr", gate(src, shim, "ext_ptr", err, sizeof err));
+    EK_CHECK_STR(err, "");
+}
+
+/* A ctype carrying the opaque pointer: the field packs and unpacks
+   across the boundary, the callee reads through it, and the pointer
+   itself never renders an address. */
+static void ptr_ctype_field(void)
+{
+    static const char *src =
+        "H: ctype = [raw: C.Ptr.Void, n: I32]\n"
+        "_get: () -> H = extern \"shim_get_h\" Pure\n"
+        "_read: (h: C.In H) -> I32 = extern \"shim_read_h\" Pure\n"
+        "main: () -> _ =\n"
+        "    h = _get()\n"
+        "    r = Int.from_i32(_read(h))\n"
+        "    s = h.show()\n"
+        "    w = 0\n"
+        "    if r == 7:\n"
+        "        if s == \"\\{raw: <opaque>, n: <opaque>}\":\n"
+        "            w := 1\n"
+        "            _\n"
+        "    d = 1 / w\n"
+        "    _ := d\n"
+        "    _\n";
+    static const char *shim =
+        "typedef struct { void *f_raw; int32_t f_n; } ekC_test$H;\n"
+        "static ekC_test$H the_h = { (void *)1, 7 };\n"
+        "ekC_test$H shim_get_h(void)\n"
+        "{\n"
+        "    return the_h;\n"
+        "}\n"
+        "int32_t shim_read_h(const ekC_test$H *h)\n"
+        "{\n"
+        "    return h->f_n;\n"
+        "}\n";
+    char err[8];
+
+    expect_clean("ptr field", gate(src, shim, "ext_ptr_field", err,
+                                   sizeof err));
     EK_CHECK_STR(err, "");
 }
 
@@ -392,6 +466,8 @@ int main(void)
     word_echo();
     ctype_round_trip();
     c_in_read_borrow();
+    c_in_element_array();
+    ptr_ctype_field();
     callback_sorts();
     ptr_round_trip();
     unit_result_statement();

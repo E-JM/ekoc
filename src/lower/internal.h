@@ -174,7 +174,8 @@ typedef struct {
    row. */
 typedef enum {
     MS_BOOL, MS_INT, MS_UINT, MS_FLOAT, MS_WORD, MS_STRING, MS_BYTES,
-    MS_CTYPE, MS_CIN, MS_PTR, MS_SIZE, MS_CLOSURE, MS_UNIT, MS_BAD
+    MS_CTYPE, MS_CIN, MS_CIN_LIST, MS_PTR, MS_SIZE, MS_CLOSURE, MS_UNIT,
+    MS_BAD
 } lower_ms_kind;
 
 typedef struct {

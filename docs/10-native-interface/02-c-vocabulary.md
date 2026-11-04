@@ -152,15 +152,18 @@ only in the directions recorded for it.
 | `Bytes` | `const void *` | parameter: pointer to the payload, read-only for the call |
 | `ctype` record | the mirrored C struct | by value, both directions |
 | `C.In T` | pointer to `T` | parameter: copy-in read borrow (Clause 10.3.4) |
+| `C.In []T` (`T` a machine word) | `const T *` | parameter: the caller's list copied into a C element array, valid for the call alone; the length travels separately, the callee's own parameter |
+
 | `C.Ptr.Void` | `void *` | both directions, opaque |
 | `C.Size` | `size_t` | by value, both directions |
 | `_` | `void` | result only; corresponds to C `void` |
 | closure | function pointer and context | parameter: synchronous callback (Clause 10.5) |
 
 A parameter or result type outside this table is a compile error with code
-`E-extern-type`. The excluded types include `Char`, a list, a dictionary, an
-ordinary record, a capability, a type variable, and a variadic tail. `Bytes`,
-`C.In T`, and a closure are parameter-only; `_` is result-only.
+`E-extern-type`. The excluded types include `Char`, a bare list, a dictionary,
+an ordinary record, a capability, a type variable, and a variadic tail.
+`Bytes`, `C.In T`, `C.In []T`, and a closure are parameter-only; `_` is
+result-only.
 
 The `_` row admits a unit result because the elided-arrow form `(a) !` denotes
 a unit result (Clause 6.9.3); it corresponds to C `void`. No other unit

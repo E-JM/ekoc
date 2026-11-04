@@ -78,6 +78,7 @@ static int emit_prototype(lower_ctx *c, const ek_symbol *sym,
     const char *ret = res.kind == MS_UNIT ? "void"
                                           : lower_ms_param_type(c, &res);
     int ok = ret && res.kind != MS_BYTES && res.kind != MS_CIN
+        && res.kind != MS_CIN_LIST
         && res.kind != MS_CLOSURE && res.kind != MS_BAD;
 
     if (!ok) {
@@ -220,6 +221,37 @@ static int marshal_arg(lower_ctx *c, lower_scope *scope, ek_buf *b,
                     s.ctype->name, cs, packed ? packed : "{ 0 }");
         return ek_buf_append_str(b, s.kind == MS_CIN
                                        ? lower_str(c, "&%s", cs) : cs);
+    }
+    if (s.kind == MS_CIN_LIST) {
+        /* the caller's list copies into a C element array, valid for
+           the call alone; the walk reads one element per spine cell */
+        const char *ct = lower_word_ctype(s.word);
+        const char *out = lower_scalar_out_expr(
+            c, &(lower_mshape){ MS_WORD, s.word, NULL, NULL },
+            "ek_cons_head(li.as.ref)");
+        const char *arr = lower_temp(c, scope);
+        const char *n = lower_temp(c, scope);
+
+        if (!out) {
+            lower_error(c, e, "the argument `%zu` of `%s` has no lowering "
+                              "at the boundary", i, sym->name);
+            return 0;
+        }
+        lower_pad(c);
+        lower_emitf(c, "size_t %s = ek_list_len(%s);\n", n, arg);
+        lower_pad(c);
+        lower_emitf(c, "%s *%s = ek_cin_array(%s, sizeof(%s));\n", ct,
+                    arr, n, ct);
+        lower_pad(c);
+        lower_emitf(c, "{\n");
+        lower_emitf(c, "    ek_val li = %s;\n", arg);
+        lower_emitf(c, "    size_t j = 0;\n");
+        lower_emitf(c, "    while (ek_val_is_cons(li)) {\n");
+        lower_emitf(c, "        %s[j++] = %s;\n", arr, out);
+        lower_emitf(c, "        li = ek_cons_tail(li.as.ref);\n");
+        lower_emitf(c, "    }\n");
+        lower_emitf(c, "}\n");
+        return ek_buf_append_str(b, arr);
     }
     if (s.kind == MS_CLOSURE) {
         const char *fn, *ctxty;

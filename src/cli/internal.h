@@ -65,7 +65,8 @@ size_t cli_test_names(const ek_surface *s, const char **names);
    out is the executable path, or NULL for the input's stem in the
    current directory. tree_root is the directory holding rt/ and
    build/. */
-int cli_build(const char *file, const char *out, const char *tree_root);
+int cli_build(const char *file, const char *out, const char *tree_root,
+               const char *extra);
 
 /* The check command: the pipeline through the lowerer over one Eko
    file, every diagnostic reported and nothing compiled. A root that

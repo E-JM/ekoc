@@ -21,12 +21,12 @@
    stand on their own, also over a clean build. */
 static int finish_build(cli_diag_log *log, ek_arena *arena, ek_diag *diag,
                         const ek_lower_result *low, const char *out,
-                        const char *tree_root)
+                        const char *tree_root, const char *extra)
 {
     int failed = cli_log_errors(log) != 0;
 
     if (!failed) {
-        ek_emit_aot(low->text, out, tree_root, arena, diag);
+        ek_emit_aot(low->text, out, tree_root, extra, arena, diag);
         cli_log_drain(log, diag);
         failed = cli_log_errors(log) != 0;
     }
@@ -61,7 +61,8 @@ static int early_failure(ek_arena *arena, ek_diag *diag, const char *file,
     return 2;
 }
 
-int cli_build(const char *file, const char *out, const char *tree_root)
+int cli_build(const char *file, const char *out, const char *tree_root,
+               const char *extra)
 {
     ek_arena *arena = ek_arena_create();
     ek_diag *diag = ek_diag_create();
@@ -112,7 +113,8 @@ int cli_build(const char *file, const char *out, const char *tree_root)
     cli_log_drain(&log, diag);
     /* The log's report reads the diag buffer's own storage, so nothing
        is freed before it is printed. */
-    status = finish_build(&log, arena, diag, &low, out, tree_root);
+    status = finish_build(&log, arena, diag, &low, out, tree_root,
+                    extra);
     finish(&source, diag, arena);
     return status;
 }

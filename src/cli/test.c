@@ -265,7 +265,7 @@ static int build_drivers(const ek_resolve_result *res, ek_check_result chk,
         if (roots[r].bin == NULL) {
             return 0;
         }
-        ek_emit_aot(low.text, roots[r].bin, tree_root, arena, diag);
+        ek_emit_aot(low.text, roots[r].bin, tree_root, NULL, arena, diag);
         cli_log_drain(log, diag);
     }
     return 1;

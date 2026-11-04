@@ -86,7 +86,7 @@ static void success_path(void)
         ek_arena_destroy(arena);
         return;
     }
-    r = ek_emit_aot(unit_exit_0, "build/emit_aot_ok", ".", arena, diag);
+    r = ek_emit_aot(unit_exit_0, "build/emit_aot_ok", ".", NULL, arena, diag);
     EK_CHECK_U64(r.ok, 1);
     EK_CHECK_U64(ek_diag_count(diag, EK_SEV_ERROR), 0);
     EK_CHECK(access("build/emit_aot_ok.c", R_OK) == 0);
@@ -98,7 +98,7 @@ static void success_path(void)
     }
     /* A second emit over the same path replaces the unit and the
        executable wholesale. */
-    r = ek_emit_aot(unit_exit_3, "build/emit_aot_ok", ".", arena, diag);
+    r = ek_emit_aot(unit_exit_3, "build/emit_aot_ok", ".", NULL, arena, diag);
     EK_CHECK_U64(r.ok, 1);
     status = run_binary("build/emit_aot_ok");
     EK_CHECK(status >= 0 && WIFEXITED(status));
@@ -122,7 +122,7 @@ static void failure_path(void)
         return;
     }
     (void)remove("build/emit_aot_bad");
-    r = ek_emit_aot(unit_broken, "build/emit_aot_bad", ".", arena, diag);
+    r = ek_emit_aot(unit_broken, "build/emit_aot_bad", ".", NULL, arena, diag);
     EK_CHECK_U64(r.ok, 0);
     fail = emit_error(diag);
     EK_CHECK(fail != NULL);

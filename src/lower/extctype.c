@@ -170,6 +170,9 @@ lower_gtype *lower_ctype_shape(lower_ctx *c, const ek_symbol *tsym)
     c->ctypedefs = slots;
     c->ctypedefs[c->nct++] = tsym;
     emit_ctype_typedef(c, tsym, kids);
+    /* the pack and unpack walks both stand behind the family: the
+       helper joins the unit with the typedef */
+    g->constructed = 1;
     return g;
 }
 

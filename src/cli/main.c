@@ -9,7 +9,9 @@
 /* Writes the usage lines, one per command. */
 static void usage(void)
 {
-    fprintf(stderr, "usage: ekoc build <file.eko> [-o <out>]\n");
+    fprintf(stderr, "usage: ekoc build <file.eko> [-o <out>]\n"
+                    "       ekoc build <file.eko> [--link <lib>]... "
+                    "[--shim <file.c>]... [-o <out>]\n");
     fprintf(stderr, "       ekoc check <file.eko>\n");
     fprintf(stderr, "       ekoc test <file.eko>\n");
 }
@@ -42,13 +44,19 @@ static void tree_root(char *buf, size_t cap)
     }
 }
 
-/* The build argument walk: -o and one input file. */
+/* The build argument walk: -o, one input file, and the host-contact
+   flags -- each naming one value, repeatable, whose values join the
+   link line verbatim: a --link value is the library's own -l spelling
+   or path, a --shim value a C source the link compiles in. */
 static int run_build(int argc, char **argv, const char *root)
 {
     const char *file = NULL;
     const char *out = NULL;
+    char extra[1024];
+    size_t nextra = 0;
     int i;
 
+    extra[0] = '\0';
     for (i = 2; i < argc; i++) {
         if (strcmp(argv[i], "-o") == 0) {
             if (out != NULL || i + 1 >= argc) {
@@ -56,6 +64,19 @@ static int run_build(int argc, char **argv, const char *root)
                 return 2;
             }
             out = argv[++i];
+        } else if (strcmp(argv[i], "--link") == 0
+                   || strcmp(argv[i], "--shim") == 0) {
+            const char *val = i + 1 < argc ? argv[i + 1] : NULL;
+            size_t len;
+
+            if (val == NULL || nextra + strlen(val) + 2 >= sizeof extra) {
+                usage();
+                return 2;
+            }
+            len = sprintf(extra + nextra, "%s'%s'", nextra ? " " : "",
+                          val);
+            nextra += len;
+            i++;
         } else if (argv[i][0] == '-' && argv[i][1] != '\0') {
             usage();
             return 2;
@@ -70,7 +91,7 @@ static int run_build(int argc, char **argv, const char *root)
         usage();
         return 2;
     }
-    return cli_build(file, out, root);
+    return cli_build(file, out, root, nextra ? extra : NULL);
 }
 
 /* The check argument walk: one input file, no options. The command

@@ -73,4 +73,17 @@ typedef char ek_val_is_16_bytes[sizeof(ek_val) == 16 ? 1 : -1];
 ek_obj *ek_nil_obj(void)
 {
     return &nil_obj;
+}/* The element array of one boundary copy-in: zeroed storage of n
+   elements of w bytes, or an abort -- memory exhaustion ends the
+   process. The array belongs to the call that requested it. */
+void *ek_cin_array(size_t n, size_t w)
+{
+    void *p = calloc(n != 0 ? n : 1, w);
+
+    if (p == NULL) {
+        ek_abort("out of memory");
+    }
+    return p;
 }
+
+

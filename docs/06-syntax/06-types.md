@@ -88,8 +88,9 @@ label, variable, or annotation.
 ### 6.9.4 Generic Application
 
 A generic type is applied by juxtaposition, with no commas (Annex A.3.7). An
-argument is an arrow-free atom. An application chain stops at `,` and at
-`->`.
+argument is an arrow-free atom; a list type `[]t` is an argument form too,
+which the boundary's element-array row reads (`C.In []T`, Clause 10.3.5). An
+application chain stops at `,` and at `->`.
 
 ```eko
 Value Int Float                     // t = Int, u = Float

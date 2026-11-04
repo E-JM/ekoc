@@ -181,8 +181,8 @@ static int prepare(ek_diag *diag, ek_arena *arena, const char *c_text,
 }
 
 ek_emit_result ek_emit_aot(const char *c_text, const char *out_path,
-                           const char *tree_root, ek_arena *arena,
-                           ek_diag *diag)
+                           const char *tree_root, const char *extra,
+                           ek_arena *arena, ek_diag *diag)
 {
     ek_emit_result r;
     ek_buf raw;
@@ -194,10 +194,12 @@ ek_emit_result ek_emit_aot(const char *c_text, const char *out_path,
         return r;
     }
     /* the link lands on a temporary name and replaces the product by
-       rename, so a failed compile leaves the previous binary whole */
+       rename, so a failed compile leaves the previous binary whole;
+       the extra arguments carry the host's libraries and shims */
     cmd = aprintf(arena, "cc -std=c99 -I%s/rt %s.c %s/build/libekort.a"
-                         " -lm -o %s.tmp 2>&1 && mv %s.tmp %s",
-                  tree_root, out_path, tree_root, out_path, out_path,
+                         " -lm %s -o %s.tmp 2>&1 && mv %s.tmp %s",
+                  tree_root, out_path, tree_root,
+                  extra != NULL ? extra : "", out_path, out_path,
                   out_path);
     if (cmd == NULL) {
         ek_diag_emit(diag, EK_SEV_ERROR, "E-emit", out_path, 0, 0,

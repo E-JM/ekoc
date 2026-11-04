@@ -561,6 +561,10 @@ ek_val ek_list_append(ek_val a, ek_val b);
 /* The number of cells; the empty list has none. */
 size_t ek_list_len(ek_val list);
 
+/* Zeroed storage for a boundary copy-in array of n elements of w bytes;
+   exhaustion aborts. The caller owns the array for the call's duration. */
+void *ek_cin_array(size_t n, size_t w);
+
 /* A dictionary maps inline scalar keys to values. Setting a key builds
    a fresh dictionary; the old one is untouched and keeps its own
    references. Keys compare on the tag and the exact payload bytes; a
