@@ -30,57 +30,9 @@ static const ek_node *as_lambda(const ek_node *v)
     return v && v->kind == EK_N_LAMBDA ? v : NULL;
 }
 
-/* The record shape behind a binding pattern's scrutinee, when one
-   exists. */
-static const ek_type *repr_of(ck_ctx *c, const ek_type *t)
-{
-    t = ck_prune(t);
-    if (t && t->kind == EK_T_NOMINAL && t->u.nominal.sym) {
-        return ck_decl_repr(c, t);
-    }
-    return t;
-}
-
 /* Binds an irrefutable pattern's names. */
 static void bind_pattern(ck_ctx *c, const ek_node *pat, const ek_type *t,
                          ck_scheme *gen);
-
-/* The brace case of a value-binding pattern: fields bind at their
-   field types. */
-static void bind_brace(ck_ctx *c, const ek_node *pat, const ek_type *t)
-{
-    const ek_type *p = repr_of(c, t);
-    size_t i;
-
-    for (i = 0; i < pat->u.p_brace.items.count; i++) {
-        const ek_node *item = pat->u.p_brace.items.data[i];
-        const char *field = NULL;
-        const ek_type *ft = NULL;
-        size_t k;
-
-        if (item->kind == EK_N_P_FIELD) {
-            field = item->u.p_field.name;
-        } else if (item->kind == EK_N_P_VAR && item->u.path.count == 1) {
-            field = item->u.path.data[0];
-        }
-        if (!field) {
-            continue;
-        }
-        if (p && p->kind == EK_T_RECORD) {
-            for (k = 0; k < p->u.record.count; k++) {
-                if (strcmp(p->u.record.fields[k].name, field) == 0) {
-                    ft = p->u.record.fields[k].type;
-                }
-            }
-        }
-        if (item->kind == EK_N_P_FIELD) {
-            bind_pattern(c, item->u.p_field.pattern,
-                         ft ? ft : ck_opaque(c), NULL);
-        } else {
-            ck_scope_bind(c, field, ft ? ft : ck_opaque(c));
-        }
-    }
-}
 
 /* Binds an irrefutable pattern's names. */
 static void bind_pattern(ck_ctx *c, const ek_node *pat, const ek_type *t,
@@ -115,7 +67,13 @@ static void bind_pattern(ck_ctx *c, const ek_node *pat, const ek_type *t,
         return;
     }
     case EK_N_P_BRACE:
-        bind_brace(c, pat, t);
+    case EK_N_P_CONS:
+        /* The structured families type through the pattern walk, so
+           the binding's rows carry the family the lowerer reads; a
+           refutable shape already took its error above. */
+        if (ck_irrefutable(c, pat, t)) {
+            ck_pattern(c, pat, t);
+        }
         return;
     default:
         return; /* refutable forms never reach a value binding */
@@ -470,7 +428,7 @@ static const ek_type *ck_binding(ck_ctx *c, const ek_node *m, int top)
         }
         bound = ck_expr(c, val, NULL);
     }
-    if (!ck_irrefutable(pat)) {
+    if (!ck_irrefutable(c, pat, bound)) {
         ck_error(c, pat, "E-refutable-binding",
                  "a value binding admits only irrefutable patterns "
                  "(Clause 7.7.1)");

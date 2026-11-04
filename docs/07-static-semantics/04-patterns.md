@@ -44,13 +44,15 @@ out-of-range numeric literal is `E-literal-overflow` (Annex B). A literal
 pattern is a `String`, an integer, a float, a negative numeric literal, or a
 zero-payload constructor (Clause 6.8.5); an interpolated string is not a
 pattern. A value binding admits only irrefutable patterns: `_`, a variable, a
-tuple or group pattern of irrefutable patterns, and a record pattern whose
-subpatterns are irrefutable. Constructor, literal, list, and or-patterns occur
-only in `case` arms; a refutable pattern in a value binding is
-`E-refutable-binding` (Annex B). Parameter positions admit an identifier, `_`,
-or a tuple parameter group, and no other pattern form. Record, constructor,
-list, literal, and or-patterns are rejected there; `<-` inherits the
-restriction (Clause 7.8.1).
+tuple or group pattern of irrefutable patterns, a record pattern whose
+subpatterns are irrefutable, and a constructor pattern whose constructor is
+the only constructor of the scrutinee's declared ADT and whose payload
+subpattern is irrefutable. A constructor pattern of an ADT with several
+constructors, a literal, a list, and an or-pattern occur only in `case` arms;
+a refutable pattern in a value binding is `E-refutable-binding` (Annex B).
+Parameter positions admit an identifier, `_`, or a tuple parameter group, and
+no other pattern form. Record, constructor, list, literal, and or-patterns
+are rejected there; `<-` inherits the restriction (Clause 7.8.1).
 
 Dictionary patterns, as-patterns, and conjunctive patterns do not exist; a
 program MUST NOT use them (Clause 6.8.7). A `case` over several scrutinees has

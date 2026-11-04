@@ -144,7 +144,8 @@ to the name. `_` matches anything and binds nothing.
 Tuple, record, and list patterns share braces; the expected type decides
 between them, as it does for composite literals. The same pattern grammar is
 used in `case` arms and on the left of binding operators, subject to the
-parameter-position restriction of Clause 7.7.1.
+irrefutability requirement of a value binding and the parameter-position
+restriction of Clause 7.7.1.
 
 ### 6.8.2 Record Patterns
 

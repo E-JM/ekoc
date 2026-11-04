@@ -218,6 +218,17 @@ static const ek_type *cons_pattern(ck_ctx *c, const ek_node *p,
     return opaque_cons(c, p, scrut);
 }
 
+/* The constructor symbol a constructor pattern selects against a type:
+   the case-arm selection offered to the binding-shape walk. */
+const ek_symbol *ck_cons_select(ck_ctx *c, const ek_node *p,
+                                const ek_type *scrut)
+{
+    const ek_ref *ref = NULL;
+
+    (void)ck_ref_at(c, p, 0, &ref);
+    return cons_select(ref, ck_prune(scrut));
+}
+
 /* Record-pattern item: the field name, whether a `f: P` pair or the
    shorthand `f`. */
 static const char *pat_field(const ek_node *item, const ek_node **sub)

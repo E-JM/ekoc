@@ -88,7 +88,9 @@ against which `e` is checked; it does not evaluate a type expression at run
 time.
 
 An initial binding produces no value of its own; it extends the environment. A
-tuple pattern destructures a tuple value. The wildcard `_` binds nothing. A
+tuple pattern destructures a tuple value, a record pattern reads the fields it
+names, and a constructor pattern of a single-variant ADT reads the payload.
+The wildcard `_` binds nothing. A
 binding holds a scalar directly or a reference to a heap object; it never
 copies a composite value (Clause 8.5.2).
 

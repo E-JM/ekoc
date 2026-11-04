@@ -185,11 +185,16 @@ static void emit_let(lower_ctx *c, lower_scope *scope, const ek_node *m)
         lower_emitf(c, "ek_release(%s);\n", cname);
         return;
     }
-    if (pat && pat->kind == EK_N_P_PAREN
-        && lower_tuple_let(c, scope, m, pat)) {
+    if (pat && (pat->kind != EK_N_P_VAR || pat->u.path.count != 1)) {
+        if (lower_binding_destructure(c, scope, m, pat)) {
+            return;
+        }
+        lower_error(c, m, "the destructuring pattern is not supported by "
+                          "this lowerer");
+        emit_value_stmt(c, scope, m->u.bind.value);
         return;
     }
-    if (!pat || pat->kind != EK_N_P_VAR || pat->u.path.count != 1) {
+    if (!pat) {
         lower_error(c, m, "the destructuring pattern is not supported by "
                           "this lowerer");
         emit_value_stmt(c, scope, m->u.bind.value);

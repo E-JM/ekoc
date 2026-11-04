@@ -834,11 +834,10 @@ lower_val lower_members(lower_ctx *c, lower_scope *scope,
                         const ek_node **kids, size_t n);
 const lower_local *scope_find_local(lower_scope *scope, const char *name);
 
-/* destructure.c: the flat tuple destructuring of an initial binding.
-   1 when the paren pattern lowered, 0 to keep the general
-   diagnostic. */
-int lower_tuple_let(lower_ctx *c, lower_scope *scope, const ek_node *m,
-                    const ek_node *pat);
+/* destructure.c: the irrefutable destructuring of an initial binding.
+   1 when the pattern lowered, 0 to keep the general diagnostic. */
+int lower_binding_destructure(lower_ctx *c, lower_scope *scope,
+                              const ek_node *m, const ek_node *pat);
 
 /* extctype.c: the frozen C struct of a ctype and the walks between
    its two shapes. lower_ctype_of_node names the declaration a written

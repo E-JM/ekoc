@@ -37,6 +37,8 @@ otherwise it names the rejection and the normative clause.
 | N29 | two imports open the same free name | `E-name-conflict` |
 | N30 | non-terminating generic instantiation | `E-instantiation-depth` |
 | N31 | record right-hand side on its own indented line | parse error |
+| N32 | constructor of a several-variant ADT in a value binding | `E-refutable-binding` |
+| N33 | list pattern in a value binding | `E-refutable-binding` |
 
 ## N01 — nominal mismatch
 
@@ -404,3 +406,34 @@ R: type =
 Expected: parse error, at `[`. A record or tuple right-hand side follows `=`
 on the same line (Clause 6.3.5); the same rejection covers a parenthesized
 form and a composite type such as `[]String` on the indented line.
+
+## N32 — constructor of a several-variant ADT in a value binding
+
+A value binding admits only irrefutable patterns; a constructor pattern is
+irrefutable only when it is the sole constructor of the scrutinee's ADT
+(Clause 7.7.1).
+
+```eko
+Lit: type = Num Int | Tag String
+
+unwrap: (l: Lit) -> Int =
+    Num n = l
+    n
+```
+
+Expected: `E-refutable-binding`, at the binding line. The sole constructor
+of a single-variant ADT stays legal in the same position (`NewInt i = n`).
+
+## N33 — list pattern in a value binding
+
+A rest pattern is a list pattern, and a list pattern is refutable: it names
+one shape of the type, not every value (Clause 7.7.1).
+
+```eko
+head_of: (xs: []Int) -> Int =
+    {h, ..t} = xs
+    h
+```
+
+Expected: `E-refutable-binding`, at the binding line. Record patterns and
+parenthesized tuple splits stay legal in the same position.

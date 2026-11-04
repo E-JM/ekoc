@@ -249,9 +249,92 @@ void ck_arm_binds_together(ck_ctx *c, const ek_node *arm)
 }
 
 /* A value binding admits only irrefutable patterns: `_`, a variable,
-   a tuple or group of irrefutable patterns, and a record pattern whose
-   subpatterns are irrefutable. */
-int ck_irrefutable(const ek_node *p)
+   a tuple or group of irrefutable patterns, a record pattern whose
+   subpatterns are irrefutable, and the sole constructor of a
+   single-variant ADT at an irrefutable payload pattern. The judgment
+   is against the bound type: a family the type cannot decide is
+   refutable. */
+
+/* The record or tuple shape behind a pattern position's type, when one
+   is decidable. */
+static const ek_type *brace_repr_of(ck_ctx *c, const ek_type *t)
+{
+    const ek_type *s = ck_prune(t);
+
+    if (s && (s->kind == EK_T_RECORD || s->kind == EK_T_TUPLE)) {
+        return s;
+    }
+    if (s && s->kind == EK_T_NOMINAL && s->u.nominal.sym) {
+        return ck_decl_repr(c, s);
+    }
+    return NULL;
+}
+
+/* The sole constructor a constructor pattern selects: the selection
+   belongs to the scrutinee's declaration and is its only variant. The
+   payload's own judgment belongs to the caller. */
+static const ck_ctor *sole_ctor(ck_ctx *c, const ek_node *p, const ek_type *t)
+{
+    const ek_type *s = ck_prune(t);
+    const ek_symbol *sel;
+    const ck_ctor *ct;
+    const ck_decl *d;
+
+    if (!s || s->kind != EK_T_NOMINAL || !s->u.nominal.sym
+        || !s->u.nominal.sym->decl) {
+        return NULL;
+    }
+    sel = ck_cons_select(c, p, s);
+    ct = sel ? ck_ctor_of(c, sel) : NULL;
+    if (!ct || ct->owner != s->u.nominal.sym) {
+        return NULL;
+    }
+    d = ck_decl_of(c, ct->owner);
+    if (!d || d->nctors != 1 || d->ctors[0] != ct) {
+        return NULL;
+    }
+    return ct;
+}
+
+/* A constructor pattern's irrefutability: the sole constructor of the
+   scrutinee's ADT, whose payload pattern walks at the instantiated
+   payload. A payload-arity mismatch stays admissible here so the
+   pattern walk names it precisely. */
+static int cons_irrefutable(ck_ctx *c, const ek_node *p, const ek_type *t)
+{
+    const ek_type *s = ck_prune(t);
+    const ck_ctor *ct = sole_ctor(c, p, t);
+    const ck_decl *d;
+    const ek_type **repl = NULL;
+    const ek_type *pt;
+    size_t n, i;
+
+    if (!ct) {
+        return 0;
+    }
+    if (!ct->payload || !p->u.cons.payload) {
+        return 1; /* a payload-arity mismatch is the walk's error */
+    }
+    d = ck_decl_of(c, ct->owner);
+    n = d ? d->nbinders : 0;
+    if (n && (!s || s->u.nominal.argc < n)) {
+        return 0;
+    }
+    if (n) {
+        repl = ek_arena_alloc(c->arena, n * sizeof *repl);
+        if (!repl) {
+            c->oom = 1;
+            return 1;
+        }
+        for (i = 0; i < n; i++) {
+            repl[i] = ck_prune(s->u.nominal.args[i]);
+        }
+    }
+    pt = ck_apply_binders(c, ct->payload, d->binders, repl, n);
+    return ck_irrefutable(c, p->u.cons.payload, pt);
+}
+
+int ck_irrefutable(ck_ctx *c, const ek_node *p, const ek_type *t)
 {
     size_t i;
 
@@ -262,28 +345,67 @@ int ck_irrefutable(const ek_node *p)
     case EK_N_P_WILDCARD:
     case EK_N_P_VAR:
         return 1;
-    case EK_N_P_PAREN:
+    case EK_N_P_CONS:
+        return cons_irrefutable(c, p, t);
+    case EK_N_P_PAREN: {
+        const ek_type *repr = brace_repr_of(c, t);
+
         for (i = 0; i < p->u.kids.count; i++) {
-            if (!ck_irrefutable(p->u.kids.data[i])) {
+            const ek_type *ct = repr && repr->kind == EK_T_TUPLE
+                                    && i < repr->u.tuple.count
+                                    ? repr->u.tuple.items[i] : NULL;
+
+            if (!ck_irrefutable(c, p->u.kids.data[i], ct)) {
                 return 0;
             }
         }
         return 1;
-    case EK_N_P_BRACE:
+    }
+    case EK_N_P_BRACE: {
+        const ek_type *repr;
+
         if (p->u.p_brace.rest != EK_REST_NONE) {
             return 0; /* a list pattern */
         }
+        repr = brace_repr_of(c, t);
+        if (!repr || (repr->kind != EK_T_RECORD && repr->kind != EK_T_TUPLE)) {
+            return 0; /* a list, an ADT, an opaque, or a scalar family */
+        }
         for (i = 0; i < p->u.p_brace.items.count; i++) {
             const ek_node *item = p->u.p_brace.items.data[i];
+            const ek_type *ft = NULL;
 
-            if (item->kind == EK_N_P_FIELD
-                && !ck_irrefutable(item->u.p_field.pattern)) {
+            if (repr->kind == EK_T_RECORD) {
+                const char *field = item->kind == EK_N_P_FIELD
+                                        ? item->u.p_field.name
+                                        : item->kind == EK_N_P_VAR
+                                              && item->u.path.count == 1
+                                              ? item->u.path.data[0] : NULL;
+                size_t k;
+
+                for (k = 0; field && k < repr->u.record.count; k++) {
+                    if (strcmp(repr->u.record.fields[k].name, field) == 0) {
+                        ft = repr->u.record.fields[k].type;
+                    }
+                }
+                if (field && !ft) {
+                    return 1; /* the pattern walk names the field */
+                }
+            } else if (i < repr->u.tuple.count) {
+                ft = repr->u.tuple.items[i];
+            }
+            if (item->kind == EK_N_P_FIELD) {
+                if (!ck_irrefutable(c, item->u.p_field.pattern, ft)) {
+                    return 0;
+                }
+            } else if (!ck_irrefutable(c, item, ft)) {
                 return 0;
             }
         }
         return 1;
+    }
     default:
-        return 0; /* constructor, literal, list, or-pattern */
+        return 0; /* literal, list, or-pattern */
     }
 }
 

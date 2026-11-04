@@ -1,5 +1,6 @@
-// Binding forms: initial `=`, rebinding `:=`, tuple splitting, discard, and
-// inverted-binding chains ending in `Ok` (Clauses 6.3, 9.2).
+// Binding forms: initial `=`, rebinding `:=`, tuple splitting, discard,
+// inverted-binding chains ending in `Ok`, and the irrefutable destructures
+// of a value binding (Clauses 6.3, 7.7.1, 9.2).
 
 _sum_row: (row: []String) -> Result Int String =
     a <- row.get(0).to_result("missing a").try()
@@ -8,6 +9,16 @@ _sum_row: (row: []String) -> Result Int String =
     y <- Int.parse(b).map_err((e): "b: {e}").try()
     total := x + y
     Ok total
+
+_Point: type = [x: Int, y: Int]
+_Mono: type = _Mono Int
+_Duration: type = _Duration Int
+_Box: type t = _Box t
+
+_mono_sub: (a: _Mono, b: _Mono) -> _Duration =
+    _Mono x = a
+    _Mono y = b
+    _Duration (x - y)
 
 initial_binding: test =
     answer: Int = 42
@@ -40,3 +51,28 @@ inverted_chain: test =
     assert_eq(_sum_row({"7", "8"}), Ok 15)
     assert_eq(_sum_row({}), Err "missing a")
     assert_eq(_sum_row({"7"}), Err "missing b")
+
+record_split: test =
+    p: _Point = {x: 3, y: 4}
+    {x, y: yy} = p
+    assert_eq(x, 3)
+    assert_eq(yy, 4)
+
+record_split_nested: test =
+    pair: [_Point, _Point] = {{x: 1, y: 2}, {x: 5, y: 6}}
+    (a, {x}) = pair
+    assert_eq(a.x + a.y, 3)
+    assert_eq(x, 5)
+
+ctor_split: test =
+    n := _Mono 41
+    _Mono i = n
+    assert_eq(i + 2, 43)
+
+ctor_split_generic: test =
+    b: _Box String = _Box "seven"
+    _Box s = b
+    assert_eq(s, "seven")
+
+mono_sub: test =
+    assert_eq(show(_mono_sub(_Mono 9, _Mono 4)), "_Duration 5")

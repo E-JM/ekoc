@@ -431,10 +431,13 @@ const ek_type *ck_invert_block(ck_ctx *c, const ek_node *m,
                                const ek_node *block, size_t start,
                                const ek_type *expected);
 const ek_type *ck_pattern(ck_ctx *c, const ek_node *p, const ek_type *scrut);
+const ek_symbol *ck_cons_select(ck_ctx *c, const ek_node *p,
+                                const ek_type *scrut);
 const ek_type *ck_or_pattern(ck_ctx *c, const ek_node *p, const ek_type *scrut);
 void ck_arm_binds_together(ck_ctx *c, const ek_node *arm); /* a name two
                                         of the arm's patterns bind conflicts */
-int ck_irrefutable(const ek_node *p); /* 0 = refutable in a value binding */
+int ck_irrefutable(ck_ctx *c, const ek_node *p, const ek_type *t);
+/* 0 = refutable in a value binding */
 
 /* exhaust.c: coverage of one scrutinee. exhaust_prod.c: the
    multi-scrutinee product and the entry. */

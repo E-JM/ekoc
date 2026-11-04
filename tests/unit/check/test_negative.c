@@ -354,6 +354,57 @@ static void unanchored_literal(void)
     cfx_end(&f);
 }
 
+/* N32 — a constructor of a several-variant ADT in a value binding.
+   The boundary stays legal: the sole constructor of a single-variant
+   ADT destructures. */
+static void n32(void)
+{
+    cfx f;
+
+    cfx_begin(&f,
+              "Lit: type = Num Int | Tag String\n"
+              "unwrap: (l: Lit) -> Int =\n"
+              "    Num n = l\n"
+              "    n\n");
+    EK_CHECK(cfx_errors(&f) >= 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-refutable-binding", 3));
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "New: type = New Int\n"
+              "unwrap: (n: New) -> Int =\n"
+              "    New i = n\n"
+              "    i\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+}
+
+/* N33 — a list pattern in a value binding. The boundary stays legal:
+   a record pattern and a plain tuple split keep binding. */
+static void n33(void)
+{
+    cfx f;
+
+    cfx_begin(&f,
+              "head_of: (xs: []Int) -> Int =\n"
+              "    {h, ..t} = xs\n"
+              "    h\n");
+    EK_CHECK(cfx_errors(&f) >= 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-refutable-binding", 2));
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "Pt: type = [x: Int, y: Int]\n"
+              "split: (p: Pt) -> Int =\n"
+              "    {x, y} = p\n"
+              "    x + y\n"
+              "pair: (t: [Int, Int]) -> Int =\n"
+              "    (a, b) = t\n"
+              "    a + b\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+}
+
 int main(void)
 {
     n01();
@@ -372,6 +423,8 @@ int main(void)
     n28();
     n29();
     n30();
+    n32();
+    n33();
     alias_cascade();
     unanchored_literal();
     return ek_test_report("check/negative");

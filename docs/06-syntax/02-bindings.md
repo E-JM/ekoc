@@ -50,6 +50,16 @@ A parenthesized tuple on the left of `=` destructures a tuple value:
 (s, want) = row
 ```
 
+The left of `=` admits the irrefutable patterns of Clause 7.7.1. A record
+pattern binds the fields it names, and a constructor pattern whose constructor
+is the only constructor of a single-variant ADT destructures the payload:
+
+```eko
+{name, age} = person
+NewInt i = n
+Mono x = a
+```
+
 A binding whose pattern is `_` evaluates the right-hand side and discards the
 value: `_ := e`. In value position `_` is the unit value; in pattern position
 it is the wildcard (Clause 7.5.4).
