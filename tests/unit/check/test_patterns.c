@@ -199,6 +199,18 @@ static void guards_and_scrutinees(void)
     EK_CHECK(cfx_code_at_line(&f, "E-exhaust", 3));
     cfx_end(&f);
 
+    /* Brace patterns in a multi-scrutinee arm split at the top-level
+       commas: the braces' own commas join one pattern's fields, so a
+       brace pattern never merges with its neighbor. */
+    cfx_begin(&f,
+              "f: (a: [x: Int, y: Int], b: [x: Int, y: Int], c: []Int)"
+              " -> Int =\n"
+              "    case a, b, c:\n"
+              "        {x, ..r}, {y, ..s}, {h, ..t} -> x + y + h\n"
+              "        _, _, _ -> 0\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+
     /* Every arm has the same type. */
     cfx_begin(&f,
               "f: (n: Int) -> String =\n"
