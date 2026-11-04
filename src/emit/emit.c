@@ -14,8 +14,8 @@
 #include "support/buf.h"
 #include "support/diag.h"
 
-#define EMIT_MSG_CAP 480  /* collapsed compiler output kept in a message */
-#define EMIT_MSG_HEAD 120 /* the first line's share of a long message */
+#define EMIT_MSG_CAP 480  /* compiler output kept whole in a message */
+#define EMIT_MSG_HEAD 120 /* the head's share of a long message */
 
 /* Formats into arena memory; NULL on exhaustion or an encoding error. */
 static char *aprintf(ek_arena *arena, const char *fmt, ...)
@@ -74,75 +74,45 @@ static size_t align_forward(const char *s, size_t len, size_t at)
     return at;
 }
 
-/* Appends text with every run of whitespace collapsed to one space and
-   the ends trimmed. */
-static void append_collapsed(ek_buf *out, const char *text, size_t len)
-{
-    size_t i;
-    int gap = 0;
-
-    for (i = 0; i < len; i++) {
-        if (isspace((unsigned char)text[i])) {
-            gap = 1;
-            continue;
-        }
-        if (gap != 0 && out->len != 0) {
-            if (!ek_buf_append_char(out, ' ')) {
-                return;
-            }
-        }
-        gap = 0;
-        if (!ek_buf_append_char(out, text[i])) {
-            return;
-        }
-    }
-}
-
-/* The E-emit message for a failed compile: the compiler output on one
-   line, or the bare fact when it printed nothing. An output too long
-   for one message keeps the first line and the tail. */
+/* The E-emit message for a failed compile: the compiler's own lines
+   stand whole, never folded onto one; an output too long for one
+   message keeps its head and tail lines. */
 static void emit_failure(ek_diag *diag, const char *out_path,
                          const char *raw, size_t len)
 {
-    ek_buf flat;
-    const char *nl;
-    size_t first_len;
-
     if (len == 0 || raw == NULL) {
         ek_diag_emit(diag, EK_SEV_ERROR, "E-emit", out_path, 0, 0,
                      "cc failed");
         return;
     }
-    ek_buf_init(&flat);
-    append_collapsed(&flat, raw, len);
-    nl = memchr(raw, '\n', len);
-    first_len = nl != NULL ? (size_t)(nl - raw) : len;
-    if (flat.data == NULL) {
+    if (len <= EMIT_MSG_CAP) {
         ek_diag_emit(diag, EK_SEV_ERROR, "E-emit", out_path, 0, 0,
-                     "cc failed");
-    } else if (flat.len <= EMIT_MSG_CAP) {
-        ek_diag_emit(diag, EK_SEV_ERROR, "E-emit", out_path, 0, 0,
-                     "cc failed: %s", flat.data);
-    } else {
-        ek_buf head;
-        size_t cut;
-
-        ek_buf_init(&head);
-        append_collapsed(&head, raw, first_len);
-        if (head.data != NULL && head.len > EMIT_MSG_HEAD) {
-            cut = align_forward(head.data, head.len, EMIT_MSG_HEAD);
-            head.data[cut] = '\0';
-            head.len = cut;
-        }
-        cut = flat.len - (EMIT_MSG_CAP - EMIT_MSG_HEAD - 5);
-        cut = align_forward(flat.data, flat.len, cut);
-        ek_diag_emit(diag, EK_SEV_ERROR, "E-emit", out_path, 0, 0,
-                     "cc failed: %s ... %s",
-                     head.data != NULL ? head.data : "",
-                     flat.data + cut);
-        ek_buf_destroy(&head);
+                       "cc failed:\n%.*s", (int)len, raw);
+        return;
     }
-    ek_buf_destroy(&flat);
+    {
+        size_t cut = len - (EMIT_MSG_CAP - EMIT_MSG_HEAD - 20);
+
+        cut = align_forward(raw, len, cut);
+        while (cut < len && raw[cut] != '\n') {
+            cut++;
+        }
+        ek_diag_emit(diag, EK_SEV_ERROR, "E-emit", out_path, 0, 0,
+                       "cc failed (first lines cut):\n%.*s",
+                       (int)(len - cut), raw + cut);
+    }
+}
+
+/* Drops the temporary product a failed link may have left behind. */
+static void remove_tmp(const char *out_path)
+{
+    char *tmp = malloc(strlen(out_path) + 5);
+
+    if (tmp) {
+        sprintf(tmp, "%s.tmp", out_path);
+        remove(tmp);
+        free(tmp);
+    }
 }
 
 /* Runs the link line through the shell; returns the wait status, with
@@ -223,9 +193,12 @@ ek_emit_result ek_emit_aot(const char *c_text, const char *out_path,
     if (!prepare(diag, arena, c_text, out_path, tree_root)) {
         return r;
     }
+    /* the link lands on a temporary name and replaces the product by
+       rename, so a failed compile leaves the previous binary whole */
     cmd = aprintf(arena, "cc -std=c99 -I%s/rt %s.c %s/build/libekort.a"
-                         " -lm -o %s",
-                  tree_root, out_path, tree_root, out_path);
+                         " -lm -o %s.tmp 2>&1 && mv %s.tmp %s",
+                  tree_root, out_path, tree_root, out_path, out_path,
+                  out_path);
     if (cmd == NULL) {
         ek_diag_emit(diag, EK_SEV_ERROR, "E-emit", out_path, 0, 0,
                      "out of memory");
@@ -234,6 +207,7 @@ ek_emit_result ek_emit_aot(const char *c_text, const char *out_path,
     ek_buf_init(&raw);
     status = run_cc(cmd, &raw);
     if (status < 0 || !WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+        remove_tmp(out_path);
         emit_failure(diag, out_path, raw.data, raw.len);
     } else {
         r.ok = 1;

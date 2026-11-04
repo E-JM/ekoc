@@ -127,12 +127,13 @@ static void failure_path(void)
     fail = emit_error(diag);
     EK_CHECK(fail != NULL);
     if (fail != NULL) {
-        /* The message carries the compiler's output, collapsed to one
-           line. */
+        /* The message carries the compiler's own lines, whole. */
         EK_CHECK(strstr(fail->message, "error") != NULL);
-        EK_CHECK(strchr(fail->message, '\n') == NULL);
+        EK_CHECK(strchr(fail->message, '\n') != NULL);
     }
+    /* a failed link leaves no product and no temporary behind */
     EK_CHECK(access("build/emit_aot_bad", X_OK) != 0);
+    EK_CHECK(access("build/emit_aot_bad.tmp", X_OK) != 0);
     ek_diag_destroy(diag);
     ek_arena_destroy(arena);
 }
