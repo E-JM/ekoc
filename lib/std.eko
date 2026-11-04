@@ -342,6 +342,14 @@ _json_char: (c: Char) -> String =
 // is source over the scalar sequence.
 String.at: (s: String, i: Int) -> Option Char = List.get(s.chars(), i)
 
+// The code points as U32 words, the boundary's element form: without
+// it, a code point table reaches C.In []U32 through three conversions.
+// A code point always fits the word, so the checked conversions
+// unwrap at the default.
+String.codepoints: (s: String) -> []U32 =
+    cs := s.chars()
+    cs.map((c): c.to_code().to_u32().unwrap_or(0))
+
 // The empty text has no lines; any other text yields the fields of the
 // newline split, less the empty one a trailing newline leaves.
 String.lines: (s: String) -> []String =

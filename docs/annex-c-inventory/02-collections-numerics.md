@@ -103,6 +103,7 @@ The namespace of `String` is `String` (Clause 7.4.3).
 | `String.from_char` | `(Char) -> String` | Clause 9.4.2 |
 | `String.from_chars` | `([]Char) -> String` | Clause 9.4.2 |
 | `String.append` | `(String, String) -> String` | Clause 9.4.2 |
+| `String.codepoints` | `(String) -> []U32` | Clause 9.4.2 |
 | `String.lines` | `(String) -> []String` | Clause 9.11.1 |
 | `String.split` | `(String, String) -> []String` | Clause 9.11.1 |
 | `String.contains` | `(String, String) -> Bool` | Clause 9.11.1 |

@@ -349,6 +349,14 @@ const char *const ek_std_source_parts[] = {
     "// is source over the scalar sequence.\n",
     "String.at: (s: String, i: Int) -> Option Char = List.get(s.chars(), i)\n",
     "\n",
+    "// The code points as U32 words, the boundary's element form: without\n",
+    "// it, a code point table reaches C.In []U32 through three conversions.\n",
+    "// A code point always fits the word, so the checked conversions\n",
+    "// unwrap at the default.\n",
+    "String.codepoints: (s: String) -> []U32 =\n",
+    "    cs := s.chars()\n",
+    "    cs.map((c): c.to_code().to_u32().unwrap_or(0))\n",
+    "\n",
     "// The empty text has no lines; any other text yields the fields of the\n",
     "// newline split, less the empty one a trailing newline leaves.\n",
     "String.lines: (s: String) -> []String =\n",
@@ -512,8 +520,8 @@ const char *const ek_std_source_parts[] = {
     "        False -> _\n",
 };
 
-const size_t ek_std_source_nparts = 505;
-const size_t ek_std_source_len = 16090;
+const size_t ek_std_source_nparts = 513;
+const size_t ek_std_source_len = 16437;
 
 char *ek_std_source_join(ek_arena *arena)
 {

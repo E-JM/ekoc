@@ -79,3 +79,10 @@ fold_callback_patterns: test =
     s: Result Int String =
         xs.fold(Ok 0, (acc, e): case acc: Ok v -> Ok (v + e); Err m -> Err m)
     assert_eq(s, Ok 6)
+
+// The code points in the boundary's element form (Clause 9.4.2).
+string_codepoints: test =
+    assert_eq("hélö".codepoints().show(), "\{104, 233, 108, 246}")
+    assert_eq("".codepoints().length(), 0)
+    cs: []U32 = "ab".codepoints()
+    assert_eq(cs, {97, 98})

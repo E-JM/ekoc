@@ -44,6 +44,8 @@ type (Clause 6.10); `String.at` is the accessor, has cost O(n), yields `Option
 Char`, and returns `None` for an out-of-range index. `String.length` counts
 Unicode scalar values, not bytes. `String.append` and `++` perform an O(n)
 full copy. `String.chars` produces `[]Char` and composes with the `List`
+combinators; `String.codepoints` produces the same sequence as `[]U32`, the
+boundary's element form (Clause 10.3.5)
 namespace; no String-specific iteration function exists. An empty `String` is
 `""`. Values are immutable and are represented and reclaimed under Clauses 8.5
 and 8.6.
