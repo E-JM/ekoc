@@ -113,6 +113,7 @@ LIB_CHECK := $(BUILD)/libek_check.a
 CHECK_OBJ := $(CHECK_SRC:src/%.c=$(BUILD)/%.o)
 
 LOWER_SRC := \
+	src/lower/binop.c \
 	src/lower/body.c \
 	src/lower/borrow.c \
 	src/lower/bundle.c \

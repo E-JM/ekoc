@@ -565,6 +565,14 @@ lower_val lower_composite(lower_ctx *c, lower_scope *scope,
 /* expr.c: expressions and construct naming for diagnostics. */
 lower_val lower_expr(lower_ctx *c, lower_scope *scope, const ek_node *e);
 lower_val lower_sub(lower_ctx *c, lower_scope *scope, const ek_node *e);
+
+/* binop.c: the operator expressions -- numeric rows, derived
+   comparisons, concatenation, the logical expansions, ranges, and
+   negation. */
+lower_val lower_binary_expr(lower_ctx *c, lower_scope *scope,
+                            const ek_node *e);
+lower_val lower_unary_expr(lower_ctx *c, lower_scope *scope,
+                           const ek_node *e);
 const char *lower_construct(const ek_node *n);
 
 /* case.c: the case form and its arm cascade. */
