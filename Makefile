@@ -74,13 +74,13 @@ CHECK_SRC := \
 	src/check/exhaust_branch.c \
 	src/check/exhaust_leaf.c \
 	src/check/exhaust_prod.c \
-	src/check/exhaust_prod.c \
 	src/check/extern.c \
 	src/check/expr.c \
 	src/check/halt.c \
 	src/check/instdepth.c \
 	src/check/literal.c \
 	src/check/member.c \
+	src/check/membersvc.c \
 	src/check/namespace.c \
 	src/check/nsrows.c \
 	src/check/op.c \

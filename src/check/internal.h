@@ -303,6 +303,32 @@ int ck_shared_name(ck_ctx *c, const char *name);
    a declaration: the equality pair, the ordering family, the display
    pair, with, and the JSON pair. */
 int ck_service_name(const char *name);
+
+/* membersvc.c: the derived services of a receiver's namespace. Each
+   returns the service's arrow when it derives over the receiver, and
+   NULL when the name is not the service's or the miss is diagnosed;
+   ck_service_receiver is the receiver a service is written at, and
+   ck_no_member reports a name no station answered. */
+const ek_type *ck_derive_eq(ck_ctx *c, const ek_node *at,
+                            const ek_type *r, const char *name,
+                            ek_reading *rd, const ek_type *bool_t);
+const ek_type *ck_derive_lt(ck_ctx *c, const ek_node *at,
+                            const ek_type *r, const char *name,
+                            ek_reading *rd, const ek_type *bool_t);
+const ek_type *ck_derive_display(ck_ctx *c, const ek_type *r,
+                                 const char *name, ek_reading *rd);
+const ek_type *ck_derive_panic(ck_ctx *c, const ek_type *r,
+                               const char *name, ek_reading *rd);
+const ek_type *ck_derive_json(ck_ctx *c, const ek_node *at,
+                              const ek_type *r, const char *name,
+                              ek_reading *rd);
+const ek_type *ck_derive_with(ck_ctx *c, const ek_node *at,
+                              const ek_type *r, const char *name,
+                              ek_reading *rd);
+const ek_type *ck_service_receiver(ck_ctx *c, const ek_type *r);
+const ek_type *ck_no_member(ck_ctx *c, const ek_node *at,
+                            const ek_type *r, const char *name,
+                            const ek_symbol *mod);
 void ck_row(ck_ctx *c, const ek_node *n, const ek_type *t, ek_reading r);
 void ck_error(ck_ctx *c, const ek_node *n, const char *code, const char *fmt,
               ...);
