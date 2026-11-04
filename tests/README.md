@@ -53,6 +53,14 @@ diagnostic code from `Annex B.3` where one exists, otherwise
 `compile error: <reason>` with the normative clause. Negative cases are
 specifications of rejection, not tests that run.
 
+## Annex D
+
+The annex's mechanical fields — the module, root, and test counts of D.1,
+D.2, and D.5 — are a reading of this directory. After changing the tree,
+run `python3 tools/gen_annex_d.py`; it rewrites those fields and leaves the
+clause and coverage columns as written. `--check` reports drift without
+writing, so a suite change that forgot the annex fails before commit.
+
 ## Conventions
 
 - Four spaces per indentation level; tabs are an `E-tab` error
