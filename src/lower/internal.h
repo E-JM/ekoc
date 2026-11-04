@@ -522,8 +522,15 @@ lower_val lower_string_expr(lower_ctx *c, lower_scope *scope,
    before the functions. */
 lower_gtype *lower_decl_repr(lower_ctx *c, const ek_symbol *tsym);
 lower_gtype *lower_gtype_of_stem(lower_ctx *c, const char *stem);
+lower_gtype *lower_add_family(lower_ctx *c);
 lower_gtype *lower_anon_record(lower_ctx *c, const ek_type *rec);
 lower_gtype *lower_anon_tuple(lower_ctx *c, size_t n);
+const ek_symbol *lower_pick_ctor(const ek_ref *ref, const ek_symbol *tsym);
+lower_gtype *lower_find_family(const lower_ctx *c, const ek_symbol *sym,
+                               const char *key);
+lower_gtype *lower_register_ctor(lower_ctx *c, const ek_node *at,
+                                 const ek_symbol *cs, const ek_node *decl,
+                                 int construct);
 lower_gtype *lower_ctor_family(lower_ctx *c, const ek_node *at,
                                const ek_ref *ref, const ek_symbol *tsym);
 lower_gtype *lower_ctor_built(lower_ctx *c, const ek_node *at,

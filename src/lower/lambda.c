@@ -192,3 +192,36 @@ void lower_flush_pending(lower_ctx *c)
         }
     }
 }
+
+/* Registers the environment struct of one closure: its fields are the
+   captured free names, in capture order. Every closure keeps its own
+   family, so two capture sets never share a layout. */
+lower_gtype *lower_env_family(lower_ctx *c, const char **names, size_t n)
+{
+    lower_gtype *g = lower_add_family(c);
+    const char **slots;
+    size_t cap = 0, i;
+
+    if (!g) {
+        return NULL;
+    }
+    g->key_str = lower_str(c, "env:%u", c->anon_env);
+    g->stem = lower_str(c, "env%u", c->anon_env++);
+    g->helper = lower_str(c, "ekn_%s", g->stem);
+    g->shape = GT_REC;
+    g->nf = n;
+    g->used = 1;
+    g->constructed = 1;
+    if (n) {
+        slots = lower_grow(c, NULL, &cap, n, sizeof *slots);
+        if (!slots) {
+            c->ngt--;
+            return NULL;
+        }
+        g->fnames = slots;
+        for (i = 0; i < n; i++) {
+            g->fnames[i] = names[i];
+        }
+    }
+    return g;
+}

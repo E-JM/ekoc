@@ -129,6 +129,7 @@ LOWER_SRC := \
 	src/lower/composite.c \
 	src/lower/construct.c \
 	src/lower/ctl.c \
+	src/lower/ctorfam.c \
 	src/lower/destructure.c \
 	src/lower/derived.c \
 	src/lower/derivedcall.c \
