@@ -554,6 +554,22 @@ lower_val lower_ctor_value(lower_ctx *c, const ek_node *e, const ek_ref *ref);
 /* The one-directional shape adaptation of one value: a nominal record
    flowing into an anonymous record expectation rebuilds field by field;
    any other pair comes back unchanged. */
+/* composite.c: the item machinery behind every literal. The walkers
+   are shared with the container and constructor constructions of
+   construct.c. */
+lower_val lower_item_under(lower_ctx *c, lower_scope *scope,
+                           const ek_node *e, const ek_type *t);
+const char **lower_item_temps(lower_ctx *c, lower_scope *scope,
+                              const ek_node *e, const ek_type *t,
+                              const ek_type *rec);
+void lower_release_temps(lower_ctx *c, const char **argv, size_t n);
+const ek_symbol *lower_row_nominal(lower_ctx *c, const ek_node *at);
+
+/* construct.c: the composites born at a family border. */
+lower_val lower_list_literal(lower_ctx *c, lower_scope *scope,
+                             const ek_node *e);
+lower_val lower_dict_literal(lower_ctx *c, lower_scope *scope,
+                             const ek_node *e);
 lower_val lower_shape_adapt(lower_ctx *c, lower_scope *scope, lower_val v,
                             const ek_node *at, const ek_type *from,
                             const ek_type *to);
