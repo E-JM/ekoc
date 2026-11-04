@@ -28,6 +28,10 @@ static void emit_mix_helper(lower_ctx *c, lower_demit *d)
         return;
     }
     c->hash_mix = 1;
+    /* a service minted mid-body can land ahead of the first body, so
+       the definition travels with a declaration ahead of them all */
+    lower_push_sig(c, "static unsigned long ek_hash_mix(unsigned long h, "
+                      "unsigned long x);");
     lower_d_printf(d, "static unsigned long ek_hash_mix(unsigned long h, "
                       "unsigned long x)\n{\n");
     lower_d_printf(d, "    h ^= x;\n");
@@ -70,21 +74,47 @@ static void emit_slot_mix(lower_ctx *c, lower_demit *d, const ek_type *t,
         lower_d_printf(d, "        h = ek_hash_mix(h, b);\n");
         lower_d_printf(d, "    }\n");
         return;
-    default:
-        lower_d_printf(d, "    if (%s.tag == EK_VAL_REF && %s.as.ref != NULL"
-                          "\n        && %s.as.ref->info->hash != NULL) {\n",
-                       slot, slot, slot);
-        lower_d_printf(d, "        h = ek_hash_mix(h, "
-                          "%s.as.ref->info->hash(%s));\n", slot, slot);
-        lower_d_printf(d, "    } else if (%s.tag == EK_VAL_REF && "
-                          "%s.as.ref != NULL) {\n", slot, slot);
-        lower_d_printf(d, "        h = ek_hash_mix(h, "
-                          "(unsigned long)%s.as.ref);\n", slot);
-        lower_d_printf(d, "    } else {\n");
-        lower_d_printf(d, "        h = ek_hash_mix(h, "
-                          "(unsigned long)%s.as.u);\n", slot);
+    case EKSC_STRING:
+    case EKSC_BYTES: {
+        int is_str = sk == EKSC_STRING;
+
+        /* the text families hash their own bytes: no service exists to
+           call, and the runtime's key hash belongs to its table */
+        lower_d_printf(d, "    {\n");
+        lower_d_printf(d, "        const unsigned char *ekp = (const "
+                          "unsigned char *)%s(%s.as.ref);\n",
+                       is_str ? "ek_str_cstr" : "ek_bytes_data", slot);
+        lower_d_printf(d, "        size_t ekn = %s(%s.as.ref);\n",
+                       is_str ? "ek_str_len" : "ek_bytes_len", slot);
+        lower_d_printf(d, "        size_t eki;\n\n");
+        lower_d_printf(d, "        for (eki = 0; eki < ekn; eki++)\n");
+        lower_d_printf(d, "            h = ek_hash_mix(h, "
+                          "(unsigned long)ekp[eki]);\n");
         lower_d_printf(d, "    }\n");
         return;
+    }
+    default: {
+        const char *svc = t ? lower_dsvc_request(c, NULL, DSV_HASH, t)
+                            : NULL;
+
+        /* A reference whose family carries no hash of its own keys on
+           its address, the identity fallback the key domains without
+           per-value families read. */
+        if (svc) {
+            lower_d_printf(d, "    h = ek_hash_mix(h, %s(%s));\n", svc,
+                           slot);
+        } else {
+            lower_d_printf(d, "    if (%s.tag == EK_VAL_REF && %s.as.ref"
+                              " != NULL) {\n", slot, slot);
+            lower_d_printf(d, "        h = ek_hash_mix(h, "
+                              "(unsigned long)%s.as.ref);\n", slot);
+            lower_d_printf(d, "    } else {\n");
+            lower_d_printf(d, "        h = ek_hash_mix(h, "
+                              "(unsigned long)%s.as.u);\n", slot);
+            lower_d_printf(d, "    }\n");
+        }
+        return;
+    }
     }
 }
 

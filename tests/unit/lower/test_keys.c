@@ -92,14 +92,13 @@ static void adt_stamps_every_constructor(void)
                          "{ EK_KIND_STRUCT, drop_test$V$M, "
                          "ekq_N$test$V, ekh_N$test$V };"));
     /* the hash dispatches on the constructor identity and mixes the
-       payload in its own form: a String through the child hook, a
-       Float by the canonicalized bits */
+       payload in its own form: a String through its derived service,
+       a Float by the canonicalized bits */
     EK_CHECK(lfx_has(&f, "if (v.as.ref->info == &ekT_test$V$S) {\n"
                          "    h = ek_hash_mix(h, (unsigned long)"
                          "((ekS_test$V$S *)v.as.ref)->p0.tag);\n"));
-    EK_CHECK(lfx_has(&f, "h = ek_hash_mix(h, "
-                         "((ekS_test$V$S *)v.as.ref)->p0.as.ref->info->hash"
-                         "(((ekS_test$V$S *)v.as.ref)->p0));"));
+    EK_CHECK(lfx_has(&f, "ekp = (const unsigned char *)ek_str_cstr("
+                         "((ekS_test$V$S *)v.as.ref)->p0.as.ref);"));
     EK_CHECK(lfx_has(&f, "if (x == 0.0) {\n            x = 0.0;\n"
                          "        }\n"
                          "        memcpy(&b, &x, sizeof b);"));
@@ -126,14 +125,12 @@ static void nested_refs_hash_through_the_child_hook(void)
     EK_CHECK(lfx_has(&f, "const ek_typeinfo ekT_test$Outer = "
                          "{ EK_KIND_STRUCT, drop_test$Outer, "
                          "ekq_N$test$Outer, ekh_N$test$Outer };"));
-    /* a reference field hashes through the child typeinfo's hook */
-    EK_CHECK(lfx_has(&f, "if (((ekS_test$Outer *)v.as.ref)->f_i.tag == "
-                         "EK_VAL_REF"));
-    EK_CHECK(lfx_has(&f, "((ekS_test$Outer *)v.as.ref)->f_i.as.ref->"
-                         "info->hash(((ekS_test$Outer *)v.as.ref)->f_i)"));
-    /* the identity fallback keeps the address */
-    EK_CHECK(lfx_has(&f, "h = ek_hash_mix(h, (unsigned long)"
-                         "((ekS_test$Outer *)v.as.ref)->f_i.as.ref);"));
+    /* a nested record field hashes through its own derived service */
+    EK_CHECK(lfx_has(&f, "h = ek_hash_mix(h, "
+                         "ekh_N$test$Inner(((ekS_test$Outer *)v.as.ref)"
+                         "->f_i));"));
+    EK_CHECK(lfx_has(&f, "ekp = (const unsigned char *)ek_str_cstr("
+                         "((ekS_test$Outer *)v.as.ref)->f_s.as.ref);"));
     lfx_end(&f);
 }
 

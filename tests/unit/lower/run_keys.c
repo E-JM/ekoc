@@ -246,6 +246,39 @@ static void float_key_rules_run(void)
     EK_CHECK(err[0] == '\0');
 }
 
+/* The key domains the stamping reaches: a bare zero-payload
+   constructor keys a dictionary literal, a tuple-payload variant keys
+   deterministically through its payload's own hash, and the scalar
+   Float domain reads its numeric equality -- the two zeros one key, a
+   NaN insert changing nothing. */
+static void stamped_key_domains_run(void)
+{
+    static const char *src =
+        "Dir: type = North | South\n"
+        "Shape: type = Circle Float | Rect [Float, Float]\n"
+        "main: (out: Out) ! =\n"
+        "    d: [Dir]Int = {North: 1, South: 2}\n"
+        "    out.println(d.get(North).unwrap_or(0).show())\n"
+        "    s: [Shape]Int = {Rect {2.0, 3.0}: 5}\n"
+        "    out.println(s.get(Rect {2.0, 3.0}).unwrap_or(0).show())\n"
+        "    out.println(s.get(Rect {2.0, 4.0}).unwrap_or(0).show())\n"
+        "    f: [Float]Int = {}\n"
+        "    f := f.insert(0.0, 1)\n"
+        "    f := f.insert(-0.0, 2)\n"
+        "    f := f.insert(0.0 / 0.0, 9)\n"
+        "    out.println(f.length().show())\n"
+        "    out.println(f.get(-0.0).unwrap_or(0).show())\n";
+    char out[64], err[8];
+    int status = gate(src, "lower_keys_stamped", 3, out, sizeof out,
+                      err, sizeof err);
+
+    if (status >= 0 && WIFEXITED(status)) {
+        EK_CHECK_U64(WEXITSTATUS(status), 0);
+    }
+    EK_CHECK_STR(out, "1\n5\n0\n1\n2\n");
+    EK_CHECK(err[0] == '\0');
+}
+
 int main(void)
 {
     if (mkdir("build", 0777) != 0 && errno != EEXIST) {
@@ -256,5 +289,6 @@ int main(void)
     record_keyed_dict_run();
     composite_set_run();
     float_key_rules_run();
+    stamped_key_domains_run();
     return ek_test_report("lower/run_keys");
 }

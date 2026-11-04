@@ -72,6 +72,7 @@ static uint64_t hash_key(ek_val v)
     uint64_t h = 14695981039346656037ULL;
     const unsigned char *p = (const unsigned char *)&v.as;
     unsigned long kh = 0;
+    double zf;
     size_t width;
 
     if (text_key(&v)) {
@@ -81,6 +82,11 @@ static uint64_t hash_key(ek_val v)
         kh = v.as.ref->info->hash(v);
         p = (const unsigned char *)&kh;
         width = sizeof kh;
+    } else if (v.tag == EK_VAL_FLOAT) {
+        /* the two zeros hash as one key, the way they compare */
+        zf = v.as.f == 0.0 ? 0.0 : v.as.f;
+        p = (const unsigned char *)&zf;
+        width = sizeof zf;
     } else {
         width = payload_width(&v);
     }
@@ -109,6 +115,8 @@ static int key_eq(ek_val a, ek_val b)
             return a.as.ref->info->eq(a, b);
         return a.as.ref == b.as.ref;
     }
+    if (a.tag == EK_VAL_FLOAT)
+        return a.as.f == b.as.f;
     return memcmp(&a.as, &b.as, payload_width(&a)) == 0;
 }
 
@@ -234,8 +242,17 @@ static ek_dict *dict_joined(const ek_dict *a, const ek_dict *b)
 
 ek_val ek_dict_set(ek_val d, ek_val key, ek_val val)
 {
-    const ek_dict *old = (const ek_dict *)d.as.ref;
-    const ek_dict_entry *existing = find_entry(old, key);
+    const ek_dict *old;
+    const ek_dict_entry *existing;
+
+    /* An insert whose key equals no key, not even itself, changes
+       nothing: the entry could never be found again (Clause 9.10.4). */
+    if (!key_eq(key, key)) {
+        ek_retain(d);
+        return d;
+    }
+    old = (const ek_dict *)d.as.ref;
+    existing = find_entry(old, key);
     ek_dict *fresh = dict_sized_for(old->count + (existing == NULL ? 1 : 0));
     uint32_t idx;
 

@@ -73,7 +73,10 @@ themselves are admissible keys; the type `[[]String]Int` is well formed.
 Capabilities and functions are excluded; their equality derivation halts
 (Clause 9.8.4). A `Float` key follows IEEE equality. Since `NaN != NaN`, a
 `NaN` key always misses. `0.0` and `-0.0` compare equal and are the same key.
-The element domain of `Set` is the same key domain. A dictionary with a
+An insert whose key is not equal to itself returns the original
+dictionary: the entry could never be found again, and it is not
+observable in `length`, iteration, or `eq`. The element domain of
+`Set` is the same key domain. A dictionary with a
 non-string key domain has no default JSON mapping (`E-json-shape`, Annex B).
 
 The O(1) promise of `Dict.get` and the `Set` domain check rest on a derived

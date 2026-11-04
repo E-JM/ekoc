@@ -39,6 +39,54 @@ lower_val lower_list_literal(lower_ctx *c, lower_scope *scope,
     return (lower_val){ out, 1 };
 }
 
+/* A dictionary-literal key that spells one bare constructor name: the
+   resolver leaves a single-name item key unresolved, because the
+   record literal's field reading owns that shape, so the sole
+   constructor the key type's declaration owns is picked here, the
+   same sole-candidate rule the bridged chain heads read. */
+static lower_val bare_key_ctor(lower_ctx *c, const ek_node *key,
+                               const ek_type *kt)
+{
+    const ek_symbol *tsym = kt && kt->kind == EK_T_NOMINAL
+                                ? kt->u.nominal.sym : NULL;
+    const char *name = key->u.path.count == 1 ? key->u.path.data[0] : NULL;
+    const ek_symbol *cand = NULL;
+    lower_gtype *g;
+    size_t k, i;
+
+    if (!tsym || !name || !tsym->module) {
+        return lower_val_unit();
+    }
+    for (k = 0; k < c->resolved.module_count; k++) {
+        const ek_surface *s = &c->resolved.modules[k];
+
+        if (strcmp(s->module, tsym->module) != 0) {
+            continue;
+        }
+        for (i = 0; i < s->count; i++) {
+            const ek_symbol *m = &s->syms[i];
+
+            if (m->kind != EK_SYM_CONSTRUCTOR || !m->owner
+                || strcmp(m->name, name) != 0
+                || strcmp(m->owner, tsym->name) != 0) {
+                continue;
+            }
+            if (cand && cand != m) {
+                return lower_val_unit(); /* an ambiguity keeps the refusal */
+            }
+            cand = m;
+        }
+    }
+    if (!cand) {
+        return lower_val_unit();
+    }
+    g = lower_ctor_of_symbol(c, key, cand, 1);
+    if (!g || g->nf) {
+        return lower_val_unit(); /* a payload constructor never spells bare */
+    }
+    return (lower_val){ lower_str(c, "%s()", g->helper), 0 };
+}
+
 /* The key and value temps of the entries, in source order; the arrays
    hold one slot per kid, NULL where a side is absent. t is the
    literal's own dictionary type, naming the key and value types the
@@ -67,6 +115,11 @@ static void dict_item_temps(lower_ctx *c, lower_scope *scope,
 
             a = lower_item_under(c, scope, key, dtype ? dtype->u.dict.key : NULL);
             kt_row = dtype ? lower_row_type(c, key) : NULL;
+            if (!a.is_temp && strcmp(a.text, "ek_val_unit()") == 0
+                && dtype && key->kind == EK_N_NAME
+                && key->u.path.count == 1) {
+                a = bare_key_ctor(c, key, dtype->u.dict.key);
+            }
             if (!a.is_temp && strcmp(a.text, "ek_val_unit()") == 0
                 && kt_row && kt_row->kind != EK_T_UNIT) {
                 lower_error(c, key, "the dictionary key has no lowering");
