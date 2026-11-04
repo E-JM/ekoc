@@ -171,7 +171,7 @@ const char *lower_trampoline(lower_ctx *c, const ek_symbol *sym)
             return c->tramps[i].name;
         }
     }
-    name = lower_str(c, "ekt_%s_%s", sym->module, sym->name);
+    name = lower_str(c, "ekt_%s$%s", sym->module, sym->name);
     lower_push_sig(c, lower_str(c, "static ek_val %s(ek_val env, ek_val *args, "
                              "size_t argc)", name));
     p = ek_arena_alloc(c->arena, sizeof *p);

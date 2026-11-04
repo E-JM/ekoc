@@ -105,20 +105,42 @@ static void key_into(lower_ctx *c, ek_buf *b, const ek_type *t)
     }
 }
 
-/* The spelling of a tuple or record shape: the arity, then each
+/* The spelling of one applied type: a closed alphabet of head words
+   -- scalars bare, every compound tagged with a letter -- and `$`
+   between components, which no written identifier supplies, so two
+   distinct types never spell alike whatever their modules, fields, and
+   arguments are named. */
+
+/* The bare word of a root scalar, or NULL for any other type: the
+   scalar names are a closed set no other spelling can imitate, every
+   other piece carrying its `$` tag. */
+static const char *scalar_word(const ek_type *t)
+{
+    if (t->kind != EK_T_NOMINAL || !t->u.nominal.sym
+        || t->u.nominal.argc != 0
+        || lower_scalar_kind(t) == EKSC_OTHER) {
+        return NULL;
+    }
+    return t->u.nominal.sym->name;
+}
+
+/* The spelling of a tuple or record shape: the arity head, then each
    component. */
 static void spell_fields(lower_ctx *c, ek_buf *b, const ek_type *t)
 {
     size_t n = t->kind == EK_T_TUPLE ? t->u.tuple.count
                                      : t->u.record.count;
 
-    ek_buf_printf(b, "%s_%zu", t->kind == EK_T_TUPLE ? "Tup" : "Rec", n);
+    ek_buf_printf(b, "%s%zu$", t->kind == EK_T_TUPLE ? "T" : "R", n);
     for (size_t i = 0; i < n; i++) {
+        if (i) {
+            ek_buf_append_char(b, '$');
+        }
         if (t->kind == EK_T_RECORD) {
-            ek_buf_printf(b, "_%s_", t->u.record.fields[i].name);
+            ek_buf_append_str(b, t->u.record.fields[i].name);
+            ek_buf_append_char(b, '$');
             spell_into(c, b, t->u.record.fields[i].type);
         } else {
-            ek_buf_append_char(b, '_');
             spell_into(c, b, t->u.tuple.items[i]);
         }
     }
@@ -127,11 +149,14 @@ static void spell_fields(lower_ctx *c, ek_buf *b, const ek_type *t)
 /* The spelling of a nominal and its applied arguments. */
 static void spell_nominal(lower_ctx *c, ek_buf *b, const ek_type *t)
 {
-    ek_buf_printf(b, "%s_%s", t->u.nominal.sym ? t->u.nominal.sym->module
-                                               : "x",
-                  t->u.nominal.sym ? t->u.nominal.sym->name : "x");
+    if (!t->u.nominal.sym) {
+        ek_buf_append_str(b, "N$x");
+        return;
+    }
+    ek_buf_printf(b, "N$%s$%s", t->u.nominal.sym->module,
+                  t->u.nominal.sym->name);
     for (size_t i = 0; i < t->u.nominal.argc; i++) {
-        ek_buf_append_char(b, '_');
+        ek_buf_append_char(b, '$');
         spell_into(c, b, t->u.nominal.args[i]);
     }
 }
@@ -141,13 +166,13 @@ static void spell_shape(lower_ctx *c, ek_buf *b, const ek_type *t)
 {
     switch (t->kind) {
     case EK_T_LIST:
-        ek_buf_append_str(b, "List_");
+        ek_buf_append_str(b, "L$");
         spell_into(c, b, t->u.list.elem);
         break;
     case EK_T_DICT:
-        ek_buf_append_str(b, "Dict_");
+        ek_buf_append_str(b, "D$");
         spell_into(c, b, t->u.dict.key);
-        ek_buf_append_char(b, '_');
+        ek_buf_append_char(b, '$');
         spell_into(c, b, t->u.dict.val);
         break;
     case EK_T_TUPLE:
@@ -166,6 +191,8 @@ static void spell_shape(lower_ctx *c, ek_buf *b, const ek_type *t)
    the family spelling, following the struct registry's keying. */
 static void spell_into(lower_ctx *c, ek_buf *b, const ek_type *t)
 {
+    const char *word;
+
     if (!t) {
         ek_buf_append_str(b, "Opaque");
         return;
@@ -185,14 +212,19 @@ static void spell_into(lower_ctx *c, ek_buf *b, const ek_type *t)
         ek_buf_append_str(b, "Opaque");
         break;
     default:
-        spell_shape(c, b, t);
+        word = scalar_word(t);
+        if (word) {
+            ek_buf_append_str(b, word);
+        } else {
+            spell_shape(c, b, t);
+        }
         break;
     }
 }
 
-/* The identifier pieces of one instantiation's applied arguments,
-   joined with underscores: the suffix a specialized function's name
-   carries after the separator. */
+/* The identifier pieces of one instantiation's applied arguments:
+   the suffix a specialized function's name carries after the
+   separator. */
 const char *lower_spell_apply(lower_ctx *c, const ek_type *const *args,
                               size_t n)
 {
@@ -201,7 +233,7 @@ const char *lower_spell_apply(lower_ctx *c, const ek_type *const *args,
 
     ek_buf_init(&b);
     for (i = 0; i < n; i++) {
-        if (i && !ek_buf_append_char(&b, '_')) {
+        if (i && !ek_buf_append_char(&b, '$')) {
             c->oom = 1;
         }
         spell_into(c, &b, args[i]);

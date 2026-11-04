@@ -15,7 +15,7 @@ static void derived_service(void)
     EK_CHECK(lfx_check_clean(&f));
     EK_CHECK(lfx_lower_clean(&f));
     EK_CHECK_U64(f.low.fn_count, 1);
-    EK_CHECK(lfx_has(&f, "ekd_show_std_Int("));
+    EK_CHECK(lfx_has(&f, "ekd_show_Int("));
     EK_CHECK(f.low.text != NULL);
     EK_CHECK(lfx_has(&f, "#include \"ekort.h\""));
     EK_CHECK(lfx_has(&f, "int main(void)"));

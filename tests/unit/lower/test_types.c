@@ -24,23 +24,23 @@ static void record_shape(void)
     EK_CHECK(lfx_lower_clean(&f));
     EK_CHECK(lfx_has(&f, "typedef struct { ek_obj obj; "
                            "ek_val f_name; ek_val f_age; } "
-                           "ekS_test_Person;"));
+                           "ekS_test$Person;"));
     /* the drop releases the fields in declaration order */
-    EK_CHECK(lfx_has(&f, "ek_release(((ekS_test_Person *)o)->f_name);\n"
-                         "    ek_release(((ekS_test_Person *)o)->f_age);"));
-    EK_CHECK(lfx_has(&f, "const ek_typeinfo ekT_test_Person = "
-                         "{ EK_KIND_STRUCT, drop_test_Person, NULL, NULL };"));
-    EK_CHECK(lfx_has(&f, "static ek_val ekn_test_Person_rec(ek_val p0, "
+    EK_CHECK(lfx_has(&f, "ek_release(((ekS_test$Person *)o)->f_name);\n"
+                         "    ek_release(((ekS_test$Person *)o)->f_age);"));
+    EK_CHECK(lfx_has(&f, "const ek_typeinfo ekT_test$Person = "
+                         "{ EK_KIND_STRUCT, drop_test$Person, NULL, NULL };"));
+    EK_CHECK(lfx_has(&f, "static ek_val ekn_test$Person$rec(ek_val p0, "
                          "ek_val p1)"));
     EK_CHECK(lfx_has(&f, "o->f_name = ek_keep(p0);"));
     EK_CHECK(lfx_has(&f, "o->f_age = ek_keep(p1);"));
     /* the items map by name, not by written order: the fields pass in
        declaration order while the temps were minted in source order */
-    EK_CHECK(lfx_has(&f, "ek_val t2 = ekn_test_Person_rec(t1, t0);"));
+    EK_CHECK(lfx_has(&f, "ek_val t2 = ekn_test$Person$rec(t1, t0);"));
     /* the literal transfers into the binding; the access is an owned
        copy out of the struct, read through the borrowed local */
     EK_CHECK(lfx_has(&f, "ek_val p = t2;"));
-    EK_CHECK(lfx_has(&f, "ek_val t3 = ek_keep(((ekS_test_Person *)"
+    EK_CHECK(lfx_has(&f, "ek_val t3 = ek_keep(((ekS_test$Person *)"
                          "p.as.ref)->f_age);"));
     lfx_end(&f);
 }
@@ -65,28 +65,28 @@ static void adt_shape(void)
        payload constructor stores p0, a nullary one is the bare header
        with the NULL drop of a family that holds no child references */
     EK_CHECK(lfx_has(&f, "typedef struct { ek_obj obj; ek_val p0; } "
-                         "ekS_std_Option_Some;"));
+                         "ekS_std$Option$Some;"));
     EK_CHECK(lfx_has(&f, "typedef struct { ek_obj obj; } "
-                         "ekS_std_Option_None;"));
-    EK_CHECK(lfx_has(&f, "ek_release(((ekS_std_Option_Some *)o)->p0);"));
-    EK_CHECK(lfx_has(&f, "const ek_typeinfo ekT_std_Option_None = "
+                         "ekS_std$Option$None;"));
+    EK_CHECK(lfx_has(&f, "ek_release(((ekS_std$Option$Some *)o)->p0);"));
+    EK_CHECK(lfx_has(&f, "const ek_typeinfo ekT_std$Option$None = "
                          "{ EK_KIND_STRUCT, NULL, NULL, NULL };"));
-    EK_CHECK(lfx_lacks(&f, "drop_std_Option_None"));
-    EK_CHECK(lfx_has(&f, "const ek_typeinfo ekT_std_Option_Some = "
-                         "{ EK_KIND_STRUCT, drop_std_Option_Some, "
+    EK_CHECK(lfx_lacks(&f, "drop_std$Option$None"));
+    EK_CHECK(lfx_has(&f, "const ek_typeinfo ekT_std$Option$Some = "
+                         "{ EK_KIND_STRUCT, drop_std$Option$Some, "
                          "NULL, NULL };"));
-    EK_CHECK(lfx_has(&f, "static ek_val ekn_std_Option_Some(ek_val p0)"));
-    EK_CHECK(lfx_has(&f, "o->obj.info = &ekT_std_Option_Some;"));
+    EK_CHECK(lfx_has(&f, "static ek_val ekn_std$Option$Some(ek_val p0)"));
+    EK_CHECK(lfx_has(&f, "o->obj.info = &ekT_std$Option$Some;"));
     EK_CHECK(lfx_has(&f, "o->obj.rc = 1;"));
     EK_CHECK(lfx_has(&f, "o->p0 = ek_keep(p0);"));
     EK_CHECK(lfx_has(&f, "return ek_val_ref(&o->obj);"));
-    EK_CHECK(lfx_has(&f, "static ek_val ekn_std_Option_None(void)"));
+    EK_CHECK(lfx_has(&f, "static ek_val ekn_std$Option$None(void)"));
     /* the call site releases the payload temp once the helper's own
        retention stands, and the std surface stays untouched */
-    EK_CHECK(lfx_has(&f, "ek_val t1 = ekn_std_Option_Some(t0);\n"
+    EK_CHECK(lfx_has(&f, "ek_val t1 = ekn_std$Option$Some(t0);\n"
                          "    ek_release(t0);"));
-    EK_CHECK(lfx_has(&f, "ekn_std_Option_None();"));
-    EK_CHECK(lfx_lacks(&f, "ekf_std_"));
+    EK_CHECK(lfx_has(&f, "ekn_std$Option$None();"));
+    EK_CHECK(lfx_lacks(&f, "ekf_std$"));
     lfx_end(&f);
 }
 
@@ -116,14 +116,14 @@ static void tuple_shape(void)
        in the declaration order; the anonymous shape of the same arity
        shares the layout under its own name */
     EK_CHECK(lfx_has(&f, "typedef struct { ek_obj obj; ek_val f_0; "
-                         "ek_val f_1; } ekS_test_Pair;"));
+                         "ek_val f_1; } ekS_test$Pair;"));
     EK_CHECK(lfx_has(&f, "typedef struct { ek_obj obj; ek_val f_0; "
                          "ek_val f_1; } ekS_tup_2;"));
-    EK_CHECK(lfx_has(&f, "static ek_val ekn_test_Pair_rec(ek_val p0, "
+    EK_CHECK(lfx_has(&f, "static ek_val ekn_test$Pair$rec(ek_val p0, "
                          "ek_val p1)"));
     EK_CHECK(lfx_has(&f, "static ek_val ekn_tup_2(ek_val p0, ek_val p1)"));
     EK_CHECK(lfx_has(&f, "o->f_0 = ek_keep(p0);"));
-    EK_CHECK(lfx_has(&f, "ekn_test_Pair_rec(t"));
+    EK_CHECK(lfx_has(&f, "ekn_test$Pair$rec(t"));
     EK_CHECK(lfx_has(&f, "ekn_tup_2(t"));
     lfx_end(&f);
 }
@@ -212,7 +212,7 @@ static void shape_adaptation_rebuilds(void)
     /* the anonymous family births from owned reads of the nominal's
        slots, both at the binding and at the call */
     EK_CHECK(lfx_has(&f, "ekn_rec0("));
-    EK_CHECK(lfx_has(&f, "ek_keep(((ekS_test_Human *)"));
+    EK_CHECK(lfx_has(&f, "ek_keep(((ekS_test$Human *)"));
     /* the nominal object never aliases into the anonymous binding */
     EK_CHECK(lfx_lacks(&f, "ek_val view = ek_keep(h);"));
     lfx_end(&f);
@@ -232,7 +232,7 @@ static void bridged_ctor_head_reads(void)
               "    _\n");
     EK_CHECK(lfx_check_clean(&f));
     EK_CHECK(lfx_lower_clean(&f));
-    EK_CHECK(lfx_has(&f, "ekn_std_Json_Null()"));
+    EK_CHECK(lfx_has(&f, "ekn_std$Json$Null()"));
     lfx_end(&f);
 }
 

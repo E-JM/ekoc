@@ -28,23 +28,33 @@ static int is_c_keyword(const char *name)
     return 0;
 }
 
-/* Runtime identifiers visible in every emitted body: the ek_ and EK_
-   namespaces of the runtime header, the helper included. A written
-   name in those shapes gains a u_ prefix, which appending cannot
+/* The prefixes of every generated symbol family and the runtime's own
+   namespaces. A written binding in any of these shapes would shadow a
+   generated name, so it gains a u_ prefix, which appending cannot
    achieve. */
-static int shadows_runtime(const char *name)
+static const char *reserved_prefixes[] = {
+    "ek_", "EK_", "ekc", "ekf_", "ekS_", "ekT_", "ekC_", "ekn_", "eks_",
+    "ekv_", "ekt_", "ekB_", "ekl_", "ekq_", "eko_", "ekh_", "ekd_",
+    "drop_"
+};
+
+static int shadows_generated(const char *name)
 {
-    return strncmp(name, "ek_", 3) == 0 || strncmp(name, "EK_", 3) == 0;
+    size_t i;
+
+    for (i = 0; i < sizeof reserved_prefixes / sizeof *reserved_prefixes;
+         i++) {
+        if (strncmp(name, reserved_prefixes[i],
+                    strlen(reserved_prefixes[i])) == 0) {
+            return 1;
+        }
+    }
+    return 0;
 }
 
 /* The file-scope variables of the interned literals share this prefix,
    so a written binding in its shape would shadow one. */
 static const char cache_prefix[] = "ekc";
-
-static int shadows_cache(const char *name)
-{
-    return strncmp(name, cache_prefix, sizeof cache_prefix - 1) == 0;
-}
 
 static int taken_here(const lower_scope *scope, const char *name)
 {
@@ -74,15 +84,16 @@ static int taken_visible(const lower_scope *scope, const char *name)
 }
 
 /* The C name of one emitted function: a plain binding is the module
-   and its name; a namespace member carries its owner, so two members
-   of different types never collide. */
+   and its name; a namespace member carries its owner. The pieces join
+   on `$`, which no written identifier supplies, so no spelling of one
+   triple equals another. */
 const char *lower_mangled(lower_ctx *c, const ek_symbol *sym)
 {
     if (sym->owner) {
-        return lower_str(c, "ekf_%s_%s_%s", sym->module, sym->owner,
+        return lower_str(c, "ekf_%s$%s$%s", sym->module, sym->owner,
                          sym->name);
     }
-    return lower_str(c, "ekf_%s_%s", sym->module, sym->name);
+    return lower_str(c, "ekf_%s$%s", sym->module, sym->name);
 }
 
 /* The C name of one instantiation: the plain spelling, then a `$`
@@ -137,8 +148,7 @@ const char *lower_c_name(lower_ctx *c, lower_scope *scope, const char *name)
     const char *out;
 
     ek_buf_init(&b);
-    if ((shadows_runtime(name) || shadows_cache(name))
-        && !ek_buf_append_str(&b, "u_")) {
+    if (shadows_generated(name) && !ek_buf_append_str(&b, "u_")) {
         c->oom = 1;
     }
     if (!ek_buf_append_str(&b, name)) {
@@ -197,10 +207,9 @@ void lower_string_literal(lower_ctx *c, ek_buf *b, const char *bytes,
    sequences share one unit-level static ek_val, named after the cache
    prefix in first-use order, and the shim primes each variable once
    at startup. The names cannot collide by construction: a written
-   identifier in the runtime's ek_ shape or in the cache prefix's own
-   shape is emitted under the u_ prefix (lower_c_name), the temps are
-   t<n> and s<n>, and no runtime or generated family (ekf_, ekT_,
-   ekS_, ekC_, ekn_) spells the bare ekc<digits> shape.
+   identifier in any generated family's shape is emitted under the u_
+   prefix (lower_c_name), the temps are t<n> and s<n>, and no runtime
+   or generated family spells the bare ekc<digits> shape.
 
    Interning changes only object identity, and identity is
    unobservable: strings compare structurally, pattern dispatch tests

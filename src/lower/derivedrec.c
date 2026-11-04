@@ -21,7 +21,7 @@ void lower_from_tuple_emit(lower_ctx *c, lower_demit *d, lower_gtype *g,
         return;
     }
     g->constructed = 1;
-    lower_d_printf(d, "    if (v.as.ref->info != &ekT_std_Json_Arr)\n");
+    lower_d_printf(d, "    if (v.as.ref->info != &ekT_std$Json$Arr)\n");
     lower_json_err_lit(d, "    ", "");
     lower_d_printf(d, "    {\n");
     lower_d_printf(d, "        ek_val cell = %s;\n",
@@ -64,7 +64,7 @@ void lower_from_tuple_emit(lower_ctx *c, lower_demit *d, lower_gtype *g,
     }
     lower_d_printf(d, "        ek_val out = %s(", g->helper);
     for (i = 0; i < nf; i++) {
-        lower_d_printf(d, "%s((ekS_std_Result_Ok *)%s.as.ref)->p0",
+        lower_d_printf(d, "%s((ekS_std$Result$Ok *)%s.as.ref)->p0",
                        i ? ", " : "", rs[i]);
     }
     lower_d_printf(d, ");\n");
@@ -124,7 +124,7 @@ void lower_from_record_emit(lower_ctx *c, lower_demit *d, const char *name,
     }
     emit_find_helper(c, find);
     g->constructed = 1;
-    lower_d_printf(d, "    if (v.as.ref->info != &ekT_std_Json_Obj)\n");
+    lower_d_printf(d, "    if (v.as.ref->info != &ekT_std$Json$Obj)\n");
     lower_json_err_lit(d, "    ", "");
     lower_d_printf(d, "    {\n");
     lower_d_printf(d, "        ek_val d = %s;\n", lower_json_slot(c, "Obj",
@@ -193,7 +193,7 @@ void lower_from_record_emit(lower_ctx *c, lower_demit *d, const char *name,
     }
     lower_d_printf(d, "        ek_val out = %s(", g->helper);
     for (i = 0; i < nf; i++) {
-        lower_d_printf(d, "%s((ekS_std_Result_Ok *)%s.as.ref)->p0",
+        lower_d_printf(d, "%s((ekS_std$Result$Ok *)%s.as.ref)->p0",
                        i ? ", " : "", rs[i]);
     }
     lower_d_printf(d, ");\n");

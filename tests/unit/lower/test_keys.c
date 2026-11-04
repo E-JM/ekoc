@@ -23,25 +23,25 @@ static void record_stamps_eq_and_hash(void)
     EK_CHECK(lfx_check_clean(&f));
     EK_CHECK(lfx_lower_clean(&f));
     /* the signatures stand ahead of the typeinfo that names them */
-    EK_CHECK(lfx_has(&f, "static int ekq_test_P(ek_val a, ek_val b);\n"
-                         "static unsigned long ekh_test_P(ek_val v);\n"
-                         "const ek_typeinfo ekT_test_P = "
-                         "{ EK_KIND_STRUCT, drop_test_P, "
-                         "ekq_test_P, ekh_test_P };"));
+    EK_CHECK(lfx_has(&f, "static int ekq_N$test$P(ek_val a, ek_val b);\n"
+                         "static unsigned long ekh_N$test$P(ek_val v);\n"
+                         "const ek_typeinfo ekT_test$P = "
+                         "{ EK_KIND_STRUCT, drop_test$P, "
+                         "ekq_N$test$P, ekh_N$test$P };"));
     /* the hash mixes the family identity, then each field's tag and
        payload */
-    EK_CHECK(lfx_has(&f, "static unsigned long ekh_test_P(ek_val v)\n"
+    EK_CHECK(lfx_has(&f, "static unsigned long ekh_N$test$P(ek_val v)\n"
                          "{\n"
                          "    unsigned long h = 14695981039346656037ULL;"
                          "\n\n"
                          "    h = ek_hash_mix(h, (unsigned long)"
                          "v.as.ref->info);\n"));
     EK_CHECK(lfx_has(&f, "h = ek_hash_mix(h, (unsigned long)"
-                         "((ekS_test_P *)v.as.ref)->f_x.tag);\n"
+                         "((ekS_test$P *)v.as.ref)->f_x.tag);\n"
                          "    h = ek_hash_mix(h, (unsigned long)"
-                         "((ekS_test_P *)v.as.ref)->f_x.as.i);"));
+                         "((ekS_test$P *)v.as.ref)->f_x.as.i);"));
     EK_CHECK(lfx_has(&f, "h = ek_hash_mix(h, (unsigned long)"
-                         "((ekS_test_P *)v.as.ref)->f_y.as.i);"));
+                         "((ekS_test$P *)v.as.ref)->f_y.as.i);"));
     lfx_end(&f);
 }
 
@@ -62,8 +62,8 @@ static void families_no_key_touches_stay_null(void)
     lfx_begin(&f, untouched_src);
     EK_CHECK(lfx_check_clean(&f));
     EK_CHECK(lfx_lower_clean(&f));
-    EK_CHECK(lfx_has(&f, "const ek_typeinfo ekT_test_Person = "
-                         "{ EK_KIND_STRUCT, drop_test_Person, NULL, NULL };"));
+    EK_CHECK(lfx_has(&f, "const ek_typeinfo ekT_test$Person = "
+                         "{ EK_KIND_STRUCT, drop_test$Person, NULL, NULL };"));
     EK_CHECK(lfx_lacks(&f, "ekh_"));
     lfx_end(&f);
 }
@@ -85,21 +85,21 @@ static void adt_stamps_every_constructor(void)
     EK_CHECK(lfx_check_clean(&f));
     EK_CHECK(lfx_lower_clean(&f));
     /* each constructor's typeinfo carries the applied type's services */
-    EK_CHECK(lfx_has(&f, "const ek_typeinfo ekT_test_V_S = "
-                         "{ EK_KIND_STRUCT, drop_test_V_S, "
-                         "ekq_test_V, ekh_test_V };"));
-    EK_CHECK(lfx_has(&f, "const ek_typeinfo ekT_test_V_M = "
-                         "{ EK_KIND_STRUCT, drop_test_V_M, "
-                         "ekq_test_V, ekh_test_V };"));
+    EK_CHECK(lfx_has(&f, "const ek_typeinfo ekT_test$V$S = "
+                         "{ EK_KIND_STRUCT, drop_test$V$S, "
+                         "ekq_N$test$V, ekh_N$test$V };"));
+    EK_CHECK(lfx_has(&f, "const ek_typeinfo ekT_test$V$M = "
+                         "{ EK_KIND_STRUCT, drop_test$V$M, "
+                         "ekq_N$test$V, ekh_N$test$V };"));
     /* the hash dispatches on the constructor identity and mixes the
        payload in its own form: a String through the child hook, a
        Float by the canonicalized bits */
-    EK_CHECK(lfx_has(&f, "if (v.as.ref->info == &ekT_test_V_S) {\n"
+    EK_CHECK(lfx_has(&f, "if (v.as.ref->info == &ekT_test$V$S) {\n"
                          "    h = ek_hash_mix(h, (unsigned long)"
-                         "((ekS_test_V_S *)v.as.ref)->p0.tag);\n"));
+                         "((ekS_test$V$S *)v.as.ref)->p0.tag);\n"));
     EK_CHECK(lfx_has(&f, "h = ek_hash_mix(h, "
-                         "((ekS_test_V_S *)v.as.ref)->p0.as.ref->info->hash"
-                         "(((ekS_test_V_S *)v.as.ref)->p0));"));
+                         "((ekS_test$V$S *)v.as.ref)->p0.as.ref->info->hash"
+                         "(((ekS_test$V$S *)v.as.ref)->p0));"));
     EK_CHECK(lfx_has(&f, "if (x == 0.0) {\n            x = 0.0;\n"
                          "        }\n"
                          "        memcpy(&b, &x, sizeof b);"));
@@ -123,17 +123,17 @@ static void nested_refs_hash_through_the_child_hook(void)
     lfx_begin(&f, nested_src);
     EK_CHECK(lfx_check_clean(&f));
     EK_CHECK(lfx_lower_clean(&f));
-    EK_CHECK(lfx_has(&f, "const ek_typeinfo ekT_test_Outer = "
-                         "{ EK_KIND_STRUCT, drop_test_Outer, "
-                         "ekq_test_Outer, ekh_test_Outer };"));
+    EK_CHECK(lfx_has(&f, "const ek_typeinfo ekT_test$Outer = "
+                         "{ EK_KIND_STRUCT, drop_test$Outer, "
+                         "ekq_N$test$Outer, ekh_N$test$Outer };"));
     /* a reference field hashes through the child typeinfo's hook */
-    EK_CHECK(lfx_has(&f, "if (((ekS_test_Outer *)v.as.ref)->f_i.tag == "
+    EK_CHECK(lfx_has(&f, "if (((ekS_test$Outer *)v.as.ref)->f_i.tag == "
                          "EK_VAL_REF"));
-    EK_CHECK(lfx_has(&f, "((ekS_test_Outer *)v.as.ref)->f_i.as.ref->"
-                         "info->hash(((ekS_test_Outer *)v.as.ref)->f_i)"));
+    EK_CHECK(lfx_has(&f, "((ekS_test$Outer *)v.as.ref)->f_i.as.ref->"
+                         "info->hash(((ekS_test$Outer *)v.as.ref)->f_i)"));
     /* the identity fallback keeps the address */
     EK_CHECK(lfx_has(&f, "h = ek_hash_mix(h, (unsigned long)"
-                         "((ekS_test_Outer *)v.as.ref)->f_i.as.ref);"));
+                         "((ekS_test$Outer *)v.as.ref)->f_i.as.ref);"));
     lfx_end(&f);
 }
 
@@ -153,7 +153,7 @@ static void anon_record_stamps_too(void)
     EK_CHECK(lfx_lower_clean(&f));
     EK_CHECK(lfx_has(&f, "const ek_typeinfo ekT_rec0 = "
                          "{ EK_KIND_STRUCT, drop_rec0, "
-                         "ekq_Rec_1_x_std_Int, ekh_Rec_1_x_std_Int };"));
+                         "ekq_R1$x$Int, ekh_R1$x$Int };"));
     lfx_end(&f);
 }
 
@@ -174,12 +174,12 @@ static void set_elements_stamp_too(void)
     /* the element domain stamps through Set.of the way a key domain
        stamps through the dictionary; the field-less variant carries
        the NULL drop beside its hooks */
-    EK_CHECK(lfx_has(&f, "const ek_typeinfo ekT_test_V_N = "
+    EK_CHECK(lfx_has(&f, "const ek_typeinfo ekT_test$V$N = "
                          "{ EK_KIND_STRUCT, NULL, "
-                         "ekq_test_V, ekh_test_V };"));
-    EK_CHECK(lfx_has(&f, "const ek_typeinfo ekT_test_V_S = "
-                         "{ EK_KIND_STRUCT, drop_test_V_S, "
-                         "ekq_test_V, ekh_test_V };"));
+                         "ekq_N$test$V, ekh_N$test$V };"));
+    EK_CHECK(lfx_has(&f, "const ek_typeinfo ekT_test$V$S = "
+                         "{ EK_KIND_STRUCT, drop_test$V$S, "
+                         "ekq_N$test$V, ekh_N$test$V };"));
     EK_CHECK(lfx_has(&f, "ek_set_of("));
     lfx_end(&f);
 }

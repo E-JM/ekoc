@@ -94,13 +94,13 @@ void lower_bundle_checks(lower_ctx *c, ek_buf *u, const lower_gtype *g)
     }
     for (i = 0; i < g->nf; i++) {
         bprintf(c, u,
-                "typedef char ekB_%s_%s[(offsetof(ekS_%s, %s) "
+                "typedef char ekB_%s$%s[(offsetof(ekS_%s, %s) "
                 "== sizeof(ek_obj) + %s * sizeof(ek_val)) ? 1 : -1];\n",
                 g->stem, g->fnames[i], g->stem,
                 lower_field_c_name(c, g, i), slot_enum(c, row, g->fnames[i]));
     }
     bprintf(c, u,
-            "typedef char ekB_%s_slots[(sizeof(ekS_%s) == sizeof(ek_obj) "
+            "typedef char ekB_%s$slots[(sizeof(ekS_%s) == sizeof(ek_obj) "
             "+ %s_SLOTS * sizeof(ek_val)) ? 1 : -1];\n",
             g->stem, g->stem, row->prefix);
 }

@@ -37,6 +37,13 @@ Replaceability is the self-hosting mechanism: each stage entry is a pure
 function over its input, and an Eko implementation links in through the veneer
 boundary.
 
+Generated symbol names (`ekf_`, `ekS_`, `ekT_`, …) are compiler
+output, never handwritten input: their pieces join on `$`, a byte no
+Eko identifier contains, so no two spellings can merge. The `ekT_`
+families of `std`/`sys`/`time` are an internal contract between the
+emitted unit and this runtime for one compiler version — the runtime
+references them by name, and both sides change together.
+
 ## 4. Rejected backends
 
 | Rejected | Reason |

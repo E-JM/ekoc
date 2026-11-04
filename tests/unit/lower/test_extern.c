@@ -144,24 +144,24 @@ static void ctype_layout_and_marshal(void)
     EK_CHECK(lfx_check_clean(&f));
     EK_CHECK(lfx_lower_clean(&f));
     EK_CHECK(lfx_has(&f, "typedef struct { int32_t f_ok; int64_t f_size; "
-                         "uint32_t f_mode; } ekC_test_Stat;"));
-    EK_CHECK(lfx_has(&f, "extern ekC_test_Stat shim_bump(ekC_test_Stat);"));
+                         "uint32_t f_mode; } ekC_test$Stat;"));
+    EK_CHECK(lfx_has(&f, "extern ekC_test$Stat shim_bump(ekC_test$Stat);"));
     /* the C struct stands before the prototype that names it */
     EK_CHECK(f.low.text
              && (size_t)(strstr(f.low.text, "typedef struct { int32_t "
                                             "f_ok")
                          - f.low.text)
-                    < (size_t)(strstr(f.low.text, "extern ekC_test_Stat")
+                    < (size_t)(strstr(f.low.text, "extern ekC_test$Stat")
                                - f.low.text));
     /* the value family keeps the declaration order behind the header */
     EK_CHECK(lfx_has(&f, "typedef struct { ek_obj obj; ek_val f_ok; ek_val "
-                         "f_size; ek_val f_mode; } ekS_test_Stat;"));
+                         "f_size; ek_val f_mode; } ekS_test$Stat;"));
     /* the call packs by value and rebuilds through the helper */
-    EK_CHECK(lfx_has(&f, "ekC_test_Stat t5 = (ekC_test_Stat){"));
+    EK_CHECK(lfx_has(&f, "ekC_test$Stat t5 = (ekC_test$Stat){"));
     EK_CHECK(lfx_has(&f, ".f_ok = (int32_t)("));
     EK_CHECK(lfx_has(&f, ".f_mode = (uint32_t)("));
     EK_CHECK(lfx_has(&f, "= shim_bump(t5);"));
-    EK_CHECK(lfx_has(&f, "= ekn_test_Stat_rec(ek_val_int((int64_t)((t6).f_"
+    EK_CHECK(lfx_has(&f, "= ekn_test$Stat$rec(ek_val_int((int64_t)((t6).f_"
                          "ok)), ek_val_int((int64_t)((t6).f_size)), "
                          "ek_val_uint((uint64_t)((t6).f_mode)));"));
     lfx_end(&f);
@@ -182,10 +182,10 @@ static void nested_ctype(void)
               "    _\n");
     EK_CHECK(lfx_check_clean(&f));
     EK_CHECK(lfx_lower_clean(&f));
-    EK_CHECK(lfx_has(&f, "typedef struct { int16_t f_x; } ekC_test_Inner;"));
-    EK_CHECK(lfx_has(&f, "typedef struct { int8_t f_head; ekC_test_Inner "
-                         "f_inner; } ekC_test_Outer;"));
-    EK_CHECK(lfx_has(&f, ".f_inner = (ekC_test_Inner){.f_x = "
+    EK_CHECK(lfx_has(&f, "typedef struct { int16_t f_x; } ekC_test$Inner;"));
+    EK_CHECK(lfx_has(&f, "typedef struct { int8_t f_head; ekC_test$Inner "
+                         "f_inner; } ekC_test$Outer;"));
+    EK_CHECK(lfx_has(&f, ".f_inner = (ekC_test$Inner){.f_x = "
                          "(int16_t)("));
     lfx_end(&f);
 }
@@ -204,8 +204,8 @@ static void c_in_address(void)
               "    _\n");
     EK_CHECK(lfx_check_clean(&f));
     EK_CHECK(lfx_lower_clean(&f));
-    EK_CHECK(lfx_has(&f, "extern int32_t shim_peek(const ekC_test_Pair *);"));
-    EK_CHECK(lfx_has(&f, "ekC_test_Pair t4 = (ekC_test_Pair){"));
+    EK_CHECK(lfx_has(&f, "extern int32_t shim_peek(const ekC_test$Pair *);"));
+    EK_CHECK(lfx_has(&f, "ekC_test$Pair t4 = (ekC_test$Pair){"));
     EK_CHECK(lfx_has(&f, "shim_peek(&t4)"));
     lfx_end(&f);
 }

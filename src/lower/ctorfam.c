@@ -41,7 +41,7 @@ static lower_gtype *named_ctor(lower_ctx *c, const ek_symbol *cs,
         return NULL;
     }
     g->key_sym = cs;
-    g->stem = lower_str(c, "%s_%s_%s", cs->module, cs->owner, cs->name);
+    g->stem = lower_str(c, "%s$%s$%s", cs->module, cs->owner, cs->name);
     g->helper = lower_str(c, "ekn_%s", g->stem);
     g->shape = GT_CTOR;
     g->nf = v->u.variant.payload ? 1 : 0;

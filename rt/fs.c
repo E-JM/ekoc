@@ -20,9 +20,9 @@
 static int mode_of(ek_val m)
 {
     static const ek_typeinfo *ids[] = {
-        &ekT_sys_OpenMode_Read,   &ekT_sys_OpenMode_Write,
-        &ekT_sys_OpenMode_Append, &ekT_sys_OpenMode_New,
-        &ekT_sys_OpenMode_Update
+        &ekT_sys$OpenMode$Read,   &ekT_sys$OpenMode$Write,
+        &ekT_sys$OpenMode$Append, &ekT_sys$OpenMode$New,
+        &ekT_sys$OpenMode$Update
     };
     size_t i;
 

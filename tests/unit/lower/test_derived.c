@@ -28,12 +28,12 @@ static void specialization_naming(void)
               "    _\n");
     EK_CHECK(lfx_check_clean(&f));
     EK_CHECK(lfx_lower_clean(&f));
-    EK_CHECK(lfx_has(&f, "static int ekq_std_Option_std_Int(ek_val a, "
+    EK_CHECK(lfx_has(&f, "static int ekq_N$std$Option$Int(ek_val a, "
                          "ek_val b);\n"));
-    EK_CHECK(lfx_has(&f, "static int ekq_std_Option_std_String(ek_val a, "
+    EK_CHECK(lfx_has(&f, "static int ekq_N$std$Option$String(ek_val a, "
                          "ek_val b);\n"));
-    EK_CHECK(lfx_has(&f, "ekq_std_Option_std_Int("));
-    EK_CHECK(lfx_has(&f, "ekq_std_Option_std_String("));
+    EK_CHECK(lfx_has(&f, "ekq_N$std$Option$Int("));
+    EK_CHECK(lfx_has(&f, "ekq_N$std$Option$String("));
     lfx_end(&f);
 }
 
@@ -51,14 +51,14 @@ static void recursive_forward_decl(void)
               "    _\n");
     EK_CHECK(lfx_check_clean(&f));
     EK_CHECK(lfx_lower_clean(&f));
-    EK_CHECK(lfx_has(&f, "static ek_obj *ekd_show_test_Chain(ek_val v);\n"));
-    EK_CHECK(lfx_has(&f, "static ek_obj *ekd_inspect_test_Chain(ek_val v);"
+    EK_CHECK(lfx_has(&f, "static ek_obj *ekd_show_N$test$Chain(ek_val v);\n"));
+    EK_CHECK(lfx_has(&f, "static ek_obj *ekd_inspect_N$test$Chain(ek_val v);"
                        "\n"));
-    EK_CHECK(lfx_has(&f, "ekd_inspect_test_Chain(((ekS_test_Chain_Link *)"
+    EK_CHECK(lfx_has(&f, "ekd_inspect_N$test$Chain(((ekS_test$Chain$Link *)"
                        "v.as.ref)->p0)"));
     /* the dispatch tests the constructor families' typeinfo */
-    EK_CHECK(lfx_has(&f, "v.as.ref->info == &ekT_test_Chain_End"));
-    EK_CHECK(lfx_has(&f, "v.as.ref->info == &ekT_test_Chain_Link"));
+    EK_CHECK(lfx_has(&f, "v.as.ref->info == &ekT_test$Chain$End"));
+    EK_CHECK(lfx_has(&f, "v.as.ref->info == &ekT_test$Chain$Link"));
     lfx_end(&f);
 }
 
@@ -85,10 +85,10 @@ static void operator_routing(void)
               "    _\n");
     EK_CHECK(lfx_check_clean(&f));
     EK_CHECK(lfx_lower_clean(&f));
-    EK_CHECK(lfx_has(&f, "ek_bool(ekq_test_Tree("));
-    EK_CHECK(lfx_has(&f, "ek_bool(!ekq_test_Tree("));
-    EK_CHECK(lfx_has(&f, "ek_bool(eko_std_String("));
-    EK_CHECK(lfx_has(&f, "ek_bool(ekq_std_String("));
+    EK_CHECK(lfx_has(&f, "ek_bool(ekq_N$test$Tree("));
+    EK_CHECK(lfx_has(&f, "ek_bool(!ekq_N$test$Tree("));
+    EK_CHECK(lfx_has(&f, "ek_bool(eko_String("));
+    EK_CHECK(lfx_has(&f, "ek_bool(ekq_String("));
     EK_CHECK(lfx_has(&f, "ek_num_lt("));
     lfx_end(&f);
 }
@@ -109,11 +109,11 @@ static void with_shape(void)
               "    _\n");
     EK_CHECK(lfx_check_clean(&f));
     EK_CHECK(lfx_lower_clean(&f));
-    EK_CHECK(lfx_has(&f, "ekn_test_Money_rec(t"));
+    EK_CHECK(lfx_has(&f, "ekn_test$Money$rec(t"));
     /* the field reads borrow the frame's own record: the receiver
        keeps nothing, the slot keeps its own copy */
-    EK_CHECK(lfx_has(&f, "ek_keep(((ekS_test_Money *)(t3).as.ref)->f_cur)"));
-    EK_CHECK(lfx_has(&f, "ek_keep(((ekS_test_Money *)n.as.ref)->f_cents)"));
+    EK_CHECK(lfx_has(&f, "ek_keep(((ekS_test$Money *)(t3).as.ref)->f_cur)"));
+    EK_CHECK(lfx_has(&f, "ek_keep(((ekS_test$Money *)n.as.ref)->f_cents)"));
     lfx_end(&f);
 }
 
@@ -134,8 +134,8 @@ static void ordering_and_display_members(void)
               "    _\n");
     EK_CHECK(lfx_check_clean(&f));
     EK_CHECK(lfx_lower_clean(&f));
-    EK_CHECK(lfx_has(&f, "ek_bool(eko_test_Sex("));
-    EK_CHECK(lfx_has(&f, "ekd_show_std_Int(ek_val v)"));
+    EK_CHECK(lfx_has(&f, "ek_bool(eko_N$test$Sex("));
+    EK_CHECK(lfx_has(&f, "ekd_show_Int(ek_val v)"));
     EK_CHECK(lfx_has(&f, "return ek_show_int(v);"));
     EK_CHECK(lfx_has(&f, "ek_str_quote(v.as.ref, '\"')"));
     lfx_end(&f);
@@ -178,12 +178,12 @@ static void capability_display(void)
               "    _\n");
     EK_CHECK(lfx_check_clean(&f));
     EK_CHECK(lfx_lower_clean(&f));
-    EK_CHECK(lfx_has(&f, "static ek_obj *ekd_show_std_Out(ek_val v);\n"));
-    EK_CHECK(lfx_has(&f, "return ekd_inspect_std_Out(v);"));
+    EK_CHECK(lfx_has(&f, "static ek_obj *ekd_show_N$std$Out(ek_val v);\n"));
+    EK_CHECK(lfx_has(&f, "return ekd_inspect_N$std$Out(v);"));
     EK_CHECK(lfx_has(&f, "ek_str_from_cstr(\"<cap>\")"));
     /* the placeholder arm reads no value, and the body silences the
        parameter the way the shims silence theirs */
-    EK_CHECK(lfx_has(&f, "ekd_inspect_std_Out(ek_val v)\n"
+    EK_CHECK(lfx_has(&f, "ekd_inspect_N$std$Out(ek_val v)\n"
                          "{\n"
                          "    (void)v;\n"));
     lfx_end(&f);
@@ -208,12 +208,12 @@ static void from_json_constructs_variants(void)
     EK_CHECK(lfx_check_clean(&f));
     EK_CHECK(lfx_lower_clean(&f));
     /* the variant helpers stand although no source site constructs */
-    EK_CHECK(lfx_has(&f, "static ek_val ekn_test_Shape_Light(void)"));
-    EK_CHECK(lfx_has(&f, "static ek_val ekn_test_Shape_Dark(void)"));
+    EK_CHECK(lfx_has(&f, "static ek_val ekn_test$Shape$Light(void)"));
+    EK_CHECK(lfx_has(&f, "static ek_val ekn_test$Shape$Dark(void)"));
     /* the decode arm builds the variant through its named temp and
        releases it once the Ok stands */
-    EK_CHECK(lfx_has(&f, "ek_val q = ekn_test_Shape_Dark();\n"
-                         "            ek_val w = ekn_std_Result_Ok(q);\n"
+    EK_CHECK(lfx_has(&f, "ek_val q = ekn_test$Shape$Dark();\n"
+                         "            ek_val w = ekn_std$Result$Ok(q);\n"
                          "            ek_release(q);\n"
                          "            return w;"));
     lfx_end(&f);

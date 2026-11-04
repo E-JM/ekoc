@@ -23,17 +23,17 @@ static void instantiation_naming(void)
               "    _\n");
     EK_CHECK(lfx_check_clean(&f));
     EK_CHECK(lfx_lower_clean(&f));
-    EK_CHECK(lfx_has(&f, "static ek_val ekf_std_assert_eq$std_Int"
+    EK_CHECK(lfx_has(&f, "static ek_val ekf_std$assert_eq$Int"
                          "(ek_val ek_p0, ek_val ek_p1);\n"));
-    EK_CHECK(lfx_has(&f, "static ek_val ekf_std_assert_eq$test_Person"
+    EK_CHECK(lfx_has(&f, "static ek_val ekf_std$assert_eq$N$test$Person"
                          "(ek_val ek_p0, ek_val ek_p1);\n"));
-    EK_CHECK(lfx_has(&f, "ekf_std_assert_eq$std_Int("));
-    EK_CHECK(lfx_has(&f, "ekf_std_assert_eq$test_Person("));
-    EK_CHECK(lfx_has(&f, "static ek_val ekf_test_main(void);\n"));
-    EK_CHECK(lfx_has(&f, "static ek_val ekf_test_main(void)\n"));
+    EK_CHECK(lfx_has(&f, "ekf_std$assert_eq$Int("));
+    EK_CHECK(lfx_has(&f, "ekf_std$assert_eq$N$test$Person("));
+    EK_CHECK(lfx_has(&f, "static ek_val ekf_test$main(void);\n"));
+    EK_CHECK(lfx_has(&f, "static ek_val ekf_test$main(void)\n"));
     /* one body per instantiation: the applied Int site never calls
        the Person one */
-    EK_CHECK(lfx_lacks(&f, "ekf_std_assert_eq("));
+    EK_CHECK(lfx_lacks(&f, "ekf_std$assert_eq("));
     lfx_end(&f);
 }
 
@@ -55,12 +55,12 @@ static void substituted_dispatch(void)
     EK_CHECK(lfx_lower_clean(&f));
     {
         const char *body = strstr(f.low.text,
-                                  "ekf_std_assert_eq$test_Person("
+                                  "ekf_std$assert_eq$N$test$Person("
                                   "ek_val ek_p0, ek_val ek_p1)\n{");
 
         EK_CHECK(body != NULL);
-        EK_CHECK(strstr(body, "ekq_test_Person(") != NULL);
-        EK_CHECK(strstr(body, "ekd_inspect_test_Person(") != NULL);
+        EK_CHECK(strstr(body, "ekq_N$test$Person(") != NULL);
+        EK_CHECK(strstr(body, "ekd_inspect_N$test$Person(") != NULL);
     }
     lfx_end(&f);
 }
@@ -79,7 +79,7 @@ static void scalar_dispatch(void)
     EK_CHECK(lfx_lower_clean(&f));
     {
         const char *body = strstr(f.low.text,
-                                  "ekf_std_assert_eq$std_Int("
+                                  "ekf_std$assert_eq$Int("
                                   "ek_val ek_p0, ek_val ek_p1)\n{");
 
         EK_CHECK(body != NULL);
@@ -106,11 +106,11 @@ static void self_recursion_retry(void)
               "    _\n");
     EK_CHECK(lfx_check_clean(&f));
     EK_CHECK(lfx_lower_clean(&f));
-    EK_CHECK(lfx_has(&f, "static ek_val ekf_test_down$std_Int"
+    EK_CHECK(lfx_has(&f, "static ek_val ekf_test$down$Int"
                          "(ek_val ek_p0, ek_val ek_p1);\n"));
     {
         const char *body = strstr(f.low.text,
-                                  "ekf_test_down$std_Int("
+                                  "ekf_test$down$Int("
                                   "ek_val ek_p0, ek_val ek_p1)\n{");
 
         EK_CHECK(body != NULL);
@@ -138,10 +138,10 @@ static void generic_to_generic(void)
               "    _\n");
     EK_CHECK(lfx_check_clean(&f));
     EK_CHECK(lfx_lower_clean(&f));
-    EK_CHECK(lfx_has(&f, "static ek_val ekf_test_twice$std_Int"
+    EK_CHECK(lfx_has(&f, "static ek_val ekf_test$twice$Int"
                          "(ek_val ek_p0, ek_val ek_p1);\n"));
-    EK_CHECK(lfx_has(&f, "ekf_std_List_map$std_Int_std_Int("));
-    EK_CHECK(lfx_lacks(&f, "ekf_std_List_map("));
+    EK_CHECK(lfx_has(&f, "ekf_std$List$map$Int$Int("));
+    EK_CHECK(lfx_lacks(&f, "ekf_std$List$map("));
     lfx_end(&f);
 }
 
@@ -161,8 +161,8 @@ static void lambda_in_specialized_body(void)
               "    _\n");
     EK_CHECK(lfx_check_clean(&f));
     EK_CHECK(lfx_lower_clean(&f));
-    EK_CHECK(lfx_has(&f, "ekf_std_List_sort$std_String("));
-    EK_CHECK(lfx_has(&f, "eko_std_String("));
+    EK_CHECK(lfx_has(&f, "ekf_std$List$sort$String("));
+    EK_CHECK(lfx_has(&f, "eko_String("));
     lfx_end(&f);
 }
 
@@ -182,11 +182,12 @@ static void plain_names_stand(void)
               "    _\n");
     EK_CHECK(lfx_check_clean(&f));
     EK_CHECK(lfx_lower_clean(&f));
-    EK_CHECK(lfx_has(&f, "static ek_val ekf_test_double(ek_val ek_p0);\n"));
-    EK_CHECK(lfx_has(&f, "static ek_val ekf_test_apply(ek_val ek_p0, "
+    EK_CHECK(lfx_has(&f, "static ek_val ekf_test$double(ek_val ek_p0);\n"));
+    EK_CHECK(lfx_has(&f, "static ek_val ekf_test$apply(ek_val ek_p0, "
                          "ek_val ek_p1);\n"));
-    EK_CHECK(lfx_has(&f, "static ek_val ekf_test_main(void);\n"));
-    EK_CHECK(lfx_lacks(&f, "$"));
+    EK_CHECK(lfx_has(&f, "static ek_val ekf_test$main(void);\n"));
+    EK_CHECK(lfx_lacks(&f, "ekf_test$apply$"));
+    EK_CHECK(lfx_lacks(&f, "ekf_test$double$"));
     lfx_end(&f);
 }
 

@@ -230,12 +230,12 @@ const char *lower_ms_param_type(lower_ctx *c, const lower_mshape *s)
         return "const void *";
     case MS_CTYPE:
         return lower_ctype_shape(c, s->ctype)
-                   ? lower_str(c, "ekC_%s_%s", s->ctype->module,
+                   ? lower_str(c, "ekC_%s$%s", s->ctype->module,
                                s->ctype->name)
                    : NULL;
     case MS_CIN:
         return lower_ctype_shape(c, s->ctype)
-                   ? lower_str(c, "const ekC_%s_%s *", s->ctype->module,
+                   ? lower_str(c, "const ekC_%s$%s *", s->ctype->module,
                                s->ctype->name)
                    : NULL;
     default:

@@ -89,7 +89,7 @@ static void emit_result_convert(lower_ctx *c, ek_buf *b, const char *ctxty,
         }
         return;
     case MS_CTYPE:
-        if (!ek_buf_printf(b, "    ekC_%s_%s out = %s;\n"
+        if (!ek_buf_printf(b, "    ekC_%s$%s out = %s;\n"
                               "    ek_release(r);\n"
                               "    return out;\n",
                            res->ctype->module, res->ctype->name,

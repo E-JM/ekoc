@@ -26,11 +26,11 @@ static void tests_are_roots(void)
     EK_CHECK(lfx_has(&f, "int main(int argc, char **argv)\n{\n"));
     EK_CHECK(lfx_has(&f, "if (argc == 2) {\n"));
     EK_CHECK(lfx_has(&f, "if (strcmp(argv[1], \"adds\") == 0) {\n"));
-    EK_CHECK(lfx_has(&f, "ek_val t = ekf_test_adds();\n"
+    EK_CHECK(lfx_has(&f, "ek_val t = ekf_test$adds();\n"
                          "            ek_release(t);\n"
                          "            return 0;\n"));
     EK_CHECK(lfx_has(&f, "if (strcmp(argv[1], \"fails\") == 0) {\n"
-                         "            ek_val t = ekf_test_fails();"));
+                         "            ek_val t = ekf_test$fails();"));
     /* a missing or unknown name is a refused run, never a crash */
     EK_CHECK(lfx_has(&f, "    return 2;\n}\n"));
     /* no program shim stands next to it */
@@ -54,8 +54,8 @@ static void main_is_not_a_root(void)
     /* only the test binding lowers, plus the std assert_eq instance
        its body calls; the module's `main` stays out */
     EK_CHECK_U64(f.low.fn_count, 2);
-    EK_CHECK(lfx_has(&f, "ekf_test_counts"));
-    EK_CHECK(lfx_lacks(&f, "ekf_test_main"));
+    EK_CHECK(lfx_has(&f, "ekf_test$counts"));
+    EK_CHECK(lfx_lacks(&f, "ekf_test$main"));
     EK_CHECK(lfx_lacks(&f, "int main(void)"));
     lfx_end(&f);
 }
@@ -71,9 +71,9 @@ static void program_mode_unchanged(void)
     EK_CHECK(lfx_lower_clean(&f));
     EK_CHECK_U64(f.low.fn_count, 1);
     EK_CHECK(lfx_has(&f, "int main(void)\n{\n"));
-    EK_CHECK(lfx_has(&f, "ek_val t = ekf_test_main();\n"
+    EK_CHECK(lfx_has(&f, "ek_val t = ekf_test$main();\n"
                          "    ek_release(t);\n    return 0;\n"));
-    EK_CHECK(lfx_lacks(&f, "ekf_test_counts"));
+    EK_CHECK(lfx_lacks(&f, "ekf_test$counts"));
     EK_CHECK(lfx_lacks(&f, "strcmp(argv[1]"));
     lfx_end(&f);
 }
@@ -94,8 +94,8 @@ static void tests_reach_helpers(void)
     /* reachability starts at the test binding and pulls its helpers
        in, the std assert_eq instance among them */
     EK_CHECK_U64(f.low.fn_count, 3);
-    EK_CHECK(lfx_has(&f, "ekf_test_doubles"));
-    EK_CHECK(lfx_has(&f, "ekf_test_double"));
+    EK_CHECK(lfx_has(&f, "ekf_test$doubles"));
+    EK_CHECK(lfx_has(&f, "ekf_test$double"));
     lfx_end(&f);
 }
 
@@ -127,7 +127,7 @@ static void non_unit_test_value(void)
                         "    probe()\n");
     EK_CHECK(lfx_check_clean(&f));
     EK_CHECK(lfx_lower_clean(&f));
-    EK_CHECK(lfx_has(&f, "ek_val t = ekf_test_wrapped();\n"
+    EK_CHECK(lfx_has(&f, "ek_val t = ekf_test$wrapped();\n"
                          "            ek_release(t);"));
     lfx_end(&f);
 }
@@ -145,9 +145,9 @@ static void panicking_reads(void)
                         "    assert_eq(probe(Some 3), 3)\n");
     EK_CHECK(lfx_check_clean(&f));
     EK_CHECK(lfx_lower_clean(&f));
-    EK_CHECK(lfx_has(&f, "if (t0.as.ref->info != &ekT_std_Option_Some) {"));
+    EK_CHECK(lfx_has(&f, "if (t0.as.ref->info != &ekT_std$Option$Some) {"));
     EK_CHECK(lfx_has(&f, "ek_panic(\"P-expect\", msgc);"));
-    EK_CHECK(lfx_has(&f, "ek_keep(((ekS_std_Option_Some *)t0.as.ref)->p0)"));
+    EK_CHECK(lfx_has(&f, "ek_keep(((ekS_std$Option$Some *)t0.as.ref)->p0)"));
     lfx_end(&f);
 
     lfx_begin_tests(&f, "broken: test =\n"
@@ -175,7 +175,7 @@ static void free_namespace_call(void)
                         "    assert_eq(show(p), \"P(1)\")\n");
     EK_CHECK(lfx_check_clean(&f));
     EK_CHECK(lfx_lower_clean(&f));
-    EK_CHECK(lfx_has(&f, "= ekf_test_P_show("));
+    EK_CHECK(lfx_has(&f, "= ekf_test$P$show("));
     lfx_end(&f);
 }
 

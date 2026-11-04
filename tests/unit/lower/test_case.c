@@ -29,9 +29,9 @@ static void cascade_shape(void)
                          "    do {"));
     /* the constructor identity is the typeinfo pointer */
     EK_CHECK(lfx_has(&f, "t2 = t2 && (t0.as.ref->info "
-                         "== &ekT_test_Key_Up);"));
+                         "== &ekT_test$Key$Up);"));
     EK_CHECK(lfx_has(&f, "t3 = t3 && (t0.as.ref->info "
-                         "== &ekT_test_Key_Down);"));
+                         "== &ekT_test$Key$Down);"));
     /* the first match leaves the cascade through the join */
     EK_CHECK(lfx_has(&f, "ek_panic(\"P-panic\", "
                          "\"no matching case arm\");\n"
@@ -76,7 +76,7 @@ static void string_pattern(void)
     EK_CHECK(lfx_has(&f, "ekc0 = ek_val_ref(ek_str_from_cstr("
                          "\"timeout\"));"));
     EK_CHECK(lfx_has(&f, "ek_val t3 = ek_keep(ekc0);"));
-    EK_CHECK(lfx_has(&f, "ek_str_eq(((ekS_std_Result_Err *)"
+    EK_CHECK(lfx_has(&f, "ek_str_eq(((ekS_std$Result$Err *)"
                          "t0.as.ref)->p0.as.ref, t3.as.ref)));"));
     EK_CHECK(lfx_has(&f, "ek_release(t3);\n                break;"));
     lfx_end(&f);
@@ -100,8 +100,8 @@ static void or_pattern(void)
     EK_CHECK(lfx_check_clean(&f));
     EK_CHECK(lfx_lower_clean(&f));
     /* the alternatives disjoin into one conjunct */
-    EK_CHECK(lfx_has(&f, "t2 = t2 && (t0.as.ref->info == &ekT_test_Key_Up"
-                         " || t0.as.ref->info == &ekT_test_Key_Down);"));
+    EK_CHECK(lfx_has(&f, "t2 = t2 && (t0.as.ref->info == &ekT_test$Key$Up"
+                         " || t0.as.ref->info == &ekT_test$Key$Down);"));
     lfx_end(&f);
 }
 
@@ -121,10 +121,10 @@ static void binding_patterns(void)
     /* the bindings are owned keeps of the destructured slots, and the
        arm releases them before the match leaves */
     EK_CHECK(lfx_has(&f, "x = ek_keep(((ekS_rec0 *)"
-                         "((ekS_test_Holder_Holder *)t0.as.ref)->p0.as.ref)"
+                         "((ekS_test$Holder$Holder *)t0.as.ref)->p0.as.ref)"
                          "->f_x);"));
     EK_CHECK(lfx_has(&f, "b = ek_keep(((ekS_rec0 *)"
-                         "((ekS_test_Holder_Holder *)t0.as.ref)->p0.as.ref)"
+                         "((ekS_test$Holder$Holder *)t0.as.ref)->p0.as.ref)"
                          "->f_y);"));
     EK_CHECK(lfx_has(&f, "ek_release(b);\n                ek_release(x);\n"
                          "                break;"));
@@ -258,7 +258,7 @@ static void no_tail_call_outside_tails(void)
     EK_CHECK(lfx_lower_clean(&f));
     EK_CHECK(lfx_lacks(&f, "retry"));
     EK_CHECK(lfx_lacks(&f, "goto"));
-    EK_CHECK(lfx_has(&f, "ek_val t1 = ekf_test_down(t0);"));
+    EK_CHECK(lfx_has(&f, "ek_val t1 = ekf_test$down(t0);"));
     lfx_end(&f);
 }
 
@@ -309,13 +309,13 @@ static void trampoline_shape(void)
     EK_CHECK_U64(f.low.fn_count, 3);
     /* the function value is a fresh closure over the static
        trampoline, which forwards the argument slots */
-    EK_CHECK(lfx_has(&f, "static ek_val ekt_test_double(ek_val env, "
+    EK_CHECK(lfx_has(&f, "static ek_val ekt_test$double(ek_val env, "
                          "ek_val *args, size_t argc);"));
-    EK_CHECK(lfx_has(&f, "static ek_val ekt_test_double(ek_val env, "
+    EK_CHECK(lfx_has(&f, "static ek_val ekt_test$double(ek_val env, "
                          "ek_val *args, size_t argc)\n{\n"
                          "    (void)env;\n    (void)argc;\n"
-                         "    return ekf_test_double(args[0]);\n}"));
-    EK_CHECK(lfx_has(&f, "ek_val t0 = ek_closure_new(ekt_test_double, "
+                         "    return ekf_test$double(args[0]);\n}"));
+    EK_CHECK(lfx_has(&f, "ek_val t0 = ek_closure_new(ekt_test$double, "
                          "ek_val_unit());"));
     lfx_end(&f);
 }
@@ -339,8 +339,8 @@ static void invert_shape(void)
        applied variables t, e, u in first-occurrence order */
     EK_CHECK(lfx_has(&f, "ek_val t1 = ek_closure_new(ekl_0, t0);\n"
                          "    ek_release(t0);\n"
-                         "    ek_val t2 = ekf_std_Result_try$std_Int_"
-                         "std_String_std_Int(ek_p0, t1);\n"
+                         "    ek_val t2 = ekf_std$Result$try$Int$"
+                         "String$Int(ek_p0, t1);\n"
                          "    ek_release(t1);"));
     EK_CHECK(lfx_has(&f, "static ek_val ekl_0(ek_val env, ek_val *args, "
                          "size_t argc)"));

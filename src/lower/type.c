@@ -96,8 +96,8 @@ lower_gtype *lower_decl_repr(lower_ctx *c, const ek_symbol *tsym)
             return NULL;
         }
         g->key_sym = tsym;
-        g->stem = lower_str(c, "%s_%s", tsym->module, tsym->name);
-        g->helper = lower_str(c, "ekn_%s_%s_rec", tsym->module, tsym->name);
+        g->stem = lower_str(c, "%s$%s", tsym->module, tsym->name);
+        g->helper = lower_str(c, "ekn_%s$%s$rec", tsym->module, tsym->name);
         g->shape = GT_REC;
         g->nf = kids->count;
         g->fnames = lower_grow(c, NULL, &cap, g->nf, sizeof *g->fnames);
@@ -124,8 +124,8 @@ lower_gtype *lower_decl_repr(lower_ctx *c, const ek_symbol *tsym)
         return NULL;
     }
     g->key_sym = tsym;
-    g->stem = lower_str(c, "%s_%s", tsym->module, tsym->name);
-    g->helper = lower_str(c, "ekn_%s_%s_rec", tsym->module, tsym->name);
+    g->stem = lower_str(c, "%s$%s", tsym->module, tsym->name);
+    g->helper = lower_str(c, "ekn_%s$%s$rec", tsym->module, tsym->name);
     g->shape = dn->u.type_decl.rhs == EK_TYPE_RHS_TUPLE ? GT_TUP : GT_REC;
     g->nf = kids->count;
     if (g->shape == GT_REC) {
@@ -375,7 +375,7 @@ lower_gtype *lower_range_family(lower_ctx *c, lower_scalar slot)
         return NULL;
     }
     g->key_str = key;
-    g->stem = lower_str(c, "std_Range_%s", elem);
+    g->stem = lower_str(c, "std$Range$%s", elem);
     g->helper = lower_str(c, "ekn_%s", g->stem);
     g->shape = GT_REC;
     g->nf = 3;

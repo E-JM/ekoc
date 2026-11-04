@@ -28,8 +28,8 @@ static void multi_segment(void)
                          "\" and s = \"));"));
     EK_CHECK(lfx_has(&f, "ek_keep(ekc1)"));
     EK_CHECK(lfx_has(&f, "ek_keep(ekc2)"));
-    EK_CHECK(lfx_has(&f, "ekd_show_std_Int("));
-    EK_CHECK(lfx_has(&f, "ekd_show_std_String("));
+    EK_CHECK(lfx_has(&f, "ekd_show_Int("));
+    EK_CHECK(lfx_has(&f, "ekd_show_String("));
     EK_CHECK(lfx_has(&f, "ek_str_concat("));
     EK_CHECK(lfx_has(&f, "ek_release_obj("));
     EK_CHECK_U64(lfx_errors(&f), 0);
@@ -49,7 +49,7 @@ static void single_slot(void)
                   "    _\n");
     EK_CHECK(lfx_check_clean(&f));
     EK_CHECK(lfx_lower_clean(&f));
-    EK_CHECK(lfx_has(&f, "ekd_show_std_Int("));
+    EK_CHECK(lfx_has(&f, "ekd_show_Int("));
     EK_CHECK(lfx_lacks(&f, "ek_str_concat("));
     EK_CHECK_U64(lfx_errors(&f), 0);
     lfx_end(&f);
@@ -96,7 +96,7 @@ static void nested_and_composite(void)
     EK_CHECK(lfx_has(&f, "ek_str_from_cstr(\"outer \")"));
     EK_CHECK(lfx_has(&f, "ek_str_from_cstr(\"inner \")"));
     EK_CHECK(lfx_has(&f, "ek_keep(ekc"));
-    EK_CHECK(lfx_has(&f, "ekd_show_test_Money("));
+    EK_CHECK(lfx_has(&f, "ekd_show_N$test$Money("));
     EK_CHECK_U64(lfx_errors(&f), 0);
     lfx_end(&f);
 }
@@ -120,10 +120,10 @@ static void range_construction(void)
     EK_CHECK(lfx_lower_clean(&f));
     EK_CHECK(lfx_has(&f, "typedef struct { ek_obj obj; ek_val f_start;"
                          " ek_val f_end; ek_val f_closed; }"
-                         " ekS_std_Range_Int;"));
-    EK_CHECK(lfx_has(&f, "ekn_std_Range_Int(t0, t1, ek_bool(0))"));
+                         " ekS_std$Range$Int;"));
+    EK_CHECK(lfx_has(&f, "ekn_std$Range$Int(t0, t1, ek_bool(0))"));
     EK_CHECK(lfx_has(&f, "ek_bool(1)"));
-    EK_CHECK(lfx_has(&f, "ekS_std_Range_Char"));
+    EK_CHECK(lfx_has(&f, "ekS_std$Range$Char"));
     EK_CHECK_U64(lfx_errors(&f), 0);
     lfx_end(&f);
 }
@@ -141,7 +141,7 @@ static void uint_range(void)
                   "    _\n");
     EK_CHECK(lfx_check_clean(&f));
     EK_CHECK(lfx_lower_clean(&f));
-    EK_CHECK(lfx_has(&f, "ekn_std_Range_UInt("));
+    EK_CHECK(lfx_has(&f, "ekn_std$Range$UInt("));
     EK_CHECK_U64(lfx_errors(&f), 0);
     lfx_end(&f);
 }
@@ -195,9 +195,9 @@ static void range_services(void)
                   "    _\n");
     EK_CHECK(lfx_check_clean(&f));
     EK_CHECK(lfx_lower_clean(&f));
-    EK_CHECK(lfx_has(&f, "ekd_show_std_Range_std_Int("));
-    EK_CHECK(lfx_has(&f, "ekq_std_Range_std_Int("));
-    EK_CHECK(lfx_has(&f, "eko_std_Range_std_Int("));
+    EK_CHECK(lfx_has(&f, "ekd_show_N$std$Range$Int("));
+    EK_CHECK(lfx_has(&f, "ekq_N$std$Range$Int("));
+    EK_CHECK(lfx_has(&f, "eko_N$std$Range$Int("));
     EK_CHECK(lfx_has(&f, "f_closed.as.i"));
     EK_CHECK_U64(lfx_errors(&f), 0);
     lfx_end(&f);

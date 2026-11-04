@@ -39,52 +39,52 @@ static ek_val json_wrapped(const ek_typeinfo *info, ek_val payload)
 
 ek_val json_null(void)
 {
-    return ek_gen_zero(&ekT_std_Json_Null);
+    return ek_gen_zero(&ekT_std$Json$Null);
 }
 
 ek_val json_bool(int b)
 {
-    return ek_gen_one(&ekT_std_Json_Bool, ek_bool(b));
+    return ek_gen_one(&ekT_std$Json$Bool, ek_bool(b));
 }
 
 ek_val json_int(int64_t n)
 {
-    return ek_gen_one(&ekT_std_Json_Int, ek_val_int(n));
+    return ek_gen_one(&ekT_std$Json$Int, ek_val_int(n));
 }
 
 ek_val json_float(double x)
 {
-    return ek_gen_one(&ekT_std_Json_Float, ek_val_float(x));
+    return ek_gen_one(&ekT_std$Json$Float, ek_val_float(x));
 }
 
 ek_val json_str(ek_val s)
 {
-    return json_wrapped(&ekT_std_Json_Str, s);
+    return json_wrapped(&ekT_std$Json$Str, s);
 }
 
 ek_val json_arr(ek_val list)
 {
-    return json_wrapped(&ekT_std_Json_Arr, list);
+    return json_wrapped(&ekT_std$Json$Arr, list);
 }
 
 ek_val json_obj(ek_val dict)
 {
-    return json_wrapped(&ekT_std_Json_Obj, dict);
+    return json_wrapped(&ekT_std$Json$Obj, dict);
 }
 
 ek_val parse_error_empty(void)
 {
-    return ek_gen_zero(&ekT_std_ParseError_Empty);
+    return ek_gen_zero(&ekT_std$ParseError$Empty);
 }
 
 ek_val parse_error_invalid(ek_val detail)
 {
-    return json_wrapped(&ekT_std_ParseError_Invalid, detail);
+    return json_wrapped(&ekT_std$ParseError$Invalid, detail);
 }
 
 ek_val parse_error_range(void)
 {
-    return ek_gen_zero(&ekT_std_ParseError_OutOfRange);
+    return ek_gen_zero(&ekT_std$ParseError$OutOfRange);
 }
 
 /* The keyword spellings a value position can open with: the three JSON

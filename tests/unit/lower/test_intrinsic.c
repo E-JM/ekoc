@@ -20,10 +20,10 @@ static void uint_to_int_wraps(void)
     /* the narrowing row calls the runtime and wraps the hit and the
        miss through the std constructors */
     EK_CHECK(lfx_has(&f, "ek_try_to_int("));
-    EK_CHECK(lfx_has(&f, "ekn_std_Option_Some(ek_val_int("));
-    EK_CHECK(lfx_has(&f, "ekn_std_Option_None();"));
+    EK_CHECK(lfx_has(&f, "ekn_std$Option$Some(ek_val_int("));
+    EK_CHECK(lfx_has(&f, "ekn_std$Option$None();"));
     /* the constructor family joined the unit */
-    EK_CHECK(lfx_has(&f, "ekS_std_Option_Some"));
+    EK_CHECK(lfx_has(&f, "ekS_std$Option$Some"));
     lfx_end(&f);
 }
 
@@ -40,22 +40,22 @@ static void parse_wraps_result(void)
     EK_CHECK(lfx_check_clean(&f));
     EK_CHECK(lfx_lower_clean(&f));
     EK_CHECK(lfx_has(&f, "ek_parse_int("));
-    EK_CHECK(lfx_has(&f, "ekn_std_Result_Ok(ek_val_int("));
+    EK_CHECK(lfx_has(&f, "ekn_std$Result$Ok(ek_val_int("));
     /* the parse kinds map onto the ParseError variants; each miss arm
        binds the error to its own named temp and releases it, and the
        empty detail is the interned empty literal, kept and released
        beside the Invalid it lands in */
-    EK_CHECK(lfx_has(&f, "        ek_val t4 = ekn_std_ParseError_Empty();\n"
-                         "        t1 = ekn_std_Result_Err(t4);\n"
+    EK_CHECK(lfx_has(&f, "        ek_val t4 = ekn_std$ParseError$Empty();\n"
+                         "        t1 = ekn_std$Result$Err(t4);\n"
                          "        ek_release(t4);"));
-    EK_CHECK(lfx_has(&f, "        ek_val t7 = ekn_std_ParseError_"
+    EK_CHECK(lfx_has(&f, "        ek_val t7 = ekn_std$ParseError$"
                          "OutOfRange();\n"
-                         "        t1 = ekn_std_Result_Err(t7);\n"
+                         "        t1 = ekn_std$Result$Err(t7);\n"
                          "        ek_release(t7);"));
     EK_CHECK(lfx_has(&f, "        ek_val t5 = ek_keep(ekc"));
-    EK_CHECK(lfx_has(&f, "        ek_val t6 = ekn_std_ParseError_Invalid("
+    EK_CHECK(lfx_has(&f, "        ek_val t6 = ekn_std$ParseError$Invalid("
                          "t5);\n"
-                         "        t1 = ekn_std_Result_Err(t6);\n"
+                         "        t1 = ekn_std$Result$Err(t6);\n"
                          "        ek_release(t6);\n"
                          "        ek_release(t5);"));
     lfx_end(&f);
@@ -114,7 +114,7 @@ static void dict_get_wraps_borrowed(void)
        once the constructor's own retention stands */
     EK_CHECK(lfx_has(&f, "if (ek_dict_get("));
     EK_CHECK(lfx_has(&f, "ek_keep(t7)"));
-    EK_CHECK(lfx_has(&f, "ekn_std_Option_Some(t8);"));
+    EK_CHECK(lfx_has(&f, "ekn_std$Option$Some(t8);"));
     EK_CHECK(lfx_has(&f, "ek_release(t8);"));
     lfx_end(&f);
 }
@@ -155,10 +155,10 @@ static void decode_wraps_detail(void)
     EK_CHECK(lfx_has(&f, "ek_bytes_from_hex("));
     {
         const char *def = strstr(f.low.text,
-                                 "ekn_std_ParseError_Invalid(ek_val p0)");
-        const char *body = def ? def + strlen("ekn_std_ParseError_Invalid"
+                                 "ekn_std$ParseError$Invalid(ek_val p0)");
+        const char *body = def ? def + strlen("ekn_std$ParseError$Invalid"
                                               "(ek_val p0)") : NULL;
-        const char *call = body ? strstr(body, "ekn_std_ParseError_Invalid(")
+        const char *call = body ? strstr(body, "ekn_std$ParseError$Invalid(")
                                 : NULL;
         char temp[16];
         char rel[48];
@@ -168,7 +168,7 @@ static void decode_wraps_detail(void)
             EK_CHECK(call != NULL);
         }
         if (call != NULL) {
-            const char *arg = call + strlen("ekn_std_ParseError_Invalid(");
+            const char *arg = call + strlen("ekn_std$ParseError$Invalid(");
             size_t n = strcspn(arg, ")");
 
             EK_CHECK(n > 0 && n < sizeof temp);
@@ -234,7 +234,7 @@ static void std_source_uses_the_rows(void)
     EK_CHECK(lfx_check_clean(&f));
     EK_CHECK(lfx_lower_clean(&f));
     /* the std member is the callee; the rows feed it from inside */
-    EK_CHECK(lfx_has(&f, "ekf_std_String_at("));
+    EK_CHECK(lfx_has(&f, "ekf_std$String$at("));
     EK_CHECK(lfx_has(&f, "ek_str_chars("));
     EK_CHECK(lfx_has(&f, "ek_char_to_code("));
     lfx_end(&f);

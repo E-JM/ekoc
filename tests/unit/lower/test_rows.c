@@ -32,7 +32,7 @@ static void set_rows_route(void)
     EK_CHECK(lfx_has(&f, "ek_val_int((int64_t)ek_set_len("));
     EK_CHECK(lfx_has(&f, "ek_set_to_list("));
     /* no identity stamping rides the set rows */
-    EK_CHECK(lfx_lacks(&f, "ekT_std_Json_Null"));
+    EK_CHECK(lfx_lacks(&f, "ekT_std$Json$Null"));
     lfx_end(&f);
 }
 
@@ -128,12 +128,12 @@ static void json_parse_stamps_identities(void)
     /* the routing stamps the Json and ParseError families: the typeinfo
        identities join the unit with their drops and no helpers, the
        shape the runtime's builders share */
-    EK_CHECK(lfx_has(&f, "const ek_typeinfo ekT_std_Json_Null ="));
-    EK_CHECK(lfx_has(&f, "const ek_typeinfo ekT_std_Json_Obj ="));
-    EK_CHECK(lfx_has(&f, "const ek_typeinfo ekT_std_ParseError_Empty ="));
-    EK_CHECK(lfx_has(&f, "const ek_typeinfo ekT_std_ParseError_"
+    EK_CHECK(lfx_has(&f, "const ek_typeinfo ekT_std$Json$Null ="));
+    EK_CHECK(lfx_has(&f, "const ek_typeinfo ekT_std$Json$Obj ="));
+    EK_CHECK(lfx_has(&f, "const ek_typeinfo ekT_std$ParseError$Empty ="));
+    EK_CHECK(lfx_has(&f, "const ek_typeinfo ekT_std$ParseError$"
                          "OutOfRange ="));
-    EK_CHECK(lfx_lacks(&f, "ekn_std_Json_Null"));
+    EK_CHECK(lfx_lacks(&f, "ekn_std$Json$Null"));
     lfx_end(&f);
 }
 
@@ -151,7 +151,7 @@ static void json_stamp_fires_only_on_routing(void)
     EK_CHECK(lfx_check_clean(&f));
     EK_CHECK(lfx_lower_clean(&f));
     EK_CHECK(lfx_has(&f, "ek_parse_int("));
-    EK_CHECK(lfx_lacks(&f, "ekT_std_Json_"));
+    EK_CHECK(lfx_lacks(&f, "ekT_std$Json$"));
     EK_CHECK(lfx_lacks(&f, "ek_json_parse"));
     lfx_end(&f);
 }

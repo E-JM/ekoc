@@ -369,7 +369,7 @@ const ek_symbol *lower_member_symbol(lower_ctx *c, const ek_type *recv,
 
 /* derivedjson.c, derivedfrom.c: the JSON emitters and their shared
    spellings. OK_INFO is the typeinfo test of the std Result's Ok. */
-#define LOWER_OK_INFO "&ekT_std_Result_Ok" 
+#define LOWER_OK_INFO "&ekT_std$Result$Ok" 
 const char *lower_json_ctor(lower_ctx *c, const char *variant);
 const char *lower_result_ctor(lower_ctx *c, const char *name);
 void lower_json_err_lit(lower_demit *d, const char *indent,

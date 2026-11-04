@@ -23,13 +23,13 @@ int lower_is_value(const ek_symbol *sym)
 /* The getter's C name of one value binding. */
 const char *lower_value_getter(lower_ctx *c, const ek_symbol *sym)
 {
-    return lower_str(c, "eks_%s_%s", sym->module, sym->name);
+    return lower_str(c, "eks_%s$%s", sym->module, sym->name);
 }
 
 /* The slot's C name of one value binding. */
 static const char *value_slot(lower_ctx *c, const ek_symbol *sym)
 {
-    return lower_str(c, "ekv_%s_%s", sym->module, sym->name);
+    return lower_str(c, "ekv_%s$%s", sym->module, sym->name);
 }
 
 /* The slot, its flag, and the getter's declaration: the text the

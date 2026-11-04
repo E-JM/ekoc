@@ -44,7 +44,7 @@ static void now_reads_the_wall_clock(void)
     int64_t ns;
 
     EK_CHECK(ek_val_is_ref(t));
-    EK_CHECK(t.as.ref->info == &ekT_time_Time_Time);
+    EK_CHECK(t.as.ref->info == &ekT_time$Time$Time);
     ns = payload_ns(t);
     /* the wall domain starts around 1677; any real reading is past
        2020 and inside the signed nanosecond span */
@@ -65,7 +65,7 @@ static void mono_measures_monotonically(void)
     int64_t ns;
 
     EK_CHECK(ek_val_is_ref(m));
-    EK_CHECK(m.as.ref->info == &ekT_time_Mono_Mono);
+    EK_CHECK(m.as.ref->info == &ekT_time$Mono$Mono);
     ns = payload_ns(m);
     ek_release(m);
     m2 = call0(member(b, 1));
@@ -82,7 +82,7 @@ static ek_val duration_ns_val(int64_t ns)
     if (o == NULL) {
         exit(1);
     }
-    o->info = &ekT_time_Duration_Duration;
+    o->info = &ekT_time$Duration$Duration;
     o->rc = 1;
     ((ek_val *)o)[1] = ek_val_int(ns);
     v = ek_val_ref(o);

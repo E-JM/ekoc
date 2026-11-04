@@ -216,7 +216,7 @@ static int marshal_arg(lower_ctx *c, lower_scope *scope, ek_buf *b,
         const char *packed = lower_ctype_pack_expr(c, s.ctype, arg);
 
         lower_pad(c);
-        lower_emitf(c, "ekC_%s_%s %s = %s;\n", s.ctype->module,
+        lower_emitf(c, "ekC_%s$%s %s = %s;\n", s.ctype->module,
                     s.ctype->name, cs, packed ? packed : "{ 0 }");
         return ek_buf_append_str(b, s.kind == MS_CIN
                                        ? lower_str(c, "&%s", cs) : cs);
@@ -294,7 +294,7 @@ static lower_val emit_extern_result(lower_ctx *c, lower_scope *scope,
         const char *cs = lower_temp(c, scope);
 
         lower_pad(c);
-        lower_emitf(c, "ekC_%s_%s %s = %s;\n", res->ctype->module,
+        lower_emitf(c, "ekC_%s$%s %s = %s;\n", res->ctype->module,
                     res->ctype->name, cs, call);
         t = lower_temp(c, scope);
         lower_pad(c);

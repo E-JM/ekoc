@@ -39,12 +39,12 @@ static void emit_from_scalar(lower_ctx *c, lower_demit *d, lower_scalar sk,
     const char *word = word_name(t);
 
     if (sk == EKSC_INT && !word) {
-        lower_d_printf(d, "    if (v.as.ref->info == &ekT_std_Json_Int)\n");
+        lower_d_printf(d, "    if (v.as.ref->info == &ekT_std$Json$Int)\n");
         lower_json_ok_emit(d, "        ", lower_json_slot(c, "Int", "v"));
         lower_json_err_lit(d, "    ", "");
         return;
     }
-    lower_d_printf(d, "    if (v.as.ref->info == &ekT_std_Json_Int) {\n");
+    lower_d_printf(d, "    if (v.as.ref->info == &ekT_std$Json$Int) {\n");
     lower_d_printf(d, "        ek_val p = %s;\n", lower_json_slot(c, "Int",
                                                                  "v"));
     if (sk == EKSC_UINT) {
@@ -69,19 +69,19 @@ static void emit_from_simple(lower_ctx *c, lower_demit *d, lower_scalar sk)
 {
     switch (sk) {
     case EKSC_FLOAT:
-        lower_d_printf(d, "    if (v.as.ref->info == &ekT_std_Json_Float)\n");
+        lower_d_printf(d, "    if (v.as.ref->info == &ekT_std$Json$Float)\n");
         lower_json_ok_emit(d, "        ", lower_json_slot(c, "Float", "v"));
         break;
     case EKSC_BOOL:
-        lower_d_printf(d, "    if (v.as.ref->info == &ekT_std_Json_Bool)\n");
+        lower_d_printf(d, "    if (v.as.ref->info == &ekT_std$Json$Bool)\n");
         lower_json_ok_emit(d, "        ", lower_json_slot(c, "Bool", "v"));
         break;
     case EKSC_STRING:
-        lower_d_printf(d, "    if (v.as.ref->info == &ekT_std_Json_Str)\n");
+        lower_d_printf(d, "    if (v.as.ref->info == &ekT_std$Json$Str)\n");
         lower_json_ok_emit(d, "        ", lower_json_slot(c, "Str", "v"));
         break;
     case EKSC_CHAR:
-        lower_d_printf(d, "    if (v.as.ref->info == &ekT_std_Json_Str) {\n");
+        lower_d_printf(d, "    if (v.as.ref->info == &ekT_std$Json$Str) {\n");
         lower_d_printf(d, "        ek_obj *s = %s.as.ref;\n",
                        lower_json_slot(c, "Str", "v"));
         lower_d_printf(d, "        uint32_t code;\n\n");
@@ -91,7 +91,7 @@ static void emit_from_simple(lower_ctx *c, lower_demit *d, lower_scalar sk)
         lower_d_printf(d, "    }\n");
         break;
     case EKSC_BYTES:
-        lower_d_printf(d, "    if (v.as.ref->info == &ekT_std_Json_Str) {\n");
+        lower_d_printf(d, "    if (v.as.ref->info == &ekT_std$Json$Str) {\n");
         lower_d_printf(d, "        ek_obj *s = %s.as.ref;\n",
                        lower_json_slot(c, "Str", "v"));
         lower_d_printf(d, "        ek_obj *o = (ek_obj *)0;\n");
@@ -138,9 +138,9 @@ static void emit_from_list_aux(lower_ctx *c, const char *aux,
         lower_d_printf(&d, "        ek_release(r);\n");
         lower_d_printf(&d, "        return t;\n");
         lower_d_printf(&d, "    }\n");
-        lower_d_printf(&d, "    out = ek_cons(((ekS_std_Result_Ok *)r.as.ref)"
+        lower_d_printf(&d, "    out = ek_cons(((ekS_std$Result$Ok *)r.as.ref)"
                            "->p0,\n");
-        lower_d_printf(&d, "                ((ekS_std_Result_Ok *)t.as.ref)"
+        lower_d_printf(&d, "                ((ekS_std$Result$Ok *)t.as.ref)"
                            "->p0);\n");
         lower_d_printf(&d, "    ek_release(r);\n");
         lower_d_printf(&d, "    ek_release(t);\n");
@@ -158,7 +158,7 @@ static void emit_from_list(lower_ctx *c, lower_demit *d, const char *name,
     const char *aux = lower_str(c, "%s_aux", name);
 
     emit_from_list_aux(c, aux, t);
-    lower_d_printf(d, "    if (v.as.ref->info == &ekT_std_Json_Arr)\n");
+    lower_d_printf(d, "    if (v.as.ref->info == &ekT_std$Json$Arr)\n");
     lower_d_printf(d, "        return %s(%s);\n", aux,
                    lower_json_slot(c, "Arr", "v"));
     lower_json_err_lit(d, "    ", "");
@@ -172,7 +172,7 @@ static void emit_from_dict(lower_ctx *c, lower_demit *d, const ek_type *t)
         lower_json_err_lit(d, "    ", "");
         return;
     }
-    lower_d_printf(d, "    if (v.as.ref->info != &ekT_std_Json_Obj)\n");
+    lower_d_printf(d, "    if (v.as.ref->info != &ekT_std$Json$Obj)\n");
     lower_json_err_lit(d, "    ", "");
     lower_d_printf(d, "    {\n");
     lower_d_printf(d, "        ek_val src = %s;\n", lower_json_slot(c, "Obj",
@@ -187,7 +187,7 @@ static void emit_from_dict(lower_ctx *c, lower_demit *d, const ek_type *t)
     lower_d_printf(d, "                return r;\n");
     lower_d_printf(d, "            }\n");
     lower_d_printf(d, "            e = ek_dict_set(acc, k, "
-                       "((ekS_std_Result_Ok *)r.as.ref)->p0);\n");
+                       "((ekS_std$Result$Ok *)r.as.ref)->p0);\n");
     lower_d_printf(d, "            ek_release(r);\n");
     lower_d_printf(d, "            ek_release(acc);\n");
     lower_d_printf(d, "            acc = e;\n");
@@ -205,7 +205,7 @@ static void emit_from_adt(lower_ctx *c, lower_demit *d, lower_variant *vs,
 {
     size_t i;
 
-    lower_d_printf(d, "    if (v.as.ref->info == &ekT_std_Json_Str) {\n");
+    lower_d_printf(d, "    if (v.as.ref->info == &ekT_std$Json$Str) {\n");
     lower_d_printf(d, "        ek_obj *s = %s.as.ref;\n\n",
                    lower_json_slot(c, "Str", "v"));
     for (i = 0; i < nv; i++) {
@@ -233,7 +233,7 @@ static void emit_from_adt(lower_ctx *c, lower_demit *d, lower_variant *vs,
     }
     lower_json_err_obj(d, "        ", "ek_keep(ek_val_ref(s))");
     lower_d_printf(d, "    }\n");
-    lower_d_printf(d, "    if (v.as.ref->info == &ekT_std_Json_Obj) {\n");
+    lower_d_printf(d, "    if (v.as.ref->info == &ekT_std$Json$Obj) {\n");
     lower_d_printf(d, "        ek_val d = %s;\n", lower_json_slot(c, "Obj",
                                                                  "v"));
     lower_d_printf(d, "        ek_val k, x;\n");
@@ -270,7 +270,7 @@ static void emit_from_adt(lower_ctx *c, lower_demit *d, lower_variant *vs,
         lower_d_printf(d, "            if (r.as.ref->info != %s)\n", LOWER_OK_INFO);
         lower_d_printf(d, "                return r;\n");
         lower_d_printf(d, "            ek_val q = ekn_%s("
-                          "((ekS_std_Result_Ok *)r.as.ref)->p0);\n",
+                          "((ekS_std$Result$Ok *)r.as.ref)->p0);\n",
                        vs[i].stem);
         lower_d_printf(d, "            ek_release(r);\n");
         lower_d_printf(d, "            ek_val w = %s(q);\n",
@@ -295,7 +295,7 @@ static void emit_from_shape(lower_ctx *c, lower_demit *d, const char *name,
     size_t nf, nv;
 
     if (t->kind == EK_T_UNIT) {
-        lower_d_printf(d, "    if (v.as.ref->info == &ekT_std_Json_Null)\n");
+        lower_d_printf(d, "    if (v.as.ref->info == &ekT_std$Json$Null)\n");
         lower_json_ok_emit(d, "        ", "ek_val_unit()");
         lower_json_err_lit(d, "    ", "");
         return;

@@ -51,7 +51,7 @@ static const ek_nlist *ctype_fields(const ek_symbol *tsym)
    spelling. */
 static const char *typedef_name(lower_ctx *c, const ek_symbol *tsym)
 {
-    return lower_str(c, "ekC_%s_%s", tsym->module, tsym->name);
+    return lower_str(c, "ekC_%s$%s", tsym->module, tsym->name);
 }
 
 /* The frozen C struct of a ctype: exact-width fields in declaration
@@ -164,7 +164,7 @@ static const char *pack_fields(lower_ctx *c, const ek_symbol *tsym,
     size_t i;
 
     ek_buf_init(&b);
-    if (!ek_buf_printf(&b, "(ekC_%s_%s){", tsym->module, tsym->name)) {
+    if (!ek_buf_printf(&b, "(ekC_%s$%s){", tsym->module, tsym->name)) {
         c->oom = 1;
     }
     for (i = 0; i < (kids ? kids->count : 0); i++) {
@@ -184,7 +184,7 @@ static const char *pack_fields(lower_ctx *c, const ek_symbol *tsym,
 
             piece = nested ? pack_fields(c, nested,
                                          lower_str(c,
-                                             "((ekS_%s_%s *)(%s).as.ref)",
+                                             "((ekS_%s$%s *)(%s).as.ref)",
                                              nested->module, nested->name,
                                              field))
                            : "0";
@@ -208,7 +208,7 @@ const char *lower_ctype_pack_expr(lower_ctx *c, const ek_symbol *tsym,
     if (!lower_ctype_shape(c, tsym)) {
         return NULL;
     }
-    return pack_fields(c, tsym, lower_str(c, "((ekS_%s_%s *)(%s).as.ref)",
+    return pack_fields(c, tsym, lower_str(c, "((ekS_%s$%s *)(%s).as.ref)",
                                           tsym->module, tsym->name, src));
 }
 
@@ -223,7 +223,7 @@ static const char *unpack_fields(lower_ctx *c, const ek_symbol *tsym,
     size_t i;
 
     ek_buf_init(&b);
-    if (!ek_buf_printf(&b, "ekn_%s_%s_rec(", tsym->module, tsym->name)) {
+    if (!ek_buf_printf(&b, "ekn_%s$%s$rec(", tsym->module, tsym->name)) {
         c->oom = 1;
     }
     for (i = 0; i < (kids ? kids->count : 0); i++) {

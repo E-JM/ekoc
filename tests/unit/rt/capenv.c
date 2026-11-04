@@ -27,7 +27,7 @@ static ek_val some_payload(ek_val v)
 
 static int is_some(ek_val v)
 {
-    return v.as.ref->info == &ekT_std_Option_Some;
+    return v.as.ref->info == &ekT_std$Option$Some;
 }
 
 static void env_reads_the_variables(void)
@@ -53,7 +53,7 @@ static void env_reads_the_variables(void)
     args[0].as.ref = ek_str_from_cstr("EKO_RT_ENV_ABSENT");
     r = ek_closure_call(member(b), args, 1);
     EK_CHECK(ek_val_is_ref(r));
-    EK_CHECK(r.as.ref->info == &ekT_std_Option_None);
+    EK_CHECK(r.as.ref->info == &ekT_std$Option$None);
     ek_release(r);
     ek_release(ek_val_ref(args[0].as.ref));
     ek_release(b);

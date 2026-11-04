@@ -62,7 +62,7 @@ void lower_json_err_obj(lower_demit *d, const char *indent, const char *obj)
 /* A borrowed payload slot of the std Json family. */
 const char *lower_json_slot(lower_ctx *c, const char *variant, const char *v)
 {
-    return lower_str(c, "((ekS_std_Json_%s *)%s.as.ref)->p0", variant, v);
+    return lower_str(c, "((ekS_std$Json$%s *)%s.as.ref)->p0", variant, v);
 }
 
 /* Wraps one owned ek_val expression into the Str variant. */

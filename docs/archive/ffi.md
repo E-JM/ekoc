@@ -93,7 +93,10 @@ write-style ones stay shim-only.
 Function signatures are normative, layouts are not; `eko_value` is opaque
 throughout (`Clause 10.7`). Fully specifying the ABI (RC header, closure
 layout) would freeze code generation and kill the optimization surface; the
-fast path calling generated C directly is a compiler detail. Holding values is
+fast path calling generated C directly is a compiler detail. Generated
+symbol names are never handwritten on the C side either: C↔Eko calls go
+through the veneer, and the `$`-joined families (`ekf_`, `ekT_`, …) are
+the compiler's own output space. Holding values is
 bare `eko_retain`/`eko_release` — a handle table would be root registration and
 a second value representation in disguise. **Any thread may call in**: there
 is no global mutable state, a boundary-crossing value is shared and therefore

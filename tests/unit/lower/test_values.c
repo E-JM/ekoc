@@ -16,15 +16,15 @@ static void value_slot_shape(void)
     EK_CHECK(lfx_check_clean(&f));
     EK_CHECK(lfx_lower_clean(&f));
     /* the slot, its flag, and the getter stand once */
-    EK_CHECK(lfx_has(&f, "static ek_val ekv_test__path;\n"));
-    EK_CHECK(lfx_has(&f, "static int ekv_test__path_on;\n"));
-    EK_CHECK(lfx_has(&f, "static ek_val eks_test__path(void)\n"));
+    EK_CHECK(lfx_has(&f, "static ek_val ekv_test$_path;\n"));
+    EK_CHECK(lfx_has(&f, "static int ekv_test$_path_on;\n"));
+    EK_CHECK(lfx_has(&f, "static ek_val eks_test$_path(void)\n"));
     /* the initializer runs once behind the flag and the reference
        reads the getter */
-    EK_CHECK(lfx_has(&f, "if (!ekv_test__path_on) {\n"));
-    EK_CHECK(lfx_has(&f, "ekv_test__path = "));
-    EK_CHECK(lfx_has(&f, "return ek_keep(ekv_test__path);"));
-    EK_CHECK(lfx_has(&f, "eks_test__path()"));
+    EK_CHECK(lfx_has(&f, "if (!ekv_test$_path_on) {\n"));
+    EK_CHECK(lfx_has(&f, "ekv_test$_path = "));
+    EK_CHECK(lfx_has(&f, "return ek_keep(ekv_test$_path);"));
+    EK_CHECK(lfx_has(&f, "eks_test$_path()"));
     lfx_end(&f);
 }
 
@@ -38,8 +38,8 @@ static void value_reachable_only_when_read(void)
               "main: (out: Out) ! = out.println(\"loud\")\n");
     EK_CHECK(lfx_check_clean(&f));
     EK_CHECK(lfx_lower_clean(&f));
-    EK_CHECK(lfx_lacks(&f, "ekv_test__unused"));
-    EK_CHECK(lfx_lacks(&f, "eks_test__unused"));
+    EK_CHECK(lfx_lacks(&f, "ekv_test$_unused"));
+    EK_CHECK(lfx_lacks(&f, "eks_test$_unused"));
 
     /* the initializer's own references pull their definitions: the
        getter of the outer binding calls the getter of the inner one */
@@ -49,7 +49,7 @@ static void value_reachable_only_when_read(void)
               "main: (out: Out) ! = out.println(_outer)\n");
     EK_CHECK(lfx_check_clean(&f));
     EK_CHECK(lfx_lower_clean(&f));
-    EK_CHECK(lfx_has(&f, "eks_test__inner()"));
+    EK_CHECK(lfx_has(&f, "eks_test$_inner()"));
     lfx_end(&f);
 }
 
@@ -66,8 +66,8 @@ static void value_record_initializer(void)
               "    out.println(show(empty.next_id))\n");
     EK_CHECK(lfx_check_clean(&f));
     EK_CHECK(lfx_lower_clean(&f));
-    EK_CHECK(lfx_has(&f, "ekn_test_Store_rec("));
-    EK_CHECK(lfx_has(&f, "return ek_keep(ekv_test_empty);"));
+    EK_CHECK(lfx_has(&f, "ekn_test$Store$rec("));
+    EK_CHECK(lfx_has(&f, "return ek_keep(ekv_test$empty);"));
     lfx_end(&f);
 }
 

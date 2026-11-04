@@ -54,30 +54,30 @@ ek_val ek_gen_zero(const ek_typeinfo *info)
 
 ek_val ek_gen_result_ok(ek_val payload)
 {
-    return ek_gen_one(&ekT_std_Result_Ok, payload);
+    return ek_gen_one(&ekT_std$Result$Ok, payload);
 }
 
 ek_val ek_gen_result_err(ek_val payload)
 {
-    return ek_gen_one(&ekT_std_Result_Err, payload);
+    return ek_gen_one(&ekT_std$Result$Err, payload);
 }
 
 ek_val ek_gen_option_some(ek_val payload)
 {
-    return ek_gen_one(&ekT_std_Option_Some, payload);
+    return ek_gen_one(&ekT_std$Option$Some, payload);
 }
 
 ek_val ek_gen_option_none(void)
 {
-    return ek_gen_zero(&ekT_std_Option_None);
+    return ek_gen_zero(&ekT_std$Option$None);
 }
 
 ek_val ek_gen_ioerr(int kind, const char *msg)
 {
     static const ek_typeinfo *kinds[] = {
-        &ekT_sys_IoError_NotFound, &ekT_sys_IoError_Permission,
-        &ekT_sys_IoError_Exists,   &ekT_sys_IoError_NotFile,
-        &ekT_sys_IoError_Closed
+        &ekT_sys$IoError$NotFound, &ekT_sys$IoError$Permission,
+        &ekT_sys$IoError$Exists,   &ekT_sys$IoError$NotFile,
+        &ekT_sys$IoError$Closed
     };
     ek_val d;
     ek_val r;
@@ -86,8 +86,8 @@ ek_val ek_gen_ioerr(int kind, const char *msg)
         return ek_gen_zero(kinds[kind]);
     }
     d = ek_val_ref(ek_str_from_cstr(msg != NULL ? msg : ""));
-    r = ek_gen_one(kind == EK_IO_INVALID_DATA ? &ekT_sys_IoError_InvalidData
-                                           : &ekT_sys_IoError_Other,
+    r = ek_gen_one(kind == EK_IO_INVALID_DATA ? &ekT_sys$IoError$InvalidData
+                                           : &ekT_sys$IoError$Other,
                 d);
     ek_release(d);
     return r;
@@ -95,19 +95,19 @@ ek_val ek_gen_ioerr(int kind, const char *msg)
 
 ek_val ek_gen_time(int64_t ns)
 {
-    return ek_gen_one(&ekT_time_Time_Time, ek_val_int(ns));
+    return ek_gen_one(&ekT_time$Time$Time, ek_val_int(ns));
 }
 
 ek_val ek_gen_mono(int64_t ns)
 {
-    return ek_gen_one(&ekT_time_Mono_Mono, ek_val_int(ns));
+    return ek_gen_one(&ekT_time$Mono$Mono, ek_val_int(ns));
 }
 
 ek_val ek_gen_file_info(uint64_t size, ek_val mtime, int is_dir)
 {
     ek_gen_finfo *o = ek_rt_alloc_zeroed(sizeof *o);
 
-    o->obj.info = &ekT_sys_FileInfo;
+    o->obj.info = &ekT_sys$FileInfo;
     o->obj.rc = 1;
     o->f_size = ek_val_uint(size);
     o->f_mtime = mtime;

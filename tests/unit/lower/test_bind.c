@@ -33,7 +33,7 @@ static void discard_rebind(void)
     EK_CHECK(lfx_lower_clean(&f));
     EK_CHECK_U64(f.low.fn_count, 2);
     /* the call result dies right after the call */
-    EK_CHECK(lfx_has(&f, "ek_val t1 = ekf_test_id(t0);\n"
+    EK_CHECK(lfx_has(&f, "ek_val t1 = ekf_test$id(t0);\n"
                          "    ek_release(t0);\n    ek_release(t1);"));
     EK_CHECK(lfx_lacks(&f, "ek_val _"));
     /* the binding statement's value is the unit value */
@@ -129,7 +129,7 @@ static void lambda_valued_binding(void)
     EK_CHECK(lfx_check_clean(&f));
     EK_CHECK(lfx_lower_clean(&f));
     /* the call site stays a direct call */
-    EK_CHECK(lfx_has(&f, "ekf_test_bar(t"));
+    EK_CHECK(lfx_has(&f, "ekf_test$bar(t"));
     /* the lambda's parameter stays borrowed: no prologue keep, the
        body reads the ABI slot through the alias, and the show slot
        keeps its own copy of it */

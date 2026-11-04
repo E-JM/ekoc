@@ -27,7 +27,7 @@ static void nested_partial(void)
     EK_CHECK(lfx_lower_clean(&f));
     /* the nested base is the receiver's own address field, and the
        zip the build takes is read off that base */
-    EK_CHECK(lfx_has(&f, "((ekS_test_Address *)(((ekS_test_Person *)(t"));
+    EK_CHECK(lfx_has(&f, "((ekS_test$Address *)(((ekS_test$Person *)(t"));
     EK_CHECK(lfx_has(&f, "->f_address).as.ref)->f_zip)"));
     EK_CHECK(lfx_lacks(&f, ", ek_val_unit())"));
     lfx_end(&f);
@@ -77,7 +77,7 @@ static void full_nested_value(void)
               "    _\n");
     EK_CHECK(lfx_check_clean(&f));
     EK_CHECK(lfx_lower_clean(&f));
-    EK_CHECK(lfx_has(&f, "ekn_test_Address_rec(t"));
+    EK_CHECK(lfx_has(&f, "ekn_test$Address$rec(t"));
     EK_CHECK(lfx_lacks(&f, "->f_address).as.ref)->f_zip)"));
     lfx_end(&f);
 }

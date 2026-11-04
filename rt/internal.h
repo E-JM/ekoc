@@ -29,35 +29,35 @@
    p0, record fields in the declaration's field order. The generated
    drop releases every slot, so a runtime-built value with the unit's
    typeinfo is reclaimed exactly like a unit-built one. */
-extern const ek_typeinfo ekT_std_Result_Ok;
-extern const ek_typeinfo ekT_std_Result_Err;
-extern const ek_typeinfo ekT_std_Option_Some;
-extern const ek_typeinfo ekT_std_Option_None;
-extern const ek_typeinfo ekT_std_ParseError_Empty;
-extern const ek_typeinfo ekT_std_ParseError_Invalid;
-extern const ek_typeinfo ekT_std_ParseError_OutOfRange;
-extern const ek_typeinfo ekT_std_Json_Null;
-extern const ek_typeinfo ekT_std_Json_Bool;
-extern const ek_typeinfo ekT_std_Json_Int;
-extern const ek_typeinfo ekT_std_Json_Float;
-extern const ek_typeinfo ekT_std_Json_Str;
-extern const ek_typeinfo ekT_std_Json_Arr;
-extern const ek_typeinfo ekT_std_Json_Obj;
-extern const ek_typeinfo ekT_sys_IoError_NotFound;
-extern const ek_typeinfo ekT_sys_IoError_Permission;
-extern const ek_typeinfo ekT_sys_IoError_Exists;
-extern const ek_typeinfo ekT_sys_IoError_NotFile;
-extern const ek_typeinfo ekT_sys_IoError_Closed;
-extern const ek_typeinfo ekT_sys_IoError_InvalidData;
-extern const ek_typeinfo ekT_sys_IoError_Other;
-extern const ek_typeinfo ekT_sys_OpenMode_Read;
-extern const ek_typeinfo ekT_sys_OpenMode_Write;
-extern const ek_typeinfo ekT_sys_OpenMode_Append;
-extern const ek_typeinfo ekT_sys_OpenMode_New;
-extern const ek_typeinfo ekT_sys_OpenMode_Update;
-extern const ek_typeinfo ekT_sys_FileInfo;
-extern const ek_typeinfo ekT_time_Time_Time;
-extern const ek_typeinfo ekT_time_Mono_Mono;
+extern const ek_typeinfo ekT_std$Result$Ok;
+extern const ek_typeinfo ekT_std$Result$Err;
+extern const ek_typeinfo ekT_std$Option$Some;
+extern const ek_typeinfo ekT_std$Option$None;
+extern const ek_typeinfo ekT_std$ParseError$Empty;
+extern const ek_typeinfo ekT_std$ParseError$Invalid;
+extern const ek_typeinfo ekT_std$ParseError$OutOfRange;
+extern const ek_typeinfo ekT_std$Json$Null;
+extern const ek_typeinfo ekT_std$Json$Bool;
+extern const ek_typeinfo ekT_std$Json$Int;
+extern const ek_typeinfo ekT_std$Json$Float;
+extern const ek_typeinfo ekT_std$Json$Str;
+extern const ek_typeinfo ekT_std$Json$Arr;
+extern const ek_typeinfo ekT_std$Json$Obj;
+extern const ek_typeinfo ekT_sys$IoError$NotFound;
+extern const ek_typeinfo ekT_sys$IoError$Permission;
+extern const ek_typeinfo ekT_sys$IoError$Exists;
+extern const ek_typeinfo ekT_sys$IoError$NotFile;
+extern const ek_typeinfo ekT_sys$IoError$Closed;
+extern const ek_typeinfo ekT_sys$IoError$InvalidData;
+extern const ek_typeinfo ekT_sys$IoError$Other;
+extern const ek_typeinfo ekT_sys$OpenMode$Read;
+extern const ek_typeinfo ekT_sys$OpenMode$Write;
+extern const ek_typeinfo ekT_sys$OpenMode$Append;
+extern const ek_typeinfo ekT_sys$OpenMode$New;
+extern const ek_typeinfo ekT_sys$OpenMode$Update;
+extern const ek_typeinfo ekT_sys$FileInfo;
+extern const ek_typeinfo ekT_time$Time$Time;
+extern const ek_typeinfo ekT_time$Mono$Mono;
 
 /* The one-payload and zero-payload constructor shapes over the layout
    contract (capval.c). The payload argument is owned by the caller and

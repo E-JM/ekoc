@@ -51,16 +51,16 @@ static void reachability(void)
     EK_CHECK(lfx_has(&f, "ek_retain(v);"));
     /* every emitted function is declared first; the parameters are
        the borrowed ABI slots */
-    EK_CHECK(lfx_has(&f, "static ek_val ekf_test_main(void);"));
-    EK_CHECK(lfx_has(&f, "static ek_val ekf_test_add2(ek_val ek_p0, "
+    EK_CHECK(lfx_has(&f, "static ek_val ekf_test$main(void);"));
+    EK_CHECK(lfx_has(&f, "static ek_val ekf_test$add2(ek_val ek_p0, "
                          "ek_val ek_p1);"));
-    EK_CHECK(lfx_has(&f, "static ek_val ekf_test__helper(ek_val ek_p0);"));
+    EK_CHECK(lfx_has(&f, "static ek_val ekf_test$_helper(ek_val ek_p0);"));
     /* the untouched std surface and the unreferenced binding are
        absent */
-    EK_CHECK(lfx_lacks(&f, "ekf_test_unused"));
-    EK_CHECK(lfx_lacks(&f, "ekf_std_"));
+    EK_CHECK(lfx_lacks(&f, "ekf_test$unused"));
+    EK_CHECK(lfx_lacks(&f, "ekf_std$"));
     EK_CHECK(lfx_has(&f, "int main(void)\n{\n"));
-    EK_CHECK(lfx_has(&f, "ek_val t = ekf_test_main();"));
+    EK_CHECK(lfx_has(&f, "ek_val t = ekf_test$main();"));
     EK_CHECK(lfx_has(&f, "ek_release(t);"));
     lfx_end(&f);
 }
@@ -73,9 +73,9 @@ static void ownership(void)
     /* a name argument passes the frame's own local: the caller's
        frame keeps it alive across the call, so no keep is born and
        nothing releases after the call */
-    EK_CHECK(lfx_has(&f, "ek_val t0 = ekf_test__helper(ek_p0);\n"
-                         "    ek_val t1 = ekf_test__helper(ek_p1);"));
-    EK_CHECK(lfx_lacks(&f, "ekf_test__helper(t"));
+    EK_CHECK(lfx_has(&f, "ek_val t0 = ekf_test$_helper(ek_p0);\n"
+                         "    ek_val t1 = ekf_test$_helper(ek_p1);"));
+    EK_CHECK(lfx_lacks(&f, "ekf_test$_helper(t"));
     /* a parameter the body only reads stays borrowed: the prologue
        keeps nothing, the local aliases its ABI slot, and the scope
        close releases nothing */
@@ -108,9 +108,9 @@ static void argument_shapes(void)
     EK_CHECK(lfx_lower_clean(&f));
     /* the inner call's result is an owned temp: it moves into the
        outer argument slot and dies with its own release */
-    EK_CHECK(lfx_has(&f, "ek_val t1 = ekf_test__echo(t0);\n"
+    EK_CHECK(lfx_has(&f, "ek_val t1 = ekf_test$_echo(t0);\n"
                          "    ek_release(t0);\n"
-                         "    ek_val t2 = ekf_test__echo(t1);\n"
+                         "    ek_val t2 = ekf_test$_echo(t1);\n"
                          "    ek_release(t1);"));
     lfx_end(&f);
 
@@ -125,9 +125,9 @@ static void argument_shapes(void)
     /* the field read keeps the slot's own copy into the argument temp
        and the temp releases after the call; the receiver is the
        frame's own local, borrowed */
-    EK_CHECK(lfx_has(&f, "ek_val t3 = ek_keep(((ekS_test_Person *)"
+    EK_CHECK(lfx_has(&f, "ek_val t3 = ek_keep(((ekS_test$Person *)"
                          "p.as.ref)->f_age);\n"
-                         "    ek_val t4 = ekf_test__adult(t3);\n"
+                         "    ek_val t4 = ekf_test$_adult(t3);\n"
                          "    ek_release(t3);"));
     EK_CHECK(lfx_lacks(&f, "ek_keep(p);"));
     lfx_end(&f);
@@ -158,16 +158,16 @@ static void receiver_shapes(void)
        rebuild names the anonymous family, and the adapted value
        releases with the call */
     EK_CHECK(lfx_has(&f, "ek_val t3 = ek_keep(q);"));
-    EK_CHECK(lfx_has(&f, "ek_val t4 = ek_keep(((ekS_test_Q *)"
+    EK_CHECK(lfx_has(&f, "ek_val t4 = ek_keep(((ekS_test$Q *)"
                          "t3.as.ref)->f_a);"));
     EK_CHECK(lfx_has(&f, "ek_val t6 = ekn_rec0(t4, t5);"));
-    EK_CHECK(lfx_has(&f, "ek_val t7 = ekf_test_Q_geta(t6);\n"
+    EK_CHECK(lfx_has(&f, "ek_val t7 = ekf_test$Q$geta(t6);\n"
                          "    ek_release(t6);"));
     EK_CHECK(lfx_has(&f, "ek_release(t3);"));
     /* the non-adapting receiver borrows the frame local: the call
        passes the local's own name, no keep and no release around it */
-    EK_CHECK(lfx_has(&f, "ek_val t8 = ekf_test_Q_getb(q);"));
-    EK_CHECK(lfx_lacks(&f, "ekf_test_Q_getb(ek_keep(q))"));
+    EK_CHECK(lfx_has(&f, "ek_val t8 = ekf_test$Q$getb(q);"));
+    EK_CHECK(lfx_lacks(&f, "ekf_test$Q$getb(ek_keep(q))"));
     lfx_end(&f);
 }
 
@@ -323,7 +323,7 @@ static void param_naming(void)
     /* the written name stands where the body needs the owned copy:
        a rebind releases the alias's own value and moves the temp in;
        the unnamed parameter is numbered and consumed unread */
-    EK_CHECK(lfx_has(&f, "static ek_val ekf_test__twice(ek_val ek_p0, "
+    EK_CHECK(lfx_has(&f, "static ek_val ekf_test$_twice(ek_val ek_p0, "
                          "ek_val ek_p1);"));
     EK_CHECK(lfx_has(&f, "ek_val x = ek_keep(ek_p0);"));
     EK_CHECK(lfx_has(&f, "(void)ek_p1;"));
@@ -359,9 +359,9 @@ static void manifest_scopes_families(void)
     lfx_begin(&f, "main: (out: Out) ! = out.println(\"hello\")\n");
     EK_CHECK(lfx_check_clean(&f));
     EK_CHECK(lfx_lower_clean(&f));
-    EK_CHECK(lfx_lacks(&f, "ekT_std_"));
-    EK_CHECK(lfx_lacks(&f, "ekT_sys_"));
-    EK_CHECK(lfx_lacks(&f, "ekT_time_"));
+    EK_CHECK(lfx_lacks(&f, "ekT_std$"));
+    EK_CHECK(lfx_lacks(&f, "ekT_sys$"));
+    EK_CHECK(lfx_lacks(&f, "ekT_time$"));
     EK_CHECK(lfx_lacks(&f, "drop_"));
     lfx_end(&f);
 
@@ -371,16 +371,16 @@ static void manifest_scopes_families(void)
                   "        Err _ -> _\n");
     EK_CHECK(lfx_check_clean(&f));
     EK_CHECK(lfx_lower_clean(&f));
-    EK_CHECK(lfx_has(&f, "ekT_std_Result_Ok = { EK_KIND_STRUCT, "
-                         "drop_std_Result_Ok, NULL, NULL };"));
-    EK_CHECK(lfx_has(&f, "ekT_std_Option_None = { EK_KIND_STRUCT, "
+    EK_CHECK(lfx_has(&f, "ekT_std$Result$Ok = { EK_KIND_STRUCT, "
+                         "drop_std$Result$Ok, NULL, NULL };"));
+    EK_CHECK(lfx_has(&f, "ekT_std$Option$None = { EK_KIND_STRUCT, "
                          "NULL, NULL, NULL };"));
-    EK_CHECK(lfx_has(&f, "ekT_sys_IoError_Other = { EK_KIND_STRUCT, "
-                         "drop_sys_IoError_Other, NULL, NULL };"));
-    EK_CHECK(lfx_has(&f, "const ek_typeinfo ekT_sys_FileInfo = "));
-    EK_CHECK(lfx_has(&f, "const ek_typeinfo ekT_time_Mono_Mono = "));
-    EK_CHECK(lfx_lacks(&f, "ekT_sys_OpenMode_"));
-    EK_CHECK(lfx_lacks(&f, "drop_std_Option_None"));
+    EK_CHECK(lfx_has(&f, "ekT_sys$IoError$Other = { EK_KIND_STRUCT, "
+                         "drop_sys$IoError$Other, NULL, NULL };"));
+    EK_CHECK(lfx_has(&f, "const ek_typeinfo ekT_sys$FileInfo = "));
+    EK_CHECK(lfx_has(&f, "const ek_typeinfo ekT_time$Mono$Mono = "));
+    EK_CHECK(lfx_lacks(&f, "ekT_sys$OpenMode$"));
+    EK_CHECK(lfx_lacks(&f, "drop_std$Option$None"));
     lfx_end(&f);
 }
 
@@ -393,11 +393,11 @@ static void bundle_layout_checks(void)
     lfx_begin(&f, "main: (out: Out) ! = out.println(\"hello\")\n");
     EK_CHECK(lfx_check_clean(&f));
     EK_CHECK(lfx_lower_clean(&f));
-    EK_CHECK(lfx_has(&f, "typedef char ekB_cap__OutB_write[(offsetof("
-                         "ekS_cap__OutB, f_write) == sizeof(ek_obj) + "
+    EK_CHECK(lfx_has(&f, "typedef char ekB_cap$_OutB$write[(offsetof("
+                         "ekS_cap$_OutB, f_write) == sizeof(ek_obj) + "
                          "EK_OUT_WRITE * sizeof(ek_val)) ? 1 : -1];"));
-    EK_CHECK(lfx_has(&f, "typedef char ekB_cap__OutB_slots[(sizeof("
-                         "ekS_cap__OutB) == sizeof(ek_obj) + EK_OUT_SLOTS "
+    EK_CHECK(lfx_has(&f, "typedef char ekB_cap$_OutB$slots[(sizeof("
+                         "ekS_cap$_OutB) == sizeof(ek_obj) + EK_OUT_SLOTS "
                          "* sizeof(ek_val)) ? 1 : -1];"));
     lfx_end(&f);
 }
@@ -416,11 +416,11 @@ static void vocabulary_and_channel_stems(void)
                   "        Err _ -> _\n");
     EK_CHECK(lfx_check_clean(&f));
     EK_CHECK(lfx_lower_clean(&f));
-    EK_CHECK(lfx_has(&f, "const ek_typeinfo ekT_sys_IoError_NotFound = "));
-    EK_CHECK(lfx_has(&f, "} ekS_sys_FileInfo;"));
-    EK_CHECK(lfx_has(&f, "} ekS_cap__OutB;"));
-    EK_CHECK(lfx_lacks(&f, "ekT_cap_IoError"));
-    EK_CHECK(lfx_lacks(&f, "ekS_sys__OutB"));
+    EK_CHECK(lfx_has(&f, "const ek_typeinfo ekT_sys$IoError$NotFound = "));
+    EK_CHECK(lfx_has(&f, "} ekS_sys$FileInfo;"));
+    EK_CHECK(lfx_has(&f, "} ekS_cap$_OutB;"));
+    EK_CHECK(lfx_lacks(&f, "ekT_cap$IoError"));
+    EK_CHECK(lfx_lacks(&f, "ekS_sys$_OutB"));
     lfx_end(&f);
 }
 
@@ -436,7 +436,7 @@ static void test_roots_stamp_all(void)
                         "    _\n");
     EK_CHECK(lfx_check_clean(&f));
     EK_CHECK(lfx_lower_clean(&f));
-    EK_CHECK(lfx_has(&f, "const ek_typeinfo ekT_sys_OpenMode_Read = "));
+    EK_CHECK(lfx_has(&f, "const ek_typeinfo ekT_sys$OpenMode$Read = "));
     lfx_end(&f);
 }
 
@@ -457,14 +457,14 @@ static void read_line_ok_arm(void)
     EK_CHECK(lfx_lower_clean(&f));
     /* the Some wrapper is a named temp of its own, consumed and
        released beside the payload temp */
-    EK_CHECK(lfx_has(&f, "ek_val t10 = ekn_std_Option_Some(t9);\n"
-                         "            t5 = ekn_std_Result_Ok(t10);\n"
+    EK_CHECK(lfx_has(&f, "ek_val t10 = ekn_std$Option$Some(t9);\n"
+                         "            t5 = ekn_std$Result$Ok(t10);\n"
                          "            ek_release(t10);\n"
                          "            ek_release(t9);"));
     /* the zero-payload None arm releases its constructor result the
        same way */
-    EK_CHECK(lfx_has(&f, "ek_val t10 = ekn_std_Option_None();\n"
-                         "            t5 = ekn_std_Result_Ok(t10);\n"
+    EK_CHECK(lfx_has(&f, "ek_val t10 = ekn_std$Option$None();\n"
+                         "            t5 = ekn_std$Result$Ok(t10);\n"
                          "            ek_release(t10);"));
     lfx_end(&f);
 }
@@ -497,7 +497,7 @@ static void string_interning(void)
                                                 "ek_str_from_cstr"), 2);
     /* the priming precedes the entry dispatch */
     EK_CHECK(str_before(f.low.text, "ekc0 = ek_val_ref",
-                        "ekf_test_main();"));
+                        "ekf_test$main();"));
     /* a use site keeps the cache */
     EK_CHECK(lfx_has(&f, "ek_keep(ekc0);"));
     EK_CHECK(lfx_has(&f, "ek_keep(ekc1);"));
@@ -525,6 +525,49 @@ static void cache_prefix_reserved(void)
     EK_CHECK(lfx_has(&f, "ek_val u_ekc0 = ek_keep(ekc0);"));
     EK_CHECK(lfx_has(&f, "ek_keep(u_ekc0);"));
     EK_CHECK(lfx_lacks(&f, "ek_val ekc0 ="));
+    lfx_end(&f);
+}
+
+/* A written binding in any generated family's shape is emitted under
+   the u_ prefix, so it can never shadow the family's own symbols. */
+static void family_prefixes_reserved(void)
+{
+    lfx f;
+
+    lfx_begin(&f, "main: () -> _ =\n"
+                  "    ekq_show = 3\n"
+                  "    ekt_1 = \"s\"\n"
+                  "    _ := ekq_show + ekt_1.length()\n"
+                  "    _\n");
+    EK_CHECK(lfx_check_clean(&f));
+    EK_CHECK(lfx_lower_clean(&f));
+    EK_CHECK(lfx_has(&f, "ek_val u_ekq_show = "));
+    EK_CHECK(lfx_has(&f, "ek_val u_ekt_1 = "));
+    EK_CHECK(lfx_lacks(&f, "ek_val ekq_show ="));
+    lfx_end(&f);
+}
+
+/* Member spellings that would share one underscore join keep distinct
+   names: the pieces of a generated name are separated by `$`, which no
+   written identifier supplies, so an underscored member can never
+   merge with its owner's piece. */
+static void mangled_pieces_disambiguate(void)
+{
+    lfx f;
+
+    lfx_begin(&f, "Pq: type = [x: Int]\n"
+                  "Pq.q_f: (p: Pq) -> Int = p.x\n"
+                  "P: type = [y: Int]\n"
+                  "P.f: (p: P) -> Int = p.y\n"
+                  "main: () -> _ =\n"
+                  "    d = 1 / (Pq.q_f({x: 1}) - P.f({y: 2}))\n"
+                  "    _ := d\n"
+                  "    _\n");
+    EK_CHECK(lfx_check_clean(&f));
+    EK_CHECK(lfx_lower_clean(&f));
+    EK_CHECK(lfx_has(&f, "ekf_test$Pq$q_f"));
+    EK_CHECK(lfx_has(&f, "ekf_test$P$f"));
+    EK_CHECK(lfx_lacks(&f, "ekf_test_P_"));
     lfx_end(&f);
 }
 
@@ -575,6 +618,8 @@ int main(void)
     literals();
     string_escaping();
     shadowing();
+    family_prefixes_reserved();
+    mangled_pieces_disambiguate();
     param_naming();
     no_main_no_functions();
     manifest_scopes_families();

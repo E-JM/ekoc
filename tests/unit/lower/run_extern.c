@@ -263,8 +263,8 @@ static void ctype_round_trip(void)
         "    _\n";
     static const char *shim =
         "typedef struct { int32_t f_ok; int64_t f_size; uint32_t f_mode; "
-        "} ekC_test_Stat;\n"
-        "ekC_test_Stat shim_bump(ekC_test_Stat p)\n"
+        "} ekC_test$Stat;\n"
+        "ekC_test$Stat shim_bump(ekC_test$Stat p)\n"
         "{\n"
         "    p.f_ok += 1;\n"
         "    p.f_size += 1;\n"
@@ -295,8 +295,8 @@ static void c_in_read_borrow(void)
         "    _ := d\n"
         "    _\n";
     static const char *shim =
-        "typedef struct { int32_t f_a; int32_t f_b; } ekC_test_Pair;\n"
-        "int32_t shim_peek(const ekC_test_Pair *p)\n"
+        "typedef struct { int32_t f_a; int32_t f_b; } ekC_test$Pair;\n"
+        "int32_t shim_peek(const ekC_test$Pair *p)\n"
         "{\n"
         "    return (int32_t)(p->f_a * 10 + p->f_b);\n"
         "}\n";
