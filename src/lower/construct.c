@@ -146,7 +146,7 @@ lower_val lower_dict_literal(lower_ctx *c, lower_scope *scope,
 }
 
 
-/* The one-directional shape adaptation (Clause 7.5): a nominal record
+/* The one-directional shape adaptation: a nominal record
    flowing into an anonymous record expectation rebuilds field by field
    -- the shared anonymous family never meets a nominal object, because
    the two layouts order one field set differently. The destination

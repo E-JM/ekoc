@@ -104,14 +104,99 @@ static int destructure_field(lower_ctx *c, lower_scope *scope,
     return destructure_pat(c, scope, sub, sub_slot, NULL);
 }
 
+/* One component slot of a generated family, by position. */
+static const char *field_slot(lower_ctx *c, lower_gtype *g,
+                              const char *slot, size_t i)
+{
+    return lower_str(c, "((ekS_%s *)%s.as.ref)->f_%zu", g->stem, slot, i);
+}
+
+/* A tuple group: every component reads out of the family the type
+   names, at its own component type. */
+static int destructure_paren(lower_ctx *c, lower_scope *scope,
+                             const ek_node *pat, const char *slot,
+                             const ek_type *t)
+{
+    lower_gtype *g = tuple_repr_of(c, t);
+    size_t i;
+
+    if (!g || pat->u.kids.count != g->nf) {
+        return 0;
+    }
+    for (i = 0; i < g->nf; i++) {
+        const ek_type *ct = t && t->kind == EK_T_TUPLE
+                                && i < t->u.tuple.count
+                                ? t->u.tuple.items[i] : NULL;
+
+        if (!destructure_pat(c, scope, pat->u.kids.data[i],
+                             field_slot(c, g, slot, i), ct)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+/* A brace pattern over a record or tuple shape: the record items read
+   by field name, the tuple items by position. */
+static int destructure_brace(lower_ctx *c, lower_scope *scope,
+                             const ek_node *pat, const char *slot,
+                             const ek_type *t)
+{
+    lower_gtype *g;
+    size_t i;
+
+    if (pat->u.p_brace.rest != EK_REST_NONE) {
+        return 0; /* a list pattern never reaches a binding */
+    }
+    g = brace_repr_of(c, t);
+    if (!g) {
+        return 0;
+    }
+    if (g->shape == GT_REC) {
+        for (i = 0; i < pat->u.p_brace.items.count; i++) {
+            if (!destructure_field(c, scope,
+                                   pat->u.p_brace.items.data[i], g, slot)) {
+                return 0;
+            }
+        }
+        return 1;
+    }
+    for (i = 0; i < pat->u.p_brace.items.count && i < g->nf; i++) {
+        if (!destructure_pat(c, scope, pat->u.p_brace.items.data[i],
+                             field_slot(c, g, slot, i), NULL)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+/* The payload of the sole constructor the family names. */
+static int destructure_cons(lower_ctx *c, lower_scope *scope,
+                            const ek_node *pat, const char *slot,
+                            const ek_type *t)
+{
+    const ek_ref *ref = lower_ref(c, pat);
+    const ek_symbol *tsym = t && t->kind == EK_T_NOMINAL
+                                ? t->u.nominal.sym : NULL;
+    lower_gtype *g = tsym ? lower_ctor_family(c, pat, ref, tsym) : NULL;
+
+    if (!g) {
+        return 0;
+    }
+    if (!g->nf || !pat->u.cons.payload) {
+        return !g->nf && !pat->u.cons.payload;
+    }
+    return destructure_pat(c, scope, pat->u.cons.payload,
+                           lower_str(c, "((ekS_%s *)%s.as.ref)->p0",
+                                     g->stem, slot), NULL);
+}
+
 /* The irrefutable walk of one pattern node over its slot. */
 static int destructure_pat(lower_ctx *c, lower_scope *scope,
                            const ek_node *pat, const char *slot,
                            const ek_type *t)
 {
     const ek_type *rt = repr_type(c, pat, t);
-    lower_gtype *g;
-    size_t i;
 
     switch (pat->kind) {
     case EK_N_P_WILDCARD:
@@ -128,66 +213,11 @@ static int destructure_pat(lower_ctx *c, lower_scope *scope,
         if (pat->u.kids.count == 1) {
             return destructure_pat(c, scope, pat->u.kids.data[0], slot, rt);
         }
-        g = tuple_repr_of(c, rt);
-        if (!g || pat->u.kids.count != g->nf) {
-            return 0;
-        }
-        for (i = 0; i < g->nf; i++) {
-            const ek_node *k = pat->u.kids.data[i];
-            const ek_type *ct = rt && rt->kind == EK_T_TUPLE
-                                    && i < rt->u.tuple.count
-                                    ? rt->u.tuple.items[i] : NULL;
-
-            if (!destructure_pat(c, scope, k,
-                                 lower_str(c, "((ekS_%s *)%s.as.ref)->f_%zu",
-                                           g->stem, slot, i), ct)) {
-                return 0;
-            }
-        }
-        return 1;
+        return destructure_paren(c, scope, pat, slot, rt);
     case EK_N_P_BRACE:
-        if (pat->u.p_brace.rest != EK_REST_NONE) {
-            return 0; /* a list pattern never reaches a binding */
-        }
-        g = brace_repr_of(c, rt);
-        if (!g) {
-            return 0;
-        }
-        if (g->shape == GT_REC) {
-            for (i = 0; i < pat->u.p_brace.items.count; i++) {
-                if (!destructure_field(c, scope,
-                                       pat->u.p_brace.items.data[i], g,
-                                       slot)) {
-                    return 0;
-                }
-            }
-            return 1;
-        }
-        for (i = 0; i < pat->u.p_brace.items.count && i < g->nf; i++) {
-            if (!destructure_pat(c, scope, pat->u.p_brace.items.data[i],
-                                 lower_str(c,
-                                           "((ekS_%s *)%s.as.ref)->f_%zu",
-                                           g->stem, slot, i), NULL)) {
-                return 0;
-            }
-        }
-        return 1;
-    case EK_N_P_CONS: {
-        const ek_ref *ref = lower_ref(c, pat);
-        const ek_symbol *tsym = rt && rt->kind == EK_T_NOMINAL
-                                    ? rt->u.nominal.sym : NULL;
-
-        g = tsym ? lower_ctor_family(c, pat, ref, tsym) : NULL;
-        if (!g) {
-            return 0;
-        }
-        if (!g->nf || !pat->u.cons.payload) {
-            return !g->nf && !pat->u.cons.payload;
-        }
-        return destructure_pat(c, scope, pat->u.cons.payload,
-                               lower_str(c, "((ekS_%s *)%s.as.ref)->p0",
-                                         g->stem, slot), NULL);
-    }
+        return destructure_brace(c, scope, pat, slot, rt);
+    case EK_N_P_CONS:
+        return destructure_cons(c, scope, pat, slot, rt);
     default:
         return 0;
     }
