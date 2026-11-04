@@ -172,6 +172,31 @@ static void out_in_round_trip(void)
     EK_CHECK_STR(err, "");
 }
 
+/* The line transport: a printed line reaches the stream once with one
+   terminator, and a tee observer reports the bare line once per
+   println, never twice and never with the terminator. */
+static void line_transport(void)
+{
+    static const char *src =
+        "main: (o: Out) ! =\n"
+        "    t := o.tee((s): o.println(\"[\" ++ s ++ \"]\"))\n"
+        "    t.println(\"one\")\n"
+        "    t.print(\"two\")\n"
+        "    t.println(\"\")\n"
+        "    t.println(\"done\")\n"
+        "    _\n";
+    char out[128], err[8];
+    int status;
+
+    status = gate(src, "caps_line", NULL, NULL, out, sizeof out, err,
+                  sizeof err);
+    if (status >= 0 && WIFEXITED(status)) {
+        EK_CHECK_U64(WEXITSTATUS(status), 0);
+    }
+    EK_CHECK_STR(out, "one\n[one]\ntwo[two]\n\n[]\ndone\n[done]\n");
+    EK_CHECK_STR(err, "");
+}
+
 /* The whole-path file family: write, read, stat, and exists. */
 static void fs_whole_path(void)
 {
@@ -405,6 +430,7 @@ int main(void)
         return 1;
     }
     out_in_round_trip();
+    line_transport();
     fs_whole_path();
     env_and_args();
     clock_frozen_shows_exactly();
