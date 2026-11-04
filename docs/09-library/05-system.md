@@ -256,9 +256,8 @@ namespaces and are declared by the capability module (Clause 9.1.1), except
 `In.from_lines` and `Rand.with_seed`: their sequences advance across calls,
 which has no stateless expression, so both are compiler-provided declarations
 over injected extern symbols (Clause 10.8). The error-channel constructor
-`Out.err` is likewise compiler-provided over an injected extern: the process's
-error stream has no bundle pair of its own, so the compiler injects its
-construction, and the writes through the value land there.
+`Out.err` is likewise compiler-provided over an injected extern; the wiring
+it names is Clause 7.9.1's.
 
 | Derivation | Behavior |
 |---|---|
@@ -280,10 +279,7 @@ unchanged. The observer's bit is absorbed by the `!` of the bundle's write
 closure (Clause 7.9.5). A pure observer flows in by adaptation.
 Tests cannot obtain real capabilities. Construction right belongs to the host,
 and `main`'s parameter table is the only entrance (Clause 7.9.1); a test has
-no parameter table. The error channel is the one exception to that entrance,
-and it grants nothing new: `Out.err` rides the Out session as host wiring
-beside it, names no manifest entry, and yields no channel outside the
-sessions `main` already declares. What the test runtime hands a test that
+no parameter table. What the test runtime hands a test that
 constructs `Out.err` is the runner's own side of the child's error stream,
 which the runner reads as panic capture (Clause 9.14.6) and never the user's,
 so a test keeps its written output on the derived combinators. Derived

@@ -27,7 +27,13 @@ real capability belongs to the host and to the parameters of `main` (Clause
 Birth-granted capabilities are supplied by the host at startup. Opt-in
 capabilities are requested explicitly by naming them in `main`'s parameter
 list. A capability type MUST NOT occur twice in that list; the list is the
-whole operating-system surface, and no real capability outside it is reachable
+whole operating-system surface, and no real capability outside it is reachable.
+The process has two wired write sessions: the standard output arrives
+through `main`'s parameter table, and the standard error through
+`Out.err` — the one named exception to the table's unique entrance
+(Clause 9.14.5). `Out.err` rides the `Out` session as host wiring beside
+the table: it names no manifest entry, its construction is pure, and the
+writes through the value still carry `!`.
 (Clause 10.1.2). There is no ambient I/O: no global `print`, `println`,
 `input`, or `File.*` binding exists, and world contact is authorized through
 `main`'s parameters or a pure derivation (Clause 9.14.5). The members of the
