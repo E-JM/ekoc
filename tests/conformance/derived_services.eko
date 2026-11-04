@@ -67,3 +67,15 @@ dict_key_domain: test =
     assert(d.eq(d))
     assert_eq(d.show(), "\{\"1\": 10, \"2\": 20}")
     assert_eq(d.inspect(), "\{\"1\": 10, \"2\": 20}")
+
+// A fold over an unanchored polymorphic accumulator: the callback's
+// case over the accumulator type stays exhaustive (Clause 7.7.2), the
+// constructor rows answer at the instantiated type.
+fold_callback_patterns: test =
+    xs: []Int = {1, 2, 3}
+    r: Result Int String =
+        xs.fold(Err "", (acc, e): case acc: Err m -> Ok e; Ok v -> Ok (v + e))
+    assert_eq(r, Ok 6)
+    s: Result Int String =
+        xs.fold(Ok 0, (acc, e): case acc: Ok v -> Ok (v + e); Err m -> Err m)
+    assert_eq(s, Ok 6)

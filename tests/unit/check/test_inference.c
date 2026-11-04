@@ -192,6 +192,35 @@ static void lambda_result_conform(void)
     cfx_end(&f);
 }
 
+/* A constructor at an arm's result with no outer expectation: the arm
+   anchors to a fresh variable, the arms' unification instantiates it,
+   and the if -- the same sugar -- reads the same (Clause 6.7.4). */
+static void arm_result_anchors(void)
+{
+    cfx f;
+
+    cfx_begin(&f,
+              "p: (s: String) -> Result Int String = Ok 1\n"
+              "v: Result Int String =\n"
+              "    if 1 < 2:\n"
+              "        case p(\"x\"):\n"
+              "            Err e -> Err e\n"
+              "            Ok n -> Ok (n + 1)\n"
+              "    else:\n"
+              "        Ok 9\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "p: (s: String) -> Result Int String = Ok 1\n"
+              "f: () -> Result Int String =\n"
+              "    case p(\"x\"):\n"
+              "        Err e -> Err e\n"
+              "        Ok n -> Ok (n + 1)\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+}
+
 int main(void)
 {
     implicit_tvars();
@@ -199,5 +228,6 @@ int main(void)
     generic_decls();
     wide_generics();
     lambda_result_conform();
+    arm_result_anchors();
     return ek_test_report("check/inference");
 }

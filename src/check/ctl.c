@@ -20,7 +20,11 @@ const ek_type *ck_if(ck_ctx *c, const ek_node *e, const ek_type *expected)
                  "an `if` condition is `Bool`, not %s (Clauses 6.7.4, "
                  "7.7.4)", ck_type_name(c, cond));
     }
-    then = ck_expr(c, e->u.ifexpr.then, expected);
+    /* both arms share one expectation; with none, a fresh variable
+       anchors a constructor at either arm's result (Clause 6.7.4) */
+    then = ck_expr(c, e->u.ifexpr.then,
+                   expected ? expected : (e->u.ifexpr.els ? ck_ivar(c)
+                                                          : NULL));
     if (!e->u.ifexpr.els) {
         /* Without `else` the type is `_`: the then-branch is `_` or
            `Never`. */
@@ -118,6 +122,7 @@ const ek_type *ck_case(ck_ctx *c, const ek_node *e, const ek_type *expected)
     size_t i, nsc = e->u.caseexpr.scrutinees.count;
     size_t na = e->u.caseexpr.arms.count;
     const ek_type *result;
+    const ek_type *arm_exp;
 
     scrut = ek_arena_alloc(c->arena, (nsc ? nsc : 1) * sizeof *scrut);
     arms = ek_arena_alloc(c->arena, (na ? na : 1) * sizeof *arms);
@@ -130,14 +135,21 @@ const ek_type *ck_case(ck_ctx *c, const ek_node *e, const ek_type *expected)
     if (!nsc) {
         scrut[0] = ck_opaque(c); /* malformed case; patterns bind loosely */
     }
+
     for (i = 0; i < nsc; i++) {
         scrut[i] = ck_expr(c, e->u.caseexpr.scrutinees.data[i], NULL);
     }
+    /* An arm without an outer expectation takes a fresh variable as
+       its own: a constructor at the arm's result anchors to it, the
+       arms' unification decides the instantiation, and the case's
+       result stays the arms' own (Clause 6.7.4: `if` is the same
+       sugar). */
+    arm_exp = expected ? expected : ck_ivar(c);
     for (i = 0; i < na; i++) {
         const ek_node *arm = e->u.caseexpr.arms.data[i];
 
         arms[i] = arm;
-        atypes[i] = case_arm(c, arm, scrut, nsc, expected);
+        atypes[i] = case_arm(c, arm, scrut, nsc, arm_exp);
         /* Coverage belongs to the pattern: a diverging body neither
            adds nor removes it. */
         contrib[i] = ck_prune(atypes[i]) != NULL;
