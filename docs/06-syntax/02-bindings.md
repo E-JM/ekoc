@@ -44,7 +44,9 @@ Without an annotation, the type is determined by the right-hand side. A
 composite literal with no expected type requires an annotation
 (Clause 6.6.2).
 
-A parenthesized tuple on the left of `=` destructures a tuple value:
+The tuple pattern's own spelling is braced (Clause 6.8.1). A parenthesized
+group appears on the left of `=`, where it cannot be an expression, and
+destructures a tuple value:
 
 ```eko
 (s, want) = row

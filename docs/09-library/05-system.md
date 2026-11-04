@@ -274,8 +274,10 @@ construction, and the writes through the value land there.
 | `Rand.with_seed` | the seed fixes the order; the sequence itself is not promised across versions |
 
 `Out.tee` has signature `(Out, (String) !-> _) -> Out`. Construction is pure.
-The observer fires once per write, and its bit is absorbed by the `!` of the
-bundle's write closure (Clause 7.9.5). A pure observer flows in by adaptation.
+The observer fires once per write and receives the written string with one
+trailing newline removed; a write that does not end in a newline passes
+unchanged. The observer's bit is absorbed by the `!` of the bundle's write
+closure (Clause 7.9.5). A pure observer flows in by adaptation.
 Tests cannot obtain real capabilities. Construction right belongs to the host,
 and `main`'s parameter table is the only entrance (Clause 7.9.1); a test has
 no parameter table. The error channel is the one exception to that entrance,

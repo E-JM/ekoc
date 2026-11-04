@@ -10,13 +10,15 @@ through a reference.
 
 | Value class | Representation |
 |---|---|
-| `Bool`, `Char`, `Int`, `UInt`, `Float` | stored directly; no heap allocation |
+| `Char`, `Int`, `UInt`, `Float` | stored directly; no heap allocation |
+| `Bool` | an algebraic type whose two values are stored directly; no heap allocation |
 | machine words `U8`, `I32`, and the other native-width words | stored directly (Clause 10.3.1) |
 | `_` (unit) | zero-sized |
 | `Never` | unrepresented |
 
-`Bool` is a standard-library algebraic type and `Char` is a standard-library
-scalar type; representation follows the value domain, not the declaration form.
+The scalar types are `Char`, `Int`, `UInt`, and `Float`. `Bool` is a
+standard-library algebraic type and `Char` is a standard-library scalar type;
+representation follows the value domain, not the declaration form.
 The unit type has exactly one value, and that value occupies no storage.
 `Never` has no values, so no value of that type needs representation (Clause
 7.5.4).
@@ -160,8 +162,11 @@ whole process, so no release pass runs and no finalization obligation remains.
 
 ### 8.6.2 Reference Counting
 
-Memory management is reference counting. A conforming implementation MUST
-satisfy the following guarantees.
+Memory management is reclamation by reference counting in this
+specification's reference implementation. The normative content is the
+observable guarantees below; the counting strategy itself is an
+implementation technique, and a conforming implementation MAY use another
+strategy that meets the same guarantees.
 
 - **Automatic.** Storage is reclaimed without program action. There are no
   dangling references, no double frees, and no `free` operation in the language.
@@ -169,7 +174,9 @@ satisfy the following guarantees.
   is unreachable and its storage MUST be reclaimed no later than that moment.
   Its child references are released at reclamation; a child whose last
   reference is thereby released is reclaimed in turn.
-- **Pause-free.** Reclamation MUST NOT require a tracing pause or a root scan.
+- **Reclaim-as-you-go.** Reclamation happens at reference release, without a
+  tracing pause or a root scan, so no language-level operation stops the world
+  to collect.
 - **Race-free.** A count shared between tasks is atomic. The count itself is
   never a data race.
 - **Earlier permitted.** An implementation MAY reclaim an object earlier than
@@ -177,9 +184,9 @@ satisfy the following guarantees.
   be used again. It MUST NOT reclaim later.
 
 Reference counting is complete because the heap graph is acyclic (Clause
-8.6.1). No tracing collector, ownership layer, borrowing layer, lifetime
-annotation, or region annotation is part of the language. Regions and arenas
-remain implementation and host techniques.
+8.6.1). No ownership layer, borrowing layer, lifetime annotation, or region
+annotation is part of the language. Regions and arenas remain implementation
+and host techniques.
 
 Reclamation timing is not observable by an Eko program (Clause 8.11). The
 host-visible promise is specified in Clause 10.7: a host that holds a value

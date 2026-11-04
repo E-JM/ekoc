@@ -167,10 +167,12 @@ an IEEE 754 binary64 value (Clause 3). The machine words `I8`, `I16`, `I32`,
 types. They have equality, ordering, `show`, and size-family conversions, and
 no arithmetic or bitwise operations (Clause 10.3.1). Numeric literals take
 their type from the expected type (Clause 5.7.4). Arithmetic is specified in
-Clause 7.8.4. Integer overflow panics; it does not wrap. Division by zero
-panics. `Int.abs` panics on `Int.min`. `Float` follows IEEE 754: `NaN` and the
-infinities are values, `NaN` is not equal to itself, and `-0.0` compares equal
-to `0.0`. There are no implicit numeric conversions; both operands of a
+Clause 7.8.4. Integer overflow panics; it does not wrap. Integer division by
+zero panics. `Int.abs` panics on `Int.min`. `Float` follows IEEE 754: `NaN` and
+the infinities are values, `NaN` is not equal to itself, and `-0.0` compares
+equal to `0.0`; an operation that overflows or divides by zero produces the
+IEEE 754 result rather than panicking (Clause 7.8.4), while a literal outside
+the finite range is rejected (Clause 5.7.1). There are no implicit numeric conversions; both operands of a
 numeric operator MUST have the same type.
 
 ```eko

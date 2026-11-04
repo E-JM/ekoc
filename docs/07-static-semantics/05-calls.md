@@ -138,9 +138,14 @@ and a value outside the target range is `E-literal-overflow` (Clause 5.7.1).
 values are non-negative, so the distinction vanishes. `Float` `%` uses the
 same truncation basis.
 
-Overflow and division by zero panic at run time (Clause 8.4.2); `Int.min / -1`
-overflows. This is not a static error, and a panic sets no world bit (Clause
-7.9.2). Wrapping arithmetic is the explicit `Int.wrapping_*` and
+Overflow and division by zero panic at run time for the integer types
+(Clause 8.4.2); `Int.min / -1` overflows. A `Float` operation that overflows
+or divides by zero produces the IEEE 754 result: an infinity, never a panic
+(Clause 9.6.1). A literal is not an operation: a converted value outside the
+finite range is `E-literal-overflow` for every numeric type (Clause 5.7.1),
+so no literal denotes an infinity. Overflow is not a static error, and a
+panic sets no world bit (Clause 7.9.2). Wrapping arithmetic is the explicit
+`Int.wrapping_*` and
 `UInt.wrapping_*` family (Clause 9.6.6). Bitwise operations are functions of
 the `UInt` family (Clause 9.6.5). `Int.pow` and `Float.pow` are functions; no
 exponentiation operator exists (Clause 6.10). Conversions between numeric

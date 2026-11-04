@@ -27,7 +27,7 @@ operative rules.
 | **token** | the output of the lexical grammar: an identifier, keyword, literal, operator, punctuation mark, or layout boundary | 5.3.1 |
 | **identifier** | a name that begins with an XID_Start character or `_` and continues with XID_Continue characters | 5.5.1 |
 | **keyword** | one of the reserved words `import`, `case`, `if`, `else` | 5.6.1 |
-| **contextual word** | a word recognized only in the annotation slot: `type`, `ctype`, `test` | 5.6.2 |
+| **contextual word** | an identifier carrying a special meaning in one syntactic position only: `type`, `ctype`, `test`, `extern`, `Pure` | 5.6.2 |
 | **literal** | a numeric, character, or string token that denotes a value | 5.7–5.9 |
 | **block** | the sequence of members introduced by a header line and indented one level | 6.2.2 |
 | **member** | one line, or one semicolon-terminated unit, within a block | 6.2.2 |

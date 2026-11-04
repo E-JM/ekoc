@@ -83,7 +83,9 @@ empty list and the non-empty lists MUST both be covered.
 
 A scalar scrutinee has no case structure: a literal pattern alone never covers
 its type, coverage comes from a variable or `_`, and a single-scrutinee `case`
-therefore MUST end with such an arm. An or-pattern covers what its
+therefore MUST end with such an arm. `Bool` is not a scalar here; it is an ADT
+with exactly two constructors (Clause 9.3), so its two constructor arms cover
+it and the `if` desugaring of Clause 6.7.4 is exhaustive. An or-pattern covers what its
 alternatives cover, each alternative being considered. Checking is against the
 instantiated union, so `Result t Never` still requires an `Err` arm.
 

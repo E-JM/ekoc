@@ -91,6 +91,11 @@ are otherwise ordinary identifiers.
 | `extern` | right-hand side beginning a native declaration | extern declaration (Clause 6.3.8) |
 | `Pure` | tail of an extern declaration | audited purity guarantee (Clause 10.2.2) |
 
-A contextual word remains legal as a binding name, a record field name, and a
-module name. For example, a binding named `type` is legal; `x: type = ...` is a
-type declaration only when `type` occupies the annotation slot.
+`type`, `ctype`, `test`, and `extern` are snake_case and remain legal as a
+binding name, a record field name, and a module name. For example, a binding
+named `type` is legal; `x: type = ...` is a type declaration only when `type`
+occupies the annotation slot. `Pure` is PascalCase, so the case classes place
+it with type and constructor spellings: no value binding, record field, or
+module may carry the name (Clauses 5.5.2, 7.4.1). A declared type named
+`Pure` remains legal; the word carries its special meaning only in the tail
+of an extern declaration.

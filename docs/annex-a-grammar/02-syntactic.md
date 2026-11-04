@@ -189,8 +189,15 @@ FieldPattern    := Identifier [ ':' Pattern ]
 
 A `PascalName` pattern is a constructor; an `Identifier` pattern is a
 variable. A variable pattern MUST be snake_case; a constructor pattern MUST
-be PascalCase. A constructor pattern with a payload is check-only
-(Clause 7.7.1).
+be PascalCase. A constructor pattern with a payload occurs in `case` arms
+and, when its constructor is the sole constructor of the scrutinee's ADT, in
+a value binding (Clause 7.7.1).
+
+The braced group is the tuple pattern's spelling; the parenthesized group
+occurs on the left of a binding operator, where it cannot be an expression,
+and destructures the tuple components there (Clause 6.3.2). A braced group
+over a tuple scrutinee is the same pattern; the expected type decides the
+brace family (Clause 6.8.1).
 
 ### A.3.7 Type Expressions
 

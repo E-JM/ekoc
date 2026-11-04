@@ -56,7 +56,8 @@ U+0009 (CHARACTER TABULATION) is not valid whitespace in indentation or
 between tokens. Its occurrence there is an error with code `E-tab` (Annex B).
 
 A tab inside a comment is ignored. A tab inside a string or character literal
-is written with the escape `\t` (Clause 5.9.2).
+is an ordinary character; the escape `\t` writes it visibly (Clause 5.9.2).
+The U+0009 restriction covers indentation and the space between tokens only.
 
 ### 5.2.4 Blank Lines
 

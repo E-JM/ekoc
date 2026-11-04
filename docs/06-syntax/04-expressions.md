@@ -107,7 +107,7 @@ The precedence ladder, from tightest to loosest, is:
 
 | Level | Operators | Associativity |
 |---|---|---|
-| 1 | postfix `.f()` | left |
+| 1 | postfix `.f()`, constructor juxtaposition | left |
 | 2 | unary `-` | none |
 | 3 | `* / %` | left |
 | 4 | `+ - ++` | left |
@@ -116,7 +116,8 @@ The precedence ladder, from tightest to loosest, is:
 | 7 | `&&` | left |
 | 8 | `\|\|` | left |
 
-Comparisons do not associate. A chain such as `a < b < c` is an error; write
+Constructor juxtaposition (`Ok 5`) binds with postfix access, so
+`Ct 5 * 2` is `(Ct 5) * 2`. Comparisons do not associate. A chain such as `a < b < c` is an error; write
 `a < b && b < c`. The same rule applies to `==` and the other comparison
 operators.
 

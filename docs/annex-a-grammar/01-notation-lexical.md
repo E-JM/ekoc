@@ -101,7 +101,7 @@ and `1.` are not floating literals.
 ```ebnf
 CharLiteral     := "'" ( CharEscape | CharChar ) "'"
 CharChar        := any Unicode scalar value except "'" and '\' and U+000A
-CharEscape      := '\' ( 'n' | 't' | 'r' | '\' | '"' | "'" | 'u{' HexDigits '}' )
+CharEscape      := '\' ( '{' | 'n' | 't' | 'r' | '\' | '"' | "'" | 'u{' HexDigits '}' )
 HexDigits       := HexDigit [ HexDigit [ HexDigit [ HexDigit [ HexDigit [ HexDigit ] ] ] ] ]
 ```
 
