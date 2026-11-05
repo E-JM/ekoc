@@ -230,9 +230,11 @@ _join_rev: (xs: []t, acc: String, sep: String) -> String =
             else: _join_rev(rest, h.show() ++ sep ++ acc, sep)
 
 // A slice is a start and a length; a request outside the list is a
-// domain miss, never a clamp.
+// domain miss, never a clamp. The domain is judged without adding the
+// two counts, so a start near the end of the word cannot overflow its
+// way past the check.
 List.slice: (xs: []t, start: Int, len: Int) -> Option ([]t) =
-    if start < 0 || len < 0 || start + len > xs.length():
+    if start < 0 || len < 0 || start > xs.length() || len > xs.length() - start:
         None
     else:
         Some (List.drop(xs, start).take(len))

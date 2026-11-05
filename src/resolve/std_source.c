@@ -237,9 +237,11 @@ const char *const ek_std_source_parts[] = {
     "            else: _join_rev(rest, h.show() ++ sep ++ acc, sep)\n",
     "\n",
     "// A slice is a start and a length; a request outside the list is a\n",
-    "// domain miss, never a clamp.\n",
+    "// domain miss, never a clamp. The domain is judged without adding the\n",
+    "// two counts, so a start near the end of the word cannot overflow its\n",
+    "// way past the check.\n",
     "List.slice: (xs: []t, start: Int, len: Int) -> Option ([]t) =\n",
-    "    if start < 0 || len < 0 || start + len > xs.length():\n",
+    "    if start < 0 || len < 0 || start > xs.length() || len > xs.length() - start:\n",
     "        None\n",
     "    else:\n",
     "        Some (List.drop(xs, start).take(len))\n",
@@ -520,8 +522,8 @@ const char *const ek_std_source_parts[] = {
     "        False -> _\n",
 };
 
-const size_t ek_std_source_nparts = 513;
-const size_t ek_std_source_len = 16437;
+const size_t ek_std_source_nparts = 515;
+const size_t ek_std_source_len = 16594;
 
 char *ek_std_source_join(ek_arena *arena)
 {
