@@ -31,9 +31,9 @@ their signature carries a world-bit marker.
 `each_with_index`, `any`, `all`, `find_by`, `sort_by`, `zip_with`,
 `take_while`, and `drop_while` are open-bit dispatchers (Clause 7.9.6).
 `take` and `drop` truncate: a count beyond the length takes or drops the whole
-list, and a negative count counts as zero. `slice` is a domain check: a
-partially out-of-range request yields `None`, and the range is never clamped
-(Clause 9.10.1). `sort` uses the derived ordering `<`; instantiation at a
+list, and a negative count counts as zero. `slice` is a domain check over a start and a length:
+a request that does not lie entirely inside the list yields `None`, and a
+request is never clamped into range (Clause 9.10.1). `sort` uses the derived ordering `<`; instantiation at a
 record type is a compile error because a record has no ordering
 (Clause 9.8.5). `sort_by` is stable, and an inconsistent comparator
 terminates with an implementation-defined order (Clause 2.5). `join` uses the
@@ -120,8 +120,9 @@ String-specific iteration function exists (Clause 9.4.2). `append` is the body
 of `++` and costs O(n) (Clause 7.8.6). `split` splits on every occurrence of a
 non-empty separator and keeps empty fields; an empty separator is a panic
 (Annex B.5). `lines` splits on `'\n'` and drops the final empty element when
-the string ends with `'\n'` (Clause 9.11.1). `slice` uses the Unicode scalar
-domain, returns `None` when out of range, and never clamps (Clause 9.11.1).
+the string ends with `'\n'` (Clause 9.11.1). `slice` takes a start and a length in the Unicode scalar
+domain, returns `None` when the request does not lie entirely inside the
+string, and never clamps (Clause 9.11.1).
 `trim`, `trim_start`, and `trim_end` remove Unicode White_Space
 (Clause 9.11.1). `to_bytes` is total and produces UTF-8; `Bytes.to_string` is
 the decoding direction and returns a `Result` (Clause 9.5.3). `pad_left` and
