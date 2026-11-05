@@ -120,9 +120,13 @@ static void annotated_fn_body(ck_ctx *c, const ek_node *ann,
 }
 
 /* One annotated binding: the annotation types the value, the scheme
-   generalizes, and the body reconciles. */
+   generalizes, and the body reconciles. The declaration sugar — the
+   annotation's parameters bound over the value as its body — belongs
+   to a module member; a nested binding binds a value of the annotated
+   type. */
 static const ek_type *annotated_binding(ck_ctx *c, const ek_node *m,
-                                        const ek_node *val, ck_scheme *gen)
+                                        const ek_node *val, ck_scheme *gen,
+                                        int top)
 {
     const ek_node *ann = m->u.bind.type;
     const ek_symbol *sym = ck_decl_symbol(c, m);
@@ -160,17 +164,26 @@ static const ek_type *annotated_binding(ck_ctx *c, const ek_node *m,
     }
     saved_open = c->open_scope;
     c->open_scope = ck_signature_opens(bound);
-    if (val && bound && bound->kind == EK_T_FN) {
+    if (val && bound && bound->kind == EK_T_FN && top) {
         annotated_fn_body(c, ann, val, bound);
     } else if (val) {
         const ek_type *vt = ck_expr(c, val, bound);
         ck_conform k = ck_conforms(c, vt, bound, 1);
 
         if (k != CK_OK) {
-            ck_error(c, val, ck_conform_code(k),
-                     "the binding is %s, the annotation is %s "
-                     "(Clause 7.5.7)", ck_type_name(c, vt),
-                     ck_type_name(c, bound));
+            if (bound && bound->kind == EK_T_FN) {
+                ck_error(c, val, ck_conform_code(k),
+                         "the binding is %s, the annotation is %s; a named "
+                         "function is a module member, and a local function "
+                         "value binds a lambda at its annotated type "
+                         "(Clause 7.5.7)", ck_type_name(c, vt),
+                         ck_type_name(c, bound));
+            } else {
+                ck_error(c, val, ck_conform_code(k),
+                         "the binding is %s, the annotation is %s "
+                         "(Clause 7.5.7)", ck_type_name(c, vt),
+                         ck_type_name(c, bound));
+            }
         }
     }
     c->open_scope = saved_open;
@@ -207,7 +220,7 @@ static const ek_type *ck_binding(ck_ctx *c, const ek_node *m, int top)
     }
     if (m->u.bind.type) {
         gen = ck_mono(c, NULL);
-        bound = annotated_binding(c, m, val, gen);
+        bound = annotated_binding(c, m, val, gen, top);
     } else {
         const ek_node *lam = as_lambda(val);
 

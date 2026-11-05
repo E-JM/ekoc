@@ -1,0 +1,20 @@
+// A local binding annotated at a function type binds a function value:
+// a lambda checked at its annotated type, or a module function read
+// as a value (Clauses 6.3.2, 7.6.3).
+
+dbl: (n: Int) -> Int = n * 2
+
+local_fn_values: test =
+    g: (Int) -> Int = dbl
+    h: (Int) -> Int = (n): n + 1
+    k: () -> Int = (): 7
+    assert_eq(g(21), 42)
+    assert_eq(h(41), 42)
+    assert_eq(k(), 7)
+    assert_eq(g(h(20)), 42)
+
+passed_by_name: (f: (Int) -> Int, x: Int) -> Int = f(x)
+
+local_at_call: test =
+    g: (Int) -> Int = (n): n * 3
+    assert_eq(passed_by_name(g, 5), 15)
