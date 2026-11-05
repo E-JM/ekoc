@@ -128,8 +128,11 @@ void lower_reads_walk(lower_reads *r, const ek_node *e)
     case EK_N_P_PAREN:
     case EK_N_P_OR:
     case EK_N_COMPOSITE:
-    case EK_N_P_BRACE:
         reads_kids(r, e->u.kids.data, e->u.kids.count);
+        return;
+    case EK_N_P_BRACE:
+        /* the rest name binds; it is not a read */
+        reads_kids(r, e->u.p_brace.items.data, e->u.p_brace.items.count);
         return;
     case EK_N_STRING_LIT:
         for (i = 0; i < e->u.str.count; i++) {
