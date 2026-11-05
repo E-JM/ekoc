@@ -19,11 +19,45 @@ layouts are not. `eko_value` is opaque throughout.
 | `eko_cap_out(write, ctx)` and the corresponding constructor for each capability | per-capability bundle construction (Clause 10.8) |
 | `eko_on_panic(observer)` | best-effort notification at abort (Clause 10.7.5) |
 
+The signatures are these, and `rt/ekoveneer.h` in the reference runtime
+carries them as the single source of truth; the tool
+`tools/check_veneer.py` fails when the two lists drift. The value and
+module types are opaque handles; a string is NUL-terminated UTF-8
+borrowed by the callee; an argument vector is borrowed for the call
+alone.
+
+```c
+eko_module *eko_eval_file(const char *path);
+eko_value eko_get_export(const eko_module *module, const char *name);
+eko_value eko_call(eko_value fn, const eko_value *args, size_t n);
+void eko_retain(eko_value v);
+void eko_release(eko_value v);
+eko_value eko_string_new(const char *utf8);
+const char *eko_as_string(eko_value v);
+eko_value eko_int_new(int64_t i);
+int64_t eko_as_int(eko_value v);
+eko_value eko_float_new(double f);
+double eko_as_float(eko_value v);
+eko_value eko_bool_new(int b);
+int eko_as_bool(eko_value v);
+eko_value eko_unit_new(void);
+eko_value eko_closure_new(eko_fn fn, void *ctx);
+eko_value eko_cap_out(eko_write write, void *ctx);
+void eko_on_panic(eko_panic_observer observer);
+```
+
 A conforming host links against the veneer and nothing else. A fast path that
 calls the compiler's generated C directly exists. It is a compiler detail and is
 not part of the contract. Of `eko_closure_new(fn, ctx)`, the closure manages no
 part of `ctx`: the host keeps `ctx` valid for the closure's lifetime — the
 borrow discipline the language's own call boundary keeps.
+
+The portable unit of a native binding is the module: its extern
+declarations, and the symbols they name, move between conforming
+implementations together with the veneer. A shim is C compiled for its
+platform, so no portable spelling of one exists to standardize; the
+mechanism by which a build attaches a shim is implementation-defined
+(Clause 10.3.6).
 
 ### 10.7.2 Holding Values
 

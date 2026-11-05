@@ -199,6 +199,8 @@ The extern declaration names `_eko_stat` and returns `StatResult`
 language guarantee (Clause 2.6).
 
 The mechanism by which a build attaches a shim to a module is
-implementation-defined. The declaration is an ordinary extern, and the symbol
-resolves at link time (Clause 10.6). No Eko syntax attaches a shim; the
-language surface is the declaration alone.
+implementation-defined. Every implementation MUST document that mechanism
+beside its statement of conformance (Clause 2.1); the declaration is an
+ordinary extern either way, and the symbol resolves at link time
+(Clause 10.6). No Eko syntax attaches a shim; the language surface is the
+declaration alone.
