@@ -1,0 +1,50 @@
+// A `<-` chain inside a case arm: the arm's own expectation reaches
+// the chain's tail through the callback result, so a constructor
+// record literal places there as it places in the annotated function
+// (Clauses 6.3.4, 6.7.4, 7.5.3).
+
+STok: type = Sym String | Num Int
+SToken: type = [tok: STok, pos: Int]
+SStep: type = [expr: STok, rest: []SToken]
+
+_expect_sym: (s: String, toks: []SToken) -> Result ([]SToken) String =
+    case toks:
+        {t, ..rest} -> case t.tok:
+            Sym got if got == s -> Ok rest
+            _ -> Err "expected {s}"
+        {} -> Err "end of input"
+
+_step: (toks: []SToken) -> Result SStep String =
+    case toks:
+        {t, ..rest} -> Ok {expr: t.tok, rest: rest}
+        {} -> Err "end of input"
+
+chain_direct: (toks: []SToken) -> Result SStep String =
+    p <- _step(toks).try()
+    r2 <- _expect_sym(")", p.rest).try()
+    Ok {expr: p.expr, rest: r2}
+
+chain_in_arm: (name: String, toks: []SToken) -> Result SStep String =
+    case toks:
+        {t, ..rest} ->
+            case t.tok:
+                Sym got if got == "*" ->
+                    r2 <- _expect_sym(")", rest).try()
+                    Ok {expr: Sym got, rest: r2}
+                _ ->
+                    p <- _step(toks).try()
+                    r2 <- _expect_sym(")", p.rest).try()
+                    Ok {expr: p.expr, rest: r2}
+        {} -> Err "unterminated {name}"
+
+chain_tail: test =
+    toks: []SToken = {{tok: Sym "a", pos: 0}, {tok: Sym ")", pos: 1}}
+    star: []SToken = {{tok: Sym "*", pos: 0}, {tok: Sym ")", pos: 1}}
+    assert_eq(chain_direct(toks), Ok {expr: Sym "a", rest: {}})
+    assert_eq(chain_in_arm("*", star), Ok {expr: Sym "*", rest: {}})
+    assert_eq(chain_in_arm("*", toks), Ok {expr: Sym "a", rest: {}})
+    assert_eq(chain_in_arg(toks), Ok {expr: Num 1, rest: {{tok: Sym ")", pos: 1}}})
+
+chain_in_arg: (toks: []SToken) -> Result SStep String =
+    p <- _step(toks).try()
+    Ok {expr: Num 1, rest: p.rest}

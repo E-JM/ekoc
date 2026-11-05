@@ -192,6 +192,13 @@ const ek_type *ck_invert_block(ck_ctx *c, const ek_node *m,
     }
     if (has_body) {
         last = block->u.kids.data[n - 1];
+        if (expected && vt && vt != expected) {
+            /* The block's expectation belongs to the call's result,
+               and the call's open slots take it here, before the
+               continuation needs them: a tail literal that cannot
+               stand alone places at the type the chain carries. */
+            ck_conforms(c, expected, vt, 1);
+        }
         body = ck_members(c, block, start, res ? res : expected);
         b = rest_bit(c, block, start);
         if (res) {
