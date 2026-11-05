@@ -134,6 +134,7 @@ implementation that does not collide with a code in the table.
 | `E-extern-type` | an `extern` signature uses a type outside the marshalling whitelist, or contains a type variable or variadic parameter | Clause 10.2.3, Clause 10.3.5 |
 | `E-extern-arrow` | an open arrow appears in an extern signature, as the declaration's own arrow or inside a parameter type | Clause 10.2.3 |
 | `E-refutable-binding` | a refutable pattern in a value binding | Clause 7.7.1 |
+| `E-top-arrow` | an inverted binding at module top level, where the remaining block it continues does not exist | Clause 6.3.4 |
 | `E-reserved-symbol` | an `extern` names a reserved symbol | Clause 10.6 |
 
 The table is the first batch of the vocabulary. A code for a condition outside

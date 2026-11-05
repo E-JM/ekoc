@@ -145,6 +145,12 @@ const ek_type *ck_invert_binding(ck_ctx *c, const ek_node *m,
     const ek_type *fn, *cb, *vt;
 
     vt = invert_call(c, m, &fn, &cb);
+    if (top) {
+        ck_error(c, m, "E-top-arrow",
+                 "an inverted binding is legal only inside a function body: "
+                 "its continuation is the remaining block, and a module "
+                 "member has none (Clause 6.3.4)");
+    }
     if (!ck_invert_pattern(pat)) {
         ck_error(c, pat, "E-refutable-binding",
                  "an inverted binding takes a parameter-position "

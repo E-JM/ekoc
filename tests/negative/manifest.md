@@ -437,3 +437,19 @@ head_of: (xs: []Int) -> Int =
 
 Expected: `E-refutable-binding`, at the binding line. Record patterns and
 parenthesized tuple splits stay legal in the same position.
+
+## N34 — inverted binding at module top level
+
+An inverted binding continues the remaining block of a function body; a module
+member has no remaining block, so the desugaring of Clause 6.3.4 has nothing
+to place in the callback position (Clause 6.3.4).
+
+```eko
+read_config: () -> Result String String = Ok "x"
+
+line <- read_config().try()
+main: () ! = line.unwrap_or("").inspect()
+```
+
+Expected: `E-top-arrow`, at the binding line. The same binding inside a
+function body stays legal.

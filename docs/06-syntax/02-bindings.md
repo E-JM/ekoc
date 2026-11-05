@@ -140,6 +140,10 @@ Because the desugaring appends a callback in the last position, `<-` requires
 a call with a callback parameter. It is not applicable to a call that returns
 `Never` and takes no callback.
 
+The remaining block is the continuation, so an inverted binding is legal only
+inside a function body. A module member has no remaining block; an inverted
+binding at module top level is a compile error with code `E-top-arrow`.
+
 ### 6.3.5 Type Declarations
 
 A type declaration names a type, lists its type-variable binders after `type`,
