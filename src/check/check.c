@@ -242,7 +242,7 @@ static void ck_undetermined(ck_ctx *c, size_t from)
 }
 
 /* The sorted row of one node, by address. */
-static const ek_ck_row *row_of(const ck_ctx *c, const ek_node *n)
+const ek_ck_row *ck_row_of(const ck_ctx *c, const ek_node *n)
 {
     size_t lo = 0, hi = c->nrows;
 
@@ -259,16 +259,18 @@ static const ek_ck_row *row_of(const ck_ctx *c, const ek_node *n)
 }
 
 /* The composite literals placed under an undetermined expectation:
-   substitution had its chance, and one whose family stayed undecided
-   has no lowering, so the checker rejects it here, in its own
-   file. */
+   substitution had its chance. One whose family stayed undecided has
+   no lowering, so the checker rejects it here, in its own file; one
+   whose family was decided after the opaque placement reads the items
+   reads them again under that family now, with the row table
+   answering each expression's type. */
 static void sweep_literals(ck_ctx *c)
 {
     size_t i;
 
     for (i = 0; i < c->npend; i++) {
         const ek_node *n = c->pend_lits[i].node;
-        const ek_ck_row *row = row_of(c, n);
+        const ek_ck_row *row = ck_row_of(c, n);
         const ek_type *t = row ? ck_prune(row->type) : NULL;
 
         if (!t || t->kind == EK_T_IVAR || t->kind == EK_T_TVAR) {
@@ -277,7 +279,12 @@ static void sweep_literals(ck_ctx *c)
                          "a composite literal never stands alone; it "
                          "requires an expected type or an annotation "
                          "(Clause 7.5.3)");
+            continue;
         }
+        c->cur = c->pend_lits[i].mod;
+        c->sweep_recheck = 1;
+        ck_composite(c, n, t, 0);
+        c->sweep_recheck = 0;
     }
 }
 
@@ -353,7 +360,8 @@ ek_check_result ek_check(ek_resolve_result in, ek_arena *arena,
 
 void ck_row(ck_ctx *c, const ek_node *n, const ek_type *t, ek_reading r)
 {
-    if (c->oom || !n) {
+    if (c->oom || !n || c->sweep_recheck) {
+        /* A recheck reads the table; it does not grow it. */
         return;
     }
     if (c->nrows == c->crows) {

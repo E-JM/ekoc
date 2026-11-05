@@ -274,6 +274,13 @@ const ek_type *ck_expr(ck_ctx *c, const ek_node *e, const ek_type *expected)
     if (c->oom || !e) {
         return expected;
     }
+    if (c->sweep_recheck) {
+        /* The final sweep re-runs a placement with every table built:
+           an expression answers the type its row already carries. */
+        const ek_ck_row *row = ck_row_of(c, e);
+
+        return row ? row->type : ck_opaque(c);
+    }
     switch (e->kind) {
     case EK_N_INT_LIT:
     case EK_N_FLOAT_LIT:

@@ -1,0 +1,56 @@
+// The capture analysis of a `<-` continuation walks the patterns the
+// continuation matches, brace patterns included (Clauses 6.3.4, 6.8.2).
+
+_head_ok: (xs: []Int) -> Result Int String =
+    case xs:
+        {h, .._} -> Ok h
+        {} -> Err "empty"
+
+_tail: (xs: []Int) -> Result ([]Int) String =
+    case xs:
+        {_, ..rest} -> Ok rest
+        {} -> Err "empty"
+
+capture_in_arm: (xs: []Int) -> Result ([]Int) String =
+    x <- _head_ok(xs).try()
+    case xs:
+        {} -> Ok {}
+        {_, ..rest} -> _tail(rest).map((more): {x} ++ more)
+
+scrutinee_is_bound: (n: Int) -> Result Int String =
+    r <- _tail({n, n + 1}).try()
+    case r:
+        {} -> Err "empty"
+        {h, ..t} -> Ok (h + t.length())
+
+prefix_rest: (xs: []Int) -> Result Int String =
+    x <- _head_ok(xs).try()
+    case xs:
+        {..init, last} -> Ok (x + last + init.length())
+        {} -> Err "empty"
+
+multi_scrutinee: (a: []Int, b: []Int) -> Result Int String =
+    x <- _head_ok(a).try()
+    case a, b:
+        {_, ..ra}, {_, ..rb} -> Ok (x + ra.length() + rb.length())
+        _, _ -> Err "empty"
+
+alt_sum: (xs: []Int) -> Result Int String =
+    x <- _head_ok(xs).try()
+    _alt_rest(_tail(xs).unwrap_or({})).map((n): x + n)
+
+_alt_rest: (xs: []Int) -> Result Int String =
+    case xs:
+        {} -> Ok 0
+        {h, ..rest} ->
+            n <- alt_sum(rest).try()
+            Ok (h + n)
+
+mutual_cluster: test =
+    assert_eq(capture_in_arm({1, 2, 3}), Ok {1, 3})
+    assert_eq(scrutinee_is_bound(3), Ok 4)
+    assert_eq(prefix_rest({2, 5, 9}), Ok 13)
+    assert_eq(multi_scrutinee({4, 5}, {6, 7, 8}), Ok 7)
+    assert_eq(alt_sum({1, 2, 3}), Ok 6)
+    assert_eq(alt_sum({5}), Ok 5)
+    assert_eq(capture_in_arm({}), Err "empty")

@@ -381,6 +381,7 @@ void ck_pending_literal(ck_ctx *c, const ek_node *e)
     }
     c->pend_lits = grown;
     c->pend_lits[c->npend].node = e;
+    c->pend_lits[c->npend].mod = c->cur;
     c->pend_lits[c->npend].file = ck_file(c);
     c->npend++;
 }

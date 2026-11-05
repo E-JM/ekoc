@@ -74,10 +74,11 @@ typedef struct ck_scope {
     size_t count, cap;
 } ck_scope;
 
-/* One composite literal awaiting its family: the node and the file it
-   was checked in. */
+/* One composite literal awaiting its family: the node, the module it
+   was checked in, and its file for the family-less report. */
 typedef struct {
     const ek_node *node;
+    const ek_surface *mod;
     const char *file;
 } ck_pend_lit;
 
@@ -134,6 +135,10 @@ typedef struct {
        sweep when substitution left the family undecided. */
     ck_pend_lit *pend_lits;
     size_t npend, cpend;
+    /* Set while the final sweep re-runs a decided literal's placement:
+       expressions answer the types their rows already carry, and no
+       new rows record. */
+    int sweep_recheck;
     /* The instantiation graph: the body being checked, its rigid
        variables, the call marked as the current callee's, and the
        instantiate capture of its scheme variables. */
@@ -413,6 +418,7 @@ const ek_type *ck_place(ck_ctx *c, const ek_node *lit, const ek_type *expected,
 const ek_type *ck_composite(ck_ctx *c, const ek_node *e,
                             const ek_type *expected, int allow_partial);
 void ck_pending_literal(ck_ctx *c, const ek_node *e);
+const ek_ck_row *ck_row_of(const ck_ctx *c, const ek_node *n);
 
 /* op.c: operator typing. */
 const ek_type *ck_unary(ck_ctx *c, const ek_node *e, const ek_type *expected);
