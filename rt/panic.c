@@ -3,6 +3,7 @@
 #include "ekort.h"
 
 #include <stddef.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -25,13 +26,35 @@ static void write_all(const char *s)
     }
 }
 
+/* One backtrace frame: "  at name (file:line:column)", the live calls
+   innermost first. The frame text is fixed and allocation-free. */
+static void write_frame(size_t i)
+{
+    char pos[96];
+
+    write_all("  at ");
+    write_all(ek_frames[i].name);
+    write_all(" (");
+    write_all(ek_frames[i].file);
+    snprintf(pos, sizeof pos, ":%d:%d)\n", ek_frames[i].line,
+             ek_frames[i].col);
+    write_all(pos);
+}
+
 void ek_panic(const char *code, const char *msg)
 {
+    size_t i = ek_frame_depth;
+
     write_all("panic [");
     write_all(code);
     write_all("]: ");
     write_all(msg);
     write_all("\n");
+    while (i-- > 0) {
+        if (i < EK_FRAME_MAX) {
+            write_frame(i);
+        }
+    }
     exit(1);
 }
 

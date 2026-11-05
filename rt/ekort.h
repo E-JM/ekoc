@@ -910,7 +910,23 @@ void ek_retain(ek_val v);
    may reach zero, but it is never dropped and never freed. */
 void ek_release(ek_val v);
 
-/* Writes the single line "panic [code]: message" to standard error and
+/* The frame stack behind the panic backtrace: the generated code of a
+   named function pushes its source-level name and declaration position
+   on entry and pops it at the return. Beyond the bound the newest
+   frames are dropped and the depth keeps counting. */
+#define EK_FRAME_MAX 256
+typedef struct {
+    const char *name;
+    const char *file;
+    int line;
+    int col;
+} ek_frame;
+extern ek_frame ek_frames[EK_FRAME_MAX];
+extern size_t ek_frame_depth;
+void ek_frame_push(const char *name, const char *file, int line, int col);
+void ek_frame_pop(void);
+
+/* Writes the panic line and the frame backtrace to standard error and
    exits with status 1. No release pass runs and nothing else is
    written. code and message are null-terminated strings. */
 void ek_panic(const char *code, const char *msg);

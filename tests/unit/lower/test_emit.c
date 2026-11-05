@@ -88,7 +88,7 @@ static void ownership(void)
     /* a binding transfers; the function's own bindings release in
        reverse order before the return */
     EK_CHECK(lfx_has(&f, "ek_val v = t2;"));
-    EK_CHECK(lfx_has(&f, "ek_release(v);\n    return t3;"));
+    EK_CHECK(lfx_has(&f, "ek_release(v);\n    ek_frame_pop();\n    return t3;"));
     lfx_end(&f);
 }
 

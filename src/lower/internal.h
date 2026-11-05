@@ -261,10 +261,15 @@ struct lower_ctx {
     const ek_symbol *entry;
     const char *entry_mangled;
     const char *file;
+    /* The source position the last #line directive named: a statement
+       marks its position only when the emission moved. */
+    const char *line_file;
+    int line_no;
     unsigned depth;
     unsigned temp; /* per-function temp counter */
     int in_tail;   /* the position being emitted is a tail of the
                       function being emitted */
+    int framed;    /* the function being emitted pushed a frame */
     /* The self tail-call transform of the function being emitted: its
        own symbol (NULL inside a closure body), its owned parameter
        locals, the borrow-free scope the release walk stops at, and the

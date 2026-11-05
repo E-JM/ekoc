@@ -26,6 +26,14 @@ static const char *prog_arith =
     "        _\n"
     "    _\n";
 
+static const char *prog_frames =
+    "inner: (n: Int) -> Int =\n"
+    "    case n:\n"
+    "        0 -> panic(\"bottom\")\n"
+    "        _ -> inner(n - 1)\n"
+    "outer: (n: Int) -> Int = inner(n) * 2\n"
+    "main: (out: Out) ! = out.println(outer(3).show())\n";
+
 static const char *prog_div =
     "main: () -> _ =\n"
     "    a = 6\n"
@@ -300,6 +308,26 @@ static void arithmetic_program(void)
     if (status >= 0 && WIFEXITED(status)) {
         EK_CHECK_U64(WEXITSTATUS(status), 0);
     }
+}
+
+/* The panic backtrace: innermost frame first, source-level names, one
+   frame for the self tail caller (Clause 8.8.3), and the frame text of
+   Annex B.6. */
+static void panic_backtrace(void)
+{
+    char err[512];
+    int status = gate(prog_frames, "lower_run_frames", 4, err, sizeof err);
+
+    if (status < 0 || !WIFEXITED(status)) {
+        return;
+    }
+    EK_CHECK_U64(WEXITSTATUS(status), 1);
+    EK_CHECK(strstr(err, "panic [P-panic]: bottom\n") != NULL);
+    EK_CHECK(strstr(err, "  at test.inner (test.eko:1:1)\n") != NULL);
+    EK_CHECK(strstr(err, "  at test.outer (test.eko:5:1)\n") != NULL);
+    EK_CHECK(strstr(err, "  at test.main (test.eko:6:1)\n") != NULL);
+    EK_CHECK(strstr(err, "at test.inner\n  at test.inner") == NULL);
+    EK_CHECK(strstr(err, "ek_frame") == NULL);
 }
 
 static void division_by_zero(void)
@@ -750,6 +778,7 @@ int main(void)
         return 1;
     }
     arithmetic_program();
+    panic_backtrace();
     division_by_zero();
     block_scoping();
     string_ownership();

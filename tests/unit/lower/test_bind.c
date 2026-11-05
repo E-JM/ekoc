@@ -37,7 +37,7 @@ static void discard_rebind(void)
                          "    ek_release(t0);\n    ek_release(t1);"));
     EK_CHECK(lfx_lacks(&f, "ek_val _"));
     /* the binding statement's value is the unit value */
-    EK_CHECK(lfx_has(&f, "ek_val t2 = ek_val_unit();\n    return t2;"));
+    EK_CHECK(lfx_has(&f, "ek_val t2 = ek_val_unit();\n    ek_frame_pop();\n    return t2;"));
     lfx_end(&f);
 }
 

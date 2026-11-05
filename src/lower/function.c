@@ -289,6 +289,25 @@ static const char *declare_function(lower_ctx *c, const ek_symbol *sym,
    the local's own reference, so both keep the prologue keep. A body
    that never names the parameter still consumes the slot, so the C
    parameter stays used. The two body scans live in borrow.c. */
+/* The panic frame of one named function: its source-level qualified
+   name and declaration position. A function without a declaration —
+   a derived or synthesized one — leaves no frame. */
+static void emit_frame_push(lower_ctx *c, const ek_symbol *sym)
+{
+    if (!sym->decl) {
+        return;
+    }
+    if (sym->owner) {
+        lower_emitf(c, "    ek_frame_push(\"%s.%s.%s\", \"%s\", %d, %d);\n",
+                    sym->module, sym->owner, sym->name, c->file,
+                    sym->decl->line, sym->decl->col);
+    } else {
+        lower_emitf(c, "    ek_frame_push(\"%s.%s\", \"%s\", %d, %d);\n",
+                    sym->module, sym->name, c->file, sym->decl->line,
+                    sym->decl->col);
+    }
+}
+
 static void emit_prologue(lower_ctx *c, lower_scope *params,
                           const ek_symbol *sym)
 {
@@ -296,6 +315,8 @@ static void emit_prologue(lower_ctx *c, lower_scope *params,
     int retry = lower_has_self_tail(c, sym, body);
     size_t i;
 
+    emit_frame_push(c, sym);
+    c->framed = sym->decl != NULL;
     for (i = 0; i < params->nloc; i++) {
         lower_local *p = &params->locs[i];
 
@@ -337,6 +358,11 @@ static void finish_function(lower_ctx *c, lower_scope *params,
     }
     lower_release_scope(c, top);
     lower_release_scope(c, params);
+    if (c->framed) {
+        lower_pad(c);
+        lower_emitf(c, "ek_frame_pop();\n");
+        c->framed = 0;
+    }
     lower_pad(c);
     lower_emitf(c, "return %s;\n", ret);
 }
