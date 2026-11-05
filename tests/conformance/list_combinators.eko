@@ -1,0 +1,45 @@
+// The early-exit and update families: fold_until stops at its own
+// answer, find_map yields the first mapped hit, set is a domain-checked
+// update, and rep repeats (Clauses 9.10.1, 9.11.1).
+
+sum_all: (xs: []Int) -> Int =
+    xs.fold_until(0, (acc, e): {acc + e, True})
+
+sum_small: (xs: []Int) -> Int =
+    xs.fold_until(0, (acc, e):
+        if acc + e > 10: {acc, False}
+        else: {acc + e, True})
+
+until_answers: test =
+    assert_eq(sum_all({1, 2, 3}), 6)
+    assert_eq(sum_all({}), 0)
+    assert_eq(sum_small({1, 2, 3, 4, 5, 6}), 10)
+    assert_eq(sum_small({}), 0)
+    assert_eq(sum_small({5, 20, 1}), 5)
+
+first_long: (s: String) -> Option String =
+    case s.split(" "):
+        {w, .._} -> if w.length() > 1: Some w else: None
+        {} -> None
+
+first_mapped: test =
+    words: []String = {"ab c", "x", "d e"}
+    none: []String = {"x", "y"}
+    assert_eq(words.find_map(first_long), Some "ab")
+    assert_eq(none.find_map(first_long), None)
+    empty: []String = {}
+    assert_eq(empty.find_map(first_long), None)
+
+set_updates: test =
+    xs: []Int = {1, 2, 3}
+    assert_eq(xs.set(1, 9), Some {1, 9, 3})
+    assert_eq(xs.set(0, 8), Some {8, 2, 3})
+    assert_eq(xs.set(2, 7), Some {1, 2, 7})
+    assert_eq(xs.set(3, 0), None)
+    assert_eq(xs.set(-1, 0), None)
+
+repeats: test =
+    assert_eq("ab".rep(3), "ababab")
+    assert_eq("x".rep(1), "x")
+    assert_eq("x".rep(0), "")
+    assert_eq("".rep(5), "")

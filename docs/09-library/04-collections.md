@@ -19,8 +19,12 @@ makes the call pure, and a world-touching callback makes it world-touching
 (Clause 7.9). Iteration combinators and tail positions follow Clause 8.8.
 `List.slice` takes a start and a length and yields `Option []t`. It never
 clamps: a request that does not lie entirely inside the list yields `None`.
-`List.join` concatenates the derived `show` forms with a separator; an element
-type without `show` is a compile error, by the same rule as interpolation.
+`List.set` is the named update at an index, with the same domain rule as
+`slice`. `List.fold_until` is the early-exit fold: its callback returns the
+next accumulator and whether to continue. `List.find_map` yields the first
+`Some` its callback produces and stops there. `List.join` concatenates the
+derived `show` forms with a separator; an element type without `show` is a
+compile error, by the same rule as interpolation.
 `List.sort` uses the derived `<` ordering; a record has no `<`, so
 instantiating `List.sort` on a record is a compile error. `List.sort_by` takes
 an explicit less-than comparator. Both sorts are stable, and `List.sort_by`
@@ -115,7 +119,8 @@ replaces the first occurrence only. `String.slice` takes a start and a length
 in the Unicode scalar domain, yields `Option String`, and never clamps; a
 request that does not lie entirely inside the string yields `None`. Its cost
 is O(n). `List.take` and `List.drop` truncate; `String.slice` does not.
-`String.trim`, `String.trim_start`, and `String.trim_end` remove Unicode
+`String.rep` repeats a string a `UInt` count of times. `String.trim`,
+`String.trim_start`, and `String.trim_end` remove Unicode
 `White_Space` at the requested ends. `String.split(s, sep)` splits on every
 occurrence of `sep` and keeps empty fields, whether leading, trailing, or
 between adjacent separators. The separator MUST be non-empty; an empty

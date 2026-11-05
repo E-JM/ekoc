@@ -251,6 +251,42 @@ const char *const ek_std_source_parts[] = {
     "    else:\n",
     "        Some (List.drop(xs, start).take(len))\n",
     "\n",
+    "// An early-exit fold: the callback returns the next accumulator and\n",
+    "// whether to keep going, so a search over the list stops at its own\n",
+    "// answer.\n",
+    "List.fold_until: (xs: []t, init: u, f: (u, t) \?-> [u, Bool]) \?-> u =\n",
+    "    case xs:\n",
+    "        {} -> init\n",
+    "        {h, ..rest} ->\n",
+    "            case f(init, h):\n",
+    "                {acc, True} -> List.fold_until(rest, acc, f)\n",
+    "                {acc, False} -> acc\n",
+    "\n",
+    "// The first mapped hit: the first Some the callback yields is the\n",
+    "// answer and the rest of the list never runs.\n",
+    "List.find_map: (xs: []t, f: (t) \?-> Option u) \?-> Option u =\n",
+    "    case xs:\n",
+    "        {} -> None\n",
+    "        {h, ..rest} ->\n",
+    "            case f(h):\n",
+    "                Some v -> Some v\n",
+    "                None -> List.find_map(rest, f)\n",
+    "\n",
+    "// A named O(n) update: the new list carries v at the index, and an\n",
+    "// index outside the list is a domain miss.\n",
+    "List.set: (xs: []t, i: Int, v: t) -> Option ([]t) =\n",
+    "    if i < 0 || i >= xs.length():\n",
+    "        None\n",
+    "    else:\n",
+    "        Some (List.take(xs, i) ++ {v} ++ List.drop(xs, i + 1))\n",
+    "\n",
+    "// One string repeated n times.\n",
+    "String.rep: (s: String, n: UInt) -> String =\n",
+    "    if n == 0:\n",
+    "        \"\"\n",
+    "    else:\n",
+    "        s ++ String.rep(s, n - 1)\n",
+    "\n",
     "// The Result combinators behind the inverted binding: the payload and\n",
     "// error variables run through the callbacks. The maps are open-bit\n",
     "// dispatchers.\n",
@@ -527,8 +563,8 @@ const char *const ek_std_source_parts[] = {
     "        False -> _\n",
 };
 
-const size_t ek_std_source_nparts = 520;
-const size_t ek_std_source_len = 16789;
+const size_t ek_std_source_nparts = 556;
+const size_t ek_std_source_len = 17956;
 
 char *ek_std_source_join(ek_arena *arena)
 {

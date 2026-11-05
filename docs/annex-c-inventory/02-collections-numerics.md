@@ -25,11 +25,17 @@ their signature carries a world-bit marker.
 | `List.take_while`, `List.drop_while` | `([]t, (t) ?-> Bool) ?-> []t` | Clause 9.10.1 |
 | `List.join` | `([]t, String) -> String` | Clause 9.10.1 |
 | `List.slice` | `([]t, Int, Int) -> Option []t` | Clause 9.10.1 |
+| `List.set` | `([]t, Int, t) -> Option []t` | Clause 9.10.1 |
+| `List.fold_until` | `([]t, u, (u, t) ?-> [u, Bool]) ?-> u` | Clause 9.10.1 |
+| `List.find_map` | `([]t, (t) ?-> Option u) ?-> Option u` | Clause 9.10.1 |
 
 `get` is O(n); index syntax does not exist for any structure (Clause 6.10).
-`append` is the body of `++` (Clause 7.8.6). `map`, `filter`, `fold`, `each`,
+`append` is the body of `++` (Clause 7.8.6). `map`, `filter`, `fold`, `fold_until`, `find_map`, `each`,
 `each_with_index`, `any`, `all`, `find_by`, `sort_by`, `zip_with`,
 `take_while`, and `drop_while` are open-bit dispatchers (Clause 7.9.6).
+`fold_until`'s callback returns the next accumulator and whether to
+continue, so an early exit is the callback's own answer; `find_map`
+yields the first `Some` and never runs the rest.
 `take` and `drop` truncate: a count beyond the length takes or drops the whole
 list, and a negative count counts as zero. `slice` is a domain check over a start and a length:
 a request that does not lie entirely inside the list yields `None`, and a
@@ -114,6 +120,7 @@ The namespace of `String` is `String` (Clause 7.4.3).
 | `String.trim`, `String.trim_start`, `String.trim_end` | `(String) -> String` | Clause 9.11.1 |
 | `String.to_bytes` | `(String) -> Bytes` | Clause 9.5.3 |
 | `String.pad_left`, `String.pad_right` | `(String, UInt, Char) -> String` | Clause 9.13.1 |
+| `String.rep` | `(String, UInt) -> String` | Clause 9.11.1 |
 
 `length` counts Unicode scalar values. `at` is O(n) and yields `None` when the
 index is outside the scalar domain. `chars` is the bridge to `List`; no

@@ -244,6 +244,42 @@ List.slice: (xs: []t, start: Int, len: Int) -> Option ([]t) =
     else:
         Some (List.drop(xs, start).take(len))
 
+// An early-exit fold: the callback returns the next accumulator and
+// whether to keep going, so a search over the list stops at its own
+// answer.
+List.fold_until: (xs: []t, init: u, f: (u, t) ?-> [u, Bool]) ?-> u =
+    case xs:
+        {} -> init
+        {h, ..rest} ->
+            case f(init, h):
+                {acc, True} -> List.fold_until(rest, acc, f)
+                {acc, False} -> acc
+
+// The first mapped hit: the first Some the callback yields is the
+// answer and the rest of the list never runs.
+List.find_map: (xs: []t, f: (t) ?-> Option u) ?-> Option u =
+    case xs:
+        {} -> None
+        {h, ..rest} ->
+            case f(h):
+                Some v -> Some v
+                None -> List.find_map(rest, f)
+
+// A named O(n) update: the new list carries v at the index, and an
+// index outside the list is a domain miss.
+List.set: (xs: []t, i: Int, v: t) -> Option ([]t) =
+    if i < 0 || i >= xs.length():
+        None
+    else:
+        Some (List.take(xs, i) ++ {v} ++ List.drop(xs, i + 1))
+
+// One string repeated n times.
+String.rep: (s: String, n: UInt) -> String =
+    if n == 0:
+        ""
+    else:
+        s ++ String.rep(s, n - 1)
+
 // The Result combinators behind the inverted binding: the payload and
 // error variables run through the callbacks. The maps are open-bit
 // dispatchers.
