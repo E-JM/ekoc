@@ -173,8 +173,17 @@ void ck_reconcile(ck_ctx *c, const ek_node *at, const ek_type *bound,
         body = ck_body_bit(c, val);
     }
     if (body != own) {
-        ck_error(c, at, "E-world-bit",
-                 "the declared bit is %s, the body bit is %s (Clause "
-                 "7.9.2)", bit_name(own), bit_name(body));
+        if (bound && bound->kind == EK_T_FN) {
+            ck_error(c, at, "E-world-bit",
+                     "the declared bit is %s, the body bit is %s (Clause "
+                     "7.9.2)", bit_name(own), bit_name(body));
+        } else {
+            ck_error(c, at, "E-world-bit",
+                     "the declared bit is %s, the body bit is %s; a value "
+                     "binding carries no bit — bind the call's result "
+                     "inside a world-touching function, or declare a "
+                     "function and write the call in its body (Clause "
+                     "7.9.2)", bit_name(own), bit_name(body));
+        }
     }
 }

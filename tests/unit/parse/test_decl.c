@@ -335,6 +335,15 @@ static void extern_decl(void)
     EK_CHECK_U64(n->u.extern_decl.type->u.t_fn.arrow, EK_ARROW_PURE);
     pfx_end(&f);
 
+    /* The tail may sit on a line of its own under the binding. */
+    pfx_begin(&f, "_stat: (p: String) !-> I32 =\n    extern \"stat\"\n");
+    EK_CHECK_U64(pfx_errors(&f), 0);
+    EK_CHECK_U64(f.ast.module->u.kids.count, 1);
+    n = pfx_item(&f, 0);
+    EK_CHECK_U64(n->kind, EK_N_EXTERN_DECL);
+    EK_CHECK_STR(n->u.extern_decl.symbol, "stat");
+    pfx_end(&f);
+
     pfx_begin(&f,
         "_qsort: (base: C.Ptr.Void, n: C.Size, size: C.Size,\n"
         "         compar: (C.Ptr.Void, C.Ptr.Void) -> Int) ! = "
