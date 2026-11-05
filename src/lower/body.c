@@ -278,6 +278,19 @@ static void emit_rebind(lower_ctx *c, lower_scope *scope, const ek_node *m)
     lower_emitf(c, "%s = %s;\n", loc->cname, t);
 }
 
+/* The source position of one member, for the debugger mapping: a
+   statement marks its position only when the emission moved to a new
+   line or file. */
+static void mark_line(lower_ctx *c, const ek_node *m)
+{
+    if (c->line_file == c->file && c->line_no == m->line) {
+        return;
+    }
+    c->line_file = c->file;
+    c->line_no = m->line;
+    lower_emitf(c, "#line %d \"%s\"\n", m->line, c->file);
+}
+
 /* The members of a body from one slice: the statements, then the value
    of the final member. An inverted binding consumes the members after
    it as its callback body, so the walk ends there. A final binding's
@@ -300,6 +313,7 @@ lower_val lower_members(lower_ctx *c, lower_scope *scope,
             c->in_tail = saved;
             return out;
         }
+        mark_line(c, m);
         emit_stmt(c, scope, m);
     }
     if (n == 0) {
@@ -316,6 +330,7 @@ lower_val lower_members(lower_ctx *c, lower_scope *scope,
         const ek_node *pat = m->u.bind.pattern;
         const lower_local *loc = NULL;
 
+        mark_line(c, m);
         emit_stmt(c, scope, m);
         if (pat && pat->kind == EK_N_P_VAR && pat->u.path.count == 1) {
             loc = scope_find_local(scope, pat->u.path.data[0]);
@@ -327,6 +342,7 @@ lower_val lower_members(lower_ctx *c, lower_scope *scope,
         return lower_val_unit();
     }
     c->in_tail = saved;
+    mark_line(c, m);
     out = lower_expr(c, scope, m);
     c->in_tail = saved;
     return out;
