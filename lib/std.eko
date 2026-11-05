@@ -229,6 +229,11 @@ _join_rev: (xs: []t, acc: String, sep: String) -> String =
             if acc == "": _join_rev(rest, h.show(), sep)
             else: _join_rev(rest, h.show() ++ sep ++ acc, sep)
 
+// The pairs of one dictionary in insertion order, each a tuple of
+// its key and value.
+Dict.to_list: (d: [k]v) -> [][k, v] =
+    List.reverse(d.fold({}, (acc, key, val): {{key, val}} ++ acc))
+
 // A slice is a start and a length; a request outside the list is a
 // domain miss, never a clamp. The domain is judged without adding the
 // two counts, so a start near the end of the word cannot overflow its

@@ -56,6 +56,7 @@ The namespace of `[k]v` is `Dict` (Clause 7.4.3). All members are pure.
 | `Dict.filter` | `([k]v, (k, v) ?-> Bool) ?-> [k]v` | Clause 9.10.2 |
 | `Dict.fold` | `([k]v, u, (u, k, v) ?-> u) ?-> u` | Clause 9.10.2 |
 | `Dict.each` | `([k]v, (k, v) ?-> _) ?-> _` | Clause 9.10.2 |
+| `Dict.to_list` | `([k]v) -> [][k, v]` | Clause 9.10.2 |
 
 `get` is O(1), and iteration follows insertion order (Clause 9.10.2).
 `insert` and `remove` return a new dictionary and never mutate the receiver;

@@ -236,6 +236,11 @@ const char *const ek_std_source_parts[] = {
     "            if acc == \"\": _join_rev(rest, h.show(), sep)\n",
     "            else: _join_rev(rest, h.show() ++ sep ++ acc, sep)\n",
     "\n",
+    "// The pairs of one dictionary in insertion order, each a tuple of\n",
+    "// its key and value.\n",
+    "Dict.to_list: (d: [k]v) -> [][k, v] =\n",
+    "    List.reverse(d.fold({}, (acc, key, val): {{key, val}} ++ acc))\n",
+    "\n",
     "// A slice is a start and a length; a request outside the list is a\n",
     "// domain miss, never a clamp. The domain is judged without adding the\n",
     "// two counts, so a start near the end of the word cannot overflow its\n",
@@ -522,8 +527,8 @@ const char *const ek_std_source_parts[] = {
     "        False -> _\n",
 };
 
-const size_t ek_std_source_nparts = 515;
-const size_t ek_std_source_len = 16594;
+const size_t ek_std_source_nparts = 520;
+const size_t ek_std_source_len = 16789;
 
 char *ek_std_source_join(ek_arena *arena)
 {

@@ -1,0 +1,21 @@
+// Dictionary iteration follows insertion order, and to_list yields the
+// pairs as tuples in that order (Clause 9.10.2).
+
+insertion_order: test =
+    d: [String]Int = {}
+    d := d.insert("a", 1).insert("b", 2).insert("c", 3)
+    assert_eq(d.to_list(), {{"a", 1}, {"b", 2}, {"c", 3}})
+
+reinsert_keeps_place: test =
+    d: [String]Int = {}
+    d := d.insert("a", 1).insert("b", 2).insert("a", 9)
+    assert_eq(d.to_list(), {{"a", 9}, {"b", 2}})
+
+remove_then_insert: test =
+    d: [String]Int = {}
+    d := d.insert("a", 1).insert("b", 2)
+    assert_eq(d.remove("a").insert("a", 7).to_list(), {{"b", 2}, {"a", 7}})
+
+empty_dictionary: test =
+    d: [Int]Int = {}
+    assert_eq(d.to_list(), {})

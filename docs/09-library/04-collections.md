@@ -41,7 +41,8 @@ O(n²) (Clause 8.10). `Dict.merge` and `++` return a dictionary in which the
 right operand wins on duplicate keys; the result keeps the left operand's
 order and appends the right operand's new keys in right order. `Dict.map`,
 `Dict.filter`, `Dict.fold`, and `Dict.each` dispatch on the key and value in
-insertion order.
+insertion order. `Dict.to_list` yields the pairs as tuples in insertion
+order.
 Iteration over a dictionary follows insertion order; this order is part of the
 observable result of `to_list`, `show`, and JSON rendering of a string-keyed
 dictionary. `Dict.eq` compares entries, not insertion order: two dictionaries
