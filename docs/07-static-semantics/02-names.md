@@ -222,6 +222,13 @@ selects one.
 A constructor name that resolves to no visible constructor is `E-unbound-name`
 in value and pattern heads alike (Annex B).
 
+A standard-library root type is a type, not a module: `Json` is not a module in
+scope, so its constructors have no module-qualified spelling. `Json.Str` is
+`E-unbound-name`, and a constructor of `Json` is written bare — `Str "x"`, or
+`Str s` in a pattern — anchored by the expected type or the scrutinee type
+(Clauses 7.4.4, 7.5.2). A companion module does have a stem, so its
+constructors admit the qualified spelling as well (Clause 9.1.3).
+
 Signature overloading does not exist. One name denotes one binding in its
 layer, with one signature; the same name with different signatures is not
 admitted (Clause 6.10).

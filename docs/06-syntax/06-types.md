@@ -104,6 +104,19 @@ A composite argument MUST be parenthesized; a bare composite atom in
 argument position is an error, and the diagnostic identifies this clause. A
 type variable MUST NOT head an application: `t Int` is an error.
 
+The composite arguments are the tuple, record, and function types. A tuple
+argument is written with its parentheses:
+
+```eko
+r: Result ([Expr, []Token]) String      // one tuple argument
+bad: Result [Expr, []Token] String      // error: the `[` starts no argument
+```
+
+The bare form stops the application at the `[` and is an error. When the
+parenthesized form reads badly, name the composite — a record type is the
+usual choice — and apply the name: `Result Parsed String`. An application is
+an atom itself, so a parenthesized application nests: `Option (Option Int)`.
+
 ### 6.9.5 Type Declarations
 
 A `type` declaration is specified in Clause 6.3.5. Its right-hand side is a
