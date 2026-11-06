@@ -6,16 +6,17 @@
 
 /* Dictionaries are immutable maps with copy-on-insert: setting a key
    builds a fresh table, and the old dictionary keeps its references.
-   Keys are inline scalars, hashed with FNV-1a over the tag byte and
-   the payload bytes; a key that refers to an object whose typeinfo
-   carries the structural hash spreads the hook's word instead, and
-   the eq hook answers the lookups over one family. Keys whose family
-   carries no hooks keep the payload discipline, which keys a heap
-   object on its address. The table is open addressing with linear
-   probing that grows from eight slots and stays at or under seventy
-   percent full, so a probe always finds an empty slot. The build order
-   of each table is kept in a chain of entry indices, so iteration
-   walks insertion order even after the keys rehash into new slots. */
+   Each dictionary carries the eq and hash hooks its key domain was
+   built with, and every derived construction clones the source's
+   pair, so one domain keys the same way across a whole build chain.
+   The domains the runtime itself can key -- the scalars, the Float
+   rules, and the text families -- answer before any hook runs; a
+   reference key outside them is answered by the carried pair. The
+   table is open addressing with linear probing that grows from eight
+   slots and stays at or under seventy percent full, so a probe always
+   finds an empty slot. The build order of each table is kept in a
+   chain of entry indices, so iteration walks insertion order even
+   after the keys rehash into new slots. */
 
 /* The load limit and the starting capacity of the table. */
 #define DICT_LOAD_NUM 10
@@ -38,6 +39,8 @@ typedef struct {
     size_t capacity;
     uint32_t head;
     uint32_t tail;
+    ek_key_eq_fn keq;
+    ek_key_hash_fn kh;
     ek_dict_entry *entries;
 } ek_dict;
 
@@ -57,63 +60,39 @@ static int text_key(const ek_val *v)
         && v->as.ref->info->kind == EK_KIND_STR;
 }
 
-/* Nonzero when the key refers to an object whose family carries the
-   structural hash: the table spreads the hook's word over the slots. */
-static int hooked_key(const ek_val *v)
+/* The slot word of a key: the carried hash hook answers the domains
+   the runtime cannot key itself; the table spreads the hook's word
+   over the slots. A missing hook is a key domain the table cannot
+   key, not a lookup miss. */
+static unsigned long hash_key(const ek_dict *dict, ek_val v)
 {
-    return v->tag == EK_VAL_REF && v->as.ref != NULL
-        && v->as.ref->info->hash != NULL;
+    if (text_key(&v))
+        return (unsigned long)ek_key_hash(v);
+    if (v.tag == EK_VAL_REF && dict->kh)
+        return dict->kh(v);
+    if (v.tag != EK_VAL_REF)
+        return (unsigned long)ek_key_hash(v);
+    ek_abort("the dictionary key carries no hash hook");
+    return 0;
 }
 
-/* FNV-1a over the tag byte and the identifying bytes, so keys of
-   different tags stay distinct even when their payloads coincide. */
-static uint64_t hash_key(ek_val v)
+/* Nonzero when the two keys identify the same mapping. The fast
+   domains answer first; a reference key outside them goes to the
+   carried eq hook. A missing hook is a key domain the table cannot
+   key, not a lookup miss. */
+static int key_eq(const ek_dict *dict, ek_val a, ek_val b)
 {
-    uint64_t h = 14695981039346656037ULL;
-    const unsigned char *p = (const unsigned char *)&v.as;
-    unsigned long kh = 0;
-    double zf;
-    size_t width;
-
-    if (text_key(&v)) {
-        p = (const unsigned char *)ek_str_cstr(v.as.ref);
-        width = ek_str_len(v.as.ref);
-    } else if (hooked_key(&v)) {
-        kh = v.as.ref->info->hash(v);
-        p = (const unsigned char *)&kh;
-        width = sizeof kh;
-    } else if (v.tag == EK_VAL_FLOAT) {
-        /* the two zeros hash as one key, the way they compare */
-        zf = v.as.f == 0.0 ? 0.0 : v.as.f;
-        p = (const unsigned char *)&zf;
-        width = sizeof zf;
-    } else {
-        width = payload_width(&v);
-    }
-    h = (h ^ (uint64_t)v.tag) * 1099511628211ULL;
-    for (size_t i = 0; i < width; i++)
-        h = (h ^ p[i]) * 1099511628211ULL;
-    return h;
-}
-
-/* Nonzero when the two keys identify the same mapping. One family is
-   the precheck: the typeinfo pointer separates the constructors before
-   any hook runs, and the hook answers within it. Keys of families
-   without hooks key on the object's address. */
-static int key_eq(ek_val a, ek_val b)
-{
-    if (text_key(&a) || text_key(&b)) {
+    if (text_key(&a) || text_key(&b))
         return text_key(&a) && text_key(&b)
             && ek_str_eq(a.as.ref, b.as.ref);
-    }
     if (a.tag != b.tag)
         return 0;
     if (a.tag == EK_VAL_REF) {
         if (a.as.ref == NULL || b.as.ref == NULL)
             return a.as.ref == b.as.ref;
-        if (a.as.ref->info == b.as.ref->info && a.as.ref->info->eq)
-            return a.as.ref->info->eq(a, b);
-        return a.as.ref == b.as.ref;
+        if (dict->keq)
+            return dict->keq(a, b);
+        ek_abort("the dictionary key carries no equality hook");
     }
     if (a.tag == EK_VAL_FLOAT)
         return a.as.f == b.as.f;
@@ -122,12 +101,12 @@ static int key_eq(ek_val a, ek_val b)
 
 /* The index of the slot key occupies, or of the free slot where it
    belongs. */
-static size_t probe(const ek_dict_entry *entries, size_t capacity, ek_val key)
+static size_t probe(const ek_dict *dict, ek_val key)
 {
-    size_t mask = capacity - 1;
-    size_t i = (size_t)hash_key(key) & mask;
+    size_t mask = dict->capacity - 1;
+    size_t i = hash_key(dict, key) & mask;
 
-    while (entries[i].used && !key_eq(entries[i].key, key))
+    while (dict->entries[i].used && !key_eq(dict, dict->entries[i].key, key))
         i = (i + 1) & mask;
     return i;
 }
@@ -139,28 +118,32 @@ static const ek_dict_entry *find_entry(const ek_dict *dict, ek_val key)
 
     if (dict->count == 0)
         return NULL;
-    i = probe(dict->entries, dict->capacity, key);
+    i = probe(dict, key);
     return dict->entries[i].used ? &dict->entries[i] : NULL;
 }
 
-/* A dictionary object with no table: the empty dictionary. The chain
-   of none starts and ends at the no-entry mark. */
-static ek_dict *dict_new(void)
+/* A dictionary object with no table: the empty dictionary over the
+   given key hooks. The chain of none starts and ends at the no-entry
+   mark. */
+static ek_dict *dict_new(ek_key_eq_fn keq, ek_key_hash_fn kh)
 {
     ek_dict *dict = ek_rt_alloc_zeroed(sizeof *dict);
 
     dict->obj.info = &ek_typeinfo_dict;
     dict->obj.rc = 1;
+    dict->keq = keq;
+    dict->kh = kh;
     dict->head = DICT_NO_ENTRY;
     dict->tail = DICT_NO_ENTRY;
     return dict;
 }
 
 /* A fresh dictionary whose table holds count entries below the load
-   limit: the capacity starts at eight and doubles until it fits. */
-static ek_dict *dict_sized_for(size_t count)
+   limit, carrying the source's key hooks: the capacity starts at
+   eight and doubles until it fits. */
+static ek_dict *dict_sized_for(size_t count, const ek_dict *src)
 {
-    ek_dict *dict = dict_new();
+    ek_dict *dict = dict_new(src->keq, src->kh);
     size_t capacity = DICT_MIN_CAP;
 
     while (count * DICT_LOAD_NUM > capacity * DICT_LOAD_DEN)
@@ -174,7 +157,7 @@ static ek_dict *dict_sized_for(size_t count)
    appends the slot to the build-order chain. */
 static void entry_store(ek_dict *dict, ek_val key, ek_val val)
 {
-    size_t i = probe(dict->entries, dict->capacity, key);
+    size_t i = probe(dict, key);
     ek_dict_entry *slot = &dict->entries[i];
 
     ek_retain(key);
@@ -191,9 +174,9 @@ static void entry_store(ek_dict *dict, ek_val key, ek_val val)
     dict->count++;
 }
 
-ek_val ek_dict_new(void)
+ek_val ek_dict_new(ek_key_eq_fn keq, ek_key_hash_fn kh)
 {
-    return ek_val_ref(&dict_new()->obj);
+    return ek_val_ref(&dict_new(keq, kh)->obj);
 }
 
 int ek_dict_get(ek_val d, ek_val key, ek_val *out)
@@ -208,10 +191,12 @@ int ek_dict_get(ek_val d, ek_val key, ek_val *out)
 }
 
 /* Copies the mappings of a and b into fresh in that order; when
-   overwrite is nonzero the mappings of b win on duplicate keys. */
+   overwrite is nonzero the mappings of b win on duplicate keys. The
+   merge reads through the left side's key hooks, the domain the
+   result belongs to. */
 static ek_dict *dict_joined(const ek_dict *a, const ek_dict *b)
 {
-    ek_dict *fresh = dict_sized_for(a->count + b->count);
+    ek_dict *fresh = dict_sized_for(a->count + b->count, a);
     const ek_dict *srcs[2];
     uint32_t idx;
     int side;
@@ -224,9 +209,7 @@ static ek_dict *dict_joined(const ek_dict *a, const ek_dict *b)
         for (idx = src->head; idx != DICT_NO_ENTRY;
              idx = src->entries[idx].next) {
             const ek_dict_entry *e = &src->entries[idx];
-            ek_dict_entry *slot =
-                &fresh->entries[probe(fresh->entries, fresh->capacity,
-                                      e->key)];
+            ek_dict_entry *slot = &fresh->entries[probe(fresh, e->key)];
 
             if (slot->used && side == 1) {
                 ek_retain(e->val); /* b wins; the slot keeps its place */
@@ -247,13 +230,14 @@ ek_val ek_dict_set(ek_val d, ek_val key, ek_val val)
 
     /* An insert whose key equals no key, not even itself, changes
        nothing: the entry could never be found again (Clause 9.10.4). */
-    if (!key_eq(key, key)) {
+    old = (const ek_dict *)d.as.ref;
+    if (!key_eq(old, key, key)) {
         ek_retain(d);
         return d;
     }
-    old = (const ek_dict *)d.as.ref;
     existing = find_entry(old, key);
-    ek_dict *fresh = dict_sized_for(old->count + (existing == NULL ? 1 : 0));
+    ek_dict *fresh = dict_sized_for(old->count + (existing == NULL ? 1 : 0),
+                                    old);
     uint32_t idx;
 
     for (idx = old->head; idx != DICT_NO_ENTRY; idx = old->entries[idx].next) {
@@ -276,11 +260,11 @@ ek_val ek_dict_remove(ek_val d, ek_val key)
         ek_retain(d);
         return d;
     }
-    fresh = dict_sized_for(old->count - 1);
+    fresh = dict_sized_for(old->count - 1, old);
     for (idx = old->head; idx != DICT_NO_ENTRY; idx = old->entries[idx].next) {
         const ek_dict_entry *e = &old->entries[idx];
 
-        if (!key_eq(e->key, key))
+        if (!key_eq(old, e->key, key))
             entry_store(fresh, e->key, e->val);
     }
     return ek_val_ref(&fresh->obj);
@@ -368,7 +352,7 @@ ek_val ek_dict_each(ek_val d, ek_val f)
 ek_val ek_dict_map(ek_val d, ek_val f)
 {
     const ek_dict *old = (const ek_dict *)d.as.ref;
-    ek_dict *fresh = dict_sized_for(old->count);
+    ek_dict *fresh = dict_sized_for(old->count, old);
     uint32_t idx;
 
     for (idx = old->head; idx != DICT_NO_ENTRY; idx = old->entries[idx].next) {
@@ -389,7 +373,7 @@ ek_val ek_dict_map(ek_val d, ek_val f)
 ek_val ek_dict_filter(ek_val d, ek_val f)
 {
     const ek_dict *old = (const ek_dict *)d.as.ref;
-    ek_dict *fresh = dict_sized_for(old->count);
+    ek_dict *fresh = dict_sized_for(old->count, old);
     uint32_t idx;
 
     for (idx = old->head; idx != DICT_NO_ENTRY; idx = old->entries[idx].next) {

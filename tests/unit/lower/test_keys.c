@@ -169,8 +169,9 @@ static void set_elements_stamp_too(void)
     EK_CHECK(lfx_check_clean(&f));
     EK_CHECK(lfx_lower_clean(&f));
     /* the element domain stamps through Set.of the way a key domain
-       stamps through the dictionary; the field-less variant carries
-       the NULL drop beside its hooks */
+       stamps through the dictionary, and the construction passes the
+       stamped pair; the field-less variant carries the NULL drop
+       beside its hooks */
     EK_CHECK(lfx_has(&f, "const ek_typeinfo ekT_test$V$N = "
                          "{ EK_KIND_STRUCT, NULL, "
                          "ekq_N$test$V, ekh_N$test$V };"));
@@ -178,24 +179,30 @@ static void set_elements_stamp_too(void)
                          "{ EK_KIND_STRUCT, drop_test$V$S, "
                          "ekq_N$test$V, ekh_N$test$V };"));
     EK_CHECK(lfx_has(&f, "ek_set_of("));
+    EK_CHECK(lfx_has(&f, ", ekq_N$test$V, ekh_N$test$V);"));
     lfx_end(&f);
 }
 
 static const char *unit_key_src =
     "main: () -> _ =\n"
     "    d: [[]Int]Int = {}\n"
+    "    d := d.insert({1}, 5)\n"
     "    _ := d\n"
     "    _\n";
 
-static void undetermined_domains_keep_the_identity_reading(void)
+static void container_domains_mint_their_pair(void)
 {
     lfx f;
 
     lfx_begin(&f, unit_key_src);
+    EK_CHECK(lfx_check_clean(&f));
     EK_CHECK(lfx_lower_clean(&f));
-    /* a list key domain has no per-value family: no hooks stamp, and
-       the runtime's identity fallback stands */
-    EK_CHECK(lfx_lacks(&f, "ekh_"));
+    /* a list key domain has no per-value family to stamp: its own
+       services mint, and the construction passes them so the runtime
+       keys the lists structurally */
+    EK_CHECK(lfx_has(&f, "static int ekq_L$Int(ek_val a, ek_val b);\n"));
+    EK_CHECK(lfx_has(&f, "static unsigned long ekh_L$Int(ek_val v);\n"));
+    EK_CHECK(lfx_has(&f, "ek_dict_new(ekq_L$Int, ekh_L$Int);"));
     lfx_end(&f);
 }
 
@@ -207,6 +214,6 @@ int main(void)
     nested_refs_hash_through_the_child_hook();
     anon_record_stamps_too();
     set_elements_stamp_too();
-    undetermined_domains_keep_the_identity_reading();
+    container_domains_mint_their_pair();
     return ek_test_report("lower/keys");
 }

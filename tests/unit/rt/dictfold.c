@@ -54,7 +54,7 @@ static void reset_probe(void)
 
 static ek_val int_dict(const int64_t *keys, const int64_t *vals, size_t n)
 {
-    ek_val d = ek_dict_new();
+    ek_val d = ek_dict_new(ek_key_eq, ek_key_hash);
     size_t i;
 
     for (i = 0; i < n; i++) {
@@ -87,7 +87,7 @@ static void fold_accumulates_in_insertion_order(void)
 static void fold_borrows_the_accumulator(void)
 {
     ek_obj *seed = ek_str_from_cstr("acc");
-    ek_val d = ek_dict_new();
+    ek_val d = ek_dict_new(ek_key_eq, ek_key_hash);
     ek_val f = ek_closure_new(keep_fn, ek_val_unit());
     ek_val z = ek_dict_fold(d, ek_val_ref(seed), f);
 
@@ -114,7 +114,7 @@ static void fold_gathers_string_keys_in_order(void)
     ek_obj *kb = ek_str_from_cstr("b");
     ek_obj *ka = ek_str_from_cstr("a");
     ek_obj *empty = ek_str_from_cstr("");
-    ek_val d0 = ek_dict_new();
+    ek_val d0 = ek_dict_new(ek_key_eq, ek_key_hash);
     ek_val d1 = ek_dict_set(d0, ek_val_ref(kb), ek_val_int(1));
     ek_val d = ek_dict_set(d1, ek_val_ref(ka), ek_val_int(2));
     ek_val f = ek_closure_new(append_key_fn, ek_val_unit());
@@ -155,7 +155,7 @@ static void each_visits_key_then_value_in_order(void)
 
 static void each_over_the_empty_dictionary_visits_nothing(void)
 {
-    ek_val d = ek_dict_new();
+    ek_val d = ek_dict_new(ek_key_eq, ek_key_hash);
     ek_val f = ek_closure_new(pair_probe_fn, ek_val_unit());
     ek_val u;
 

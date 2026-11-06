@@ -155,21 +155,26 @@ static void release_dict_temps(lower_ctx *c, const char **kt,
 /* A dictionary literal: every keyed entry's key and value evaluate in
    source order, then the set chain builds the table one fresh
    dictionary at a step, each intermediate dying once its replacement
-   exists. */
+   exists. The key domain's hook pair rides on the table, so lookups
+   key by the domain's own equality. */
 lower_val lower_dict_literal(lower_ctx *c, lower_scope *scope,
                               const ek_node *e)
 {
     const ek_type *t = lower_row_type(c, e);
     const char **kt, **vt;
+    const char *kq = "ek_key_eq";
+    const char *kh = "ek_key_hash";
     size_t n = e->u.kids.count, cap = 0, i;
     const char *d;
 
-    if (t && t->kind == EK_T_DICT && !lower_key_hooks(c, t->u.dict.key)) {
+    if (t && t->kind == EK_T_DICT
+        && !lower_key_pair(c, t->u.dict.key, &kq, &kh)) {
         lower_error(c, e, "the dictionary key is not a key domain this "
                           "lowerer supports");
     }
     if (n == 0) {
-        return (lower_val){ "ek_dict_new()", 0 };
+        return (lower_val){ lower_str(c, "ek_dict_new(%s, %s)", kq, kh),
+                            0 };
     }
     kt = lower_grow(c, NULL, &cap, n * 2, sizeof *kt);
     if (!kt) {
@@ -179,7 +184,7 @@ lower_val lower_dict_literal(lower_ctx *c, lower_scope *scope,
     dict_item_temps(c, scope, e, t, kt, vt);
     d = lower_temp(c, scope);
     lower_pad(c);
-    lower_emitf(c, "ek_val %s = ek_dict_new();\n", d);
+    lower_emitf(c, "ek_val %s = ek_dict_new(%s, %s);\n", d, kq, kh);
     for (i = 0; i < n; i++) {
         const char *nd;
 

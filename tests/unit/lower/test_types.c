@@ -160,14 +160,17 @@ static void list_dict_shape(void)
     EK_CHECK(lfx_has(&f, "ek_val t6 = ek_nil_val();"));
     /* the dictionary entries' keys and values evaluate in source
        order, the set chain builds through them, and each intermediate
-       releases once its replacement exists */
-    EK_CHECK(lfx_has(&f, "ek_val t12 = ek_dict_new();"));
+       releases once its replacement exists; the scalar key domain
+       rides on the runtime's default pair */
+    EK_CHECK(lfx_has(&f, "ek_val t12 = ek_dict_new(ek_key_eq, "
+                         "ek_key_hash);"));
     EK_CHECK(lfx_has(&f, "ek_val t13 = ek_dict_set(t12, t8, t9);\n"
                          "    ek_release(t12);"));
     EK_CHECK(lfx_has(&f, "ek_val t14 = ek_dict_set(t13, t10, t11);"));
     EK_CHECK(lfx_has(&f, "ek_release(t9);\n    ek_release(t8);"));
-    /* the empty literal is the empty dictionary */
-    EK_CHECK(lfx_has(&f, "ek_val t16 = ek_dict_new();"));
+    /* the empty literal is the empty dictionary over the same pair */
+    EK_CHECK(lfx_has(&f, "ek_val t16 = ek_dict_new(ek_key_eq, "
+                         "ek_key_hash);"));
     lfx_end(&f);
 }
 

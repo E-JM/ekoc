@@ -254,7 +254,7 @@ static json_status parse_member(json_scan *s, ek_val *dict, ek_obj **detail)
    insertion order. */
 static json_status parse_object(json_scan *s, ek_val *out, ek_obj **detail)
 {
-    ek_val dict = ek_dict_new();
+    ek_val dict = ek_dict_new(ek_key_eq, ek_key_hash);
     json_status st = JSON_OK;
 
     json_nest_in(s);

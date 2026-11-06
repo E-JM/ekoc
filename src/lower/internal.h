@@ -406,11 +406,17 @@ void lower_dsvc_json_emit(lower_ctx *c, const char *name, const ek_type *t,
                           int from);
 void lower_dsvc_from_emit(lower_ctx *c, const char *name, const ek_type *t);
 
-/* derivedhash.c: the key-domain stamping. lower_key_hooks stamps the
-   structural eq and hash of the applied key domain onto the families
-   that carry its values, lazily at the dict and set sites that build
-   over it, and answers nonzero when the domain keys at all -- zero
-   for the domains whose derivation halts (functions, capabilities). */
+/* derivedhash.c: the key-domain stamping. lower_key_pair names the
+   hook pair a construction site passes the runtime over the key
+   domain -- the stamped family services, the minted services of a
+   container standing as the domain, or the runtime's default pair for
+   the scalar and text slots -- and answers nonzero when the domain
+   keys at all, zero for the domains whose derivation halts (functions,
+   capabilities). lower_key_hooks stamps that pair onto the families
+   that carry the domain's values, lazily at the dict and set sites
+   that build over it. */
+int lower_key_pair(lower_ctx *c, const ek_type *t, const char **keq,
+                   const char **khash);
 int lower_key_hooks(lower_ctx *c, const ek_type *t);
 
 /* The form of a derived call: the receiver is the member link's node,

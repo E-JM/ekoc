@@ -11,7 +11,7 @@
 
 static ek_val int_dict(const int64_t *keys, size_t n)
 {
-    ek_val d = ek_dict_new();
+    ek_val d = ek_dict_new(ek_key_eq, ek_key_hash);
     size_t i;
 
     for (i = 0; i < n; i++) {
@@ -60,7 +60,7 @@ static void walk_visits_insertion_order(void)
    survive every rebuild. */
 static void walk_order_survives_growth(void)
 {
-    ek_val d = ek_dict_new();
+    ek_val d = ek_dict_new(ek_key_eq, ek_key_hash);
     ek_val out;
     int64_t seen[100];
     int64_t want[100];
@@ -101,7 +101,7 @@ static void replacement_keeps_its_place(void)
 static void walk_borrows_its_entries(void)
 {
     ek_obj *v = ek_str_from_cstr("val");
-    ek_val d0 = ek_dict_new();
+    ek_val d0 = ek_dict_new(ek_key_eq, ek_key_hash);
     ek_val d1 = ek_dict_set(d0, ek_val_int(1), ek_val_ref(v));
     size_t cursor = 0;
     ek_val key;
@@ -157,7 +157,7 @@ static void merge_lets_the_right_side_win(void)
     static const int64_t a_keys[2] = {1, 2};
     ek_obj *bv = ek_str_from_cstr("right");
     ek_val a = int_dict(a_keys, 2);
-    ek_val b0 = ek_dict_new();
+    ek_val b0 = ek_dict_new(ek_key_eq, ek_key_hash);
     ek_val b1 = ek_dict_set(b0, ek_val_int(2), ek_val_ref(bv));
     ek_val b = ek_dict_set(b1, ek_val_int(3), ek_val_int(30));
     ek_val m = ek_dict_merge(a, b);
@@ -183,7 +183,7 @@ static void merge_with_the_empty_side_yields_the_other(void)
 {
     static const int64_t keys[2] = {1, 2};
     ek_val d = int_dict(keys, 2);
-    ek_val empty = ek_dict_new();
+    ek_val empty = ek_dict_new(ek_key_eq, ek_key_hash);
     ek_val lr = ek_dict_merge(d, empty);
     ek_val rl = ek_dict_merge(empty, d);
     int64_t seen[2];

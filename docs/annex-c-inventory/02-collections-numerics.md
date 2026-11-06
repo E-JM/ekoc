@@ -69,7 +69,11 @@ The namespace of `[k]v` is `Dict` (Clause 7.4.3). All members are pure.
 removing an absent key returns the original. `merge` is the body of `++`, and
 the right side wins on a duplicate key (Clause 7.8.6). The key domain is the
 set of data types with structural equality; a capability or a function is not
-a key (Clause 9.10.4). `Dict.eq` is derived (Annex C.2); `Dict` has no derived
+a key (Clause 9.10.4). The keying travels with the value: a dictionary is
+built over the key domain's derived equality and hash, and every derived
+construction carries them forward, so one key domain keys the same way
+across `insert`, `remove`, `merge`, `map`, and `filter`. `Dict.eq` is
+derived (Annex C.2); `Dict` has no derived
 ordering.
 
 ## C.5 Set
@@ -94,7 +98,10 @@ follow insertion order (Clause 9.10.3). `insert` and `remove` return a new
 set; inserting a present element or removing an absent element returns the
 original. `union` places the left set first, followed by the new elements of
 the right set in right-set order; `intersect` and `diff` preserve left order.
-The element domain is the key domain (Clause 9.10.4). `Set.empty` does not
+The element domain is the key domain (Clause 9.10.4), and the element keying
+travels with the value: `Set.of` builds over the element domain's derived
+equality and hash, and `insert` and `remove` carry them forward, so one
+element domain keys the same way across every derived set. `Set.empty` does not
 exist: the empty set is `Set.of({})` with an expected type (Clause 9.10.3).
 `Set.eq` is derived (Annex C.2); `Set` has no derived ordering.
 

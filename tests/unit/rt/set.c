@@ -25,7 +25,7 @@ static ek_val int_set(const int64_t *elems, size_t n)
         ek_release(list);
         list = cell;
     }
-    s = ek_set_of(list);
+    s = ek_set_of(list, ek_key_eq, ek_key_hash);
     ek_release(list);
     return s;
 }
@@ -49,7 +49,7 @@ static size_t walk_elems(ek_val s, int64_t *out, size_t cap)
 
 static void empty_set(void)
 {
-    ek_val s = ek_set_new();
+    ek_val s = ek_set_new(ek_key_eq, ek_key_hash);
 
     EK_CHECK(ek_val_is_ref(s));
     EK_CHECK(s.as.ref->info->kind == EK_KIND_SET);
@@ -61,7 +61,7 @@ static void empty_set(void)
 static void insert_then_contains(void)
 {
     ek_obj *v = ek_str_from_cstr("a");
-    ek_val s0 = ek_set_new();
+    ek_val s0 = ek_set_new(ek_key_eq, ek_key_hash);
     ek_val s1 = ek_set_insert(s0, ek_val_ref(v));
 
     EK_CHECK_U64(ek_set_len(s1), 1);
@@ -123,7 +123,7 @@ static void string_elements_key_on_their_bytes(void)
 {
     ek_obj *a = ek_str_from_cstr("key");
     ek_obj *b = ek_str_from_cstr("key");
-    ek_val s0 = ek_set_new();
+    ek_val s0 = ek_set_new(ek_key_eq, ek_key_hash);
     ek_val s1 = ek_set_insert(s0, ek_val_ref(a));
     ek_val s2 = ek_set_remove(s1, ek_val_ref(b));
 
@@ -143,7 +143,7 @@ static void string_and_bytes_stay_distinct(void)
 {
     ek_obj *s = ek_str_from_cstr("ab");
     ek_obj *b = ek_bytes_new("ab", 2);
-    ek_val set = ek_set_of(ek_nil_val());
+    ek_val set = ek_set_of(ek_nil_val(), ek_key_eq, ek_key_hash);
     ek_val s1 = ek_set_insert(set, ek_val_ref(s));
     ek_val s2 = ek_set_insert(s1, ek_val_ref(b));
 
@@ -162,7 +162,7 @@ static void bytes_elements_key_on_their_bytes(void)
 {
     ek_obj *a = ek_bytes_new("\x01\x02", 2);
     ek_obj *b = ek_bytes_new("\x01\x02", 2);
-    ek_val s0 = ek_set_new();
+    ek_val s0 = ek_set_new(ek_key_eq, ek_key_hash);
     ek_val s1 = ek_set_insert(s0, ek_val_ref(a));
 
     EK_CHECK(ek_set_contains(s1, ek_val_ref(b)));
@@ -179,7 +179,7 @@ static void elements_differ_across_tags(void)
         ek_val_int(1), ek_val_uint(1), ek_val_float(1.0),
         ek_val_char('1'), ek_val_int(2),
     };
-    ek_val s = ek_set_new();
+    ek_val s = ek_set_new(ek_key_eq, ek_key_hash);
     size_t i;
 
     for (i = 0; i < 5; i++) {
@@ -198,7 +198,7 @@ static void elements_differ_across_tags(void)
    and a NaN element never matches, not even itself. */
 static void float_elements_follow_ieee_equality(void)
 {
-    ek_val s0 = ek_set_new();
+    ek_val s0 = ek_set_new(ek_key_eq, ek_key_hash);
     ek_val s1 = ek_set_insert(s0, ek_val_float(0.0));
     ek_val s2 = ek_set_insert(s1, ek_val_float(-0.0));
     ek_val s3 = ek_set_insert(s2, ek_val_float(1.0));
@@ -233,7 +233,7 @@ static void remove_keeps_the_remaining_order(void)
 
 static void order_survives_growth(void)
 {
-    ek_val s = ek_set_new();
+    ek_val s = ek_set_new(ek_key_eq, ek_key_hash);
     int64_t seen[100];
     int i;
 
@@ -253,7 +253,7 @@ static void order_survives_growth(void)
 static void to_list_borrows_nothing(void)
 {
     ek_obj *v = ek_str_from_cstr("solo");
-    ek_val s0 = ek_set_new();
+    ek_val s0 = ek_set_new(ek_key_eq, ek_key_hash);
     ek_val s1 = ek_set_insert(s0, ek_val_ref(v));
     ek_val list = ek_set_to_list(s1);
 
@@ -268,7 +268,7 @@ static void to_list_borrows_nothing(void)
 
 static void of_over_the_empty_list_is_empty(void)
 {
-    ek_val s = ek_set_of(ek_nil_val());
+    ek_val s = ek_set_of(ek_nil_val(), ek_key_eq, ek_key_hash);
 
     EK_CHECK_U64(ek_set_len(s), 0);
     ek_release(s);

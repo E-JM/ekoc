@@ -66,6 +66,24 @@ typedef struct ek_typeinfo {
     unsigned long (*hash)(ek_val v);
 } ek_typeinfo;
 
+/* The key hooks a dictionary or set carries: the pair answers the
+   table's comparisons and mixes over the key domain the container was
+   built for. They have the shape of the typeinfo's eq and hash, so a
+   generated service fills either slot. Both are deterministic within
+   one process run, and values the eq hook calls equal the hash hook
+   hashes equal. */
+typedef int (*ek_key_eq_fn)(ek_val a, ek_val b);
+typedef unsigned long (*ek_key_hash_fn)(ek_val v);
+
+/* The default key pair, over the domains the runtime itself can key:
+   String and Bytes on their bytes, scalars on the tag and the payload,
+   Float on IEEE equality with the two zeros one key and NaN matching
+   nothing, and a reference through the hooks its family carries, the
+   object's address the fallback of a family with none. The pair a
+   container passes whose keys need no derived service. */
+int ek_key_eq(ek_val a, ek_val b);
+unsigned long ek_key_hash(ek_val v);
+
 /* Heap object header. Every heap family embeds it as the first member
    of its struct, and a new object is born with rc == 1. */
 struct ek_obj {
@@ -579,16 +597,22 @@ size_t ek_list_len(ek_val list);
    exhaustion aborts. The caller owns the array for the call's duration. */
 void *ek_cin_array(size_t n, size_t w);
 
-/* A dictionary maps inline scalar keys to values. Setting a key builds
-   a fresh dictionary; the old one is untouched and keeps its own
-   references. Keys compare on the tag and the exact payload bytes; a
-   key that refers to an object whose typeinfo carries the structural
-   hooks keys through them, so two structurally equal composite values
-   are one key and a key of another family never matches. The accessors
-   take a dictionary value. */
+/* A dictionary maps keys to values over the key hooks it is born
+   with. Setting a key builds a fresh dictionary; the old one is
+   untouched and keeps its own references. The pair of hooks travels
+   with the dictionary: every derived construction clones the source's
+   pair, so one key domain keys the same way across a whole build
+   chain. The fast domains -- scalars, Float, and the text families --
+   are keyed by the runtime itself; a reference key outside them is
+   answered by the carried eq and hash hooks, so two structurally equal
+   composite values are one key. Passing NULL for both builds a table
+   that answers a reference key only when the key's own family carries
+   hooks; an unanswerable key aborts the process. The accessors take a
+   dictionary value. */
 
-/* The empty dictionary. Aborts on exhaustion. */
-ek_val ek_dict_new(void);
+/* The empty dictionary over the given key hooks. Aborts on
+   exhaustion. */
+ek_val ek_dict_new(ek_key_eq_fn keq, ek_key_hash_fn kh);
 
 /* Writes the stored value into *out and returns nonzero when key is
    present; the value is borrowed. */
@@ -648,22 +672,24 @@ ek_val ek_dict_filter(ek_val dict, ek_val f);
 /* A set is an immutable collection of distinct elements with
    copy-on-insert, carried over the same table discipline as the
    dictionary: insertion order is kept in a build-order chain and
-   survives every rehash. Elements key structurally over the domains
-   the runtime itself can compare: scalars on the tag and the payload,
-   String and Bytes on their bytes, and a Float on IEEE equality, so
-   0.0 and -0.0 are one element while a NaN element never matches, not
-   even itself. A heap element whose typeinfo carries the structural
-   hooks keys through them, both sides tested for one family first;
-   every other heap family keys on the object's address, the same rule
-   the dictionary applies to keys it cannot walk. The accessors take a
-   set value. */
+   survives every rehash. Elements key over the hook pair the set is
+   born with, cloned by every derived construction the same way the
+   dictionary's is. The fast domains -- scalars, Float, String, and
+   Bytes -- are keyed by the runtime itself; a reference element
+   outside them is answered by the carried hooks, so 0.0 and -0.0 are
+   one element while a NaN element never matches, not even itself, and
+   two structurally equal composite elements are one. Passing NULL for
+   both leaves the answer of an unhooked reference element to the
+   element's own family, and an unanswerable element aborts the
+   process. The accessors take a set value. */
 
-/* The empty set. Aborts on exhaustion. */
-ek_val ek_set_new(void);
+/* The empty set over the given element hooks. Aborts on exhaustion. */
+ek_val ek_set_new(ek_key_eq_fn keq, ek_key_hash_fn kh);
 
 /* A fresh set over the list's elements in order, deduplicated with the
-   first occurrence kept. Aborts on exhaustion. */
-ek_val ek_set_of(ek_val list);
+   first occurrence kept, keyed by the given element hooks. Aborts on
+   exhaustion. */
+ek_val ek_set_of(ek_val list, ek_key_eq_fn keq, ek_key_hash_fn kh);
 
 /* A fresh set with the element added: an element already present
    yields the original, and the returned set is the caller's to release

@@ -20,7 +20,7 @@ every test (Clause 2.7).
 
 | Component | Location | Form | Required outcome |
 |---|---|---|---|
-| Positive modules | `tests/conformance/` | 29 Eko modules: 28 test roots and one fixture | compile; every test binding executes without panic |
+| Positive modules | `tests/conformance/` | 30 Eko modules: 29 test roots and one fixture | compile; every test binding executes without panic |
 | Negative entries | `tests/negative/manifest.md` | 37 minimal programs | compile-time rejection with the stated outcome |
 | Runner | toolchain | test runner over both classes | per-test report (Clause D.6) |
 
@@ -39,7 +39,7 @@ block. It has no arrow and does not enter the module interface (Clauses
 9.14.1, 9.14.6). A module without a test binding is an ordinary
 dependency under a test root; `geolib.eko` is the only such module.
 
-The suite contains 142 test bindings. Each test is a block of ordinary
+The suite contains 146 test bindings. Each test is a block of ordinary
 expressions; its value is discarded. Assertions are the standard library
 functions `assert`, `assert_eq`, and `assert_ne` (Clause 9.14.3). `assert_eq`
 locks both arguments to one type and reports failure through `inspect`
@@ -182,6 +182,7 @@ number of test bindings. `geolib.eko` is a fixture and has none.
 | `cap_surface.eko` | yes | 8 | 9.1.1, 9.12, 9.14.5, 10.8 | capability handle types; derivations construct and forward; compiler-provided declarations; `File` family at a handle parameter |
 | `case_patterns.eko` | yes | 8 | 6.7.1, 6.7.2, 6.7.3, 6.7.5, 6.8.2, 6.8.3, 6.8.4, 6.8.5, 7.7.2, 7.7.3, 8.3.1, 8.3.3, 8.3.4, 9.8.1 | guards; or-patterns; list and record patterns; literals; multiple scrutinees; single-line form |
 | `char_class.eko` | yes | 5 | 9.4.2, 9.4.4, 9.11.1 | ASCII letter and digit predicates; the White_Space and XID properties; trim follows the space property |
+| `container_keys.eko` | yes | 4 | 9.10.3, 9.10.4 | a list as a dictionary key; equal sets deduplicating as elements; a dictionary as a key; a nested list key |
 | `ctor_anchor.eko` | yes | 2 | 7.4.6, 7.5.2 | same-named constructors of different types; the expected type selects one |
 | `ctor_anchor_std.eko` | yes | 1 | 7.4.6, 7.6 | self-anchoring through the single visible constructor |
 | `data_services.eko` | yes | 10 | 6.5.4, 7.8.6, 9.5.1, 9.5.2, 9.5.3, 9.6.1, 9.6.2, 9.6.3, 9.6.4, 9.7.1, 9.7.3, 9.8.1, 9.9.2, 9.9.3, 9.9.4, 9.9.5, 9.13.1 | `Bytes` round trips and append; JSON derivation and external tagging; numeric and parse round trips; frozen time; formatting |

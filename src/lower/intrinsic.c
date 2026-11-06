@@ -512,6 +512,50 @@ static void stamp_key_domain(lower_ctx *c, const ek_node *e,
     }
 }
 
+/* The element type of the domain the Set.of row builds over, read off
+   the list the same way the stamping reads it. */
+static const ek_type *set_of_element(lower_ctx *c, const ek_node *e,
+                                     const ek_node *callee, int has_recv)
+{
+    const ek_type *rt = has_recv && callee->u.field.recv
+                            ? lower_row_type(c, callee->u.field.recv)
+                            : e->u.call.args.count
+                                  ? lower_row_type(c,
+                                                   e->u.call.args.data[0])
+                                  : NULL;
+
+    if (!rt) {
+        return NULL;
+    }
+    if (rt->kind == EK_T_LIST) {
+        return rt->u.list.elem;
+    }
+    if (rt->kind == EK_T_NOMINAL && rt->u.nominal.argc == 1) {
+        return rt->u.nominal.args[0];
+    }
+    return NULL;
+}
+
+/* The Set.of row: the element domain's hook pair rides with the list,
+   so the set keys its elements by the domain's own equality. */
+static lower_val emit_set_of(lower_ctx *c, lower_scope *scope,
+                             const ek_node *e, const ek_node *callee,
+                             int has_recv, const char *list)
+{
+    const ek_type *kt = set_of_element(c, e, callee, has_recv);
+    const char *kq = "ek_key_eq";
+    const char *kh = "ek_key_hash";
+    const char *t = lower_temp(c, scope);
+
+    if (kt && !lower_key_pair(c, kt, &kq, &kh)) {
+        lower_error(c, e, "the set element is not a key domain this "
+                          "lowerer supports");
+    }
+    lower_pad(c);
+    lower_emitf(c, "ek_val %s = ek_set_of(%s, %s, %s);\n", t, list, kq, kh);
+    return (lower_val){ t, 1 };
+}
+
 lower_val lower_intrinsic_call(lower_ctx *c, lower_scope *scope,
                                const ek_node *e, const ek_node *callee,
                                const char *family, int has_recv)
@@ -546,7 +590,9 @@ lower_val lower_intrinsic_call(lower_ctx *c, lower_scope *scope,
     } else if (keys_over_domain(family, callee->u.field.name)) {
         stamp_key_domain(c, e, callee, family, has_recv);
     }
-    {
+    if (strcmp(family, "Set") == 0 && strcmp(callee->u.field.name, "of") == 0) {
+        out = emit_set_of(c, scope, e, callee, has_recv, as[0]);
+    } else {
         const char *args = value_args(c, row, as, na);
 
         out = emit_wrap(c, scope, e, row, args, as);

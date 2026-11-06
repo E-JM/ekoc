@@ -165,13 +165,19 @@ static void emit_from_list(lower_ctx *c, lower_demit *d, const char *name,
 }
 
 /* A set decodes through the list walk, then builds the set over the
-   decoded elements; the list dies once the set holds its own refs. */
+   decoded elements under the element domain's hook pair; the list dies
+   once the set holds its own refs. */
 static void emit_from_set(lower_ctx *c, lower_demit *d, const char *name,
                           const ek_type *t)
 {
     const char *aux = lower_str(c, "%s_aux", name);
     const char *ok = lower_result_ctor(c, "Ok");
+    const char *kq = "ek_key_eq";
+    const char *kh = "ek_key_hash";
 
+    if (t->u.nominal.args[0]) {
+        lower_key_pair(c, t->u.nominal.args[0], &kq, &kh);
+    }
     emit_from_list_aux(c, aux, t->u.nominal.args[0]);
     lower_d_printf(d, "    if (v.as.ref->info == &ekT_std$Json$Arr) {\n");
     lower_d_printf(d, "        ek_val r = %s(%s);\n", aux,
@@ -180,7 +186,7 @@ static void emit_from_set(lower_ctx *c, lower_demit *d, const char *name,
     lower_d_printf(d, "        if (r.as.ref->info != %s)\n", LOWER_OK_INFO);
     lower_d_printf(d, "            return r;\n");
     lower_d_printf(d, "        list = ((ekS_std$Result$Ok *)r.as.ref)->p0;\n");
-    lower_d_printf(d, "        set = ek_set_of(list);\n");
+    lower_d_printf(d, "        set = ek_set_of(list, %s, %s);\n", kq, kh);
     lower_d_printf(d, "        out = %s(set);\n", ok);
     lower_d_printf(d, "        ek_release(set);\n");
     lower_d_printf(d, "        ek_release(r);\n");
@@ -202,7 +208,8 @@ static void emit_from_dict(lower_ctx *c, lower_demit *d, const ek_type *t)
     lower_d_printf(d, "    {\n");
     lower_d_printf(d, "        ek_val src = %s;\n", lower_json_slot(c, "Obj",
                                                                    "v"));
-    lower_d_printf(d, "        ek_val acc = ek_dict_new();\n");
+    lower_d_printf(d, "        ek_val acc = ek_dict_new(ek_key_eq, "
+                       "ek_key_hash);\n");
     lower_d_printf(d, "        ek_val k, x, e, w;\n");
     lower_d_printf(d, "        size_t cur = 0;\n\n");
     lower_d_printf(d, "        while (ek_dict_next(src, &cur, &k, &x)) {\n");

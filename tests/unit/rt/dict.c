@@ -10,7 +10,7 @@
 
 static void empty_dictionary(void)
 {
-    ek_val d = ek_dict_new();
+    ek_val d = ek_dict_new(ek_key_eq, ek_key_hash);
     ek_val out;
 
     EK_CHECK(ek_val_is_ref(d));
@@ -22,7 +22,7 @@ static void empty_dictionary(void)
 static void set_then_get(void)
 {
     ek_obj *v = ek_str_from_cstr("val");
-    ek_val d0 = ek_dict_new();
+    ek_val d0 = ek_dict_new(ek_key_eq, ek_key_hash);
     ek_val d1 = ek_dict_set(d0, ek_val_int(1), ek_val_ref(v));
     ek_val out;
 
@@ -42,7 +42,7 @@ static void overwrite_replaces_only_the_value(void)
 {
     ek_obj *v1 = ek_str_from_cstr("old");
     ek_obj *v2 = ek_str_from_cstr("new");
-    ek_val d0 = ek_dict_new();
+    ek_val d0 = ek_dict_new(ek_key_eq, ek_key_hash);
     ek_val d1 = ek_dict_set(d0, ek_val_int(1), ek_val_ref(v1));
     ek_val d2 = ek_dict_set(d1, ek_val_int(1), ek_val_ref(v2));
     ek_val out;
@@ -72,7 +72,7 @@ static void keys_differ_across_tags(void)
         ek_val_int(1), ek_val_uint(1), ek_val_float(1.0),
         ek_val_char('1'), ek_val_int(2), ek_val_int(-1),
     };
-    ek_val d = ek_dict_new();
+    ek_val d = ek_dict_new(ek_key_eq, ek_key_hash);
     ek_val out;
     size_t i;
 
@@ -94,7 +94,7 @@ static void keys_differ_across_tags(void)
 
 static void growth_keeps_every_entry(void)
 {
-    ek_val d = ek_dict_new();
+    ek_val d = ek_dict_new(ek_key_eq, ek_key_hash);
     ek_val out;
     int i;
 

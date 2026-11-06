@@ -188,7 +188,9 @@ static void emit_to_record(lower_ctx *c, lower_demit *d, const char *stem,
 {
     size_t i;
 
-    lower_d_printf(d, "    ek_val d = ek_dict_new();\n");
+    /* the Obj's table keys on text: the runtime's default pair */
+    lower_d_printf(d, "    ek_val d = ek_dict_new(ek_key_eq, "
+                      "ek_key_hash);\n");
     lower_d_printf(d, "    ek_val out;\n\n");
     for (i = 0; i < nf; i++) {
         const char *slot = fnames ? lower_str(c, "f_%s", fnames[i])
@@ -219,7 +221,8 @@ static void emit_to_dict(lower_ctx *c, lower_demit *d, const ek_type *t)
         lower_json_err_lit(d, "    ", "");
         return;
     }
-    lower_d_printf(d, "    ek_val d = ek_dict_new();\n");
+    lower_d_printf(d, "    ek_val d = ek_dict_new(ek_key_eq, "
+                      "ek_key_hash);\n");
     lower_d_printf(d, "    ek_val k, x;\n");
     lower_d_printf(d, "    size_t cur = 0;\n");
     lower_d_printf(d, "    ek_val out;\n\n");
@@ -308,7 +311,8 @@ static void emit_to_adt(lower_ctx *c, lower_demit *d, lower_variant *vs,
                 const char *e = lower_d_temp(d);
                 const char *r = lower_d_temp(d);
 
-                lower_d_printf(d, "        ek_val %s = ek_dict_new();\n", dd);
+                lower_d_printf(d, "        ek_val %s = ek_dict_new("
+                                  "ek_key_eq, ek_key_hash);\n", dd);
                 lower_d_printf(d, "        ek_val %s = ek_keep(%s);\n", k,
                                lit);
                 lower_d_printf(d, "        ek_val %s = %s(((ekS_%s *)v.as."

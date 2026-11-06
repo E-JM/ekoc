@@ -1,0 +1,37 @@
+// Container keys: a list, a set, and a dictionary standing as a key
+// domain, and a nested container key, key by structure -- equal but
+// distinct values are one key and unequal values miss (Clauses
+// 9.10.3, 9.10.4).
+
+list_keys: test =
+    d: [[]Int]String = {}
+    d := d.insert({1, 2}, "hit")
+    assert_eq(d.get({1, 2}), Some "hit")
+    assert_eq(d.get({2, 1}), None)
+    assert_eq(d.length(), 1)
+
+set_elements: test =
+    a := Set.of({1, 2})
+    b := Set.of({2, 1})
+    s := Set.of({a, b, Set.of({3})})
+    assert_eq(s.length(), 2)
+    assert(s.contains(Set.of({2, 1})))
+    assert(s.contains(Set.of({3})))
+
+dict_keys: test =
+    d: [[String]Int]String = {}
+    d := d.insert({"a": 1}, "hit")
+    assert_eq(d.get({"a": 1}), Some "hit")
+    assert_eq(d.get({"a": 2}), None)
+    assert_eq(d.get({"b": 1}), None)
+    assert_eq(d.length(), 1)
+
+nested_keys: test =
+    d: [[][]Int]Int = {}
+    k: [][]Int = {{1}, {2}}
+    d := d.insert(k, 7)
+    assert_eq(d.get(k), Some 7)
+    k2: [][]Int = {{2}, {1}}
+    assert_eq(d.get(k2), None)
+    k3: [][]Int = {{3}}
+    assert_eq(d.get(k3), None)

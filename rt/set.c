@@ -12,15 +12,13 @@
    chain of entry indices, so iteration walks insertion order even
    after the elements rehash into new slots.
 
-   Elements key structurally over the domains the runtime itself can
-   compare: scalars on the tag and the payload, String and Bytes on
-   their bytes, and a Float on IEEE equality, so 0.0 and -0.0 are one
-   element while a NaN element never matches, not even itself. A heap
-   element whose typeinfo carries the structural hooks keys through
-   them, both sides tested for one family before any hook runs.
-   Families without hooks keep the address rule, the same rule the
-   dictionary applies to keys it cannot walk; the compiler's check
-   admits only element types whose keying this discipline honors. */
+   Each set carries the eq and hash hooks its element domain was built
+   with, and every derived construction clones the source's pair. The
+   domains the runtime itself can key -- the scalars, the Float rules,
+   and the String and Bytes families -- answer before any hook runs; a
+   reference element outside them is answered by the carried pair, so
+   two structurally equal composite elements are one. An element the
+   carried pair cannot answer aborts the process. */
 
 #define SET_LOAD_NUM 10
 #define SET_LOAD_DEN 7
@@ -41,6 +39,8 @@ typedef struct {
     size_t capacity;
     uint32_t head;
     uint32_t tail;
+    ek_key_eq_fn keq;
+    ek_key_hash_fn kh;
     ek_set_entry *entries;
 } ek_set;
 
@@ -61,14 +61,6 @@ static int content_key(const ek_val *v)
         || v->as.ref->info->kind == EK_KIND_BYTES;
 }
 
-/* Nonzero when the element refers to an object whose family carries
-   the structural hash: the table spreads the hook's word. */
-static int hooked_key(const ek_val *v)
-{
-    return v->tag == EK_VAL_REF && v->as.ref != NULL
-        && v->as.ref->info->hash != NULL;
-}
-
 /* The identifying bytes of a String or Bytes element. */
 static void content_view(const ek_val *v, const unsigned char **p,
                          size_t *width)
@@ -82,53 +74,26 @@ static void content_view(const ek_val *v, const unsigned char **p,
     }
 }
 
-/* The IEEE-equality key of a Float element: negative zero reads as
-   plain zero, so both spellings share one slot, and a NaN keeps its
-   own bits and matches nothing. */
-static uint64_t float_key(const ek_val *v)
+/* The slot word of an element: the carried hash hook answers the
+   domains the runtime cannot key itself. A missing hook is an element
+   domain the table cannot key, not a lookup miss. */
+static unsigned long hash_key(const ek_set *set, ek_val v)
 {
-    double d = v->as.f == 0.0 ? 0.0 : v->as.f;
-    uint64_t bits;
-
-    memcpy(&bits, &d, sizeof bits);
-    return bits;
+    if (content_key(&v))
+        return (unsigned long)ek_key_hash(v);
+    if (v.tag == EK_VAL_REF && set->kh)
+        return set->kh(v);
+    if (v.tag != EK_VAL_REF)
+        return (unsigned long)ek_key_hash(v);
+    ek_abort("the set element carries no hash hook");
+    return 0;
 }
 
-/* FNV-1a over the tag byte and the identifying bytes, so elements of
-   different tags stay distinct even when their payloads coincide. */
-static uint64_t hash_key(ek_val v)
-{
-    uint64_t h = 14695981039346656037ULL;
-    const unsigned char *p = (const unsigned char *)&v.as;
-    uint64_t bits = 0;
-    size_t width;
-
-    if (content_key(&v)) {
-        content_view(&v, &p, &width);
-    } else if (v.tag == EK_VAL_FLOAT) {
-        bits = float_key(&v);
-        p = (const unsigned char *)&bits;
-        width = sizeof bits;
-    } else if (hooked_key(&v)) {
-        unsigned long kh = v.as.ref->info->hash(v);
-
-        bits = (uint64_t)kh;
-        p = (const unsigned char *)&bits;
-        width = sizeof bits;
-    } else {
-        width = payload_width(&v);
-    }
-    h = (h ^ (uint64_t)v.tag) * 1099511628211ULL;
-    for (size_t i = 0; i < width; i++)
-        h = (h ^ p[i]) * 1099511628211ULL;
-    return h;
-}
-
-/* Nonzero when the two elements are the same element. One family is
-   the precheck: the typeinfo pointer separates the constructors
-   before any hook runs, and the hook answers within it. Elements of
-   families without hooks key on the object's address. */
-static int key_eq(ek_val a, ek_val b)
+/* Nonzero when the two elements are the same element. The fast
+   domains answer first; a reference element outside them goes to the
+   carried eq hook. A missing hook is an element domain the table
+   cannot key, not a lookup miss. */
+static int key_eq(const ek_set *set, ek_val a, ek_val b)
 {
     if (content_key(&a) || content_key(&b)) {
         const unsigned char *pa, *pb;
@@ -149,21 +114,21 @@ static int key_eq(ek_val a, ek_val b)
     if (a.tag == EK_VAL_REF) {
         if (a.as.ref == NULL || b.as.ref == NULL)
             return a.as.ref == b.as.ref;
-        if (a.as.ref->info == b.as.ref->info && a.as.ref->info->eq)
-            return a.as.ref->info->eq(a, b);
-        return a.as.ref == b.as.ref;
+        if (set->keq)
+            return set->keq(a, b);
+        ek_abort("the set element carries no equality hook");
     }
     return memcmp(&a.as, &b.as, payload_width(&a)) == 0;
 }
 
 /* The index of the slot the element occupies, or of the free slot
    where it belongs. */
-static size_t probe(const ek_set_entry *entries, size_t capacity, ek_val key)
+static size_t probe(const ek_set *set, ek_val key)
 {
-    size_t mask = capacity - 1;
-    size_t i = (size_t)hash_key(key) & mask;
+    size_t mask = set->capacity - 1;
+    size_t i = hash_key(set, key) & mask;
 
-    while (entries[i].used && !key_eq(entries[i].key, key))
+    while (set->entries[i].used && !key_eq(set, set->entries[i].key, key))
         i = (i + 1) & mask;
     return i;
 }
@@ -175,28 +140,32 @@ static const ek_set_entry *find_entry(const ek_set *set, ek_val key)
 
     if (set->count == 0)
         return NULL;
-    i = probe(set->entries, set->capacity, key);
+    i = probe(set, key);
     return set->entries[i].used ? &set->entries[i] : NULL;
 }
 
-/* A set object with no table: the empty set. The chain of none starts
-   and ends at the no-entry mark. */
-static ek_set *set_new(void)
+/* A set object with no table: the empty set over the given element
+   hooks. The chain of none starts and ends at the no-entry mark. */
+static ek_set *set_new(ek_key_eq_fn keq, ek_key_hash_fn kh)
 {
     ek_set *set = ek_rt_alloc_zeroed(sizeof *set);
 
     set->obj.info = &ek_typeinfo_set;
     set->obj.rc = 1;
+    set->keq = keq;
+    set->kh = kh;
     set->head = SET_NO_ENTRY;
     set->tail = SET_NO_ENTRY;
     return set;
 }
 
-/* A fresh set whose table holds count entries below the load limit:
-   the capacity starts at eight and doubles until it fits. */
-static ek_set *set_sized_for(size_t count)
+/* A fresh set whose table holds count entries below the load limit,
+   carrying the given element hooks: the capacity starts at eight and
+   doubles until it fits. */
+static ek_set *set_sized_for(size_t count, ek_key_eq_fn keq,
+                             ek_key_hash_fn kh)
 {
-    ek_set *set = set_new();
+    ek_set *set = set_new(keq, kh);
     size_t capacity = SET_MIN_CAP;
 
     while (count * SET_LOAD_NUM > capacity * SET_LOAD_DEN)
@@ -210,7 +179,7 @@ static ek_set *set_sized_for(size_t count)
    appends the slot to the build-order chain. */
 static void entry_store(ek_set *set, ek_val key)
 {
-    size_t i = probe(set->entries, set->capacity, key);
+    size_t i = probe(set, key);
     ek_set_entry *slot = &set->entries[i];
 
     ek_retain(key);
@@ -225,14 +194,14 @@ static void entry_store(ek_set *set, ek_val key)
     set->count++;
 }
 
-ek_val ek_set_new(void)
+ek_val ek_set_new(ek_key_eq_fn keq, ek_key_hash_fn kh)
 {
-    return ek_val_ref(&set_new()->obj);
+    return ek_val_ref(&set_new(keq, kh)->obj);
 }
 
-ek_val ek_set_of(ek_val list)
+ek_val ek_set_of(ek_val list, ek_key_eq_fn keq, ek_key_hash_fn kh)
 {
-    ek_set *set = set_sized_for(ek_list_len(list));
+    ek_set *set = set_sized_for(ek_list_len(list), keq, kh);
     ek_val cur;
 
     for (cur = list; ek_val_is_cons(cur); cur = ek_cons_tail(cur.as.ref)) {
@@ -254,7 +223,7 @@ ek_val ek_set_insert(ek_val s, ek_val elem)
         ek_retain(s);
         return s;
     }
-    fresh = set_sized_for(old->count + 1);
+    fresh = set_sized_for(old->count + 1, old->keq, old->kh);
     for (idx = old->head; idx != SET_NO_ENTRY; idx = old->entries[idx].next)
         entry_store(fresh, old->entries[idx].key);
     entry_store(fresh, elem);
@@ -271,9 +240,9 @@ ek_val ek_set_remove(ek_val s, ek_val elem)
         ek_retain(s);
         return s;
     }
-    fresh = set_sized_for(old->count - 1);
+    fresh = set_sized_for(old->count - 1, old->keq, old->kh);
     for (idx = old->head; idx != SET_NO_ENTRY; idx = old->entries[idx].next) {
-        if (!key_eq(old->entries[idx].key, elem))
+        if (!key_eq(old, old->entries[idx].key, elem))
             entry_store(fresh, old->entries[idx].key);
     }
     return ek_val_ref(&fresh->obj);

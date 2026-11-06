@@ -274,7 +274,7 @@ static int supported(lower_dsvc_kind kind, const ek_type *t)
     case EK_T_NEVER:
         return 0;
     case EK_T_DICT:
-        if (kind == DSV_ORD || kind == DSV_HASH) {
+        if (kind == DSV_ORD) {
             return 0;
         }
         if (kind == DSV_TOJSON || kind == DSV_FROMJSON) {

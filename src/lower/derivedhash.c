@@ -8,17 +8,21 @@
    -- integers by value, floats by their bits with negative zero read
    as plain zero and a NaN by its own bits, and a reference through the
    child typeinfo's hash or, when the child carries none, the child's
-   address. One FNV-1a word step is the mixing primitive, and the
+   address. Lists walk the spine and dictionaries and sets accumulate
+   their entries order-insensitively, the way their equalities ignore
+   order. One FNV-1a word step is the mixing primitive, and the
    determinism it needs holds within one process run.
 
-   lower_key_hooks stamps the eq and hash of an applied key domain onto
-   the families that carry its values, lazily at the dict and set sites
-   that build over the domain. The scalar slots never stamp: the
-   runtime keys them natively. A family stamps once, so two instanti-
-   ations of one generic family keep the first domain's hooks. The
-   domains whose derivation halts answer zero, and the domains with no
-   per-value family (lists, dictionaries, sets) answer one over the
-   identity fallback the runtime applies to them. */
+   lower_key_pair names the hook pair a construction site passes the
+   runtime: the stamped family services for the record, tuple, and
+   algebraic domains, the minted container services for a list or a
+   dictionary standing as the key domain, and the runtime's default
+   pair for the scalar and text slots. lower_key_hooks stamps those
+   services onto the families that carry the domain's values, lazily
+   at the dict and set sites that build over the domain. A family
+   stamps once, so two instantiations of one generic family keep the
+   first domain's hooks. The domains whose derivation halts answer
+   zero, and the construction sites diagnose the refusal. */
 
 /* The mixing step every generated hash shares, emitted once per unit
    ahead of the first body that calls it. */
@@ -228,6 +232,27 @@ static void emit_list_hash(lower_ctx *c, lower_demit *d, const ek_type *t)
     lower_d_printf(d, "    return h;\n");
 }
 
+/* Entry mixing over a dictionary: each key's and each value's hash
+   adds, so two dictionaries built in different orders mix the same
+   word, matching the dictionary equality that ignores order. */
+static void emit_dict_hash(lower_ctx *c, lower_demit *d, const ek_type *t)
+{
+    const char *kh = lower_dsvc_request(c, NULL, DSV_HASH, t->u.dict.key);
+    const char *vh = lower_dsvc_request(c, NULL, DSV_HASH, t->u.dict.val);
+
+    if (!kh || !vh) {
+        lower_d_printf(d, "    return h;\n");
+        return;
+    }
+    lower_d_printf(d, "    ek_val k, x;\n");
+    lower_d_printf(d, "    size_t cur = 0;\n\n");
+    lower_d_printf(d, "    while (ek_dict_next(v, &cur, &k, &x)) {\n");
+    lower_d_printf(d, "        h += %s(k);\n", kh);
+    lower_d_printf(d, "        h += %s(x);\n", vh);
+    lower_d_printf(d, "    }\n");
+    lower_d_printf(d, "    return h;\n");
+}
+
 void lower_dsvc_hash_emit(lower_ctx *c, const char *name, const ek_type *t)
 {
     lower_demit d;
@@ -252,6 +277,9 @@ void lower_dsvc_hash_emit(lower_ctx *c, const char *name, const ek_type *t)
         lower_d_printf(&d, "    return h;\n");
     } else if (t->kind == EK_T_LIST) {
         emit_list_hash(c, &d, t);
+    } else if (t->kind == EK_T_DICT) {
+        emit_identity_mix(&d);
+        emit_dict_hash(c, &d, t);
     } else if (lower_scalar_kind(t) != EKSC_OTHER) {
         emit_slot_mix(c, &d, t, "v");
         lower_d_printf(&d, "    return h;\n");
@@ -301,8 +329,8 @@ static void stamp_family(lower_ctx *c, lower_gtype *g, const ek_type *t)
 }
 
 /* Stamps the record, tuple, or ctype representation the applied type
-   names. */
-static void stamp_shape(lower_ctx *c, const ek_type *t)
+   names, answering the family the stamping landed on. */
+static lower_gtype *stamp_shape(lower_ctx *c, const ek_type *t)
 {
     lower_gtype *g = NULL;
     const char **fnames;
@@ -312,43 +340,78 @@ static void stamp_shape(lower_ctx *c, const ek_type *t)
     if (lower_shape_of(c, NULL, t, &fnames, &ftypes, &nf, &g) && g) {
         stamp_family(c, g, t);
     }
+    return g;
 }
 
-/* Stamps the nominal's families: the range over its generated struct,
-   the algebraic type over every constructor's family, the declared
-   record or tuple repr over its own. Zero when none exists -- a
-   capability or handle, whose derivation halts. */
-static int stamp_nominal(lower_ctx *c, const ek_type *t)
+/* The stamped pair of the record, tuple, and nominal domains: the
+   services read back off the family the stamping landed on -- every
+   constructor of an algebraic type carries the same pair. Zero when
+   the domain has no family, a capability or handle whose derivation
+   halts. */
+static int stamp_pair(lower_ctx *c, const ek_type *t, const char **keq,
+                      const char **khash)
 {
     lower_variant *vs;
     lower_gtype *g = NULL;
-    const ek_type *elem;
     size_t nv, i;
 
-    if (lower_is_range(t)) {
-        elem = t->u.nominal.argc == 1 ? t->u.nominal.args[0] : NULL;
-        g = elem ? lower_range_family(c, lower_scalar_kind(elem)) : NULL;
-        stamp_family(c, g, t);
-        return 1;
-    }
-    if (lower_variants_of(c, NULL, t, &vs, &nv, 0)) {
-        for (i = 0; i < nv; i++) {
-            stamp_family(c, lower_gtype_of_stem(c, vs[i].stem), t);
+    if (t->kind == EK_T_NOMINAL) {
+        if (lower_is_range(t)) {
+            const ek_type *elem = t->u.nominal.argc == 1
+                                      ? t->u.nominal.args[0] : NULL;
+
+            g = elem ? lower_range_family(c, lower_scalar_kind(elem)) : NULL;
+            if (g) {
+                stamp_family(c, g, t);
+            }
+        } else if (lower_variants_of(c, NULL, t, &vs, &nv, 0)) {
+            for (i = 0; i < nv; i++) {
+                stamp_family(c, lower_gtype_of_stem(c, vs[i].stem), t);
+            }
+            g = lower_gtype_of_stem(c, vs[0].stem);
+        } else if (t->u.nominal.sym && t->u.nominal.sym->decl) {
+            g = stamp_shape(c, t);
         }
-        return 1;
+    } else {
+        g = stamp_shape(c, t);
     }
-    if (t->u.nominal.sym && t->u.nominal.sym->decl) {
-        stamp_shape(c, t);
-        return 1;
+    if (!g || !g->eq_name || !g->hash_name) {
+        return 0;
     }
-    return 0;
+    *keq = g->eq_name;
+    *khash = g->hash_name;
+    return 1;
 }
 
-/* The applied key domain: nonzero when the domain keys. The scalar
-   slots and the domains with no per-value family key without hooks;
-   the family domains stamp theirs. */
-int lower_key_hooks(lower_ctx *c, const ek_type *t)
+/* The minted pair of a container domain: the services that walk the
+   container itself, named for its applied spelling. */
+static int mint_pair(lower_ctx *c, const ek_type *t, const char **keq,
+                     const char **khash)
 {
+    const char *q = lower_dsvc_request(c, NULL, DSV_EQ, t);
+    const char *h = lower_dsvc_request(c, NULL, DSV_HASH, t);
+
+    if (!q || !h) {
+        return 0;
+    }
+    *keq = q;
+    *khash = h;
+    return 1;
+}
+
+/* The hook pair a construction site passes the runtime over the key
+   domain: the family services the domain stamps for the record, tuple,
+   and algebraic shapes, the minted services for a container standing
+   as the domain -- a list, a dictionary, or the runtime-backed set --
+   and the runtime's default pair for the scalar and text slots. Zero
+   when the domain keys nowhere -- the refusal the construction sites
+   diagnose. The names stand at the default pair whatever the answer,
+   so the drained unit still compiles. */
+int lower_key_pair(lower_ctx *c, const ek_type *t, const char **keq,
+                   const char **khash)
+{
+    *keq = "ek_key_eq";
+    *khash = "ek_key_hash";
     if (!t) {
         return 1;
     }
@@ -359,13 +422,28 @@ int lower_key_hooks(lower_ctx *c, const ek_type *t)
     case EK_T_FN:
     case EK_T_NEVER:
         return 0;
+    case EK_T_LIST:
+    case EK_T_DICT:
+        return mint_pair(c, t, keq, khash);
+    case EK_T_NOMINAL:
+        if (lower_is_set(t)) {
+            return mint_pair(c, t, keq, khash);
+        }
+        return stamp_pair(c, t, keq, khash);
     case EK_T_RECORD:
     case EK_T_TUPLE:
-        stamp_shape(c, t);
-        return 1;
-    case EK_T_NOMINAL:
-        return stamp_nominal(c, t);
+        return stamp_pair(c, t, keq, khash);
     default:
         return 1;
     }
+}
+
+/* The key-domain stamping: whether the domain keys at all, stamping
+   its pair onto the families that carry its values along the way. */
+int lower_key_hooks(lower_ctx *c, const ek_type *t)
+{
+    const char *keq;
+    const char *khash;
+
+    return lower_key_pair(c, t, &keq, &khash);
 }

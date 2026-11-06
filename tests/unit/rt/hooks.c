@@ -1,16 +1,22 @@
 #include "harness.h"
 
+#include <signal.h>
 #include <stddef.h>
 #include <stdlib.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 #include "ekort.h"
 
-/* The structural keying hooks: a family whose typeinfo carries eq and
-   hash keys dictionaries and sets structurally, so equal-but-distinct
+/* The key hooks a container carries: a dictionary or set born over an
+   eq and hash pair keys its domain through them, so equal-but-distinct
    objects are one key, unequal ones hash apart, and the identity holds
-   across every lookup within the run. A family without hooks keeps the
-   address rule, and a key of another family never matches. The text
-   families carry the hooks over their bytes. */
+   across every lookup within the run. Every copy-on-insert step clones
+   the carried pair, so a build chain keys by one discipline. The
+   default pair keys the scalar, Float, and text domains itself and
+   falls back to the family's own hooks, the object's address when the
+   family has none; a reference key the carried pair cannot answer
+   aborts the process. */
 
 /* Two fake families over the same two-slot layout: the hooks compare
    and mix the slots, the identity separating the families stays with
@@ -85,7 +91,7 @@ static void hooks_answer_over_the_layout(void)
 
 static void dict_keys_structurally(void)
 {
-    ek_val d0 = ek_dict_new();
+    ek_val d0 = ek_dict_new(ek_key_eq, ek_key_hash);
     ek_val a = pair_of(&pair_a_info, 4, 5);
     ek_val b = pair_of(&pair_a_info, 4, 5);
     ek_val c = pair_of(&pair_a_info, 4, 6);
@@ -115,7 +121,7 @@ static void dict_distinct_keys_coexist(void)
 {
     ek_val a = pair_of(&pair_a_info, 1, 1);
     ek_val b = pair_of(&pair_a_info, 2, 2);
-    ek_val d0 = ek_dict_new();
+    ek_val d0 = ek_dict_new(ek_key_eq, ek_key_hash);
     ek_val d1 = ek_dict_set(d0, a, ek_val_int(1));
     ek_val d2 = ek_dict_set(d1, b, ek_val_int(2));
     ek_val out = ek_val_unit();
@@ -136,7 +142,7 @@ static void dict_separates_the_families(void)
 {
     ek_val a = pair_of(&pair_a_info, 3, 4);
     ek_val b = pair_of(&pair_b_info, 3, 4);
-    ek_val d0 = ek_dict_new();
+    ek_val d0 = ek_dict_new(ek_key_eq, ek_key_hash);
     ek_val d1 = ek_dict_set(d0, a, ek_val_int(1));
     ek_val d2 = ek_dict_set(d1, b, ek_val_int(2));
     ek_val out = ek_val_unit();
@@ -153,12 +159,12 @@ static void dict_separates_the_families(void)
 }
 
 /* A family without hooks keys on the object's address, the rule the
-   hookless families always applied. */
+   default pair keeps for the families it cannot walk. */
 static void dict_keeps_the_address_rule_without_hooks(void)
 {
     ek_val a = pair_of(&plain_info, 8, 9);
     ek_val b = pair_of(&plain_info, 8, 9);
-    ek_val d0 = ek_dict_new();
+    ek_val d0 = ek_dict_new(ek_key_eq, ek_key_hash);
     ek_val d1 = ek_dict_set(d0, a, ek_val_int(1));
     ek_val d2 = ek_dict_set(d1, b, ek_val_int(2));
     ek_val out = ek_val_unit();
@@ -177,7 +183,7 @@ static void set_keys_structurally(void)
     ek_val a = pair_of(&pair_a_info, 6, 7);
     ek_val b = pair_of(&pair_a_info, 6, 7);
     ek_val c = pair_of(&pair_a_info, 9, 9);
-    ek_val s0 = ek_set_new();
+    ek_val s0 = ek_set_new(ek_key_eq, ek_key_hash);
     ek_val s1 = ek_set_insert(s0, a);
     ek_val s2 = ek_set_insert(s1, b);
     ek_val s3 = ek_set_insert(s2, c);
@@ -209,10 +215,15 @@ static void set_dedups_over_the_hooks(void)
     ek_val b = pair_of(&pair_a_info, 1, 2);
     ek_val c = pair_of(&pair_a_info, 1, 3);
     ek_val other = pair_of(&pair_b_info, 1, 2);
-    ek_val list = ek_cons(a, ek_cons(b, ek_cons(c, ek_nil_val())));
-    ek_val s = ek_set_of(list);
+    ek_val last = ek_cons(c, ek_nil_val());
+    ek_val rest = ek_cons(b, last);
+    ek_val list = ek_cons(a, rest);
+    ek_val s = ek_set_of(list, ek_key_eq, ek_key_hash);
     ek_val less = ek_set_remove(s, b);
 
+    /* each fold's intermediate dies once the next cell holds its own */
+    ek_release(last);
+    ek_release(rest);
     EK_CHECK_U64(ek_set_len(s), 2); /* the first occurrence keeps */
     EK_CHECK(ek_set_contains(s, b));
     EK_CHECK(!ek_set_contains(s, other));
@@ -232,7 +243,7 @@ static void text_keys_stay_byte_based(void)
 {
     ek_obj *k1 = ek_str_from_cstr("key");
     ek_obj *k2 = ek_str_from_cstr("key");
-    ek_val d0 = ek_dict_new();
+    ek_val d0 = ek_dict_new(ek_key_eq, ek_key_hash);
     ek_val d1 = ek_dict_set(d0, ek_val_ref(k1), ek_val_int(1));
     ek_val d2 = ek_dict_set(d1, ek_val_ref(k2), ek_val_int(2));
     ek_val out = ek_val_unit();
@@ -254,7 +265,7 @@ static void set_text_hooks(void)
     ek_obj *t1 = ek_str_from_cstr("k");
     ek_obj *t2 = ek_str_from_cstr("k");
     ek_obj *b = ek_bytes_new("k", 1);
-    ek_val s0 = ek_set_new();
+    ek_val s0 = ek_set_new(ek_key_eq, ek_key_hash);
     ek_val s1 = ek_set_insert(s0, ek_val_ref(t1));
     ek_val s2 = ek_set_insert(s1, ek_val_ref(t2));
     ek_val s3 = ek_set_insert(s2, ek_val_ref(b));
@@ -274,7 +285,7 @@ static void set_text_hooks(void)
    element and a NaN element never matches, not even itself. */
 static void set_float_elements_follow_ieee_equality(void)
 {
-    ek_val s0 = ek_set_new();
+    ek_val s0 = ek_set_new(ek_key_eq, ek_key_hash);
     ek_val s1 = ek_set_insert(s0, ek_val_float(0.0));
     ek_val s2 = ek_set_insert(s1, ek_val_float(-0.0));
     ek_val s3 = ek_set_insert(s2, ek_val_float(1.5));
@@ -291,6 +302,181 @@ static void set_float_elements_follow_ieee_equality(void)
     ek_release(s0);
 }
 
+/* The carried pair travels with every copy-on-insert step: a build
+   chain over the pair hooks keeps keying structurally after each
+   insert, and a merge reads through the left side's pair. */
+static void dict_set_clones_the_pair(void)
+{
+    ek_val d0 = ek_dict_new(pair_eq, pair_hash);
+    ek_val right = ek_dict_new(ek_key_eq, ek_key_hash);
+    ek_val a = pair_of(&pair_a_info, 1, 4);
+    ek_val b = pair_of(&pair_a_info, 1, 4);
+    ek_val out = ek_val_unit();
+    ek_val d1 = ek_dict_set(d0, a, ek_val_int(1));
+    ek_val d2 = ek_dict_set(d1, b, ek_val_int(2));
+    ek_val joined = ek_dict_merge(d2, right);
+
+    EK_CHECK_U64(ek_dict_len(d2), 1); /* the clone found b equal to a */
+    EK_CHECK(ek_dict_get(d2, b, &out) && out.as.i == 2);
+    EK_CHECK_U64(ek_dict_len(joined), 1);
+    EK_CHECK(ek_dict_get(joined, b, &out) && out.as.i == 2);
+    ek_release(joined);
+    ek_release(d2);
+    ek_release(d1);
+    ek_release(d0);
+    ek_release(right);
+    ek_release(a);
+    ek_release(b);
+}
+
+/* The element pair clones the same way across an insert chain. */
+static void set_insert_clones_the_pair(void)
+{
+    ek_val s0 = ek_set_new(pair_eq, pair_hash);
+    ek_val a = pair_of(&pair_a_info, 2, 5);
+    ek_val b = pair_of(&pair_a_info, 2, 5);
+    ek_val s1 = ek_set_insert(s0, a);
+    ek_val s2 = ek_set_insert(s1, b);
+
+    EK_CHECK_U64(ek_set_len(s2), 1); /* the clone found b equal to a */
+    EK_CHECK(ek_set_contains(s2, b));
+    ek_release(s2);
+    ek_release(s1);
+    ek_release(s0);
+    ek_release(a);
+    ek_release(b);
+}
+
+/* A Bytes value keys its bytes under the default pair, and a String
+   and a Bytes value over one byte sequence stay apart. */
+static void dict_bytes_key_by_content(void)
+{
+    ek_obj *k1 = ek_str_from_cstr("k");
+    ek_obj *b1 = ek_bytes_new("k", 1);
+    ek_obj *b2 = ek_bytes_new("k", 1);
+    ek_val d0 = ek_dict_new(ek_key_eq, ek_key_hash);
+    ek_val d1 = ek_dict_set(d0, ek_val_ref(b1), ek_val_int(1));
+    ek_val d2 = ek_dict_set(d1, ek_val_ref(b2), ek_val_int(2));
+    ek_val out = ek_val_unit();
+
+    EK_CHECK_U64(ek_dict_len(d2), 1); /* the second spelling overwrote */
+    EK_CHECK(ek_dict_get(d2, ek_val_ref(b1), &out) && out.as.i == 2);
+    EK_CHECK(!ek_dict_get(d2, ek_val_ref(k1), &out));
+    ek_release(d2);
+    ek_release(d1);
+    ek_release(d0);
+    ek_release(ek_val_ref(k1));
+    ek_release(ek_val_ref(b1));
+    ek_release(ek_val_ref(b2));
+}
+
+/* A container born without hooks refuses a reference key its own
+   family cannot answer: the process aborts with the reason. */
+
+#define ABORT_TEXT_CAP 128
+
+typedef struct {
+    int status;
+    char text[ABORT_TEXT_CAP];
+} abort_run;
+
+static void read_err(int fd, char *buf, size_t cap)
+{
+    size_t len = 0;
+    ssize_t n;
+
+    while (len + 1 < cap) {
+        n = read(fd, buf + len, cap - 1);
+        if (n <= 0)
+            break;
+        len += (size_t)n;
+    }
+    buf[len] = '\0';
+}
+
+/* Runs body in a child whose standard error is the pipe, then records
+   the wait status and everything the child wrote. */
+static void run_abort(void (*body)(void), abort_run *run)
+{
+    int fds[2];
+    pid_t pid;
+
+    run->status = 0;
+    run->text[0] = '\0';
+    if (pipe(fds) != 0) {
+        EK_CHECK(0);
+        return;
+    }
+    pid = fork();
+    if (pid < 0) {
+        EK_CHECK(0);
+        close(fds[0]);
+        close(fds[1]);
+        return;
+    }
+    if (pid == 0) {
+        close(fds[0]);
+        if (dup2(fds[1], STDERR_FILENO) < 0)
+            _exit(127);
+        close(fds[1]);
+        body();
+        _exit(127); /* a body that returns failed to terminate */
+    }
+    close(fds[1]);
+    read_err(fds[0], run->text, ABORT_TEXT_CAP);
+    close(fds[0]);
+    waitpid(pid, &run->status, 0);
+}
+
+static void body_dict_insert_without_eq(void)
+{
+    ek_val d = ek_dict_new(NULL, NULL);
+    ek_val a = pair_of(&plain_info, 1, 1);
+
+    ek_dict_set(d, a, ek_val_int(1));
+}
+
+static void body_dict_lookup_without_hash(void)
+{
+    ek_val d = ek_dict_new(pair_eq, NULL);
+    ek_val a = pair_of(&plain_info, 1, 1);
+    ek_val out = ek_val_unit();
+
+    d = ek_dict_set(d, ek_val_ref(ek_str_from_cstr("k")),
+                    ek_val_int(1));
+    ek_dict_get(d, a, &out);
+}
+
+static void body_set_insert_without_hooks(void)
+{
+    ek_val s = ek_set_new(NULL, NULL);
+    ek_val a = pair_of(&plain_info, 1, 1);
+
+    ek_set_insert(s, a);
+}
+
+static void unhooked_reference_keys_abort(void)
+{
+    abort_run run;
+
+    run_abort(body_dict_insert_without_eq, &run);
+    EK_CHECK(WIFSIGNALED(run.status));
+    EK_CHECK_U64(WTERMSIG(run.status), SIGABRT);
+    EK_CHECK_STR(run.text, "abort: the dictionary key carries no equality "
+                           "hook\n");
+
+    run_abort(body_dict_lookup_without_hash, &run);
+    EK_CHECK(WIFSIGNALED(run.status));
+    EK_CHECK_U64(WTERMSIG(run.status), SIGABRT);
+    EK_CHECK_STR(run.text, "abort: the dictionary key carries no hash "
+                           "hook\n");
+
+    run_abort(body_set_insert_without_hooks, &run);
+    EK_CHECK(WIFSIGNALED(run.status));
+    EK_CHECK_U64(WTERMSIG(run.status), SIGABRT);
+    EK_CHECK_STR(run.text, "abort: the set element carries no hash hook\n");
+}
+
 int main(void)
 {
     hooks_answer_over_the_layout();
@@ -303,5 +489,9 @@ int main(void)
     text_keys_stay_byte_based();
     set_text_hooks();
     set_float_elements_follow_ieee_equality();
+    dict_set_clones_the_pair();
+    set_insert_clones_the_pair();
+    dict_bytes_key_by_content();
+    unhooked_reference_keys_abort();
     return ek_test_report("rt/hooks");
 }
