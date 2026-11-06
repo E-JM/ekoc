@@ -393,15 +393,20 @@ static void root_name_rules(void)
     rfx_end(&f);
 }
 
-/* The companion stem is reserved for the shipped module: a root file
-   named `time` is rejected like `std` and `_geo`. */
+/* A companion stem is reserved for the shipped module: a root file
+   named after one is rejected like `std` and `_geo`. */
 static void companion_root_name(void)
 {
-    rfx f;
+    static const char *const reserved[] = {"time.eko", "regex.eko"};
+    size_t i;
 
-    rfx_run(&f, "v: Int = 1\n", NULL, 0, "time.eko");
-    EK_CHECK(rfx_code_at_line(&f, "E-module-name", 1));
-    rfx_end(&f);
+    for (i = 0; i < sizeof reserved / sizeof reserved[0]; i++) {
+        rfx f;
+
+        rfx_run(&f, "v: Int = 1\n", NULL, 0, reserved[i]);
+        EK_CHECK(rfx_code_at_line(&f, "E-module-name", 1));
+        rfx_end(&f);
+    }
 }
 
 /* A constructor and its type MAY share a spelling; the qualified value
