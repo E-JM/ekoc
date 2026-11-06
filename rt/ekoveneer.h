@@ -4,12 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* The embedding veneer: the entry points a host links against, and
-   nothing else (Clause 10.7.1). The value and module types are
-   opaque; layouts belong to the implementation. A value that crosses
-   the boundary arrives at no reference of its own: the host holds it
-   with eko_retain and drops the hold with eko_release (Clause
-   10.7.2). */
+/* The embedding veneer's entry points. */
 
 typedef struct eko_opaque *eko_value;
 typedef struct eko_module_opaque *eko_module;

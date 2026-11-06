@@ -16,10 +16,12 @@ where they conflict.
   `support/` implements them. No stage aborts, exits, or panics —
   failures are diagnostics and the pipeline drains (rule 4).
 
-## Comments
+## Comments and docs
 
-- A public header gives each function's contract in a few lines:
-  inputs, ownership, failure.
+- A module's overview — its input and output, the shape of its data, how
+  it is used — lives in the README.md beside it, not in a header. A
+  public header gives each function's contract in a few lines: inputs,
+  ownership, failure.
 - Say what the code does and why in its own terms: no clause, annex, or
   table numbers and no spec quotations. A diagnostic string may cite a
   clause where the suite demands it; a comment never does.

@@ -7,10 +7,7 @@
 #include "support/arena.h"
 #include "support/diag.h"
 
-/* Source bytes -> token stream. The stream ends with EOF; line
-   terminators survive as NEWLINE tokens for the layout stage. A `///`
-   line yields one DOC token before its NEWLINE; plain `//` comments
-   are skipped. */
+/* Source bytes -> token stream. */
 
 typedef enum {
     EK_TOK_IDENT = 0,
