@@ -183,7 +183,7 @@ Result t ParseError` by default.
 | `String`, `Char`, `Bytes` | `Str`; `Bytes` in lowercase hexadecimal |
 | `Int`, `Float`, `Bool`, `_` | number, `true` or `false`, `null` |
 | ADT | external tagging (Clause 9.9.4) |
-| non-string-keyed dictionary, capability, handle, function | no default; compile error (`E-json-shape`) |
+| non-string-keyed dictionary, capability, handle, function, `Range` | no default; compile error (`E-json-shape`) |
 
 Every value whose type participates satisfies `from_json(to_json(v)).eq(Ok
 v)`. A missing field, an extra key, an unknown variant, or a payload type

@@ -316,6 +316,24 @@ static void json_halts(void)
     EK_CHECK_U64(cfx_errors(&f), 0);
     EK_CHECK(cfx_reading_at(&f, 4, EK_RD_DERIVED));
     cfx_end(&f);
+
+    /* A range is an iteration form with no mapping row: the pair halts
+       at the head and through a containing record. */
+    cfx_begin(&f,
+              "f: () -> Json =\n"
+              "    r := 1..5\n"
+              "    r.to_json()\n");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-json-shape", 3));
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "Rng: type = [r: Range Int]\n"
+              "v: Rng = {r: 1..5}\n"
+              "w: Json = v.to_json()\n");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-json-shape", 3));
+    cfx_end(&f);
 }
 
 /* The equality pair and the ordering family derive over the value layer

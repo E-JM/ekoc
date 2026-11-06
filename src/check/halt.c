@@ -75,6 +75,11 @@ static int halt_stops(const halt_graph *g, const ek_type *t)
             return 1; /* a non-string key has no default form */
         }
     }
+    /* A range is an iteration form, not a data shape: no row of the
+       mapping table names it, so the pair halts here. */
+    if (t->kind == EK_T_NOMINAL && ck_is_std(t, "Range")) {
+        return 1;
+    }
     return ck_is_capability(t) || ck_is_handle(t);
 }
 

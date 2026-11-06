@@ -105,7 +105,8 @@ the start exceeds the end; `Range.length` counts them; `Range.each` and
 the two endpoints and the closed flag. `Range.lt` and its family (`le`, `gt`,
 `ge`) order lexicographically over the endpoints, the closed flag last.
 `Range.show` is the operator form, `1..5` and `1..=5`, so neither `show` nor
-`inspect` prints a constructor name.
+`inspect` prints a constructor name. `Range` has no default JSON mapping
+(Clause 9.9.3).
 A member is world-touching exactly when its callback is (Clause 7.9).
 
 ## 9.11 Text Utilities
