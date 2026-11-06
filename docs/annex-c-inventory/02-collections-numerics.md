@@ -200,7 +200,8 @@ elements are `Int` in `0..255` (Clause 9.5.2). `append` is the body of `++`
 and costs O(n) (Clause 7.8.6). `from_ints` is a domain check, and an element
 outside `0..255` yields `None`. `from_hex` is input validation, and an odd
 length or a non-hexadecimal character yields `Err` (Clause 9.5.3). `to_u8s`
-and `from_u8s` are zero-copy (Clause 9.5.2). `to_string` reports the first
+and `from_u8s` walk the block in place over the word's own slot: one pass,
+no second block (Clause 9.5.2). `to_string` reports the first
 invalid offset on failure; `to_bytes` on `String` is total (Clause 9.5.3).
 `Bytes.eq` and `Bytes.lt` are compiler-owned; `<` is byte lexicographic order
 (Clause 9.8.5).

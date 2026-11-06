@@ -16,7 +16,7 @@ the length of the list.
 | `==`, `show`, `inspect` | O(structure size) |
 | Deep structural recursion | proportional to data depth; stack guarantees in Clause 8.8 |
 | extern marshalling (whitelisted, Clause 10.3.5) | at most one copy per crossing of the value's size; scalars O(1); `C.In` one copy-in |
-| `Bytes.to_u8s` and `Bytes.from_u8s` (Clause 9.5.2) | O(1), zero copy |
+| `Bytes.to_u8s` and `Bytes.from_u8s` (Clause 9.5.2) | O(n): one pass, the block itself not copied |
 
 Dictionary merge magnitude is implementation-defined, because dictionaries are
 persistent structures (Clause 2.5). Index-based access keeps the same
