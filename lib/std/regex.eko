@@ -1,0 +1,405 @@
+// The regex companion module: a linear-time matcher over the pattern
+// subset of Clause 9.11.3. Opened by `import std/regex`; no name of this
+// module resolves without that line.
+//
+// A pattern is parsed into an AST and compiled to a Thompson NFA with
+// explicit epsilon and assertion edges. Matching simulates the NFA over
+// the code points of a line: there is no backtracking, so nested
+// quantifiers such as (a*)*b cannot blow up, and the cost stays bounded
+// by the line length times the state count. The compiled automaton lives
+// in a closure, so the type below is the whole public surface.
+
+/// A compiled pattern. It carries the NFA, so a match is a call; no
+/// pattern text or automaton is observable.
+Regex: type = Regex ((String, Bool) -> Bool)
+
+/// Compiles a pattern, or reports the position and cause of a malformed
+/// one. The Bool of a match folds ASCII letters only.
+Regex.compile: (pattern: String) -> Result Regex String =
+    case _compile(pattern):
+        Err e -> Err e
+        Ok compiled ->
+            Ok (Regex ((line, ignore_case): _match(compiled, line, ignore_case)))
+
+/// True when the pattern matches anywhere in the line. The Bool folds
+/// ASCII letters only, in the pattern's classes and in the line.
+Regex.is_match: (re: Regex, line: String, ignore_case: Bool) -> Bool =
+    case re:
+        Regex run -> run(line, ignore_case)
+
+/// One inclusive code-point span of a character class.
+_Span: type = [lo: Int, hi: Int]
+
+/// A character class before matching: a union of spans, optionally negated.
+_CharClass: type = [negated: Bool, spans: []_Span]
+
+/// The parsed regular-expression AST.
+_Node: type =
+    | EmptyNode
+    | Literal Char
+    | AnyChar
+    | CharSet _CharClass
+    | Sequence []_Node
+    | Alternate []_Node
+    | RepeatStar _Node
+    | RepeatPlus _Node
+    | RepeatOpt _Node
+    | LineStart
+    | LineEnd
+
+/// One consuming NFA edge; `cls` decides whether the current Char is taken.
+_CEdge: type = [cls: _CharClass, to: Int]
+
+/// One NFA state. `bol` and `eol` are zero-width assertion edges that the
+/// simulator traverses only at the start or end of a line.
+_State: type = [
+    eps: []Int,
+    bol: Option Int,
+    eol: Option Int,
+    edges: []_CEdge,
+    accept: Bool]
+
+/// A compiled NFA. `start` is the unanchored-search entry state.
+_Compiled: type = [start: Int, states: []_State]
+
+_dead_state: _State = {eps: {}, bol: None, eol: None, edges: {}, accept: False}
+
+_any_class: _CharClass = {negated: True, spans: {}}
+
+_singleton_class: (c: Char) -> _CharClass =
+    code := Char.to_code(c)
+    {negated: False, spans: {{lo: code, hi: code}}}
+
+_perr: (pos: Int, msg: String) -> String =
+    "at position {pos + 1}: {msg}"
+
+// ------------------------------------------------------------ parser
+
+_peek: (cs: []Char, pos: Int) -> Option Char = cs.get(pos)
+
+_alt_of: (nodes: []_Node) -> _Node =
+    case nodes:
+        {} -> EmptyNode
+        {n} -> n
+        _ -> Alternate nodes
+
+_seq_of: (nodes: []_Node) -> _Node =
+    case nodes:
+        {} -> EmptyNode
+        {n} -> n
+        _ -> Sequence nodes
+
+_parse_pattern: (cs: []Char) -> Result _Node String =
+    parsed <- _parse_alt(cs, 0).try()
+    (node, pos) = parsed
+    case _peek(cs, pos):
+        None -> Ok node
+        Some ')' -> Err (_perr(pos, "unmatched ')'"))
+        Some c -> Err (_perr(pos, "unexpected character {c}"))
+
+_parse_alt: (cs: []Char, pos: Int) -> Result ([_Node, Int]) String =
+    parsed <- _parse_seq(cs, pos).try()
+    (node, next) = parsed
+    _parse_alt_rest(cs, next, {node})
+
+_parse_alt_rest: (cs: []Char, pos: Int, acc: []_Node) -> Result ([_Node, Int]) String =
+    case _peek(cs, pos):
+        Some '|' ->
+            parsed <- _parse_seq(cs, pos + 1).try()
+            (node, next) = parsed
+            _parse_alt_rest(cs, next, acc ++ {node})
+        _ -> Ok {_alt_of(acc), pos}
+
+_parse_seq: (cs: []Char, pos: Int) -> Result ([_Node, Int]) String =
+    _parse_seq_rest(cs, pos, {})
+
+_parse_seq_rest: (cs: []Char, pos: Int, acc: []_Node) -> Result ([_Node, Int]) String =
+    case _peek(cs, pos):
+        None -> Ok {_seq_of(acc), pos}
+        Some '|' -> Ok {_seq_of(acc), pos}
+        Some ')' -> Ok {_seq_of(acc), pos}
+        _ ->
+            parsed <- _parse_repeat(cs, pos).try()
+            (node, next) = parsed
+            _parse_seq_rest(cs, next, acc ++ {node})
+
+_parse_repeat: (cs: []Char, pos: Int) -> Result ([_Node, Int]) String =
+    parsed <- _parse_atom(cs, pos).try()
+    (node, next) = parsed
+    _parse_quantifier(cs, next, node)
+
+_parse_quantifier: (cs: []Char, pos: Int, node: _Node) -> Result ([_Node, Int]) String =
+    case _peek(cs, pos):
+        Some '*' -> _after_quantifier(cs, pos + 1, RepeatStar node)
+        Some '+' -> _after_quantifier(cs, pos + 1, RepeatPlus node)
+        Some '?' -> _after_quantifier(cs, pos + 1, RepeatOpt node)
+        _ -> Ok {node, pos}
+
+// A second postfix quantifier is rejected rather than composed. In standard
+// regex syntax `a+?` means "lazy plus", so silently reading it as `(a+)?`
+// would turn a common pattern into a match-anything pattern. `a**` is
+// rejected for the same reason: the engine has no sensible reading for it.
+_after_quantifier: (cs: []Char, pos: Int, node: _Node) -> Result ([_Node, Int]) String =
+    case _peek(cs, pos):
+        Some '*' | Some '+' | Some '?' ->
+            Err (_perr(pos, "stacked quantifier; lazy quantifiers are not supported"))
+        _ -> Ok {node, pos}
+
+_parse_atom: (cs: []Char, pos: Int) -> Result ([_Node, Int]) String =
+    case _peek(cs, pos):
+        None -> Err (_perr(pos, "unexpected end of pattern"))
+        Some '(' -> _parse_group(cs, pos)
+        Some '[' -> _parse_class(cs, pos)
+        Some '.' -> Ok {AnyChar, pos + 1}
+        Some '^' -> Ok {LineStart, pos + 1}
+        Some '$' -> Ok {LineEnd, pos + 1}
+        Some '\\' ->
+            escaped <- _parse_escape(cs, pos).try()
+            (c, next) = escaped
+            Ok {Literal c, next}
+        Some '*' -> Err (_perr(pos, "nothing to repeat before '*'"))
+        Some '+' -> Err (_perr(pos, "nothing to repeat before '+'"))
+        Some '?' -> Err (_perr(pos, "nothing to repeat before '?'"))
+        Some '|' -> Err (_perr(pos, "unexpected '|'"))
+        Some c -> Ok {Literal c, pos + 1}
+
+_parse_group: (cs: []Char, pos: Int) -> Result ([_Node, Int]) String =
+    parsed <- _parse_alt(cs, pos + 1).try()
+    (node, next) = parsed
+    case _peek(cs, next):
+        Some ')' -> Ok {node, next + 1}
+        None -> Err (_perr(pos, "unterminated group"))
+        Some c -> Err (_perr(next, "expected ')' but found {c}"))
+
+_escaped_char: (c: Char) -> Result Char String =
+    case c:
+        'n' -> Ok '\n'
+        't' -> Ok '\t'
+        'r' -> Ok '\r'
+        '\\' | '.' | '*' | '+' | '?' | '|' | '(' | ')' | '[' | ']' | '{' | '}' | '^' | '$' | '-' | '/' ->
+            Ok c
+        _ -> Err "unknown escape sequence"
+
+_parse_escape: (cs: []Char, pos: Int) -> Result ([Char, Int]) String =
+    case _peek(cs, pos + 1):
+        None -> Err (_perr(pos, "trailing backslash"))
+        Some c ->
+            _escaped_char(c).map((d): {d, pos + 2}).map_err((e): _perr(pos, e))
+
+_parse_class: (cs: []Char, pos: Int) -> Result ([_Node, Int]) String =
+    case _peek(cs, pos + 1):
+        Some '^' -> _parse_class_items(cs, pos + 2, True, {})
+        _ -> _parse_class_items(cs, pos + 1, False, {})
+
+_parse_class_items: (cs: []Char, pos: Int, negated: Bool, spans: []_Span) -> Result ([_Node, Int]) String =
+    case _peek(cs, pos):
+        None -> Err (_perr(pos, "unterminated character class"))
+        Some ']' ->
+            if spans.length() == 0:
+                Err (_perr(pos, "empty character class"))
+            else:
+                Ok {CharSet {negated: negated, spans: spans}, pos + 1}
+        _ ->
+            item <- _parse_class_char(cs, pos).try()
+            (c, next) = item
+            case _peek(cs, next):
+                Some '-' ->
+                    case _peek(cs, next + 1):
+                        Some ']' ->
+                            _parse_class_items(cs, next, negated, spans ++ {{lo: Char.to_code(c), hi: Char.to_code(c)}})
+                        Some _ ->
+                            item <- _parse_class_char(cs, next + 1).try()
+                            (d, after) = item
+                            lo := Char.to_code(c)
+                            hi := Char.to_code(d)
+                            if lo > hi:
+                                Err (_perr(next, "invalid range {c}-{d}"))
+                            else:
+                                _parse_class_items(cs, after, negated, spans ++ {{lo: lo, hi: hi}})
+                        None ->
+                            _parse_class_items(cs, next, negated, spans ++ {{lo: Char.to_code(c), hi: Char.to_code(c)}})
+                _ ->
+                    _parse_class_items(cs, next, negated, spans ++ {{lo: Char.to_code(c), hi: Char.to_code(c)}})
+
+_parse_class_char: (cs: []Char, pos: Int) -> Result ([Char, Int]) String =
+    case _peek(cs, pos):
+        None -> Err (_perr(pos, "unterminated character class"))
+        Some '\\' -> _parse_escape(cs, pos)
+        Some c -> Ok {c, pos + 1}
+
+// ------------------------------------------------------------ compiler
+
+_build: (node: _Node, next: Int, states: []_State) -> [Int, []_State] =
+    case node:
+        EmptyNode -> {next, states}
+        Literal c ->
+            id := states.length()
+            st: _State = {eps: {}, bol: None, eol: None, edges: {{cls: _singleton_class(c), to: next}}, accept: False}
+            {id, states ++ {st}}
+        AnyChar ->
+            id := states.length()
+            st: _State = {eps: {}, bol: None, eol: None, edges: {{cls: _any_class, to: next}}, accept: False}
+            {id, states ++ {st}}
+        CharSet cls ->
+            id := states.length()
+            st: _State = {eps: {}, bol: None, eol: None, edges: {{cls: cls, to: next}}, accept: False}
+            {id, states ++ {st}}
+        Sequence nodes -> _build_sequence(nodes.reverse(), next, states)
+        Alternate nodes -> _build_alternate(nodes.reverse(), next, states)
+        RepeatStar child -> _build_star(child, next, states)
+        RepeatPlus child -> _build_plus(child, next, states)
+        RepeatOpt child ->
+            case _build(child, next, states):
+                {child_start, child_states} ->
+                    id := child_states.length()
+                    st: _State = {eps: {next, child_start}, bol: None, eol: None, edges: {}, accept: False}
+                    {id, child_states ++ {st}}
+        LineStart ->
+            id := states.length()
+            st: _State = {eps: {}, bol: Some next, eol: None, edges: {}, accept: False}
+            {id, states ++ {st}}
+        LineEnd ->
+            id := states.length()
+            st: _State = {eps: {}, bol: None, eol: Some next, edges: {}, accept: False}
+            {id, states ++ {st}}
+
+_build_sequence: (reversed: []_Node, next: Int, states: []_State) -> [Int, []_State] =
+    init: [Int, []_State] = {next, states}
+    reversed.fold(init, (acc, node):
+        (start, sts) = acc
+        _build(node, start, sts))
+
+_build_alternate: (reversed: []_Node, next: Int, states: []_State) -> [Int, []_State] =
+    init: [[]Int, []_State] = {{}, states}
+    (starts, sts) = reversed.fold(init, (acc, node):
+        (ss, st) = acc
+        (start, st2) = _build(node, next, st)
+        {{start} ++ ss, st2})
+    if starts.length() == 0:
+        {next, sts}
+    else:
+        id := sts.length()
+        st: _State = {eps: starts, bol: None, eol: None, edges: {}, accept: False}
+        {id, sts ++ {st}}
+
+_build_star: (child: _Node, next: Int, states: []_State) -> [Int, []_State] =
+    loop_id := states.length()
+    reserved: []_State = states ++ {_dead_state}
+    (child_start, child_states) = _build(child, loop_id, reserved)
+    loop_state: _State = {eps: {next, child_start}, bol: None, eol: None, edges: {}, accept: False}
+    {loop_id, _set_state(child_states, loop_id, loop_state)}
+
+_build_plus: (child: _Node, next: Int, states: []_State) -> [Int, []_State] =
+    loop_id := states.length()
+    reserved: []_State = states ++ {_dead_state}
+    (child_start, child_states) = _build(child, loop_id, reserved)
+    loop_state: _State = {eps: {next, child_start}, bol: None, eol: None, edges: {}, accept: False}
+    {child_start, _set_state(child_states, loop_id, loop_state)}
+
+_set_state: (states: []_State, idx: Int, st: _State) -> []_State =
+    _set_state_at(states, 0, idx, st)
+
+_set_state_at: (states: []_State, i: Int, idx: Int, st: _State) -> []_State =
+    case states:
+        {} -> {}
+        {h, ..t} ->
+            if i == idx:
+                {st} ++ t
+            else:
+                {h} ++ _set_state_at(t, i + 1, idx, st)
+
+_compile: (pattern: String) -> Result _Compiled String =
+    node <- _parse_pattern(pattern.chars()).try()
+    accept: _State = {eps: {}, bol: None, eol: None, edges: {}, accept: True}
+    case _build(node, 0, {accept}):
+        {pattern_start, states} ->
+            search_id := states.length()
+            search_state: _State = {
+                eps: {pattern_start},
+                bol: None,
+                eol: None,
+                edges: {{cls: _any_class, to: search_id}},
+                accept: False}
+            Ok {start: search_id, states: states ++ {search_state}}
+
+// ------------------------------------------------------------ simulation
+
+_ascii_lower: (c: Char) -> Char =
+    code := Char.to_code(c)
+    if code >= 65 && code <= 90:
+        Char.from_code(code + 32).unwrap_or(c)
+    else:
+        c
+
+_ascii_upper: (c: Char) -> Char =
+    code := Char.to_code(c)
+    if code >= 97 && code <= 122:
+        Char.from_code(code - 32).unwrap_or(c)
+    else:
+        c
+
+_positive_match: (cls: _CharClass, c: Char) -> Bool =
+    code := Char.to_code(c)
+    cls.spans.any((s): code >= s.lo && code <= s.hi)
+
+_class_matches: (cls: _CharClass, c: Char, ignore_case: Bool) -> Bool =
+    inside := _positive_match(cls, c) ||
+        (ignore_case && (_positive_match(cls, _ascii_lower(c)) ||
+                         _positive_match(cls, _ascii_upper(c))))
+    if cls.negated: inside.not() else: inside
+
+_closure: (states: []_State, seeds: Set Int, at_bol: Bool, at_eol: Bool) -> Set Int =
+    seen: Set Int = Set.of({})
+    _closure_work(states, seeds.to_list(), at_bol, at_eol, seen)
+
+_closure_work: (states: []_State, work: []Int, at_bol: Bool, at_eol: Bool, seen: Set Int) -> Set Int =
+    case work:
+        {} -> seen
+        {h, ..t} ->
+            if seen.contains(h):
+                _closure_work(states, t, at_bol, at_eol, seen)
+            else:
+                st := states.get(h).unwrap_or(_dead_state)
+                more := st.eps
+                more := if at_bol:
+                    st.bol.map((x): more ++ {x}).unwrap_or(more)
+                else:
+                    more
+                more := if at_eol:
+                    st.eol.map((x): more ++ {x}).unwrap_or(more)
+                else:
+                    more
+                _closure_work(states, more ++ t, at_bol, at_eol, seen.insert(h))
+
+_step: (states: []_State, current: Set Int, c: Char, ignore_case: Bool) -> Set Int =
+    targets: []Int = current.to_list().fold({}, (acc, id):
+        st := states.get(id).unwrap_or(_dead_state)
+        st.edges.fold(acc, (a, e):
+            if _class_matches(e.cls, c, ignore_case): {e.to} ++ a else: a))
+    Set.of(targets)
+
+_accepting: (states: []_State, set: Set Int) -> Bool =
+    set.to_list().any((id): states.get(id).map((s): s.accept).unwrap_or(False))
+
+_empty_chars: (cs: []Char) -> Bool = cs.length() == 0
+
+// Walk the line as a list, consuming one Char per step, so the cost is
+// O(length * states) rather than O(length^2 * states). A self tail call
+// keeps the Eko stack constant no matter how long the line is.
+_scan_chars: (re: _Compiled, chars: []Char, current: Set Int, ignore_case: Bool) -> Bool =
+    if _accepting(re.states, current):
+        True
+    else:
+        case chars:
+            {} -> False
+            {c, ..rest} ->
+                at_eol := _empty_chars(rest)
+                stepped := _step(re.states, current, c, ignore_case)
+                closed := _closure(re.states, stepped, False, at_eol)
+                _scan_chars(re, rest, closed, ignore_case)
+
+_match: (re: _Compiled, line: String, ignore_case: Bool) -> Bool =
+    chars := line.chars()
+    initial := _closure(re.states, Set.of({re.start}), True, _empty_chars(chars))
+    _scan_chars(re, chars, initial, ignore_case)
+
