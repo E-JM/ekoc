@@ -12,6 +12,10 @@ to right. `List.each` and `List.each_with_index` visit in order, and
 `List.length` counts elements. `List.any` and `List.all` short-circuit.
 `List.reverse` is total. `List.take` and `List.drop` truncate: a count beyond
 the length takes or drops everything, and a negative count counts as zero.
+Because `List.get` and `String.at` walk from the head, a scan that indexes by
+a growing counter is quadratic in the input; the linear scan shape over a list
+is head-tail recursion — the pattern `{h, ..t}` steps in constant time, the
+accumulator grows by prepends, and `List.reverse` finishes the pass.
 `List.map`, `List.filter`, `List.fold`, `List.each`, `List.each_with_index`,
 `List.any`, `List.all`, `List.find_by`, `List.take_while`, `List.drop_while`,
 `List.sort_by`, and `List.zip_with` are open-bit dispatchers; a pure callback
