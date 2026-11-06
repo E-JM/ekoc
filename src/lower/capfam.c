@@ -19,12 +19,11 @@
    capability parameter, and that call pulls the runtime's own object
    files in through archive resolution, so the families the pulled
    members name are the capability's to define. The Out and Proc
-   bundles stay runtime-typed and name no generated identity; the
-   other bundle constructors live beside capval.c's value builders,
-   which name the status, reason, stat, and time identities, and the
-   Fs bundle's mode dispatch names the OpenMode identities besides.
-   The table lists one row per manifest capability, so a future
-   interface mechanism extends it in place. */
+   bundles stay runtime-typed and name no generated identity; each
+   other capability's row is the set of identities its own runtime
+   members name, and the Fs bundle's mode dispatch names the OpenMode
+   identities besides. The table lists one row per manifest capability,
+   so a future interface mechanism extends it in place. */
 
 /* One family registration step: a constructor family, or a record
    representation when repr is set. */
@@ -82,10 +81,8 @@ static const fam_step steps_modes[] = {
     {"sys", "OpenMode", "Update", 0},
 };
 
-/* The groups over the shared builders: everything the bundle
-   constructors beside capval.c name, with the OpenMode identities
-   last, so the Fs row is the whole list and every other bundle row
-   takes the prefix the value builders name. */
+/* The family groups. Each capability's row below takes exactly the
+   groups its own runtime members name. */
 static const fam_group group_status = {
     steps_status, sizeof steps_status / sizeof *steps_status
 };
@@ -102,27 +99,39 @@ static const fam_group group_modes = {
     steps_modes, sizeof steps_modes / sizeof *steps_modes
 };
 
-/* The shared set: the groups capval.c's builders name, one per bundle
-   row but Fs. Each row names its own list, so a reordering of the
-   groups cannot silently attach or detach a registration. */
-static const fam_group *const groups_shared[] = {
-    &group_status, &group_ioerr, &group_finfo, &group_time,
+/* Each capability's list is what its own runtime members name, so a
+   reordering of the groups cannot silently attach or detach a
+   registration. The reader's Result and Option come from the In
+   closures, the IoError from their failures; Env reads an Option;
+   Clock reads the time pair; Args, Rand, Out, and Proc name no
+   generated identity at all. */
+static const fam_group *const groups_in[] = {
+    &group_status, &group_ioerr,
 };
 
-/* The Fs row's list: the shared set plus the OpenMode identities the
-   mode dispatch names. */
+static const fam_group *const groups_env[] = {
+    &group_status,
+};
+
+static const fam_group *const groups_clock[] = {
+    &group_time,
+};
+
+/* The Fs row: the status and reason set, the stat and time identities
+   its directory walks build, and the OpenMode identities the mode
+   dispatch names. */
 static const fam_group *const groups_fs[] = {
     &group_status, &group_ioerr, &group_finfo, &group_time, &group_modes,
 };
 
 static const cap_row cap_table[] = {
     {"Out",   NULL, 0},
-    {"In",    groups_shared, sizeof groups_shared / sizeof *groups_shared},
+    {"In",    groups_in, sizeof groups_in / sizeof *groups_in},
     {"Fs",    groups_fs, sizeof groups_fs / sizeof *groups_fs},
-    {"Env",   groups_shared, sizeof groups_shared / sizeof *groups_shared},
-    {"Args",  groups_shared, sizeof groups_shared / sizeof *groups_shared},
-    {"Clock", groups_shared, sizeof groups_shared / sizeof *groups_shared},
-    {"Rand",  groups_shared, sizeof groups_shared / sizeof *groups_shared},
+    {"Env",   groups_env, sizeof groups_env / sizeof *groups_env},
+    {"Args",  NULL, 0},
+    {"Clock", groups_clock, sizeof groups_clock / sizeof *groups_clock},
+    {"Rand",  NULL, 0},
     {"Proc",  NULL, 0},
 };
 
@@ -276,8 +285,8 @@ void lower_json_shapes(lower_ctx *c, const ek_node *at)
 
 /* The seven Json and three ParseError constructor families the
    runtime's document reader builds values over. The routing pulls the
-   reader's own object file and, with it, the shared value builders
-   its constructors stand on, so the stamping covers both sets and
+   reader's own object file and, with it, the status builders its
+   Result constructors stand on, so the stamping covers both sets and
    fires exactly at the routing. */
 void lower_json_families(lower_ctx *c, const ek_node *at)
 {
@@ -289,10 +298,11 @@ void lower_json_families(lower_ctx *c, const ek_node *at)
     static const fam_group group_parse = {
         steps_parse, sizeof steps_parse / sizeof *steps_parse
     };
+    static const fam_group *const groups_build[] = {&group_status};
     static const fam_group *const groups_reader[] = {&group_parse};
 
-    register_groups(c, at, groups_shared,
-                    sizeof groups_shared / sizeof *groups_shared);
+    register_groups(c, at, groups_build,
+                    sizeof groups_build / sizeof *groups_build);
     lower_json_shapes(c, at);
     register_groups(c, at, groups_reader,
                     sizeof groups_reader / sizeof *groups_reader);

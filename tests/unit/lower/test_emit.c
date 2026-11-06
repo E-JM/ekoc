@@ -347,10 +347,10 @@ static void no_main_no_functions(void)
 
 /* The manifest scopes the runtime-shared families: an Out manifest
    defines no shared identity (the Out bundle stays runtime-typed and
-   the generated unit only reads its record layout), and an In manifest
-   defines the identities the stdin reader's builders name -- the
-   Result, Option, IoError, FileInfo, and time families -- with the
-   OpenMode set staying with the file-system capability. A field-less
+   the generated unit only reads its record layout), an In manifest
+   defines the Result, Option, and IoError identities its reader's
+   builders name, a Clock manifest defines only the time pair, and the
+   stat and mode families stay with the file system. A field-less
    family stands over the NULL drop, with no drop function. */
 static void manifest_scopes_families(void)
 {
@@ -377,10 +377,20 @@ static void manifest_scopes_families(void)
                          "NULL, NULL, NULL };"));
     EK_CHECK(lfx_has(&f, "ekT_sys$IoError$Other = { EK_KIND_STRUCT, "
                          "drop_sys$IoError$Other, NULL, NULL };"));
-    EK_CHECK(lfx_has(&f, "const ek_typeinfo ekT_sys$FileInfo = "));
-    EK_CHECK(lfx_has(&f, "const ek_typeinfo ekT_time$Mono$Mono = "));
+    EK_CHECK(lfx_lacks(&f, "ekT_sys$FileInfo"));
+    EK_CHECK(lfx_lacks(&f, "ekT_time$"));
     EK_CHECK(lfx_lacks(&f, "ekT_sys$OpenMode$"));
     EK_CHECK(lfx_lacks(&f, "drop_std$Option$None"));
+    lfx_end(&f);
+
+    lfx_begin(&f, "main: (c: Clock, out: Out) ! ="
+                  " out.println(c.now().to_ns().show())\n");
+    EK_CHECK(lfx_check_clean(&f));
+    EK_CHECK(lfx_lower_clean(&f));
+    EK_CHECK(lfx_has(&f, "const ek_typeinfo ekT_time$Mono$Mono = "));
+    EK_CHECK(lfx_has(&f, "const ek_typeinfo ekT_time$Time$Time = "));
+    EK_CHECK(lfx_lacks(&f, "ekT_std$"));
+    EK_CHECK(lfx_lacks(&f, "ekT_sys$"));
     lfx_end(&f);
 }
 
@@ -418,6 +428,7 @@ static void vocabulary_and_channel_stems(void)
     EK_CHECK(lfx_lower_clean(&f));
     EK_CHECK(lfx_has(&f, "const ek_typeinfo ekT_sys$IoError$NotFound = "));
     EK_CHECK(lfx_has(&f, "} ekS_sys$FileInfo;"));
+    EK_CHECK(lfx_has(&f, "ekB_sys$FileInfo$mtime"));
     EK_CHECK(lfx_has(&f, "} ekS_cap$_OutB;"));
     EK_CHECK(lfx_lacks(&f, "ekT_cap$IoError"));
     EK_CHECK(lfx_lacks(&f, "ekS_sys$_OutB"));

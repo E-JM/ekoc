@@ -2,26 +2,29 @@
 
 #include "lower/internal.h"
 
-/* The bundle layout contract: the capability module's bundle records
-   are built by the runtime over the slot order its header publishes,
-   one enumeration per capability, and read by the unit through its own
+/* The layout contract of the records the runtime builds and the unit
+   reads: the capability bundles and the vocabulary's FileInfo record.
+   The runtime fills them over the slot order its header publishes, one
+   enumeration per record, and the unit reads them through its own
    generated struct. The unit checks the two agree at compile time: one
    constant-expression array type per field, negative when the field's
    offset is not its slot's, and one for the record's size against the
    slot count. A field added, removed, or reordered on either side then
-   stops the C build instead of misreading a closure. */
+   stops the C build instead of misreading a slot. */
 
-/* One bundle record: the type's name in the capability module and the
-   enumeration prefix the runtime publishes for its slots. */
+/* One checked record: its module, its type name, and the enumeration
+   prefix the runtime publishes for its slots. */
 typedef struct {
+    const char *module;
     const char *type;
     const char *prefix;
 } bundle_row;
 
 static const bundle_row bundles[] = {
-    {"_OutB", "EK_OUT"},   {"_InB", "EK_IN"},     {"_FsB", "EK_FS"},
-    {"_EnvB", "EK_ENV"},   {"_ArgsB", "EK_ARGS"}, {"_ClockB", "EK_CLOCK"},
-    {"_RandB", "EK_RAND"},
+    {"cap", "_OutB", "EK_OUT"},   {"cap", "_InB", "EK_IN"},
+    {"cap", "_FsB", "EK_FS"},     {"cap", "_EnvB", "EK_ENV"},
+    {"cap", "_ArgsB", "EK_ARGS"}, {"cap", "_ClockB", "EK_CLOCK"},
+    {"cap", "_RandB", "EK_RAND"}, {"sys", "FileInfo", "EK_FILEINFO"},
 };
 
 /* The row of one capability-module type name, or NULL. */
@@ -29,12 +32,12 @@ static const bundle_row *bundle_of(const lower_gtype *g)
 {
     size_t i;
 
-    if (!g->key_sym || !g->key_sym->module
-        || strcmp(g->key_sym->module, "cap") != 0) {
+    if (!g->key_sym || !g->key_sym->module) {
         return NULL;
     }
     for (i = 0; i < sizeof bundles / sizeof *bundles; i++) {
-        if (strcmp(g->key_sym->name, bundles[i].type) == 0) {
+        if (strcmp(g->key_sym->module, bundles[i].module) == 0
+            && strcmp(g->key_sym->name, bundles[i].type) == 0) {
             return &bundles[i];
         }
     }
