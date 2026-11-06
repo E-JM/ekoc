@@ -142,3 +142,41 @@ Verified state at session start (probes in /tmp/probe-batch):
   Annex D + veneer prototypes `--check` current, 17 corpus programs
   test+build, todolist 15/15, ekogit CLI script ok; `temp` needs raylib and
   a shim that the corpus does not carry (environmental, pre-existing).
+
+## Remaining-items session (2026-11-06, second pass)
+
+- [x] F18 (P1): a service used on a type variable is now an obligation of
+      the scheme; inference-variable uses are decided after the module pass,
+      scheme uses are substituted at every instantiation edge, and the open
+      remainder propagates to the caller. `assert_eq` over a function- or
+      handle-carrying type is `E-no-eq` at its call site (6ec7d53).
+- [x] followups 4b: detached task threads, scope cancellation tree, the
+      world-call cancellation point (`ek_world_call`, emitted from the call's
+      世界 row bit), the Conc manifest constructor, the four member routes,
+      and the three executable states (ec0900a, 327554a).
+- [x] R8: verified `docs/archive/selfhost.md` already carries the five
+      lowering invariants and 11 has the pointer; nothing to add.
+- [x] Surface unification, first step: the capability and handle name lists
+      collapsed into `src/support/vocab.{c,h}`; resolver, two checker files,
+      and two lower files now read one table (6270d8d). The member
+      signature/route tables remain the next P2 step.
+- [x] F19 A: Set derives show, inspect, eq, hash, to_json, and from_json
+      through its insertion-order list; equality is order-insensitive and
+      the hash additive, so equal sets mix one word (9726f31).
+- [ ] D1 Vector+HAMT: blocked on F19 C (container keys degrade to identity
+      because the runtime cannot reach a per-instantiation key service).
+      Recorded in dev-issues F19 C with the fix direction; the Vector
+      member surface alone would ship the same defect Set has.
+
+Log:
+- F18 root cause was three-part: the checker deferred the member to
+  `E_RD_UNKNOWN`, lower re-routed without a halt test, and the derived eq
+  emitter wrote `return 0`. The fix decides the halt at the instantiation, so
+  lower is only asked for services the concrete type has.
+- 4b chose threads because 8.9.4's "a pure divergent task hangs its scope
+  exit" only holds when the child runs concurrently with the parent; the
+  cancellation test blocks the child at `In.read_line` so the pending flag is
+  provably set before its next world call.
+- F19 was found while surveying D1: the clause promises Set its services and
+  the lower answered E-lower for all of them. Fixing that removed the last
+  obstacle except the runtime key-hook contract.
