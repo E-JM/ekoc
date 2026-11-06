@@ -201,21 +201,27 @@ static void widening_identity(void)
     lfx_end(&f);
 }
 
-static void unsupported_rows_keep_elower(void)
+static void set_algebra_routes(void)
 {
     lfx f;
 
-    /* the set algebra is the compiler row the runtime surface does not
-       back: check accepts it, lower keeps the E-lower refusal */
+    /* the set algebra routes to the runtime entries over the receiver
+       and the operand */
     lfx_begin(&f,
               "main: () -> _ =\n"
               "    s = Set.of({1})\n"
               "    u = s.union(s)\n"
+              "    i = s.intersect(s)\n"
+              "    d = s.diff(s)\n"
               "    _ := u\n"
+              "    _ := i\n"
+              "    _ := d\n"
               "    _\n");
     EK_CHECK(lfx_check_clean(&f));
-    EK_CHECK(lfx_errors(&f) >= 1);
-    EK_CHECK(lfx_has_code(&f, "E-lower"));
+    EK_CHECK(lfx_errors(&f) == 0);
+    EK_CHECK(lfx_has(&f, "ek_set_union("));
+    EK_CHECK(lfx_has(&f, "ek_set_intersect("));
+    EK_CHECK(lfx_has(&f, "ek_set_diff("));
     lfx_end(&f);
 }
 
@@ -250,7 +256,7 @@ int main(void)
     string_and_byte_objects();
     decode_wraps_detail();
     widening_identity();
-    unsupported_rows_keep_elower();
+    set_algebra_routes();
     std_source_uses_the_rows();
     return ek_test_report("lower/intrinsic");
 }

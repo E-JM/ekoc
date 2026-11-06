@@ -253,6 +253,56 @@ int ek_set_contains(ek_val s, ek_val elem)
     return find_entry((const ek_set *)s.as.ref, elem) != NULL;
 }
 
+/* The union keeps the left order first and appends the right set's new
+   elements in right order, over the left set's element hooks. */
+ek_val ek_set_union(ek_val a, ek_val b)
+{
+    const ek_set *left = (const ek_set *)a.as.ref;
+    const ek_set *right = (const ek_set *)b.as.ref;
+    ek_set *fresh = set_sized_for(left->count + right->count, left->keq,
+                                  left->kh);
+    uint32_t idx;
+
+    for (idx = left->head; idx != SET_NO_ENTRY; idx = left->entries[idx].next)
+        entry_store(fresh, left->entries[idx].key);
+    for (idx = right->head; idx != SET_NO_ENTRY;
+         idx = right->entries[idx].next) {
+        ek_val elem = right->entries[idx].key;
+
+        if (find_entry(fresh, elem) == NULL)
+            entry_store(fresh, elem);
+    }
+    return ek_val_ref(&fresh->obj);
+}
+
+/* The intersection keeps the left order, keeping the shared elements;
+   the difference keeps the left order, dropping them. */
+static ek_val set_keep_if(ek_val a, ek_val b, int shared)
+{
+    const ek_set *left = (const ek_set *)a.as.ref;
+    const ek_set *right = (const ek_set *)b.as.ref;
+    ek_set *fresh = set_sized_for(left->count, left->keq, left->kh);
+    uint32_t idx;
+
+    for (idx = left->head; idx != SET_NO_ENTRY; idx = left->entries[idx].next) {
+        ek_val elem = left->entries[idx].key;
+
+        if ((find_entry(right, elem) != NULL) == shared)
+            entry_store(fresh, elem);
+    }
+    return ek_val_ref(&fresh->obj);
+}
+
+ek_val ek_set_intersect(ek_val a, ek_val b)
+{
+    return set_keep_if(a, b, 1);
+}
+
+ek_val ek_set_diff(ek_val a, ek_val b)
+{
+    return set_keep_if(a, b, 0);
+}
+
 size_t ek_set_len(ek_val s)
 {
     return ((const ek_set *)s.as.ref)->count;

@@ -328,16 +328,16 @@ const ek_surface_row ek_surface_rows[] = {
     {"Set", "union", SIG_FN(EK_ARROW_PURE, SIG_APP1("Set", SIG_VAR(0)),
                             SIG_APP1("Set", SIG_VAR(0)),
                             SIG_APP1("Set", SIG_VAR(0))),
-     .route = EK_ROUTE_NONE},
+     .sym = "ek_set_union", .args = "vv"},
     {"Set", "intersect", SIG_FN(EK_ARROW_PURE,
                                 SIG_APP1("Set", SIG_VAR(0)),
                                 SIG_APP1("Set", SIG_VAR(0)),
                                 SIG_APP1("Set", SIG_VAR(0))),
-     .route = EK_ROUTE_NONE},
+     .sym = "ek_set_intersect", .args = "vv"},
     {"Set", "diff", SIG_FN(EK_ARROW_PURE, SIG_APP1("Set", SIG_VAR(0)),
                            SIG_APP1("Set", SIG_VAR(0)),
                            SIG_APP1("Set", SIG_VAR(0))),
-     .route = EK_ROUTE_NONE},
+     .sym = "ek_set_diff", .args = "vv"},
 
     /* The String namespace: the scalar sequence primitives. The
        composition (split, trim, replace, slice, padding) is std

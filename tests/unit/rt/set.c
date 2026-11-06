@@ -274,6 +274,48 @@ static void of_over_the_empty_list_is_empty(void)
     ek_release(s);
 }
 
+static void union_keeps_left_order_then_new_right(void)
+{
+    int64_t ls[] = {1, 2};
+    int64_t rs[] = {2, 3, 1};
+    ek_val a = int_set(ls, 2);
+    ek_val b = int_set(rs, 3);
+    ek_val u = ek_set_union(a, b);
+    int64_t seen[3];
+
+    EK_CHECK_U64(ek_set_len(u), 3);
+    EK_CHECK_U64(walk_elems(u, seen, 3), 3);
+    EK_CHECK_U64(seen[0], 1);
+    EK_CHECK_U64(seen[1], 2);
+    EK_CHECK_U64(seen[2], 3);
+    ek_release(u);
+    ek_release(b);
+    ek_release(a);
+}
+
+static void intersect_and_diff_keep_left_order(void)
+{
+    int64_t ls[] = {1, 2, 3};
+    int64_t rs[] = {3, 2};
+    ek_val a = int_set(ls, 3);
+    ek_val b = int_set(rs, 2);
+    ek_val i = ek_set_intersect(a, b);
+    ek_val d = ek_set_diff(a, b);
+    int64_t seen[3];
+
+    EK_CHECK_U64(ek_set_len(i), 2);
+    EK_CHECK_U64(walk_elems(i, seen, 3), 2);
+    EK_CHECK_U64(seen[0], 2);
+    EK_CHECK_U64(seen[1], 3);
+    EK_CHECK_U64(ek_set_len(d), 1);
+    EK_CHECK_U64(walk_elems(d, seen, 3), 1);
+    EK_CHECK_U64(seen[0], 1);
+    ek_release(d);
+    ek_release(i);
+    ek_release(b);
+    ek_release(a);
+}
+
 int main(void)
 {
     empty_set();
@@ -290,5 +332,7 @@ int main(void)
     order_survives_growth();
     to_list_borrows_nothing();
     of_over_the_empty_list_is_empty();
+    union_keeps_left_order_then_new_right();
+    intersect_and_diff_keep_left_order();
     return ek_test_report("rt/set");
 }

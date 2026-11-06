@@ -712,6 +712,14 @@ size_t ek_set_len(ek_val set);
    exhaustion. */
 ek_val ek_set_to_list(ek_val set);
 
+/* The union keeps the left operand's order first and appends the
+   right operand's new elements in right order; the intersection and
+   the difference keep the left operand's order. All three carry the
+   left operand's element hooks and abort on exhaustion. */
+ek_val ek_set_union(ek_val a, ek_val b);
+ek_val ek_set_intersect(ek_val a, ek_val b);
+ek_val ek_set_diff(ek_val a, ek_val b);
+
 /* A range is a compiler-emitted struct over one ordered scalar: the
    object header is followed by three ek_val fields in this order --
    start, end, closed -- and the closed field carries Bool, an Int of

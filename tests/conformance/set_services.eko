@@ -31,6 +31,17 @@ type_head_round_trip: test =
     r: Result (Set Int) ParseError = Set.from_json(a.to_json())
     assert_eq(r, Ok a)
 
+union_intersect_diff: test =
+    a: Set Int = Set.of({1, 2, 3})
+    b: Set Int = Set.of({3, 2})
+    u := a.union(b)
+    assert_eq(u.to_list(), {1, 2, 3})
+    i := a.intersect(b)
+    assert_eq(i.to_list(), {2, 3})
+    d := a.diff(b)
+    assert_eq(d.to_list(), {1})
+    assert_eq(a.diff(a).to_list(), {})
+
 keyed_by_a_record: test =
     a: Keyed = {s: Set.of({1, 2})}
     b: Keyed = {s: Set.of({2, 1})}
