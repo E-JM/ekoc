@@ -39,7 +39,7 @@ block. It has no arrow and does not enter the module interface (Clauses
 9.14.1, 9.14.6). A module without a test binding is an ordinary
 dependency under a test root; `geolib.eko` is the only such module.
 
-The suite contains 137 test bindings. Each test is a block of ordinary
+The suite contains 138 test bindings. Each test is a block of ordinary
 expressions; its value is discarded. Assertions are the standard library
 functions `assert`, `assert_eq`, and `assert_ne` (Clause 9.14.3). `assert_eq`
 locks both arguments to one type and reports failure through `inspect`
@@ -195,7 +195,7 @@ number of test bindings. `geolib.eko` is a fixture and has none.
 | `lambdas_capture.eko` | yes | 4 | 6.4.1, 6.4.2, 7.9.2, 7.9.4, 7.9.5, 7.9.6, 8.2.1, 8.2.3, 9.10.1, 9.14.5 | lambdas without annotations; snapshot capture; pure factory returning a `!` closure; dispatcher bit |
 | `list_combinators.eko` | yes | 4 | 9.10.1, 9.11.1 | `fold_until` stops at its own answer; `find_map` yields the first hit; `set` is domain-checked; `rep` repeats |
 | `local_bindings.eko` | yes | 2 | 6.3.2, 7.6.3 | a local binding at a function type takes a lambda or a named function read as a value |
-| `namespaces.eko` | yes | 6 | 7.4.3, 7.9, 9.6, 9.10 | namespace rows in both spellings; arithmetic rows; a capability whose world bit flows from the row |
+| `namespaces.eko` | yes | 7 | 7.4.3, 7.9, 9.6, 9.10 | namespace rows in both spellings; arithmetic rows; a capability whose world bit flows from the row |
 | `ranges.eko` | yes | 3 | 6.5.6, 9.8, 9.10.5 | both range operators over each endpoint type; compiler-supplied services over `Range`; wildcard arm |
 | `raw_strings.eko` | yes | 4 | 5.2.2, 5.9.4 | no escape or interpolation; the common indent stripped; blank lines; no closing newline |
 | `regex_companion.eko` | yes | 10 | 9.1.3, 9.11.3 | the pattern subset; the ASCII-only fold; the empty pattern; the rejected forms; the long-line bound |
