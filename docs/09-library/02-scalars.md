@@ -68,6 +68,31 @@ obtained through `String.to_bytes().length()` (Clause 9.5.2); no `byte_length`
 member exists. Grapheme cluster segmentation is not part of the standard
 library.
 
+### 9.4.4 Classification
+
+`Char` carries the classification predicates `Char.is_alpha`,
+`Char.is_digit`, `Char.is_alnum`, `Char.is_space`, `Char.is_upper`,
+`Char.is_lower`, `Char.is_xid_start`, and `Char.is_xid_continue`. All eight
+are pure and total; each yields `Bool`.
+
+The five ASCII predicates classify the ASCII range only: `is_upper` is `A`–`Z`,
+`is_lower` is `a`–`z`, `is_alpha` is either, `is_digit` is `0`–`9`, and
+`is_alnum` is the union of letters and digits. No code point above U+007F is in
+any of those five.
+
+`is_space` is the Unicode `White_Space` property: it covers the ASCII space,
+tab, newline, carriage return, and vertical and form feed, and the other code
+points the property names, including U+00A0, U+1680, U+2000–U+200A, U+2028,
+U+2029, U+202F, U+205F, and U+3000. It is the set `String.trim`,
+`String.trim_start`, and `String.trim_end` remove (Clause 9.11.1).
+
+`is_xid_start` and `is_xid_continue` are the Unicode `XID_Start` and
+`XID_Continue` properties. They are the properties the lexer's identifier rule
+builds on (Clause 5.5.1); the lexer admits `_` as a first character on top of
+`XID_Start`, so `_` is `XID_Continue` and not `XID_Start`. Unicode case
+mapping, including the case a fold would need, is not part of the library
+(Clause 9.15); these predicates report only membership.
+
 ## 9.5 Bytes
 
 ### 9.5.1 Identity

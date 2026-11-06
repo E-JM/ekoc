@@ -144,6 +144,9 @@ value layer (Clause 9.8.4, Clause 9.8.5).
 |---|---|---|---|
 | `Char` | `Char.to_code` | `(Char) -> Int` | Clause 9.4.3 |
 | `Char` | `Char.from_code` | `(Int) -> Option Char` | Clause 9.4.3 |
+| `Char` | `Char.is_alpha`, `Char.is_digit`, `Char.is_alnum` | `(Char) -> Bool` | Clause 9.4.4 |
+| `Char` | `Char.is_space`, `Char.is_upper`, `Char.is_lower` | `(Char) -> Bool` | Clause 9.4.4 |
+| `Char` | `Char.is_xid_start`, `Char.is_xid_continue` | `(Char) -> Bool` | Clause 9.4.4 |
 | `Bytes` | `Bytes.length` | `(Bytes) -> Int` | Clause 9.5.2 |
 | `Bytes` | `Bytes.get` | `(Bytes, Int) -> Option Int` | Clause 9.5.2 |
 | `Bytes` | `Bytes.append` | `(Bytes, Bytes) -> Bytes` | Clause 9.5.2 |

@@ -37,9 +37,10 @@ The compiler supplies the placeholder type rows for `Set` and `Range`. It
 supplies the intrinsic member rows: the arithmetic, conversion, formatting,
 and parser rows of the numeric namespaces (Clauses 9.6.1, 9.6.2), the Float
 mathematics family, the machine-word padding rows, the bitwise and wrapping
-families (Clauses 9.6.5, 9.6.6), `Char`'s code-point bridge (Clause 9.4.3),
-`String`'s scalar access and the `Bytes` operations, the member rows of the
-`Dict`, `Set`, `Range`, and `Path` namespaces, `Json.parse`, `List.append`,
+families (Clauses 9.6.5, 9.6.6), `Char`'s code-point bridge and its
+classification family (Clauses 9.4.3, 9.4.4), `String`'s scalar access and
+the `Bytes` operations, the member rows of the `Dict`, `Set`, `Range`, and
+`Path` namespaces, `Json.parse`, `List.append`,
 and the panic-coded `unwrap` and `expect` pair. `Set` and `Range` therefore
 have no source declaration. `Range` has no
 constructor and no pattern form; the range operators are its only construction
