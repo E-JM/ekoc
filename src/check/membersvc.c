@@ -205,7 +205,8 @@ const ek_type *ck_service_receiver(ck_ctx *c, const ek_type *r)
         || r->u.nominal.argc != 0) {
         return r;
     }
-    nb = sym->decl ? ck_decl_of(c, sym)->nbinders : ck_ns_generic_arity(sym);
+    nb = sym->decl ? ck_decl_of(c, sym)->nbinders
+                   : ek_surface_generic_arity(sym->module, sym->name);
     return nb ? ck_nominal_fresh_n(c, sym, nb) : r;
 }
 

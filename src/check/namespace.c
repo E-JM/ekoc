@@ -8,7 +8,7 @@
    default of a name no declaration owns. A namespace the table owns
    is complete: a name no station answers is absent, not bridged. */
 
-static const ek_type *build(ck_ctx *c, const ns_sig *s, const ek_type **slots,
+static const ek_type *build(ck_ctx *c, const ek_sig *s, const ek_type **slots,
                             size_t nslots);
 
 /* An embedded module's type symbol of one name, or NULL: the handles
@@ -36,7 +36,7 @@ static const ek_symbol *module_sym(ck_ctx *c, const char *module,
     return NULL;
 }
 
-static const ek_type *build_fn(ck_ctx *c, const ns_sig *s,
+static const ek_type *build_fn(ck_ctx *c, const ek_sig *s,
                                const ek_type **slots, size_t nslots)
 {
     const ek_type **ps = ek_arena_alloc(c->arena, s->nparams * sizeof *ps);
@@ -54,7 +54,7 @@ static const ek_type *build_fn(ck_ctx *c, const ns_sig *s,
     return ck_fn(c, ps, s->nparams, r, s->arrow);
 }
 
-static const ek_type *build(ck_ctx *c, const ns_sig *s, const ek_type **slots,
+static const ek_type *build(ck_ctx *c, const ek_sig *s, const ek_type **slots,
                             size_t nslots)
 {
     const ek_symbol *sym;
@@ -181,18 +181,20 @@ const ek_type *ck_ns_row(ck_ctx *c, const ek_type *recv, const char *name,
 {
     const char *ns = namespace_of(recv);
     const ek_type *slots[4] = {0, 0, 0, 0};
+    const ek_surface_row *row;
     size_t i;
 
     *owned = 0;
     if (!ns) {
         return NULL;
     }
-    for (i = 0; i < ck_ns_rows_len; i++) {
-        if (ck_ns_rows[i].name && strcmp(ns, ck_ns_rows[i].ns) == 0) {
-            if (strcmp(ck_ns_rows[i].name, name) == 0) {
-                return build(c, ck_ns_rows[i].sig, slots, 4);
-            }
+    for (i = 0; i < ek_surface_rows_len; i++) {
+        if (ek_surface_rows[i].name && strcmp(ns, ek_surface_rows[i].ns) == 0) {
             *owned = 1;
+            if (strcmp(ek_surface_rows[i].name, name) == 0) {
+                row = &ek_surface_rows[i];
+                return build(c, row->sig, slots, 4);
+            }
         }
     }
     return NULL;
@@ -202,18 +204,7 @@ const ek_type *ck_ns_row(ck_ctx *c, const ek_type *recv, const char *name,
    station answered is absent, not bridged. */
 int ck_ns_owned(const ek_type *recv)
 {
-    const char *ns = namespace_of(recv);
-    size_t i;
-
-    if (!ns) {
-        return 0;
-    }
-    for (i = 0; i < ck_ns_rows_len; i++) {
-        if (ck_ns_rows[i].name == NULL && strcmp(ns, ck_ns_rows[i].ns) == 0) {
-            return 1;
-        }
-    }
-    return 0;
+    return ek_surface_owned(namespace_of(recv));
 }
 
 /* The schemes of the injected pairs, hung on the cap module's

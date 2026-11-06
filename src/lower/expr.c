@@ -170,18 +170,9 @@ static lower_val qualified_read(lower_ctx *c, const ek_node *e)
    the domain travels in. */
 static lower_val ns_constant_read(lower_ctx *c, const ek_node *e)
 {
-    static const struct {
-        const char *family;
-        const char *name;
-        const char *text;
-    } rows[] = {
-        {"Int", "min", "ek_val_int(INT64_MIN)"},
-        {"Int", "max", "ek_val_int(INT64_MAX)"},
-        {"UInt", "max", "ek_val_uint(UINT64_MAX)"},
-    };
     const ek_ck_row *row = lower_row(c, e);
     const ek_ref *head;
-    size_t i;
+    const ek_surface_row *srow;
 
     if (!row || row->reading != EK_RD_NAMESPACE) {
         return (lower_val){ NULL, 0 };
@@ -190,11 +181,9 @@ static lower_val ns_constant_read(lower_ctx *c, const ek_node *e)
     if (!head || head->kind != EK_SYM_TYPE || !head->symbol) {
         return (lower_val){ NULL, 0 };
     }
-    for (i = 0; i < sizeof rows / sizeof *rows; i++) {
-        if (strcmp(rows[i].family, head->symbol->name) == 0
-            && strcmp(rows[i].name, e->u.field.name) == 0) {
-            return (lower_val){ rows[i].text, 0 };
-        }
+    srow = ek_surface_find(head->symbol->name, e->u.field.name);
+    if (srow && srow->route == EK_ROUTE_CONST) {
+        return (lower_val){ srow->text, 0 };
     }
     return (lower_val){ NULL, 0 };
 }

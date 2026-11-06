@@ -11,25 +11,25 @@
    the call read die with the caller's release pass. */
 
 /* The C type and neutral initializer of one out slot. */
-static const char *out_type(out_kind out, const char **init)
+static const char *out_type(ek_out out, const char **init)
 {
     switch (out) {
-    case OUT_U64: *init = "0";   return "uint64_t";
-    case OUT_F64: *init = "0";   return "double";
-    case OUT_U32: *init = "0";   return "uint32_t";
-    case OUT_VAL: *init = "ek_val_unit()"; return "ek_val";
+    case EK_OUT_U64: *init = "0";   return "uint64_t";
+    case EK_OUT_F64: *init = "0";   return "double";
+    case EK_OUT_U32: *init = "0";   return "uint32_t";
+    case EK_OUT_VAL: *init = "ek_val_unit()"; return "ek_val";
     default:      *init = "0";   return "int64_t";
     }
 }
 
 /* The payload expression an out slot wraps into the std domain. */
-static const char *payload_of(lower_ctx *c, out_kind out, const char *o)
+static const char *payload_of(lower_ctx *c, ek_out out, const char *o)
 {
     switch (out) {
-    case OUT_U64: return lower_str(c, "ek_val_uint(%s)", o);
-    case OUT_F64: return lower_str(c, "ek_val_float(%s)", o);
-    case OUT_U32: return lower_str(c, "ek_val_char(%s)", o);
-    case OUT_VAL: return lower_str(c, "ek_keep(%s)", o);
+    case EK_OUT_U64: return lower_str(c, "ek_val_uint(%s)", o);
+    case EK_OUT_F64: return lower_str(c, "ek_val_float(%s)", o);
+    case EK_OUT_U32: return lower_str(c, "ek_val_char(%s)", o);
+    case EK_OUT_VAL: return lower_str(c, "ek_keep(%s)", o);
     default:      return lower_str(c, "ek_val_int(%s)", o);
     }
 }
@@ -78,7 +78,7 @@ const char *lower_wrap_helper(lower_ctx *c, const ek_node *at,
    is the bare None. */
 lower_val lower_wrap_option(lower_ctx *c, lower_scope *scope,
                             const ek_node *e, const char *sym,
-                            const char *args, out_kind out)
+                            const char *args, ek_out out)
 {
     unsigned d = c->depth;
     const char *t = lower_temp(c, scope);
@@ -100,7 +100,7 @@ lower_val lower_wrap_option(lower_ctx *c, lower_scope *scope,
     lower_pad(c);
     lower_emitf(c, "if (%s(%s, &%s)) {\n", sym, args, o);
     c->depth = d + 1;
-    if (out == OUT_VAL) {
+    if (out == EK_OUT_VAL) {
         lower_pad(c);
         lower_emitf(c, "ek_val %s = ek_keep(%s);\n", p, o);
         lower_pad(c);
@@ -230,7 +230,7 @@ static void emit_parse_miss(lower_ctx *c, lower_scope *scope, unsigned d,
    empty. */
 lower_val lower_wrap_parse(lower_ctx *c, lower_scope *scope,
                            const ek_node *e, const char *sym,
-                           const char *args, out_kind out, int radix)
+                           const char *args, ek_out out, int radix)
 {
     unsigned d = c->depth;
     const char *t = lower_temp(c, scope);

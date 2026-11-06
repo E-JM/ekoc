@@ -201,50 +201,6 @@ lower_val lower_wrap_exit(lower_ctx *c, lower_scope *scope, const char *sym,
     return lower_val_unit();
 }
 
-/* The compiler-provided rows of the capability channel (Clause 10.8):
-   the eight File members over the runtime's handle table, the process
-   exit, the two advancing derivations, and the error channel. The file
-   reads keep the text gate; a stale handle reports Err Closed on every
-   operation, a second close included. The argument letters follow the
-   intrinsic discipline: v the value slot, o the object, i the raw
-   int64 word the runtime's count parameters read. */
-typedef enum {
-    CAP_PLAIN, /* the call value is the result */
-    CAP_IO_REF,
-    CAP_IO_UNIT,
-    CAP_IO_OPT,
-    CAP_EXIT
-} cap_shape;
-
-typedef struct {
-    const char *family;
-    const char *member;
-    const char *sym;
-    const char *args;
-    cap_shape shape;
-    int registers; /* the call constructs a capability value whose
-                      bundle pull names generated identities */
-} cap_row;
-
-static const cap_row cap_rows[] = {
-    {"File", "read", "ek_file_read", "vi", CAP_IO_REF, 0},
-    {"File", "read_bytes", "ek_file_read_bytes", "vi", CAP_IO_REF, 0},
-    {"File", "read_line", "ek_file_read_line", "v", CAP_IO_OPT, 0},
-    {"File", "seek", "ek_file_seek", "vv", CAP_IO_UNIT, 0},
-    {"File", "write", "ek_file_write", "vo", CAP_IO_UNIT, 0},
-    {"File", "write_bytes", "ek_file_write_bytes", "vo", CAP_IO_UNIT, 0},
-    {"File", "flush", "ek_file_flush", "v", CAP_IO_UNIT, 0},
-    {"File", "close", "ek_file_close", "v", CAP_IO_UNIT, 0},
-    {"In", "from_lines", "ek_in_from_lines", "o", CAP_PLAIN, 1},
-    {"Rand", "with_seed", "ek_rand_with_seed", "v", CAP_PLAIN, 1},
-    {"Out", "err", "ek_cap_out_stderr", "", CAP_PLAIN, 1},
-    {"Proc", "exit", "ek_proc_exit", "vv", CAP_EXIT, 0},
-    {"Conc", "scope", "ek_conc_scope", "vv", CAP_PLAIN, 0},
-    {"Scope", "spawn", "ek_scope_spawn", "vv", CAP_PLAIN, 0},
-    {"Task", "join", "ek_task_join", "v", CAP_PLAIN, 0},
-    {"Task", "cancel", "ek_task_cancel", "v", CAP_PLAIN, 0},
-};
-
 /* The pure construction of a capability value pulls the constructor's
    own object file in through archive resolution, so the row's
    capability registers the families that pull names. The File handle
@@ -254,10 +210,10 @@ static const cap_row cap_rows[] = {
    build their Result values over the unit's own helpers and stamp
    their families through that construction instead. */
 static void register_static_families(lower_ctx *c, const ek_node *e,
-                                     const cap_row *row)
+                                     const ek_surface_row *row)
 {
     if (row->registers) {
-        lower_cap_families_of(c, e, row->family);
+        lower_cap_families_of(c, e, row->ns);
     }
 }
 
@@ -294,21 +250,16 @@ lower_val lower_cap_call(lower_ctx *c, lower_scope *scope,
                          const ek_node *e, const ek_node *callee,
                          const char *family, int has_recv)
 {
-    const cap_row *row = NULL;
+    const ek_surface_row *row;
     const char **as;
     size_t cap = 0, na, written, i;
     lower_val out;
 
-    for (i = 0; i < sizeof cap_rows / sizeof *cap_rows; i++) {
-        if (strcmp(cap_rows[i].family, family) == 0
-            && strcmp(cap_rows[i].member, callee->u.field.name) == 0) {
-            row = &cap_rows[i];
-        }
-    }
-    if (!row) {
+    row = ek_surface_find(family, callee->u.field.name);
+    if (!row || row->route != EK_ROUTE_CAP) {
         return (lower_val){ NULL, 0 };
     }
-    na = strlen(row->args);
+    na = strlen(row->args ? row->args : "v");
     written = na - (size_t)has_recv;
     if (e->u.call.args.count != written) {
         lower_error(c, e, "the call of `%s.%s` is malformed", family,
@@ -331,10 +282,11 @@ lower_val lower_cap_call(lower_ctx *c, lower_scope *scope,
         as[has_recv + i] = lower_as_temp(c, scope, &a);
     }
     {
-        const char *args = value_args(c, row->args, as, na);
+        const char *args = value_args(c, row->args ? row->args : "v", as,
+                                      na);
 
         switch (row->shape) {
-        case CAP_PLAIN: {
+        case EK_CAP_PLAIN: {
             const char *t = lower_temp(c, scope);
 
             lower_pad(c);
@@ -342,15 +294,15 @@ lower_val lower_cap_call(lower_ctx *c, lower_scope *scope,
             out = (lower_val){ t, 1 };
             break;
         }
-        case CAP_IO_REF:
+        case EK_CAP_IO_REF:
             out = lower_wrap_io(c, scope, e, row->sym, args,
                                 LOWER_IO_OK_REF);
             break;
-        case CAP_IO_UNIT:
+        case EK_CAP_IO_UNIT:
             out = lower_wrap_io(c, scope, e, row->sym, args,
                                 LOWER_IO_OK_UNIT);
             break;
-        case CAP_IO_OPT:
+        case EK_CAP_IO_OPT:
             out = lower_wrap_io(c, scope, e, row->sym, args,
                                 LOWER_IO_OK_OPT);
             break;

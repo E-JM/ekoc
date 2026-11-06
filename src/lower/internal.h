@@ -748,12 +748,6 @@ lower_val value_call(lower_ctx *c, lower_scope *scope, const ek_node *e,
 int lower_param_rebinds(const ek_node *e, const char *name);
 int lower_param_mentions(const ek_node *e, const char *name);
 
-/* The out slot a status-returning runtime entry writes: a signed or
-   unsigned word, a float, a code point, or a borrowed value. */
-typedef enum {
-    OUT_I64, OUT_U64, OUT_F64, OUT_U32, OUT_VAL
-} out_kind;
-
 /* intrinsic.c: the compiler rows of the std namespaces routed to the
    runtime. The family is the receiver's std spelling; the call is
    handled when a table row matches, and left to the member path
@@ -774,13 +768,13 @@ const char *lower_ctor_helper(lower_ctx *c, const ek_node *at,
                               const char *name, int *nf);
 lower_val lower_wrap_option(lower_ctx *c, lower_scope *scope,
                             const ek_node *e, const char *sym,
-                            const char *args, out_kind out);
+                            const char *args, ek_out out);
 lower_val lower_wrap_option_obj(lower_ctx *c, lower_scope *scope,
                                 const ek_node *e, const char *sym,
                                 const char *args);
 lower_val lower_wrap_parse(lower_ctx *c, lower_scope *scope,
                            const ek_node *e, const char *sym,
-                           const char *args, out_kind out, int radix);
+                           const char *args, ek_out out, int radix);
 lower_val lower_wrap_decode(lower_ctx *c, lower_scope *scope,
                             const ek_node *e, const char *sym,
                             const char *args);

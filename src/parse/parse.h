@@ -7,6 +7,7 @@
 #include "layout/layout.h"
 #include "support/arena.h"
 #include "support/diag.h"
+#include "support/surface.h"
 
 /* Layout token stream -> AST. */
 
@@ -34,11 +35,8 @@ typedef enum {
     EK_BIN_RANGE_EXC, EK_BIN_RANGE_INC
 } ek_binop;
 
-/* World bit of a function type. result NULL means the arrow is
-   elided and the result is `_`. */
-typedef enum {
-    EK_ARROW_PURE, EK_ARROW_WORLD, EK_ARROW_OPEN
-} ek_arrow;
+/* The world bit of a function type (support/surface.h) names the
+   arrow form both here and in the surface table. */
 
 /* Where the `..` rest of a list pattern sits. */
 typedef enum {
