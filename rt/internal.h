@@ -153,6 +153,7 @@ extern const ek_typeinfo ek_typeinfo_bytes;
 extern const ek_typeinfo ek_typeinfo_cons;
 extern const ek_typeinfo ek_typeinfo_dict;
 extern const ek_typeinfo ek_typeinfo_set;
+extern const ek_typeinfo ek_typeinfo_vector;
 extern const ek_typeinfo ek_typeinfo_closure;
 extern const ek_typeinfo ek_typeinfo_nil;
 

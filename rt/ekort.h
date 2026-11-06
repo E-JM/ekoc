@@ -26,6 +26,7 @@ typedef enum {
     EK_KIND_CONS,
     EK_KIND_DICT,
     EK_KIND_SET,
+    EK_KIND_VECTOR,
     EK_KIND_CLOSURE,
     EK_KIND_STRUCT,
     EK_KIND_NIL
@@ -735,6 +736,34 @@ ek_val ek_set_to_list(ek_val set);
 ek_val ek_set_union(ek_val a, ek_val b);
 ek_val ek_set_intersect(ek_val a, ek_val b);
 ek_val ek_set_diff(ek_val a, ek_val b);
+
+/* A vector is a persistent balanced tree of the elements, one per
+   leaf, every version sharing the subtrees no update touched. The
+   entries below are the member face; the derived services walk them
+   over to_list and the length. */
+
+/* The empty vector. */
+ek_val ek_vec_new(void);
+
+/* The vector of the list's elements, in their order. */
+ek_val ek_vec_of(ek_val list);
+
+/* The elements as a fresh list, in order. */
+ek_val ek_vec_to_list(ek_val v);
+
+/* The element count. */
+size_t ek_vec_len(ek_val v);
+
+/* Nonzero and the element in *out when the index names a position;
+   zero leaving *out untouched otherwise. */
+int ek_vec_get(ek_val v, ek_val index, ek_val *out);
+
+/* A fresh vector with the element at the index replaced, or NULL when
+   the index names no position. */
+ek_obj *ek_vec_set(ek_val v, ek_val index, ek_val elem);
+
+/* A fresh vector with the element appended. */
+ek_val ek_vec_push(ek_val v, ek_val elem);
 
 /* A range is a compiler-emitted struct over one ordered scalar: the
    object header is followed by three ek_val fields in this order --
