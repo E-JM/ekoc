@@ -239,6 +239,10 @@ static const cap_row cap_rows[] = {
     {"Rand", "with_seed", "ek_rand_with_seed", "v", CAP_PLAIN, 1},
     {"Out", "err", "ek_cap_out_stderr", "", CAP_PLAIN, 1},
     {"Proc", "exit", "ek_proc_exit", "vv", CAP_EXIT, 0},
+    {"Conc", "scope", "ek_conc_scope", "vv", CAP_PLAIN, 0},
+    {"Scope", "spawn", "ek_scope_spawn", "vv", CAP_PLAIN, 0},
+    {"Task", "join", "ek_task_join", "v", CAP_PLAIN, 0},
+    {"Task", "cancel", "ek_task_cancel", "v", CAP_PLAIN, 0},
 };
 
 /* The pure construction of a capability value pulls the constructor's

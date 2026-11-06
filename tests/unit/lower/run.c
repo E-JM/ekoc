@@ -128,7 +128,7 @@ static int compile_unit(const char *name)
     int n;
 
     n = snprintf(cmd, sizeof cmd,
-                 "cc -std=c99 -O2 -Irt build/%s.c build/libekort.a"
+                 "cc -std=c99 -O2 -pthread -Irt build/%s.c build/libekort.a"
                  " -lm -o build/%s", name, name);
     if (n < 0 || (size_t)n >= sizeof cmd) {
         return 0;
@@ -743,10 +743,9 @@ static void tee_prints_twice(void)
     EK_CHECK(err[0] == '\0');
 }
 
-/* A `main` over a capability the shim cannot supply is diagnosed: the
-   concurrency surface has no scheduler in this slice, so the manifest
-   keeps no shim. */
-static void unsupported_capabilities(void)
+/* The concurrency capability is supplied by the shim like any other:
+   the manifest builds the Conc value and the four members lower. */
+static void conc_manifest(void)
 {
     lfx f;
 
@@ -755,19 +754,10 @@ static void unsupported_capabilities(void)
               "    hold = c\n"
               "    _ := hold\n"
               "    _\n");
-    EK_CHECK_U64(lfx_errors(&f), 1);
-    EK_CHECK(lfx_has_code(&f, "E-lower"));
-    EK_CHECK(lfx_lacks(&f, "int main"));
-    lfx_end(&f);
-
-    lfx_begin(&f,
-              "main: (o: Out, c: Conc) -> _ =\n"
-              "    hold = c\n"
-              "    _ := hold\n"
-              "    _\n");
-    EK_CHECK_U64(lfx_errors(&f), 1);
-    EK_CHECK(lfx_has_code(&f, "E-lower"));
-    EK_CHECK(lfx_lacks(&f, "int main"));
+    EK_CHECK(lfx_check_clean(&f));
+    EK_CHECK(lfx_lower_clean(&f));
+    EK_CHECK(lfx_has(&f, "ek_cap_conc_os"));
+    EK_CHECK(lfx_has(&f, "int main"));
     lfx_end(&f);
 }
 
@@ -798,6 +788,6 @@ int main(void)
     concat_feeds_print();
     null_prints_nothing();
     tee_prints_twice();
-    unsupported_capabilities();
+    conc_manifest();
     return ek_test_report("lower/run");
 }

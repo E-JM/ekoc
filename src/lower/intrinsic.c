@@ -281,7 +281,8 @@ static int cap_family(const char *family)
 {
     return strcmp(family, "File") == 0 || strcmp(family, "In") == 0
         || strcmp(family, "Out") == 0 || strcmp(family, "Rand") == 0
-        || strcmp(family, "Proc") == 0;
+        || strcmp(family, "Proc") == 0 || strcmp(family, "Conc") == 0
+        || strcmp(family, "Scope") == 0 || strcmp(family, "Task") == 0;
 }
 
 /* The row of one family and member spelling. */

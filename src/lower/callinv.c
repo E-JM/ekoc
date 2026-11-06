@@ -274,8 +274,16 @@ lower_val value_call(lower_ctx *c, lower_scope *scope,
         lower_emitf(c, "};\n");
     }
     lower_pad(c);
-    lower_emitf(c, "ek_val %s = ek_closure_call(%s, %s, %zu);\n", r, ft,
-                n ? av : "(ek_val *)0", n);
+    {
+        /* A world-touching call is a cancellation point: a task with
+           cancellation pending ends before it, never inside it. */
+        const ek_ck_row *row = lower_row(c, e);
+        const char *call = row && row->bit == EK_BIT_WORLD
+                               ? "ek_world_call" : "ek_closure_call";
+
+        lower_emitf(c, "ek_val %s = %s(%s, %s, %zu);\n", r, call, ft,
+                    n ? av : "(ek_val *)0", n);
+    }
     release_args(c, argv, owned, n);
     lower_pad(c);
     lower_emitf(c, "ek_release(%s);\n", ft);

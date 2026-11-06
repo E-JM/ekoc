@@ -126,6 +126,7 @@ static const fam_group *const groups_fs[] = {
 
 static const cap_row cap_table[] = {
     {"Out",   NULL, 0},
+    {"Conc",  groups_env, sizeof groups_env / sizeof *groups_env},
     {"In",    groups_in, sizeof groups_in / sizeof *groups_in},
     {"Fs",    groups_fs, sizeof groups_fs / sizeof *groups_fs},
     {"Env",   groups_env, sizeof groups_env / sizeof *groups_env},

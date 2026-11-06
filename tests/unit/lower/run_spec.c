@@ -38,7 +38,7 @@ static int compile_unit(const char *name)
     int n;
 
     n = snprintf(cmd, sizeof cmd,
-                 "cc -std=c99 -O2 -Irt build/%s.c build/libekort.a"
+                 "cc -std=c99 -O2 -pthread -Irt build/%s.c build/libekort.a"
                  " -lm -o build/%s", name, name);
     if (n < 0 || (size_t)n >= sizeof cmd) {
         return 0;

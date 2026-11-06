@@ -45,8 +45,8 @@ static int compile_gate(const char *name)
     int n;
 
     n = snprintf(cmd, sizeof cmd,
-                 "cc -std=c99 -O2 -Irt build/%s.c build/%s_shim.c"
-                 " build/libekort.a -lm -o build/%s", name, name, name);
+                 "cc -std=c99 -O2 -pthread -Irt build/%s.c build/%s_shim.c"
+                 " build/libekort.a -lm -pthread -o build/%s", name, name, name);
     if (n < 0 || (size_t)n >= sizeof cmd) {
         return 0;
     }

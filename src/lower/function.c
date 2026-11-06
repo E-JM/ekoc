@@ -160,6 +160,7 @@ static const char *shim_ctor_of(const char *cap)
         {"Clock", "ek_cap_clock_wall"},
         {"Rand",  "ek_cap_rand_os"},
         {"Proc",  "ek_cap_proc"},
+        {"Conc",  "ek_cap_conc_os"},
     };
     size_t i;
 
