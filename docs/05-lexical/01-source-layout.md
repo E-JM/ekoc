@@ -48,7 +48,9 @@ The indentation of a member, relative to the enclosing block, MUST be a
 multiple of four spaces. Any other relative indentation is an error.
 
 Blank lines and lines that contain only a comment do not establish a block
-column and do not terminate a block.
+column and do not terminate a block. The lines inside a raw string are one
+token (Clause 5.9.4), so they are not source lines at all and the layout never
+sees them.
 
 ### 5.2.3 Tabs
 

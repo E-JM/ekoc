@@ -117,7 +117,9 @@ Clause 9.4.3.
 
 A string literal is written between double quotes and denotes a `String`. The
 content is encoded as UTF-8. A string literal is single-line: a literal line
-terminator inside the quotes is an error. A newline is written `\n`.
+terminator inside the quotes is an error. A newline is written `\n`. A raw
+string (Clause 5.9.4) is the one exception: it spans lines, and its lines are
+content, not source lines.
 
 ### 5.9.2 Escapes
 
@@ -161,3 +163,32 @@ greet: String = "hi {name}, n={n}"
 open:  String = "set \{ is literal"
 nested: String = "outer {"inner {n}"}"
 ```
+
+### 5.9.4 Raw Strings
+
+A **raw string** is written between triple double quotes. It is the single-line
+rule's one exception, and it carries no escapes and no interpolation: every
+byte between the delimiters is content.
+
+- The opening delimiter MUST be followed by a line break; the content begins
+  on the next line.
+- The closing delimiter is three double quotes alone on its line, and the
+  closing line's newline is not content.
+- The content's common indent — the least indent of the non-blank content
+  lines and the closing line — is stripped from every line. A blank line
+  constrains nothing and carries an empty line of content.
+- The content MUST NOT contain three double quotes; no escape exists, and
+  this limitation is permanent.
+
+```eko
+pattern: String = """
+    SELECT *
+      FROM users
+    WHERE name LIKE {q}
+    """
+```
+
+The literal is one token in the lexer's own state, so the lines inside it
+never reach the layout rules (Clause 5.2.2); the interior indentation is
+content, not layout. A tab inside the leading indent is subject to the tab
+rule of Clause 5.2.3.

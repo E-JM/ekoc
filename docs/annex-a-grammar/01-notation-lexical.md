@@ -111,7 +111,8 @@ code point is not a scalar value.
 ### A.2.7 String Literals
 
 ```ebnf
-StringLiteral   := '"' { StringItem } '"'
+StringLiteral   := '"' { StringItem } '"' | RawString
+StringItem      := StringChar | StringEscape | Interpolation
 StringItem      := StringChar | StringEscape | Interpolation
 StringChar      := any Unicode scalar value except '"' and '\' and U+000A and '{'
 StringEscape    := '\' ( '{' | 'n' | 't' | 'r' | '\' | '"' | 'u{' HexDigits '}' )
@@ -121,6 +122,19 @@ Interpolation   := '{' Expression '}'
 `Expression` inside an interpolation is the syntactic nonterminal of Annex A.3.
 Braces inside the slot MUST balance. An empty slot is an error. A `}` that
 does not close a slot is an ordinary character.
+
+```ebnf
+RawString       := '"""' NEWLINE { RawLine } ClosingLine
+RawLine         := { RawChar } NEWLINE
+ClosingLine     := { ' ' } '"""' NEWLINE
+RawChar         := any Unicode scalar value except U+000A and U+000D
+```
+
+A raw string carries no escape and no interpolation: a `{` and a backslash
+are content. The opening delimiter is followed by a line break, and the
+closing delimiter is alone on its line (Clause 5.9.4). Content lines are
+stripped of the common indent of the non-blank content lines and the closing
+line. The content MUST NOT contain three double quotes.
 
 ### A.2.8 Operators and Punctuation
 

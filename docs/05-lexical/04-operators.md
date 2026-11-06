@@ -74,7 +74,7 @@ The following lexical forms do not exist. Their occurrence is an error.
 |---|---|
 | Tab as whitespace | `E-tab`; indentation is spaces (Clause 5.2.3) |
 | Block comments `/* ... */` | no such form outside a string literal; use `//` (Clause 5.4.1); inside a slot it is two operator tokens |
-| Multiline string literals | strings are single-line (Clause 5.9.1) |
+| Multiline string literals | a `"` string is single-line; only a raw string spans lines (Clauses 5.9.1, 5.9.4) |
 | Numeric type suffixes (`1u8`, `1.0f`) | no suffixes; placement is by expected type (Clause 5.7.4) |
 | Character literals with more than one scalar | one scalar per `Char` (Clause 5.8) |
 | Byte-string literals (`b"..."`) | construction is by function (Clause 9.5) |

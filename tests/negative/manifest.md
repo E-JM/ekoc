@@ -39,6 +39,9 @@ otherwise it names the rejection and the normative clause.
 | N31 | record right-hand side on its own indented line | parse error |
 | N32 | constructor of a several-variant ADT in a value binding | `E-refutable-binding` |
 | N33 | list pattern in a value binding | `E-refutable-binding` |
+| N34 | inverted binding at module top level | `E-top-arrow` |
+| N35 | raw string content containing the delimiter | compile error: a raw string's content may not contain its delimiter |
+| N36 | raw string opener without a line break | compile error: the opening delimiter is followed by a line break |
 
 ## N01 — nominal mismatch
 
@@ -453,3 +456,30 @@ main: () ! = line.unwrap_or("").inspect()
 
 Expected: `E-top-arrow`, at the binding line. The same binding inside a
 function body stays legal.
+
+
+## N35 — raw string content containing the delimiter
+
+A raw string has no escape, so its content may not contain the delimiter
+itself (Clause 5.9.4).
+
+```eko
+bad: String = """
+    has """ inside
+    """
+```
+
+Expected: compile error: the raw string's content may not contain its
+delimiter. The same literal without the inner quotes is legal.
+
+## N36 — raw string opener without a line break
+
+The content of a raw string begins on the line after the opening delimiter
+(Clause 5.9.4).
+
+```eko
+bad: String = """ text
+    """
+```
+
+Expected: compile error: the opening delimiter is followed by a line break.
