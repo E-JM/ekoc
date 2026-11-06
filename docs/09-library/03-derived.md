@@ -110,9 +110,16 @@ no mutation. The partial field literal is legal only in its argument position
 permission follows the record field chain only (Clause 6.6.3); a misspelling
 is an error.
 
+The receiver MUST be a concrete record type, or a `ctype`, at check time
+(Clauses 8.5.3, 10.3.3). A receiver whose type is a type variable has no
+record lowering, and `.with` over it is a compile error: the form is not a
+function value and admits no other reading. `with` sets no world bit and
+performs no adaptation; the result has the receiver's own type.
+
 The second parameter type of `T.with`, `(t, partial fields) -> t`, is not
 expressible in the type syntax; the typing of the form is a localized
-exception. `with` is the record update vocabulary; `insert` and `remove`
+exception. The exception does not extend to any other form whose type cannot
+be written. `with` is the record update vocabulary; `insert` and `remove`
 belong to dictionaries, and `append` and `merge` belong to the body of `++`.
 
 ### 9.8.7 Dispatch

@@ -31,6 +31,10 @@ has terminated. When the callback returns, the scope cancels every child that
 has not terminated; scope exit waits for all children. A task cannot outlive
 its scope.
 
+A `Task b` value that leaves its scope does not outlive it either: scope exit
+has cancelled the task, so `join` on the value reads `None` — unless the task
+had already terminated, in which case `join` reads its result (Clause 8.9.2).
+
 `scope.spawn(callback)` creates a task and returns a `Task b` value. The
 callback is a closure over the values visible at the spawn site, captured by
 snapshot under Clause 8.2.3. The task is eligible to execute after `spawn`
@@ -53,8 +57,15 @@ is cooperative. It is applied at world-call boundaries: a task that is executing
 a pure computation is not interrupted at an arbitrary point. A task that never
 reaches a world-call boundary therefore cannot be cancelled.
 
+The boundary check precedes the call. When cancellation is pending at a
+world-call boundary, that call is not executed, and the task terminates there
+as cancelled: a world effect already performed is not undone, but the one the
+call was about to perform is withheld.
+
 Cancellation is not an error and does not produce a panic. A cancelled task has
-no result value; `join` reports `None`.
+no result value; `join` reports `None`. It performs no unwinding: no finalizer
+runs, and a handle the task still holds is left to the leak discipline of
+Clause 9.12.3.
 
 ### 8.9.3 Determinism
 
@@ -84,5 +95,6 @@ and is accounted for by atomic counts; acyclicity continues to hold (Clause
 
 There are no channels, no timeouts, and no shared mutable state; the language
 has no channel deadlock. A cancelled task stops at a world-call boundary and
-does not resume. A task's world contacts may interleave with those of its
+does not resume; the call standing at that boundary is not made (Clause
+8.9.2). A task's world contacts may interleave with those of its
 parent and siblings; no order among them is specified.

@@ -219,13 +219,23 @@ is skipped for it, so one defect yields one diagnostic.
 
 A `?` in a parameter type is instantiated by the corresponding argument: `->`
 instantiates pure and `!->` world-touching, and several such parameters are
-ORed. Lambda arguments are checked last, so the callback's bit is known when
-the open bit is instantiated (Clause 7.6.4). Inside the body of a declaration
-whose own arrow is open, a call through a `?` arrow instantiates from its
-feeder arguments and, when they are pure, from the enclosing declaration's
-open bit, so one open body may feed another. A `?` in a result is rejected
-whether or not a parameter feeds another open bit, mirroring the result-only
-variable rule (Clause 7.6.5). A type variable under a `?` arrow counts as a
+ORed. Inside the body of a declaration whose own arrow is open, a call through
+a `?` arrow instantiates from its feeder arguments and, when they are pure,
+from the enclosing declaration's open bit, so one open body may feed another.
+
+The instantiation order is fixed, and the procedure takes one pass:
+
+1. A nested call is instantiated before the call that contains it: the inner
+   call's bit is known before it feeds the outer call.
+2. Non-lambda arguments are checked before lambda arguments, so a callback's
+   bit is known when the open bit is instantiated (Clause 7.6.4).
+3. Inside a declaration whose own arrow is open, its `?` is a bit variable
+   during checking; each call site instantiates it from the argument bits.
+4. The order is deterministic and needs no fixed point: no bit depends on a
+   value that a later step computes.
+
+A `?` in a result is rejected whether or not a parameter feeds another open
+bit, mirroring the result-only variable rule (Clause 7.6.5). A type variable under a `?` arrow counts as a
 use (Clause 7.6.2), and an open arrow MUST NOT appear on an extern
 (Clause 10.2.1). A dispatcher signature has the form
 `List.map: ([]t, (t) ?-> u) ?-> []u`.
