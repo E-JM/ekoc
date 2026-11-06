@@ -52,3 +52,17 @@ Pair.make: ([Int, Int]) -> Pair = (t):
 namespace_lambda_body: test =
     assert_eq(Pair.make({3, 4}), {f: 3, s: 4})
 
+
+// Station 3 on a structural receiver: the current module's function is
+// the extension whatever the receiver's shape (Clause 7.4.3).
+_sum_all: (xs: []Int) -> Int = xs.fold(0, (acc, n): acc + n)
+_widen: (r: [lo: Int, hi: Int]) -> [lo: Int, hi: Int] = r.with({hi: r.hi + 1})
+_run: (f: (Int) -> Int, x: Int) -> Int = f(x)
+
+receiver_extension: test =
+    xs: []Int = {1, 2, 3}
+    assert_eq(xs._sum_all(), 6)
+    r: [lo: Int, hi: Int] = {lo: 1, hi: 2}
+    assert_eq(r._widen().hi, 3)
+    f: (Int) -> Int = (n): n + 1
+    assert_eq(f._run(41), 42)

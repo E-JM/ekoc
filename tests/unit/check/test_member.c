@@ -440,6 +440,26 @@ static void type_qualified_calls(void)
     cfx_end(&f);
 }
 
+/* Station 3 resolves a current-module function over any receiver
+   shape, not only a nominal one: the structural composites and a
+   function type reach the module reading (Clause 7.4.3). */
+static void receiver_station_on_composites(void)
+{
+    cfx f;
+
+    cfx_begin(&f,
+              "sum_all: (xs: []Int) -> Int = xs.fold(0, (a, n): a + n)\n"
+              "apply1: (fn: (Int) -> Int, x: Int) -> Int = fn(x)\n"
+              "xs: []Int = {1, 2}\n"
+              "a: Int = xs.sum_all()\n"
+              "fn: (Int) -> Int = (n): n + 1\n"
+              "b: Int = fn.apply1(7)\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    EK_CHECK(cfx_reading_at(&f, 4, EK_RD_MODULE_FN));
+    EK_CHECK(cfx_reading_at(&f, 6, EK_RD_MODULE_FN));
+    cfx_end(&f);
+}
+
 /* The receiver of a member call conforms before the arguments, so an
    argument checked under a parameter that shares the receiver's
    variables sees them determined. */
@@ -474,6 +494,7 @@ int main(void)
     function_receiver();
     qualified_calls();
     type_qualified_calls();
+    receiver_station_on_composites();
     receiver_binds_first();
     return ek_test_report("check/member");
 }

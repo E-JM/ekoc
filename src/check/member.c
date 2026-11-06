@@ -308,14 +308,20 @@ static const ek_type *link_type(ck_ctx *c, const ek_node *at,
                 return row;
             }
         }
+        t = ck_type_of(c, module_fn(c, name, r));
+        if (t && t->kind == EK_T_FN) {
+            *rd = EK_RD_MODULE_FN;
+            return t;
+        }
         return ck_no_member(c, at, r, name, mod);
     }
     if (r && r->kind == EK_T_NOMINAL && r->u.nominal.sym) {
         return nominal_link(c, at, r, name, mod, rd, bool_t);
     }
     if (r && r->kind == EK_T_FN) {
-        /* A function type has no fields, no namespace, and no module
-           reading: the derived services and their halts. */
+        /* A function type has no fields and no namespace: the derived
+           services and their halts, then the current module's
+           extension. */
         const ek_type *t = ck_derive_eq(c, at, r, name, rd, bool_t);
 
         if (t) {
@@ -335,6 +341,11 @@ static const ek_type *link_type(ck_ctx *c, const ek_node *at,
         }
         t = ck_derive_with(c, at, r, name, rd);
         if (t) {
+            return t;
+        }
+        t = ck_type_of(c, module_fn(c, name, r));
+        if (t && t->kind == EK_T_FN) {
+            *rd = EK_RD_MODULE_FN;
             return t;
         }
         return ck_no_member(c, at, r, name, mod);
