@@ -760,6 +760,17 @@ typedef enum {
     EK_IN_SLOTS
 } ek_in_slot;
 
+/* The FileInfo record's fields, in the declaration order of the
+   vocabulary module. The runtime builds the record and the emitted unit
+   reads it through its own struct, so both sides check their layout
+   against these slots. */
+typedef enum {
+    EK_FILEINFO_SIZE,
+    EK_FILEINFO_MTIME,
+    EK_FILEINFO_IS_DIR,
+    EK_FILEINFO_SLOTS
+} ek_fileinfo_slot;
+
 typedef enum {
     EK_FS_OPEN,
     EK_FS_WITH_FILE,

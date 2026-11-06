@@ -9,7 +9,8 @@
    its bundle, so the record here is layout-compatible with the
    compiler's one-field records and generated code reads the closures
    through its own layout. The shared bundle families and the value
-   builders over the emitted unit's identities live in capval.c. */
+   builders over the emitted unit's identities live in bundle.c and the
+   gen* files beside it. */
 
 /* The session-write bundle of Out: one write closure per transport
    form, the bytes as given and the bytes with the line terminator

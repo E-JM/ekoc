@@ -112,5 +112,5 @@ int main(void)
     env_reads_the_variables();
     args_carry_the_vector();
     proc_token_is_opaque();
-    return ek_test_report("rt/capenv");
+    return ek_test_report("rt/env_args");
 }

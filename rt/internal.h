@@ -59,8 +59,16 @@ extern const ek_typeinfo ekT_sys$FileInfo;
 extern const ek_typeinfo ekT_time$Time$Time;
 extern const ek_typeinfo ekT_time$Mono$Mono;
 
+/* The one-payload shape of a constructor family over the layout
+   contract: the object header, then the payload slot. genval.c builds
+   it, and the time payload reader reads it. */
+typedef struct {
+    ek_obj obj;
+    ek_val p0;
+} ek_gen_p0_shape;
+
 /* The one-payload and zero-payload constructor shapes over the layout
-   contract (capval.c). The payload argument is owned by the caller and
+   contract (genval.c). The payload argument is owned by the caller and
    owned by the built value afterwards. */
 ek_val ek_gen_one(const ek_typeinfo *info, ek_val p0);
 ek_val ek_gen_zero(const ek_typeinfo *info);
