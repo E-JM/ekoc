@@ -1,0 +1,45 @@
+// Char classification (Clause 9.4.4): the ASCII letter and digit
+// predicates, the Unicode White_Space property, and the XID pair the
+// lexer's identifier rule builds on.
+
+ascii_letters: test =
+    assert('a'.is_alpha())
+    assert('Z'.is_alpha())
+    assert('a'.is_lower())
+    assert('Z'.is_upper())
+    assert('a'.is_upper().not())
+    assert('Z'.is_lower().not())
+    assert(Char.from_code(0xE9).unwrap_or('x').is_alpha().not())
+
+ascii_digits: test =
+    assert('0'.is_digit())
+    assert('9'.is_digit())
+    assert('a'.is_digit().not())
+    assert('7'.is_alnum())
+    assert('x'.is_alnum())
+    assert('_'.is_alnum().not())
+    assert('-'.is_alnum().not())
+
+white_space: test =
+    assert(' '.is_space())
+    assert('\t'.is_space())
+    assert('\n'.is_space())
+    assert('\r'.is_space())
+    assert(Char.from_code(0xA0).unwrap_or('x').is_space())
+    assert(Char.from_code(0x3000).unwrap_or('x').is_space())
+    assert(Char.from_code(0x200B).unwrap_or('x').is_space().not())
+    assert('x'.is_space().not())
+
+xid: test =
+    assert('a'.is_xid_start())
+    assert('λ'.is_xid_start())
+    assert('_'.is_xid_start().not())
+    assert('_'.is_xid_continue())
+    assert('1'.is_xid_continue())
+    assert('1'.is_xid_start().not())
+    assert('-'.is_xid_continue().not())
+
+trim_follows_the_space_property: test =
+    nbsp := String.from_char(Char.from_code(0xA0).unwrap_or(' '))
+    assert_eq("  x\t\n".trim(), "x")
+    assert_eq((nbsp ++ "x" ++ nbsp).trim(), "x")

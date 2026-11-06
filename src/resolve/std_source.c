@@ -498,7 +498,7 @@ const char *const ek_std_source_parts[] = {
     "_trim_start_chars: (cs: []Char) -> []Char =\n",
     "    case cs:\n",
     "        {} -> {}\n",
-    "        {c, ..rest} -> if _is_space(c): _trim_start_chars(rest) else: cs\n",
+    "        {c, ..rest} -> if c.is_space(): _trim_start_chars(rest) else: cs\n",
     "\n",
     "_trim_end_chars: (cs: []Char) -> []Char =\n",
     "    _list_rev(_trim_start_chars(_list_rev(cs, {})), {})\n",
@@ -516,15 +516,6 @@ const char *const ek_std_source_parts[] = {
     "_repeat_into: (c: Char, n: Int, acc: String) -> String =\n",
     "    if n <= 0: acc\n",
     "    else: _repeat_into(c, n - 1, String.from_char(c) ++ acc)\n",
-    "\n",
-    "// True when the character is Unicode White_Space (Clause 9.11.1).\n",
-    "_is_space: (c: Char) -> Bool =\n",
-    "    n := c.to_code()\n",
-    "    n == 9 || n == 10 || n == 11 || n == 12 || n == 13 || n == 32 ||\n",
-    "        n == 133 || n == 160 || n == 5760 ||\n",
-    "        (n >= 8192 && n <= 8202) ||\n",
-    "        n == 8232 || n == 8233 || n == 8239 || n == 8287 ||\n",
-    "        n == 12288\n",
     "\n",
     "// True when `cs` begins with `pre`.\n",
     "_starts_with_chars: (cs: []Char, pre: []Char) -> Bool =\n",
@@ -563,8 +554,8 @@ const char *const ek_std_source_parts[] = {
     "        False -> _\n",
 };
 
-const size_t ek_std_source_nparts = 556;
-const size_t ek_std_source_len = 17956;
+const size_t ek_std_source_nparts = 547;
+const size_t ek_std_source_len = 17607;
 
 char *ek_std_source_join(ek_arena *arena)
 {
