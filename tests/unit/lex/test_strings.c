@@ -31,6 +31,66 @@ static void test_plain_strings(void)
     fx_end(&f);
 }
 
+/* The raw string: one token, no escapes, no slots, the common indent
+   stripped, and the closing line's newline not content. */
+static void test_raw_strings(void)
+{
+    struct {
+        const char *src;
+        const char *cooked;
+        size_t len;
+    } cases[] = {
+        { "\"\"\"\n    ab\n    \"\"\"\n", "ab", 2 },
+        { "\"\"\"\n    a\n      b\n    \"\"\"\n", "a\n  b", 5 },
+        { "\"\"\"\n    {x} \\n \"\n    \"\"\"\n", "{x} \\n \"", 8 },
+        { "\"\"\"\n    a\n\n    b\n    \"\"\"\n", "a\n\nb", 4 },
+        { "\"\"\"\n    a\n      \n    b\n    \"\"\"\n", "a\n\nb", 4 },
+        { "\"\"\"\n      a\n    \"\"\"\n", "  a", 3 },
+        { "\"\"\"\n    \"\"\"\n", "", 0 },
+    };
+    size_t i;
+
+    for (i = 0; i < sizeof cases / sizeof cases[0]; i++) {
+        lex_fixture f;
+
+        fx_begin(&f, cases[i].src);
+        EK_CHECK_U64(fx_count(&f), 3);
+        if (fx_count(&f) == 3) {
+            ek_token t = fx_tok(&f, 0);
+
+            EK_CHECK_U64(t.kind, EK_TOK_STRING);
+            EK_CHECK_U64(t.part_count, cases[i].len ? 1 : 0);
+            if (t.part_count == (cases[i].len ? 1u : 0u)
+                && t.part_count == 1) {
+                EK_CHECK_U64(t.parts[0].text_len, cases[i].len);
+                if (t.parts[0].text_len == cases[i].len) {
+                    EK_CHECK(memcmp(t.parts[0].text, cases[i].cooked,
+                                    cases[i].len) == 0);
+                }
+            }
+        }
+        fx_end(&f);
+    }
+}
+
+static void test_raw_rejections(void)
+{
+    lex_fixture f;
+
+    fx_begin(&f, "\"\"\" no break\n\"\"\"\n");
+    EK_CHECK_U64(fx_errors(&f), 1);
+    fx_end(&f);
+
+    fx_begin(&f, "\"\"\"\nx \"\"\" y\n\"\"\"\n");
+    EK_CHECK_U64(fx_errors(&f), 1);
+    fx_end(&f);
+
+
+    fx_begin(&f, "\"\"\"\nopen ended\n");
+    EK_CHECK_U64(fx_errors(&f), 1);
+    fx_end(&f);
+}
+
 static void test_escapes(void)
 {
     struct {
@@ -59,8 +119,9 @@ static void test_escapes(void)
         if (fx_count(&f) == 2) {
             ek_token t = fx_tok(&f, 0);
             EK_CHECK_U64(t.kind, EK_TOK_STRING);
-            EK_CHECK_U64(t.part_count, 1);
-            if (t.part_count == 1) {
+            EK_CHECK_U64(t.part_count, cases[i].len ? 1 : 0);
+            if (t.part_count == (cases[i].len ? 1u : 0u)
+                && t.part_count == 1) {
                 EK_CHECK_U64(t.parts[0].text_len, cases[i].len);
                 if (t.parts[0].text_len == cases[i].len) {
                     EK_CHECK(memcmp(t.parts[0].text, cases[i].cooked,
@@ -464,5 +525,7 @@ int main(void)
     test_unbalanced_slot();
     test_unterminated_stops_at_bracket();
     test_string_position();
+    test_raw_strings();
+    test_raw_rejections();
     return ek_test_report("lex/strings");
 }

@@ -268,6 +268,9 @@ int lex_token(lex_ctx *c, gbuf *out)
         return lex_number(c, out);
     }
     if (b == '"') {
+        if (ctx_byte(c, 1) == '"' && ctx_byte(c, 2) == '"') {
+            return lex_raw_string(c, out);
+        }
         return lex_string_literal(c, out);
     }
     if (b == '\'') {

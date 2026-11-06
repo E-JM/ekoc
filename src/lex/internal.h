@@ -88,5 +88,6 @@ int lex_char_literal(lex_ctx *c, gbuf *out);
 
 /* string.c */
 int lex_string_literal(lex_ctx *c, gbuf *out);
+int lex_raw_string(lex_ctx *c, gbuf *out);
 
 #endif

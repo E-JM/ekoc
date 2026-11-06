@@ -1,0 +1,34 @@
+// Raw strings: no escape, no interpolation, common indent stripped, no
+// trailing newline (Clause 5.9.4).
+
+strip_and_keep: test =
+    s: String = """
+        first
+          second
+        {no slot} \n kept
+        """
+    assert_eq(s, "first\n  second\n\{no slot} \\n kept")
+
+blank_lines: test =
+    s: String = """
+        top
+
+        bottom
+        """
+    assert_eq(s, "top\n\nbottom")
+
+empty_and_closer_indent: test =
+    e: String = """
+        """
+    d: String = """
+            deeper
+        """
+    assert_eq(e, "")
+    assert_eq(d, "    deeper")
+
+last_line_follows: test =
+    s: String = """
+        alpha
+        beta
+        """
+    assert_eq(s.split("\n").length(), 2)
