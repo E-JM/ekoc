@@ -114,9 +114,9 @@ static void emit_from_simple(lower_ctx *c, lower_demit *d, lower_scalar sk)
 /* The recursive cell decode behind an Arr: the walk answers the std
    Result, so the first failing element short-circuits. */
 static void emit_from_list_aux(lower_ctx *c, const char *aux,
-                               const ek_type *t)
+                               const ek_type *elemt)
 {
-    const char *f = lower_fromj_of(c, t->u.list.elem);
+    const char *f = lower_fromj_of(c, elemt);
     const char *ok = lower_result_ctor(c, "Ok");
     lower_demit d;
     ek_buf b;
@@ -157,10 +157,35 @@ static void emit_from_list(lower_ctx *c, lower_demit *d, const char *name,
 {
     const char *aux = lower_str(c, "%s_aux", name);
 
-    emit_from_list_aux(c, aux, t);
+    emit_from_list_aux(c, aux, t->u.list.elem);
     lower_d_printf(d, "    if (v.as.ref->info == &ekT_std$Json$Arr)\n");
     lower_d_printf(d, "        return %s(%s);\n", aux,
                    lower_json_slot(c, "Arr", "v"));
+    lower_json_err_lit(d, "    ", "");
+}
+
+/* A set decodes through the list walk, then builds the set over the
+   decoded elements; the list dies once the set holds its own refs. */
+static void emit_from_set(lower_ctx *c, lower_demit *d, const char *name,
+                          const ek_type *t)
+{
+    const char *aux = lower_str(c, "%s_aux", name);
+    const char *ok = lower_result_ctor(c, "Ok");
+
+    emit_from_list_aux(c, aux, t->u.nominal.args[0]);
+    lower_d_printf(d, "    if (v.as.ref->info == &ekT_std$Json$Arr) {\n");
+    lower_d_printf(d, "        ek_val r = %s(%s);\n", aux,
+                   lower_json_slot(c, "Arr", "v"));
+    lower_d_printf(d, "        ek_val list, set, out;\n\n");
+    lower_d_printf(d, "        if (r.as.ref->info != %s)\n", LOWER_OK_INFO);
+    lower_d_printf(d, "            return r;\n");
+    lower_d_printf(d, "        list = ((ekS_std$Result$Ok *)r.as.ref)->p0;\n");
+    lower_d_printf(d, "        set = ek_set_of(list);\n");
+    lower_d_printf(d, "        out = %s(set);\n", ok);
+    lower_d_printf(d, "        ek_release(set);\n");
+    lower_d_printf(d, "        ek_release(r);\n");
+    lower_d_printf(d, "        return out;\n");
+    lower_d_printf(d, "    }\n");
     lower_json_err_lit(d, "    ", "");
 }
 
@@ -302,6 +327,10 @@ static void emit_from_shape(lower_ctx *c, lower_demit *d, const char *name,
     }
     if (t->kind == EK_T_LIST) {
         emit_from_list(c, d, name, t);
+        return;
+    }
+    if (lower_is_set(t)) {
+        emit_from_set(c, d, name, t);
         return;
     }
     if (t->kind == EK_T_DICT) {

@@ -110,19 +110,26 @@ static void emit_part(lower_demit *d, const char *ind, const char *part,
     }
 }
 
-static void emit_list_show(lower_ctx *c, lower_demit *d, const ek_type *t)
+/* The brace form over one cons spine. The spine is the receiver itself
+   for a list, and the runtime's insertion-order materialization for a
+   set, which the walk owns and releases. */
+static void emit_seq_show(lower_ctx *c, lower_demit *d, const ek_type *elemt,
+                          const char *src, int owned)
 {
-    const char *elem = insp_of(c, t->u.list.elem);
-    const char *form = bare_form(t->u.list.elem);
+    const char *elem = insp_of(c, elemt);
+    const char *form = bare_form(elemt);
     const char *ind = "        ";
 
     if (!elem && !form) {
+        if (owned) {
+            lower_d_printf(d, "    ek_release(%s);\n", src);
+        }
         lower_d_printf(d, "    (void)v;\n");
         lower_d_printf(d, "    return %s;\n", lit_obj(c, "<opaque>"));
         return;
     }
     lower_d_printf(d, "    ek_obj *acc = %s;\n", lit_obj(c, "{"));
-    lower_d_printf(d, "    ek_val cell = v;\n");
+    lower_d_printf(d, "    ek_val cell = %s;\n", src);
     lower_d_printf(d, "    int first = 1;\n\n");
     lower_d_printf(d, "    while (ek_val_is_cons(cell)) {\n");
     lower_d_printf(d, "        ek_obj *part;\n\n");
@@ -134,7 +141,21 @@ static void emit_list_show(lower_ctx *c, lower_demit *d, const ek_type *t)
     lower_d_printf(d, "%scell = ek_cons_tail(cell.as.ref);\n", ind);
     lower_d_printf(d, "    }\n");
     lower_d_concat_lit(d, "    ", "acc", "}");
+    if (owned) {
+        lower_d_printf(d, "    ek_release(%s);\n", src);
+    }
     lower_d_printf(d, "    return acc;\n");
+}
+
+static void emit_list_show(lower_ctx *c, lower_demit *d, const ek_type *t)
+{
+    emit_seq_show(c, d, t->u.list.elem, "v", 0);
+}
+
+static void emit_set_show(lower_ctx *c, lower_demit *d, const ek_type *t)
+{
+    lower_d_printf(d, "    ek_val list = ek_set_to_list(v);\n");
+    emit_seq_show(c, d, t->u.nominal.args[0], "list", 1);
 }
 
 static void emit_dict_show(lower_ctx *c, lower_demit *d, const ek_type *t)
@@ -297,6 +318,8 @@ static void emit_struct_show(lower_ctx *c, lower_demit *d, const ek_type *t)
         lower_d_printf(d, "    return %s;\n", lit_obj(c, "<opaque>"));
     } else if (t->kind == EK_T_LIST) {
         emit_list_show(c, d, t);
+    } else if (lower_is_set(t)) {
+        emit_set_show(c, d, t);
     } else if (t->kind == EK_T_DICT) {
         emit_dict_show(c, d, t);
     } else if (lower_is_range(t)) {

@@ -160,6 +160,44 @@ static void emit_adt_eq(lower_ctx *c, lower_demit *d, lower_variant *vs,
     lower_d_printf(d, "    return 1;\n");
 }
 
+/* Set equality is set equality: the lengths agree and every element of
+   one has its counterpart in the other, whatever order each was built
+   in. The element comparison is the derived service, so a set of
+   structural values compares structurally. */
+static void emit_set_eq(lower_ctx *c, lower_demit *d, const ek_type *t)
+{
+    const ek_type *elem = t->u.nominal.argc == 1 ? t->u.nominal.args[0]
+                                                 : NULL;
+    const char *eq = elem ? eq_of(c, elem) : NULL;
+
+    if (!eq) {
+        lower_d_printf(d, "    return 0;\n");
+        return;
+    }
+    lower_d_printf(d, "    ek_val la = ek_set_to_list(a);\n");
+    lower_d_printf(d, "    ek_val lb = ek_set_to_list(b);\n");
+    lower_d_printf(d, "    int same = ek_list_len(la) == ek_list_len(lb);\n");
+    lower_d_printf(d, "    ek_val p = la;\n\n");
+    lower_d_printf(d, "    while (same && ek_val_is_cons(p)) {\n");
+    lower_d_printf(d, "        ek_val x = ek_cons_head(p.as.ref);\n");
+    lower_d_printf(d, "        ek_val q = lb;\n");
+    lower_d_printf(d, "        int found = 0;\n\n");
+    lower_d_printf(d, "        while (ek_val_is_cons(q)) {\n");
+    lower_d_printf(d, "            if (%s(x, ek_cons_head(q.as.ref))) {\n",
+                   eq);
+    lower_d_printf(d, "                found = 1;\n");
+    lower_d_printf(d, "                break;\n");
+    lower_d_printf(d, "            }\n");
+    lower_d_printf(d, "            q = ek_cons_tail(q.as.ref);\n");
+    lower_d_printf(d, "        }\n");
+    lower_d_printf(d, "        same = found;\n");
+    lower_d_printf(d, "        p = ek_cons_tail(p.as.ref);\n");
+    lower_d_printf(d, "    }\n");
+    lower_d_printf(d, "    ek_release(la);\n");
+    lower_d_printf(d, "    ek_release(lb);\n");
+    lower_d_printf(d, "    return same;\n");
+}
+
 /* An undetermined payload compares by its tag and payload bytes. */
 static void emit_opaque_eq(lower_demit *d)
 {
@@ -216,6 +254,8 @@ void lower_dsvc_eq_emit(lower_ctx *c, const char *name, const ek_type *t)
     lower_d_printf(&d, "static int %s(ek_val a, ek_val b)\n{\n", name);
     if (lower_is_range(t)) {
         emit_range_eq(c, &d, t);
+    } else if (lower_is_set(t)) {
+        emit_set_eq(c, &d, t);
     } else if (lower_scalar_kind(t) != EKSC_OTHER) {
         emit_scalar_eq(c, &d, lower_scalar_kind(t));
     } else if (t->kind == EK_T_UNIT) {

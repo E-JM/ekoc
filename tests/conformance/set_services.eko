@@ -1,0 +1,34 @@
+// The set's derived services (Clauses 9.8.1, 9.8.4, 9.9.3, 9.10.3):
+// display in insertion order, set equality that ignores the order, the
+// JSON array round trip, and structural keying through a containing
+// record.
+
+Holder: type = [s: Set Int]
+Keyed: type = [s: Set Int]
+
+show_set: test =
+    a: Set Int = Set.of({1, 2})
+    assert_eq(show(a), "\{1, 2}")
+    assert_eq(inspect(a), "\{1, 2}")
+    empty: Set Int = Set.of({})
+    assert_eq(show(empty), "\{}")
+
+set_equality: test =
+    a: Set Int = Set.of({1, 2})
+    b: Set Int = Set.of({2, 1})
+    c: Set Int = Set.of({1})
+    assert(a.eq(b))
+    assert(a.eq(c).not())
+    assert(b.eq(a))
+
+json_round_trip: test =
+    h: Holder = {s: Set.of({1, 2})}
+    assert_eq(Holder.from_json(h.to_json()), Ok h)
+    assert_eq(Json.show(h.to_json()), "\{\"s\":[1,2]}")
+
+keyed_by_a_record: test =
+    a: Keyed = {s: Set.of({1, 2})}
+    b: Keyed = {s: Set.of({2, 1})}
+    e: [Keyed]String = {}
+    d := e.insert(a, "x")
+    assert_eq(d.get(b), Some "x")

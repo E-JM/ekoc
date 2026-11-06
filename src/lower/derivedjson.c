@@ -107,10 +107,10 @@ static void emit_to_scalar(lower_ctx *c, lower_demit *d, lower_scalar sk)
 
 /* The recursive cell walk behind an Arr, as its own service: each
    element's Json value dies once its cons stands. */
-static void emit_to_list_aux(lower_ctx *c, const char *aux, const ek_type *t)
+static void emit_to_list_aux(lower_ctx *c, const char *aux,
+                             const ek_type *elemt)
 {
-    const char *elem = lower_dsvc_request(c, NULL, DSV_TOJSON,
-                                          t->u.list.elem);
+    const char *elem = lower_dsvc_request(c, NULL, DSV_TOJSON, elemt);
     lower_demit d;
     ek_buf b;
 
@@ -139,9 +139,24 @@ static void emit_to_arr(lower_ctx *c, lower_demit *d, const char *name,
 {
     const char *aux = lower_str(c, "%s_aux", name);
 
-    emit_to_list_aux(c, aux, t);
+    emit_to_list_aux(c, aux, t->u.list.elem);
     lower_d_printf(d, "    return %s(%s(v));\n", lower_json_ctor(c, "Arr"),
                    aux);
+}
+
+/* A set maps to the Arr of its elements in iteration order: the walk
+   over the runtime's list, released once the Arr stands. */
+static void emit_to_set_arr(lower_ctx *c, lower_demit *d, const char *name,
+                            const ek_type *t)
+{
+    const char *aux = lower_str(c, "%s_aux", name);
+    const char *arr = lower_d_temp(d);
+
+    emit_to_list_aux(c, aux, t->u.nominal.args[0]);
+    lower_d_printf(d, "    ek_val list = ek_set_to_list(v);\n");
+    lower_d_printf(d, "    ek_val %s = %s(list);\n", arr, aux);
+    lower_d_printf(d, "    ek_release(list);\n");
+    lower_d_printf(d, "    return %s(%s);\n", lower_json_ctor(c, "Arr"), arr);
 }
 
 /* One Obj entry: the key text and the mapped value, stored over the
@@ -338,6 +353,8 @@ void lower_dsvc_json_emit(lower_ctx *c, const char *name, const ek_type *t,
         lower_d_printf(&d, "    return %s();\n", lower_json_ctor(c, "Null"));
     } else if (t->kind == EK_T_LIST) {
         emit_to_arr(c, &d, name, t);
+    } else if (lower_is_set(t)) {
+        emit_to_set_arr(c, &d, name, t);
     } else if (t->kind == EK_T_DICT) {
         emit_to_dict(c, &d, t);
     } else if (t->kind == EK_T_TUPLE) {
