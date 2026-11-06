@@ -1,78 +1,46 @@
 # ekoc coding conventions
 
-English everywhere: code, identifiers, comments, diagnostics, commit
-messages. These rules bind all C in this repository. ARCHITECTURE.md fixes
-the layering; this file fixes the style. Where a spec clause and this file
-conflict, the spec governs.
+English everywhere: code, identifiers, comments, diagnostics, commits.
+ARCHITECTURE.md fixes the layering, this file the style; the spec governs
+where they conflict.
 
-## Build
+## Code
 
-- C99, one compiler (`cc`), one build tool (`make`). No other toolchain
-  dependency, ever (docs/archive/toolchain.md §1).
-- Warning flags are non-negotiable and warnings are errors:
-  `-std=c99 -Wall -Wextra -Wpedantic -Werror`.
-- Generated tables are committed; regeneration is a tool under `tools/`,
-  never a build step.
-
-## Naming
-
-- Files and directories: `snake_case.c/.h`, one domain per file
-  (`arena.c`, `diag.c`).
-- Cross-module symbols carry the `ek_` prefix; types `ek_arena`, functions
-  `ek_arena_new`. `static` file-local names drop the prefix.
-- Enumerator and macro constants are uppercase: `EK_SEV_ERROR`.
-- Names say what, not how: `ek_diag_emit`, not `ek_diag_do_emit_impl2`.
-- Header guards: `EK_<DIR>_<FILE>_H`.
-
-## Structure
-
-- One public header per stage directory, exporting only the output type
-  and the entry point (ARCHITECTURE rule 2). Everything else is `static`.
-- A stage includes only `src/support/` and public headers of earlier
-  stages. A violation is a bug regardless of what compiles.
-- Soft limits, split when exceeded: function 50 lines, file 400 lines.
-- One function does one thing; guards over nesting; early returns over
-  arrow code.
-
-## Memory and errors
-
-- Stages allocate from arenas only; no `malloc` in stage code, no object
-  frees. Arenas are freed wholesale (ARCHITECTURE rule 5). `support/`
-  itself implements the arenas and may use `malloc` internally.
-- No stage aborts, exits, or panics. Failures are diagnostics in the
-  diagnostics buffer; the pipeline drains (ARCHITECTURE rule 4).
+- One public header per stage, holding only the output type and the entry
+  point (ARCHITECTURE rule 2); everything else is `static`. A stage
+  includes only `src/support/` and earlier stages' public headers: a
+  violation is a bug even if it compiles.
+- Soft limits: 50 lines per function, 400 per file. One function does one
+  thing; guards over nesting; early returns over arrow code.
+- Arenas only: no `malloc`, no object frees in stages (rule 5), though
+  `support/` implements them. No stage aborts, exits, or panics —
+  failures are diagnostics and the pipeline drains (rule 4).
 
 ## Comments
 
-- A comment says what a piece of code does and why, in the code's own
-  terms. It is not language documentation: no clause, annex, or table
-  numbers, no spec quotations.
-- No pipeline-stage or milestone labels ("Stage 2", "M6"), no history
-  ("was X, now Y"), no bug or fix narration, no notes to reviewers. The
-  code states what holds; history lives in git. No reference labels
-  ("Clause ...").
-- A public header states each function's contract in a few lines —
-  inputs, ownership, failure behavior — and nothing else.
-- No banner comments, no commented-out code, no license headers per file
-  (LICENSE covers the tree). Diagnostic strings may cite a clause where
-  the suite requires the rejection to name one; comments never do.
+- A public header gives each function's contract in a few lines:
+  inputs, ownership, failure.
+- Say what the code does and why in its own terms: no clause, annex, or
+  table numbers and no spec quotations. A diagnostic string may cite a
+  clause where the suite demands it; a comment never does.
+- No stage or milestone labels, no history, no fix narration, no notes to
+  reviewers, no reference labels: history lives in git, the code states
+  what holds.
+- No banners, no commented-out code, no per-file license headers.
 
 ## Tests
 
-- Every unit ships with tests under `tests/unit/<unit>/`, built and run
-  by `make test`. The harness is a header in `tests/`; no external test
-  framework.
-- Tests fail the build when they fail. No skipped, stubbed, or faked
-  results; a failing test is fixed before anything new lands.
-- Conformance and negative suites (`tests/`, Annex D) are run only by the
-  real pipeline; they are never unit-tested in bulk.
+- Every unit ships tests under `tests/unit/<unit>/`, run by `make test`;
+  the harness is a header in `tests/`, no external framework. A failing
+  test fails the build, and nothing is skipped, stubbed, or faked.
+- Conformance and negative suites (Annex D) run only through the real
+  pipeline, never unit-tested in bulk.
 
 ## Git
 
-- One logical change per commit; the tree builds and `make test` passes
-  at every commit.
-- Subject: `<area>: <imperative summary>` under 50 chars. Areas:
-  `support`, `lex`, `layout`, `parse`, `resolve`, `check`, `lower`,
-  `emit`, `cli`, `rt`, `cap`, `lib`, `build`, `test`, `docs`, `spec`,
-  `conv`. Body paragraphs are one sentence each, English, and explain
-  why, not what.
+- One logical change per commit; every commit builds and passes
+  `make test`.
+- Subject `<area>: <imperative summary>` under 50 chars; areas:
+  `support` `lex` `layout` `parse` `resolve` `check` `lower` `emit` `cli`
+  `rt` `cap` `lib` `build` `test` `docs` `spec` `conv`. Body paragraphs
+  are one English sentence each, saying why, not what.
