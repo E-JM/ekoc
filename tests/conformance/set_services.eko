@@ -26,6 +26,11 @@ json_round_trip: test =
     assert_eq(Holder.from_json(h.to_json()), Ok h)
     assert_eq(Json.show(h.to_json()), "\{\"s\":[1,2]}")
 
+type_head_round_trip: test =
+    a: Set Int = Set.of({1, 2})
+    r: Result (Set Int) ParseError = Set.from_json(a.to_json())
+    assert_eq(r, Ok a)
+
 keyed_by_a_record: test =
     a: Keyed = {s: Set.of({1, 2})}
     b: Keyed = {s: Set.of({2, 1})}

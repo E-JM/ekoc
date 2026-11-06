@@ -269,26 +269,35 @@ const ek_type *ck_nominal(ck_ctx *c, const ek_symbol *sym, const ek_type **args,
     return ck_intern(c, t);
 }
 
-/* The nominal of a declared type applied to fresh variables for its
-   binders: an unapplied head whose instantiation the arguments and the
-   expected type determine. A non-generic type takes no arguments. */
-const ek_type *ck_nominal_fresh(ck_ctx *c, const ek_symbol *sym)
+/* The nominal applied to `n` fresh variables: an unapplied head whose
+   instantiation the arguments and the expected type determine. A count
+   of zero takes no arguments. */
+const ek_type *ck_nominal_fresh_n(ck_ctx *c, const ek_symbol *sym,
+                                  size_t n)
 {
-    const ck_decl *d = ck_decl_of(c, sym);
-    size_t nb = d ? d->nbinders : 0, i;
     const ek_type **args = NULL;
+    size_t i;
 
-    if (nb) {
-        args = ek_arena_alloc(c->arena, nb * sizeof *args);
+    if (n) {
+        args = ek_arena_alloc(c->arena, n * sizeof *args);
         if (!args) {
             c->oom = 1;
             return ck_ivar(c);
         }
-        for (i = 0; i < nb; i++) {
+        for (i = 0; i < n; i++) {
             args[i] = ck_ivar(c);
         }
     }
-    return ck_nominal(c, sym, args, nb);
+    return ck_nominal(c, sym, args, n);
+}
+
+/* The nominal of a declared type applied to fresh variables for its
+   binders. A non-generic type takes no arguments. */
+const ek_type *ck_nominal_fresh(ck_ctx *c, const ek_symbol *sym)
+{
+    const ck_decl *d = ck_decl_of(c, sym);
+
+    return ck_nominal_fresh_n(c, sym, d ? d->nbinders : 0);
 }
 
 const ek_type *ck_list(ck_ctx *c, const ek_type *elem)

@@ -306,10 +306,13 @@ int ex_scalar_branch(ck_ctx *c, ex_state *st, size_t pos, ex_memo *memo,
 const ek_type *ck_ns_row(ck_ctx *c, const ek_type *recv, const char *name,
                          int *owned); /* a compiler namespace row, or NULL */
 int ck_ns_owned(const ek_type *recv); /* the namespace has compiler rows */
+size_t ck_ns_generic_arity(const ek_symbol *sym); /* a supplied generic's
+                                                     binder count */
 void ck_cap_schemes(ck_ctx *c); /* the injected pair's schemes */
 const ek_type *ck_nominal(ck_ctx *c, const ek_symbol *sym, const ek_type **args,
                           size_t argc);
 const ek_type *ck_nominal_fresh(ck_ctx *c, const ek_symbol *sym);
+const ek_type *ck_nominal_fresh_n(ck_ctx *c, const ek_symbol *sym, size_t n);
 const ek_type *ck_list(ck_ctx *c, const ek_type *elem);
 const ek_type *ck_dict(ck_ctx *c, const ek_type *key, const ek_type *val);
 const ek_type *ck_tuple(ck_ctx *c, const ek_type **items, size_t n);

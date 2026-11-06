@@ -193,20 +193,20 @@ const ek_type *ck_derive_panic(ck_ctx *c, const ek_type *r,
 
 /* The receiver a derived service is written at: an unapplied generic
    type head takes fresh variables, which the arguments and the
-   expected type then determine. */
+   expected type then determine. A declared head counts its binders; a
+   head with no declaration behind it is compiler-supplied, so its
+   count comes from the surface table. */
 const ek_type *ck_service_receiver(ck_ctx *c, const ek_type *r)
 {
-    const ck_decl *d;
+    const ek_symbol *sym;
+    size_t nb;
 
-    if (r->kind != EK_T_NOMINAL || !r->u.nominal.sym
+    if (r->kind != EK_T_NOMINAL || !(sym = r->u.nominal.sym)
         || r->u.nominal.argc != 0) {
         return r;
     }
-    d = ck_decl_of(c, r->u.nominal.sym);
-    if (!d || !d->nbinders) {
-        return r;
-    }
-    return ck_nominal_fresh(c, r->u.nominal.sym);
+    nb = sym->decl ? ck_decl_of(c, sym)->nbinders : ck_ns_generic_arity(sym);
+    return nb ? ck_nominal_fresh_n(c, sym, nb) : r;
 }
 
 /* The derived JSON pair over a receiver whose form exists: the

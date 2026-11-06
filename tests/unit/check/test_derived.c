@@ -254,6 +254,16 @@ static void json_core_and_composites(void)
     EK_CHECK(row_nominal_at(&f, 7, "std", "Json"));
     EK_CHECK(row_nominal_at(&f, 12, "std", "Json"));
     cfx_end(&f);
+
+    /* A compiler-supplied generic head anchors the same way: the
+       expected Result payload fixes the element type. */
+    cfx_begin(&f,
+              "s: Set Int = Set.of({1, 2})\n"
+              "j: Json = s.to_json()\n"
+              "b: Result (Set Int) ParseError = Set.from_json(j)\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    EK_CHECK(cfx_reading_at(&f, 3, EK_RD_DERIVED));
+    cfx_end(&f);
 }
 
 /* The JSON mapping halts with E-json-shape at a capability, a function,

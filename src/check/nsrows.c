@@ -1,3 +1,5 @@
+#include <string.h>
+
 #include "check/internal.h"
 
 /* The compiler-provided member rows of the std namespaces: the table
@@ -671,6 +673,34 @@ const ns_row ck_ns_rows[] = {
 
 /* The table's length, for the consult loops. */
 const size_t ck_ns_rows_len = sizeof ck_ns_rows / sizeof ck_ns_rows[0];
+
+/* The std generic types the compiler supplies with no declaration: a
+   placeholder head carries no binders, so the count a service head
+   needs is named here. */
+static const struct {
+    const char *name;
+    size_t arity;
+} ck_ns_generics[] = {
+    {"Set", 1},
+};
+
+/* The binder count of a compiler-supplied std generic, zero for any
+   other symbol. */
+size_t ck_ns_generic_arity(const ek_symbol *sym)
+{
+    size_t i;
+
+    if (!sym || !sym->module || strcmp(sym->module, "std") != 0) {
+        return 0;
+    }
+    for (i = 0; i < sizeof ck_ns_generics / sizeof ck_ns_generics[0];
+         i++) {
+        if (strcmp(sym->name, ck_ns_generics[i].name) == 0) {
+            return ck_ns_generics[i].arity;
+        }
+    }
+    return 0;
+}
 
 
 /* The injected pairs of the capability module (Clause 10.8): the
