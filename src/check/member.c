@@ -339,6 +339,16 @@ static const ek_type *link_type(ck_ctx *c, const ek_node *at,
         }
         return ck_no_member(c, at, r, name, mod);
     }
+    if (r && (r->kind == EK_T_IVAR || r->kind == EK_T_TVAR)
+        && strcmp(name, "with") == 0) {
+        /* `with` constructs a record of the receiver's type: a type
+           variable names no record, whatever it later instantiates
+           to. */
+        ck_error(c, at, "E-no-member",
+                 "the receiver type %s is not a record; `with` needs a "
+                 "concrete record or ctype (Clause 9.8.6)",
+                 ck_type_name(c, r));
+    }
     if (!r || r->kind == EK_T_IVAR || r->kind == EK_T_TVAR) {
         *rd = EK_RD_UNKNOWN;
     }

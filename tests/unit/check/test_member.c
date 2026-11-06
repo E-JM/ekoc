@@ -383,6 +383,12 @@ static void derived_with(void)
     EK_CHECK(cfx_has_code(&f, "E-type-mismatch"));
     cfx_end(&f);
 
+    /* A type-variable receiver names no record: `with` is rejected at
+       check time, not handed to a later stage (Clause 9.8.6). */
+    cfx_begin(&f, "g: (r: t) -> t = r.with({})\n");
+    EK_CHECK(cfx_has_code(&f, "E-no-member"));
+    cfx_end(&f);
+
     /* A duplicate field inside the update literal. */
     cfx_begin(&f,
               "Human: type = [name: String, age: Int]\n"
