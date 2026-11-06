@@ -39,7 +39,7 @@ block. It has no arrow and does not enter the module interface (Clauses
 9.14.1, 9.14.6). A module without a test binding is an ordinary
 dependency under a test root; `geolib.eko` is the only such module.
 
-The suite contains 146 test bindings. Each test is a block of ordinary
+The suite contains 147 test bindings. Each test is a block of ordinary
 expressions; its value is discarded. Assertions are the standard library
 functions `assert`, `assert_eq`, and `assert_ne` (Clause 9.14.3). `assert_eq`
 locks both arguments to one type and reports failure through `inspect`
@@ -202,7 +202,7 @@ number of test bindings. `geolib.eko` is a fixture and has none.
 | `regex_companion.eko` | yes | 10 | 9.1.3, 9.11.3 | the pattern subset; the ASCII-only fold; the empty pattern; the rejected forms; the long-line bound |
 | `result_chains.eko` | yes | 4 | 6.3.4, 6.8.1, 7.5.4, 8.2.4, 9.2.1, 9.2.2, 9.6.3, 9.10.1, 9.11.1, 9.14.4 | `<-` unwrapping; `to_result` and `map_err`; wildcard links over `Result _ e`; table-driven test |
 | `selective_import.eko` | yes | 2 | 6.5.2, 7.2.3, 9.1.2 | selective import opens one free name; free-call forms of `show` and `panic` |
-| `set_services.eko` | yes | 4 | 9.8.1, 9.8.4, 9.9.3, 9.10.3 | display in insertion order; order-insensitive set equality; the JSON array round trip; structural keying through a containing record |
+| `set_services.eko` | yes | 5 | 9.8.1, 9.8.4, 9.9.3, 9.10.3 | display in insertion order; order-insensitive set equality; the JSON array round trip through a record and the type head; structural keying through a containing record |
 | `slice_domain.eko` | yes | 3 | 9.10.1, 9.11.1 | a start and a length inside the sequence; a request whose counts would overflow yields `None` |
 | `std_show.eko` | yes | 4 | 9.1.3, 9.7.4, 9.9.2 | `std/time` import; `Duration` decimal seconds; `Time` ISO 8601 UTC; `Json` minimal text |
 | `string_split.eko` | yes | 6 | 9.4.2, 9.11.1 | `split` keeps empty fields; `lines` drops the one trailing empty; empty text has no lines; a large input holds the walk linear |
