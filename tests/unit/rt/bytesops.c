@@ -227,12 +227,72 @@ static void to_string_names_the_first_bad_offset(void)
     ek_release(ek_val_ref(detail));
 }
 
+/* The machine word's bridge: the U8 list of a block and the block of a
+   U8 list, with the element domain enforced through the uint slot. */
+static ek_val u8_list(const uint64_t *xs, size_t n)
+{
+    ek_val list = ek_nil_val();
+    size_t i = n;
+
+    while (i > 0) {
+        ek_val next;
+
+        i--;
+        next = ek_cons(ek_val_uint(xs[i]), list);
+        ek_release(list);
+        list = next;
+    }
+    return list;
+}
+
+static void u8_bridge_moves_both_ways(void)
+{
+    static const unsigned char raw[3] = {0, 127, 255};
+    ek_obj *b = bytes_of(raw, 3);
+    ek_val list = ek_bytes_to_u8s(b);
+    ek_val cur;
+    size_t i = 0;
+
+    for (cur = list; ek_val_is_cons(cur); cur = ek_cons_tail(cur.as.ref)) {
+        ek_val h = ek_cons_head(cur.as.ref);
+
+        EK_CHECK_U64(h.tag, EK_VAL_UINT);
+        EK_CHECK_U64(h.as.u, raw[i++]);
+    }
+    EK_CHECK_U64(i, 3);
+    {
+        ek_obj *back = ek_bytes_from_u8s(list);
+
+        EK_CHECK(back != NULL);
+        EK_CHECK(memcmp(ek_bytes_data(back), raw, 3) == 0);
+        ek_release(ek_val_ref(back));
+    }
+    ek_release(list);
+    ek_release(ek_val_ref(b));
+}
+
+static void from_u8s_refuses_words_outside_the_domain(void)
+{
+    static const uint64_t high[2] = {1, 256};
+    static const int64_t as_int[2] = {1, 2};
+    ek_val hl = u8_list(high, 2);
+    ek_val il = int_list(as_int, 2);
+
+    EK_CHECK(ek_bytes_from_u8s(hl) == NULL);
+    /* an Int element is a value of another slot: the bridge refuses it */
+    EK_CHECK(ek_bytes_from_u8s(il) == NULL);
+    ek_release(hl);
+    ek_release(il);
+}
+
 int main(void)
 {
     get_reads_the_indexed_byte();
     concat_builds_a_fresh_block();
     to_ints_lists_in_order();
     from_ints_checks_the_element_domain();
+    u8_bridge_moves_both_ways();
+    from_u8s_refuses_words_outside_the_domain();
     hex_is_lowercase_and_round_trips();
     from_hex_validates_the_text();
     to_string_decodes_well_formed_utf8();

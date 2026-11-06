@@ -80,6 +80,49 @@ ek_obj *ek_bytes_from_ints(ek_val ints)
     return out;
 }
 
+/* The same two walks over the machine word's own slot: the U8 list of
+   a block and the block of a U8 list, whose elements are uint words
+   inside the byte range. */
+ek_val ek_bytes_to_u8s(ek_obj *bytes)
+{
+    const unsigned char *p = ek_bytes_data(bytes);
+    ek_val acc = ek_nil_val();
+    size_t i = ek_bytes_len(bytes);
+
+    while (i > 0) {
+        ek_val next;
+
+        i--;
+        next = ek_cons(ek_val_uint(p[i]), acc);
+        ek_release(acc);
+        acc = next;
+    }
+    return acc;
+}
+
+ek_obj *ek_bytes_from_u8s(ek_val u8s)
+{
+    ek_val cur;
+    size_t n = 0;
+    unsigned char *buf;
+    size_t i = 0;
+    ek_obj *out;
+
+    for (cur = u8s; ek_val_is_cons(cur); cur = ek_cons_tail(cur.as.ref)) {
+        ek_val h = ek_cons_head(cur.as.ref);
+
+        if (h.tag != EK_VAL_UINT || h.as.u > 255)
+            return NULL;
+        n++;
+    }
+    buf = ek_rt_alloc_zeroed(n);
+    for (cur = u8s; ek_val_is_cons(cur); cur = ek_cons_tail(cur.as.ref))
+        buf[i++] = (unsigned char)ek_cons_head(cur.as.ref).as.u;
+    out = ek_bytes_new(buf, n);
+    free(buf);
+    return out;
+}
+
 ek_obj *ek_bytes_to_hex(ek_obj *bytes)
 {
     static const char digits[] = "0123456789abcdef";

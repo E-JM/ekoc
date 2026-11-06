@@ -26,6 +26,11 @@ bytes_append: test =
     assert_eq(joined.to_string(), Ok "abcd")
     assert_eq(joined.get(3), Some 100)
 
+bytes_words: test =
+    b := Bytes.from_hex("00ff10").unwrap()
+    assert_eq(b.to_u8s(), {0, 255, 16})
+    assert_eq(Bytes.from_u8s({0, 255, 16}), Some b)
+
 json_record: test =
     p: Profile = {name: "ada", sex: Woman}
     j := p.to_json()

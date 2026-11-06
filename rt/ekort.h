@@ -535,6 +535,12 @@ ek_val ek_bytes_to_ints(ek_obj *bytes);
    falls outside 0..255. Aborts on exhaustion. */
 ek_obj *ek_bytes_from_ints(ek_val ints);
 
+/* The same pair over the machine word's own slot: the elements as a
+   fresh list of U8 values, and the block of a U8 list, NULL when an
+   element falls outside the byte range. Aborts on exhaustion. */
+ek_val ek_bytes_to_u8s(ek_obj *bytes);
+ek_obj *ek_bytes_from_u8s(ek_val u8s);
+
 /* The bytes encoded as lowercase hexadecimal with no separators. */
 ek_obj *ek_bytes_to_hex(ek_obj *bytes);
 
