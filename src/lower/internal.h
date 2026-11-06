@@ -340,6 +340,7 @@ void lower_d_end(lower_ctx *c, ek_buf *b);
 lower_scalar lower_scalar_kind(const ek_type *t);
 int lower_is_range(const ek_type *t);
 int lower_is_handle(const ek_type *t);
+int lower_is_set(const ek_type *t);
 void lower_d_printf(lower_demit *d, const char *fmt, ...);
 const char *lower_d_temp(lower_demit *d);
 void lower_d_concat_lit(lower_demit *d, const char *indent, const char *acc,

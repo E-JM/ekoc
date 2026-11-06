@@ -1,6 +1,7 @@
 #include <string.h>
 
 #include "check/internal.h"
+#include "support/vocab.h"
 
 /* The entry rules and the root pre-pass. A test root has no `main`
    requirement, so the rules fire only where a binding named `main`
@@ -24,19 +25,13 @@ void ck_prebind(ck_ctx *c)
 
 static int is_capability(const ek_type *t)
 {
-    static const char *caps[] = {"Out",  "In",   "Fs",    "Env",  "Args",
-                                 "Clock", "Rand", "Proc", "Conc"};
-    size_t i;
-
     t = ck_prune(t);
     if (!t || t->kind != EK_T_NOMINAL || !t->u.nominal.sym
         || t->u.nominal.argc != 0) {
         return 0;
     }
-    for (i = 0; i < sizeof caps / sizeof *caps; i++) {
-        if (strcmp(t->u.nominal.sym->name, caps[i]) == 0) {
-            return 1;
-        }
+    if (ek_is_capability_name(t->u.nominal.sym->name)) {
+        return 1;
     }
     return 0;
 }

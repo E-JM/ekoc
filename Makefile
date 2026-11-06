@@ -11,6 +11,7 @@ SUPPORT_SRC := \
 	src/support/buf.c \
 	src/support/diag.c \
 	src/support/utf8.c \
+	src/support/vocab.c \
 	src/support/xid.c \
 	src/support/xid_tables.c
 

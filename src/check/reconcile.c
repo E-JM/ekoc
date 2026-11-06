@@ -1,6 +1,7 @@
 #include <string.h>
 
 #include "check/internal.h"
+#include "support/vocab.h"
 
 /* The no-eq rule and the declared-bit binding rules: where `?` may
    sit in an annotation, when a signature's open bit is fed, and the
@@ -10,19 +11,13 @@
    the bridge by their placeholder names. */
 int ck_is_capability(const ek_type *t)
 {
-    static const char *caps[] = {"Out",   "In",   "Fs",    "Env",  "Args",
-                                 "Clock", "Rand", "Proc",  "Conc"};
-    size_t i;
-
     t = ck_prune(t);
     if (!t || t->kind != EK_T_NOMINAL || !t->u.nominal.sym
         || t->u.nominal.argc != 0 || t->u.nominal.sym->decl) {
         return 0;
     }
-    for (i = 0; i < sizeof caps / sizeof *caps; i++) {
-        if (strcmp(t->u.nominal.sym->name, caps[i]) == 0) {
-            return 1;
-        }
+    if (ek_is_capability_name(t->u.nominal.sym->name)) {
+        return 1;
     }
     return 0;
 }
@@ -33,21 +28,13 @@ int ck_is_capability(const ek_type *t)
    module (Clause 9.1.1), so the module names them. */
 int ck_is_handle(const ek_type *t)
 {
-    static const char *handles[] = {"File", "Scope", "Task"};
-    size_t i;
-
     t = ck_prune(t);
     if (!t || t->kind != EK_T_NOMINAL || !t->u.nominal.sym
         || t->u.nominal.argc > 1 || !t->u.nominal.sym->module
         || strcmp(t->u.nominal.sym->module, "sys") != 0) {
         return 0;
     }
-    for (i = 0; i < sizeof handles / sizeof *handles; i++) {
-        if (strcmp(t->u.nominal.sym->name, handles[i]) == 0) {
-            return 1;
-        }
-    }
-    return 0;
+    return ek_is_handle_name(t->u.nominal.sym->name);
 }
 
 /* Open arrows are allowed on the annotation's own arrow and inside its

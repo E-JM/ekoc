@@ -1,6 +1,7 @@
 #include <string.h>
 
 #include "lower/internal.h"
+#include "support/vocab.h"
 
 /* Shared classification and plumbing for the derived services: the
    scalar slots a receiver can occupy, the service buffer's writer with
@@ -46,25 +47,28 @@ int lower_is_range(const ek_type *t)
         && strcmp(t->u.nominal.sym->name, "Range") == 0;
 }
 
+/* True when the nominal is the compiler-supplied Set placeholder: the
+   runtime-backed set whose values the compiler's services walk through
+   the insertion-order list. */
+int lower_is_set(const ek_type *t)
+{
+    return t && t->kind == EK_T_NOMINAL && t->u.nominal.sym
+        && t->u.nominal.argc == 1 && t->u.nominal.sym->module
+        && strcmp(t->u.nominal.sym->module, "std") == 0
+        && strcmp(t->u.nominal.sym->name, "Set") == 0;
+}
+
 /* True when the nominal is a handle type of the system vocabulary:
    the closed three-name list the checker's own judgment reads, so the
    display channels and the halt rules stay one list apart. */
 int lower_is_handle(const ek_type *t)
 {
-    static const char *handles[] = {"File", "Scope", "Task"};
-    size_t i;
-
     if (!t || t->kind != EK_T_NOMINAL || !t->u.nominal.sym
         || t->u.nominal.argc > 1 || !t->u.nominal.sym->module
         || strcmp(t->u.nominal.sym->module, "sys") != 0) {
         return 0;
     }
-    for (i = 0; i < sizeof handles / sizeof *handles; i++) {
-        if (strcmp(handles[i], t->u.nominal.sym->name) == 0) {
-            return 1;
-        }
-    }
-    return 0;
+    return ek_is_handle_name(t->u.nominal.sym->name);
 }
 
 /* Opens one service body's buffer. */

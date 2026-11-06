@@ -1,6 +1,7 @@
 #include <string.h>
 
 #include "resolve/internal.h"
+#include "support/vocab.h"
 #include "resolve/std_source.h"
 
 /* The std module, parsed from the embedded lib/std.eko bytes. Its
@@ -32,19 +33,7 @@ static const char *type_names[] = {
    so the names open unqualified and have no std-qualified spelling. */
 int r_std_cap_name(const char *name)
 {
-    static const char caps[] = "OutInFsEnvArgsClockRandProcConc";
-    static const unsigned char off[] = {0, 3, 5, 7, 10, 14, 19, 23, 27};
-    size_t i;
-
-    for (i = 0; i < sizeof off; i++) {
-        const char *cand = caps + off[i];
-        size_t len = (i + 1 < sizeof off ? off[i + 1] : 31) - off[i];
-
-        if (strlen(name) == len && strncmp(name, cand, len) == 0) {
-            return 1;
-        }
-    }
-    return 0;
+    return ek_is_capability_name(name);
 }
 
 /* True for a type name the std surface supplies as a placeholder row

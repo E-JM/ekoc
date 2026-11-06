@@ -1,6 +1,7 @@
 #include <string.h>
 
 #include "lower/internal.h"
+#include "support/vocab.h"
 
 /* The derived service registry: one body per family and applied type,
    emitted into the service buffer on first use, with the applied
@@ -246,10 +247,7 @@ const char *lower_spell_apply(lower_ctx *c, const ek_type *const *args,
    runtime's bundle closures build. */
 static int is_cap_type(const ek_type *t)
 {
-    static const char *caps[] = {"Out",   "In",   "Fs",   "Env", "Args",
-                                 "Clock", "Rand", "Proc", "Conc"};
     const ek_symbol *sym;
-    size_t i;
 
     if (t->kind != EK_T_NOMINAL || t->u.nominal.argc != 0) {
         return 0;
@@ -259,12 +257,7 @@ static int is_cap_type(const ek_type *t)
         || sym->decl) {
         return 0;
     }
-    for (i = 0; i < sizeof caps / sizeof *caps; i++) {
-        if (strcmp(sym->name, caps[i]) == 0) {
-            return 1;
-        }
-    }
-    return 0;
+    return ek_is_capability_name(sym->name);
 }
 
 /* Which families a service renders at all. */
@@ -312,6 +305,12 @@ static int supported(lower_dsvc_kind kind, const ek_type *t)
                equality, ordering, keying, and JSON stay derived-free
                the way the checker's halt rules read them. */
             return kind == DSV_SHOW || kind == DSV_INSPECT;
+        }
+        if (lower_is_set(t)) {
+            /* The set's services walk its elements in insertion order
+               through the runtime's list; the order of the walk is not
+               the equality, which is set equality. */
+            return kind != DSV_ORD;
         }
         return t->u.nominal.sym && t->u.nominal.sym->decl != NULL;
     default:
