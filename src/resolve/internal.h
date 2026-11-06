@@ -101,6 +101,7 @@ typedef struct {
 void *r_grow(r_ctx *c, void *old, size_t n, size_t *cap, size_t elem);
 int r_is_pascal(const char *s);
 int r_is_snake(const char *s);
+int r_is_ident(const char *s);
 ek_symbol *r_sym(r_ctx *c, const char *name, ek_sym_kind kind,
                  const char *module, int line, int col);
 scope *r_scope_new(r_ctx *c, scope *parent);

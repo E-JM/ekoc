@@ -131,6 +131,11 @@ static void file_setup(r_ctx *c, r_file *f, r_mod *m)
    std, and no import path names an embedded module. */
 static void check_root_name(r_ctx *c, const char *file, const char *stem)
 {
+    if (!r_is_ident(stem)) {
+        r_error(c, file, 1, 1, "E-name-case",
+                "module name `%s` is not an identifier (Clauses 5.5.1, "
+                "7.2.1)", stem);
+    }
     if (!r_is_snake(stem)) {
         r_error(c, file, 1, 1, "E-name-case",
                 "module name `%s` is not snake_case (Clauses 5.5.2, "

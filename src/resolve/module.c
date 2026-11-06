@@ -304,6 +304,12 @@ static char *find_file(r_ctx *c, const ek_node *imp)
 static int stem_legal(r_ctx *c, const char *file, const ek_node *imp,
                       const char *stem)
 {
+    if (!r_is_ident(stem)) {
+        r_error(c, file, imp->line, imp->col, "E-name-case",
+                "module name `%s` is not an identifier (Clauses 5.5.1, "
+                "7.2.1)", stem);
+        return 0;
+    }
     if (!r_is_snake(stem)) {
         r_error(c, file, imp->line, imp->col, "E-name-case",
                 "module name `%s` is not snake_case (Clauses 5.5.2, "

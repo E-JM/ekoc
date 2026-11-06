@@ -393,6 +393,23 @@ static void root_name_rules(void)
     rfx_end(&f);
 }
 
+/* A stem is an identifier before it is snake_case: a file name with a
+   non-identifier character is rejected, whatever its case class. */
+static void root_stem_identifier(void)
+{
+    rfx f;
+
+    rfx_run(&f, "v: Int = 1\n", NULL, 0, "hy-min.eko");
+    EK_CHECK_U64(rfx_errors(&f), 1);
+    EK_CHECK(rfx_code_at_line(&f, "E-name-case", 1));
+    rfx_end(&f);
+
+    rfx_run(&f, "v: Int = 1\n", NULL, 0, "9foo.eko");
+    EK_CHECK_U64(rfx_errors(&f), 1);
+    EK_CHECK(rfx_code_at_line(&f, "E-name-case", 1));
+    rfx_end(&f);
+}
+
 /* A companion stem is reserved for the shipped module: a root file
    named after one is rejected like `std` and `_geo`. */
 static void companion_root_name(void)
@@ -513,6 +530,7 @@ int main(void)
     std_stem_import();
     companion_stem_rules();
     root_name_rules();
+    root_stem_identifier();
     companion_root_name();
     qualified_ctor_shared_spelling();
     diamond_share();

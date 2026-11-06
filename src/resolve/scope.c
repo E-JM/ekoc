@@ -47,6 +47,33 @@ int r_is_snake(const char *s)
     return !r_is_pascal(s);
 }
 
+/* The identifier shape the lexer admits: `_` or XID_Start first, then
+   XID_Continue. Names reach resolution through the lexer carry it by
+   construction; file stems arrive spelled by the host and are judged
+   here against the same rule. */
+int r_is_ident(const char *s)
+{
+    ek_utf8_decoded d;
+
+    d = ek_utf8_decode(s, strlen(s));
+    if (d.status != EK_UTF8_OK || d.len == 0) {
+        return 0;
+    }
+    if (d.cp != '_' && !ek_xid_start(d.cp)) {
+        return 0;
+    }
+    s += d.len;
+    while (*s) {
+        d = ek_utf8_decode(s, strlen(s));
+        if (d.status != EK_UTF8_OK || d.len == 0
+            || !ek_xid_continue(d.cp)) {
+            return 0;
+        }
+        s += d.len;
+    }
+    return 1;
+}
+
 ek_symbol *r_sym(r_ctx *c, const char *name, ek_sym_kind kind,
                  const char *module, int line, int col)
 {
