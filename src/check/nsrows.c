@@ -331,11 +331,28 @@ const ns_row ck_ns_rows[] = {
     {"String", "to_bytes", SIG_FN(EK_ARROW_PURE, SIG_STD("Bytes"),
                                   SIG_STD("String"))},
 
-    /* The Char namespace: the code-point bridge in both directions. */
+    /* The Char namespace: the code-point bridge in both directions,
+       the ASCII classifiers, the space property, and the XID pair. */
     {"Char", "to_code", SIG_FN(EK_ARROW_PURE, SIG_STD("Int"),
                                SIG_STD("Char"))},
     {"Char", "from_code", SIG_FN(EK_ARROW_PURE, SIG_OPTION(SIG_STD("Char")),
                                  SIG_STD("Int"))},
+    {"Char", "is_alpha", SIG_FN(EK_ARROW_PURE, SIG_STD("Bool"),
+                                SIG_STD("Char"))},
+    {"Char", "is_digit", SIG_FN(EK_ARROW_PURE, SIG_STD("Bool"),
+                                SIG_STD("Char"))},
+    {"Char", "is_alnum", SIG_FN(EK_ARROW_PURE, SIG_STD("Bool"),
+                                SIG_STD("Char"))},
+    {"Char", "is_space", SIG_FN(EK_ARROW_PURE, SIG_STD("Bool"),
+                                SIG_STD("Char"))},
+    {"Char", "is_upper", SIG_FN(EK_ARROW_PURE, SIG_STD("Bool"),
+                                SIG_STD("Char"))},
+    {"Char", "is_lower", SIG_FN(EK_ARROW_PURE, SIG_STD("Bool"),
+                                SIG_STD("Char"))},
+    {"Char", "is_xid_start", SIG_FN(EK_ARROW_PURE, SIG_STD("Bool"),
+                                    SIG_STD("Char"))},
+    {"Char", "is_xid_continue", SIG_FN(EK_ARROW_PURE, SIG_STD("Bool"),
+                                       SIG_STD("Char"))},
 
     /* The Bytes namespace: the byte sequence, its integer and word
        bridges, and the hexadecimal and text decoders. */

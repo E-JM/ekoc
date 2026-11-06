@@ -148,10 +148,20 @@ static const intrinsic_row rows[] = {
     {"UInt", "parse_bin", "ek_parse_uint_radix", "o", W_PARSE, OUT_U64, 2},
     {"Float", "parse", "ek_parse_float", "o", W_PARSE, OUT_F64, 0},
 
-    /* Char's code-point bridge. */
+    /* Char's code-point bridge and its classification predicates. */
     {"Char", "to_code", "ek_char_to_code", "v", W_PLAIN, OUT_I64, 0},
     {"Char", "from_code", "ek_try_char_from_code", "v", W_OPTION,
      OUT_U32, 0},
+    {"Char", "is_alpha", "ek_char_is_alpha", "v", W_BOOL, OUT_I64, 0},
+    {"Char", "is_digit", "ek_char_is_digit", "v", W_BOOL, OUT_I64, 0},
+    {"Char", "is_alnum", "ek_char_is_alnum", "v", W_BOOL, OUT_I64, 0},
+    {"Char", "is_space", "ek_char_is_space", "v", W_BOOL, OUT_I64, 0},
+    {"Char", "is_upper", "ek_char_is_upper", "v", W_BOOL, OUT_I64, 0},
+    {"Char", "is_lower", "ek_char_is_lower", "v", W_BOOL, OUT_I64, 0},
+    {"Char", "is_xid_start", "ek_char_is_xid_start", "v", W_BOOL, OUT_I64,
+     0},
+    {"Char", "is_xid_continue", "ek_char_is_xid_continue", "v", W_BOOL,
+     OUT_I64, 0},
 
     /* The string's scalar sequence and its byte form. */
     {"String", "length", "ek_str_length", "o", W_LEN, OUT_I64, 0},
