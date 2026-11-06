@@ -37,8 +37,8 @@ static void accepts_the_guaranteed_depth(void)
     free(type);
 }
 
-/* One level below the parser's ceiling still parses; one past it is the
-   named rejection, diagnosed once. */
+/* A construct past the parser's ceiling is the named rejection, not a
+   crash: the guard diagnoses once and the frames unwind. */
 static void rejects_past_the_ceiling(void)
 {
     cfx f;

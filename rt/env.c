@@ -1,8 +1,6 @@
 #include "internal.h"
 
-#include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 
 /* The environment bundle: one read closure over the process
    environment. An unset name reads as None. Both results are built

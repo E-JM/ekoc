@@ -1,7 +1,5 @@
 #include "internal.h"
 
-#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
 /* The argument-vector bundle: all builds the argument list fresh on
