@@ -48,6 +48,7 @@ RESOLVE_SRC := \
 	src/resolve/module.c \
 	src/resolve/opens.c \
 	src/resolve/pattern.c \
+	src/resolve/regex_source.c \
 	src/resolve/resolve.c \
 	src/resolve/scope.c \
 	src/resolve/std.c \

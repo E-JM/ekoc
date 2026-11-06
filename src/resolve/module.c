@@ -5,6 +5,7 @@
 #include "layout/layout.h"
 #include "parse/parse.h"
 #include "resolve/internal.h"
+#include "resolve/regex_source.h"
 #include "resolve/time_source.h"
 #include "support/buf.h"
 
@@ -17,25 +18,36 @@
    host path. */
 #define EMBEDDED_FILE "(std)"
 
-/* The stems of the shipped companions: compiler-embedded release
-   sources under the reserved std/ path (Clause 9.1.3). A stem here is
-   reserved for the companion, so a user module MUST NOT claim it; a
-   future companion adds its stem, its source table, and its boot. */
-static const char *const companion_stems[] = {
-    "time",
-    NULL
+/* The shipped companions: compiler-embedded release sources under the
+   reserved std/ path (Clause 9.1.3). A stem here is reserved for the
+   companion, so a user module MUST NOT claim it. */
+typedef struct {
+    const char *stem;
+    char *(*join)(ek_arena *);
+    const size_t *len;
+} companion;
+
+static const companion companions[] = {
+    { "regex", ek_regex_source_join, &ek_regex_source_len },
+    { "time", ek_time_source_join, &ek_time_source_len },
+    { NULL, NULL, NULL }
 };
 
-int r_companion_stem(const char *stem)
+static const companion *find_companion(const char *stem)
 {
     size_t i;
 
-    for (i = 0; companion_stems[i]; i++) {
-        if (strcmp(stem, companion_stems[i]) == 0) {
-            return 1;
+    for (i = 0; companions[i].stem; i++) {
+        if (strcmp(stem, companions[i].stem) == 0) {
+            return &companions[i];
         }
     }
-    return 0;
+    return NULL;
+}
+
+int r_companion_stem(const char *stem)
+{
+    return find_companion(stem) != NULL;
 }
 
 static char *r_stem_of(r_ctx *c, const char *file)
@@ -161,19 +173,20 @@ static int shipped_companion(const r_mod *m)
    stem check. */
 static void load_companion(r_ctx *c, const char *stem)
 {
+    const companion *cp = find_companion(stem);
     char *source;
     ek_node *ast;
     r_mod *m;
 
-    if (strcmp(stem, "time") != 0) {
-        return; /* unreachable: companion_stems gates the call */
+    if (!cp) {
+        return; /* unreachable: r_companion_stem gates the call */
     }
-    source = ek_time_source_join(c->arena);
+    source = cp->join(c->arena);
     if (!source) {
         c->oom = 1;
         return;
     }
-    ast = r_parse_source(c, source, ek_time_source_len, EMBEDDED_FILE);
+    ast = r_parse_source(c, source, *cp->len, EMBEDDED_FILE);
     if (!ast) {
         return;
     }
