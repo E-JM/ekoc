@@ -1,0 +1,77 @@
+// The std/regex companion (Clause 9.11.3): the documented subset, the
+// ASCII-only case fold, the empty pattern, and the rejected forms.
+
+import std/regex
+
+_m: (pattern: String, line: String) -> Bool =
+    case Regex.compile(pattern):
+        Ok re -> Regex.is_match(re, line, False)
+        Err e -> panic("pattern should compile: {e}")
+
+_mi: (pattern: String, line: String) -> Bool =
+    case Regex.compile(pattern):
+        Ok re -> Regex.is_match(re, line, True)
+        Err e -> panic("pattern should compile: {e}")
+
+literals_and_dot: test =
+    assert(_m("abc", "xxabcyy"))
+    assert(_m("abc", "acb").not())
+    assert(_m("a.c", "abc"))
+    assert(_m("a.c", "a c"))
+    assert(_m("a.c", "ac").not())
+    assert(_m("\\.", "a.b"))
+    assert(_m("\\.", "axb").not())
+
+classes: test =
+    assert(_m("[a-z]+", "xxabc"))
+    assert(_m("[^a-z]", "1"))
+    assert(_m("[^a-z]", "abc").not())
+    assert(_m("[0-9]+", "x42"))
+    assert(_m("[\\]\\-]", "]"))
+
+alternation_and_repetition: test =
+    assert(_m("(ab|cd)+e", "abcdabe"))
+    assert(_m("a*b", "aaab"))
+    assert(_m("a?b", "b"))
+    assert(_m("a+", "").not())
+    assert(_m("()", "anything"))
+    assert(_m("a|", "zzz"))
+
+anchors: test =
+    assert(_m("^ab", "abcd"))
+    assert(_m("^ab", "zab").not())
+    assert(_m("cd$", "abcd"))
+    assert(_m("cd$", "cdz").not())
+    assert(_m("^$", ""))
+    assert(_m("^$", "x").not())
+
+empty_pattern: test =
+    assert(_m("", ""))
+    assert(_m("", "anything"))
+
+ascii_case_fold: test =
+    assert(_mi("abc", "ABC"))
+    assert(_mi("[a-z]+", "XYZ"))
+    assert(_mi("λ", "Λ").not())
+    assert(_m("abc", "ABC").not())
+
+unicode: test =
+    assert(_m("λ+", "aλ"))
+    assert(_m(".", "λ"))
+    assert(_m("^.$", "λ"))
+
+malformed: test =
+    forms: []String = {"(", "[", "[]", "[z-a]", "*", "\\", "a)"}
+    forms.each((p): assert(Regex.compile(p).is_err()))
+
+stacked_quantifiers: test =
+    lazy: []String = {"a+?", "a*?", "a??", "a**"}
+    lazy.each((p): assert(Regex.compile(p).is_err()))
+    case Regex.compile("a+?"):
+        Err e -> assert(e.contains("stacked quantifier"))
+        Ok _ -> panic("a lazy quantifier is not a form")
+
+linear_on_a_long_line: test =
+    text := "a".rep(10_000)
+    assert(_m("(a*)*b", text).not())
+    assert(_m("a+$", text))

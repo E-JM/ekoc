@@ -42,6 +42,7 @@ otherwise it names the rejection and the normative clause.
 | N34 | inverted binding at module top level | `E-top-arrow` |
 | N35 | raw string content containing the delimiter | compile error: a raw string's content may not contain its delimiter |
 | N36 | raw string opener without a line break | compile error: the opening delimiter is followed by a line break |
+| N37 | equality over a compiled pattern | `E-no-eq` |
 
 ## N01 — nominal mismatch
 
@@ -483,3 +484,17 @@ bad: String = """ text
 ```
 
 Expected: compile error: the opening delimiter is followed by a line break.
+
+## N37 — equality over a compiled pattern
+
+A compiled pattern carries a function, so its equality derivation halts
+(Clause 9.8.4).
+
+```eko
+import std/regex
+
+same: (a: Regex, b: Regex) -> Bool = a == b
+```
+
+Expected: `E-no-eq`. The companion's own match member stays the only
+observation of a compiled pattern.
