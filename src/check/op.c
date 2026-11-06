@@ -231,6 +231,15 @@ static const ek_type *binary_cmp(ck_ctx *c, const ek_node *e)
         }
         same = ck_prune(lt); /* judge the domain on the left type */
     }
+    if (same && (op == EK_BIN_EQ || op == EK_BIN_NE)) {
+        const ek_type *p = ck_prune(same);
+
+        if (p && (p->kind == EK_T_TVAR || p->kind == EK_T_IVAR)) {
+            /* The operator is the derived eq member: over an open type
+               the halt is owed to the instantiation. */
+            ck_req_note(c, e, p, "eq");
+        }
+    }
     if (same && !open_type(same)) {
         if (op == EK_BIN_EQ || op == EK_BIN_NE) {
             /* A type variable may compare: `==` is the derived eq

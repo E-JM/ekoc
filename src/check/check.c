@@ -345,6 +345,7 @@ ek_check_result ek_check(ek_resolve_result in, ek_arena *arena,
        the instance-set simulation reports a non-terminating
        expansion (Clause 8.7.3). */
     ck_inst_depth(&c);
+    ck_reqs_check(&c);
     if (c.nrows) {
         qsort(c.rows, c.nrows, sizeof *c.rows, row_cmp);
         for (i = 0; i < c.nrows; i++) {

@@ -19,6 +19,23 @@ typedef struct {
     size_t count, cap;
 } ck_map;
 
+/* One service obligation a body leaves: a derived service that can
+   halt, used on a type the body does not determine, with the use site
+   and its module for the diagnostic. */
+typedef struct {
+    const char *service;
+    const ek_type *type;
+    const ek_node *at;
+    const ek_surface *mod;
+} ck_req;
+
+/* The obligations of one scheme, shared by every copy of it and grown
+   while its body is checked. */
+typedef struct {
+    ck_req *items;
+    size_t n, cap;
+} ck_reqs;
+
 /* A generalized binding type: the annotation plus its rigid
    variables. A bridge scheme is compiler-injected machinery: its
    variables' undetermined resting state is opacity, not an error. */
@@ -27,6 +44,7 @@ typedef struct {
     const ek_type **vars; /* EK_T_TVAR nodes */
     size_t nvars;
     int bridge;
+    ck_reqs *reqs;
 } ck_scheme;
 
 /* One instantiation recorded at a use site: the callee scheme at the
@@ -43,6 +61,7 @@ typedef struct {
     const ek_type **args;         /* one actual per callee scheme var */
     size_t nargs;
     const ek_node *at;            /* the call node */
+    size_t done;                  /* obligations already checked */
 } ck_inst_edge;
 
 /* A constructor's payload in its declaration's binders. */
@@ -150,6 +169,11 @@ typedef struct {
     ck_map *inst_capture;
     ck_inst_edge *inst_edges;
     size_t ninst, cinst;
+    /* Every service obligation recorded in a checked body, in check
+       order: the ones the module pass left ground are decided after
+       it, the rest travel with their scheme to its uses. */
+    ck_req *reqs;
+    size_t nreqs, creqs;
     int oom;
 } ck_ctx;
 
@@ -331,6 +355,15 @@ const ek_type *ck_derive_with(ck_ctx *c, const ek_node *at,
                               const ek_type *r, const char *name,
                               ek_reading *rd);
 const ek_type *ck_service_receiver(ck_ctx *c, const ek_type *r);
+
+/* reqs.c: the service obligations of a checked body. A service that
+   can halt, used on a type variable, is recorded and decided at the
+   type its instantiation gives, so a checked body cannot lower a
+   service the concrete type does not have. */
+int ck_service_halts(const char *name);
+void ck_req_note(ck_ctx *c, const ek_node *at, const ek_type *r,
+                 const char *service);
+void ck_reqs_check(ck_ctx *c);
 const ek_type *ck_no_member(ck_ctx *c, const ek_node *at,
                             const ek_type *r, const char *name,
                             const ek_symbol *mod);

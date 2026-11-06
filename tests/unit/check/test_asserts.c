@@ -91,8 +91,9 @@ static void arity(void)
     cfx_end(&f);
 }
 
-/* Two capability values unify the body's single type variable; no eq
-   derivation runs at the call site, so the pair stays clean. */
+/* Two capability values reach the assertion's type variable; the
+   derivation halts there, and the halt is decided at the call site the
+   variable was instantiated from. */
 static void capability_pair(void)
 {
     cfx f;
@@ -102,14 +103,16 @@ static void capability_pair(void)
               "    assert_eq(Out.null(), Out.null())\n"
               "    assert_ne(Out.null(), Out.null())\n"
               "    _\n");
-    EK_CHECK_U64(cfx_errors(&f), 0);
+    EK_CHECK_U64(cfx_errors(&f), 2);
+    EK_CHECK(cfx_code_at_line(&f, "E-no-eq", 2));
+    EK_CHECK(cfx_code_at_line(&f, "E-no-eq", 3));
     cfx_end(&f);
 
-    /* The test-binding shape of the reported snippet stays clean. */
     cfx_begin(&f,
               "t: test =\n"
               "    assert_eq(Out.null(), Out.null())\n");
-    EK_CHECK_U64(cfx_errors(&f), 0);
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-no-eq", 2));
     cfx_end(&f);
 }
 
@@ -122,6 +125,54 @@ static void capability_in_scope(void)
     cfx_begin(&f, "main: (out: Out) -> _ = assert(True)\n");
     EK_CHECK_U64(cfx_errors(&f), 0);
     EK_CHECK(cfx_bit_at(&f, 1, EK_BIT_PURE));
+    cfx_end(&f);
+}
+
+/* A service used on a type variable is decided at the instantiation,
+   not at the definition: the halt reaches the call site that fixed the
+   type, and a valid instantiation stays clean. */
+static void generic_service_requirements(void)
+{
+    cfx f;
+
+    cfx_begin(&f,
+              "R: type = [f: (Int) -> Int]\n"
+              "same: (a: t, b: t) -> Bool = a.eq(b)\n"
+              "g: (a: t, b: t) -> Bool = same(a, b)\n"
+              "probe: test =\n"
+              "    r: R = {f: (n): n}\n"
+              "    assert(same(r, r))\n"
+              "    assert(g(r, r))\n");
+    EK_CHECK(cfx_code_at_line(&f, "E-no-eq", 6));
+    EK_CHECK(cfx_code_at_line(&f, "E-no-eq", 7));
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "same: (a: t, b: t) -> Bool = a.eq(b)\n"
+              "g: (a: t, b: t) -> Bool = same(a, b)\n"
+              "ok: test =\n"
+              "    assert(same(1, 1))\n"
+              "    assert(same(\"a\", \"a\"))\n"
+              "    assert(g(1, 1))\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "R: type = [f: (Int) -> Int]\n"
+              "ord: (a: t, b: t) -> Bool = a.lt(b)\n"
+              "probe: test =\n"
+              "    r: R = {f: (n): n}\n"
+              "    assert(ord(r, r))\n");
+    EK_CHECK(cfx_code_at_line(&f, "E-unbound-member", 5));
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "R: type = [f: (Int) -> Int]\n"
+              "toj: (x: t) -> Json = x.to_json()\n"
+              "probe: test =\n"
+              "    r: R = {f: (n): n}\n"
+              "    _ := toj(r)\n");
+    EK_CHECK(cfx_code_at_line(&f, "E-json-shape", 5));
     cfx_end(&f);
 }
 
@@ -205,6 +256,7 @@ int main(void)
     argument_types();
     arity();
     capability_pair();
+    generic_service_requirements();
     capability_in_scope();
     capability_operator();
     qualified_calls();

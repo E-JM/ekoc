@@ -55,6 +55,7 @@ const ek_type *ck_derive_eq(ck_ctx *c, const ek_node *at,
     if (strcmp(name, "eq") != 0 && strcmp(name, "ne") != 0) {
         return NULL;
     }
+    ck_req_note(c, at, r, name);
     if (ck_no_eq(c, r)) {
         /* The derivation halts here: equality over the type is
            E-no-eq and the member is absent. */
@@ -113,6 +114,7 @@ const ek_type *ck_derive_lt(ck_ctx *c, const ek_node *at,
         && strcmp(name, "gt") != 0 && strcmp(name, "ge") != 0) {
         return NULL;
     }
+    ck_req_note(c, at, r, name);
     if (ck_is_capability(r) || ck_is_handle(r) || r->kind == EK_T_FN) {
         no_order_error(c, at, r);
         return NULL;
@@ -223,6 +225,7 @@ const ek_type *ck_derive_json(ck_ctx *c, const ek_node *at,
     if (strcmp(name, "to_json") != 0 && strcmp(name, "from_json") != 0) {
         return NULL;
     }
+    ck_req_note(c, at, r, name);
     if (r->kind == EK_T_IVAR || r->kind == EK_T_TVAR) {
         return NULL; /* an undetermined receiver: the bridge */
     }

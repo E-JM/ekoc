@@ -351,6 +351,12 @@ static const ek_type *link_type(ck_ctx *c, const ek_node *at,
         return ck_no_member(c, at, r, name, mod);
     }
     if (r && (r->kind == EK_T_IVAR || r->kind == EK_T_TVAR)
+        && ck_service_halts(name)) {
+        /* The service is resolved at instantiation; its halt is owed
+           there, not answerable over an open receiver. */
+        ck_req_note(c, at, r, name);
+    }
+    if (r && (r->kind == EK_T_IVAR || r->kind == EK_T_TVAR)
         && strcmp(name, "with") == 0) {
         /* `with` constructs a record of the receiver's type: a type
            variable names no record, whatever it later instantiates
