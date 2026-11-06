@@ -736,8 +736,23 @@ ek_val ek_closure_new(ek_closure_fn call, ek_val env);
    panics. */
 ek_val ek_closure_call(ek_val closure, ek_val *args, size_t argc);
 
+/* A call through a world-touching closure. A concurrency task checks
+   its pending cancellation here, before the call, and ends without
+   making it; outside a task the call behaves as ek_closure_call. */
+ek_val ek_world_call(ek_val closure, ek_val *args, size_t argc);
+
 /* The captured environment, with no reference added. */
 ek_val ek_closure_env(ek_obj *closure);
+
+/* The concurrency surface: a Conc value, a scope over its spawned
+   tasks, and the task operations. A scope waits for every child and
+   cancels the ones still running; a task reports Some result or None
+   when cancelled; cancellation is cooperative at world calls. */
+ek_val ek_cap_conc_os(void);
+ek_val ek_conc_scope(ek_val conc, ek_val callback);
+ek_val ek_scope_spawn(ek_val scope, ek_val callback);
+ek_val ek_task_join(ek_val task);
+ek_val ek_task_cancel(ek_val task);
 
 /* The capability channel: a capability value is a bundle record of
    world-touching closures, layout-compatible with the compiler's

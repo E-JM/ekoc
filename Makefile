@@ -192,6 +192,7 @@ RT_SRC := rt/value.c rt/rc.c rt/num.c rt/numbits.c rt/nummath.c rt/panic.c \
 	rt/fmt.c rt/parse.c rt/convert.c rt/strops.c rt/charops.c \
 	rt/chartype.c rt/xid_tables.c rt/bytesops.c \
 	rt/cap.c rt/bundle.c rt/env.c rt/args.c rt/genval.c rt/genio.c \
+	rt/conc.c rt/worldcall.c \
 	rt/gentime.c rt/geninfo.c rt/in.c rt/clock.c rt/rand.c \
 	rt/file.c rt/fs.c rt/fsdir.c rt/path.c rt/range.c rt/ptr.c \
 	rt/set.c rt/jsontext.c rt/json.c
@@ -307,7 +308,7 @@ $(BUILD)/rt/%.o: rt/%.c
 
 $(BUILD)/tests/%: $(BUILD)/tests/%.o $(STAGE_LIBS) $(LIB_RT)
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -Isrc -Itests $< $(STAGE_LIBS) $(LIB_RT) -lm -o $@
+	$(CC) $(CFLAGS) -Isrc -Itests $< $(STAGE_LIBS) $(LIB_RT) -lm -pthread -o $@
 
 # the collection suite exercises the CLI's shared front, which is a
 # program object, not a stage library
@@ -315,7 +316,7 @@ $(BUILD)/tests/cli/test_collect: $(BUILD)/tests/cli/test_collect.o \
 		$(BUILD)/cli/front.o $(STAGE_LIBS) $(LIB_RT)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -Isrc -Itests $< $(BUILD)/cli/front.o \
-		$(STAGE_LIBS) $(LIB_RT) -lm -o $@
+		$(STAGE_LIBS) $(LIB_RT) -lm -pthread -o $@
 
 $(BUILD)/tests/%.o: tests/unit/%.c
 	@mkdir -p $(dir $@)

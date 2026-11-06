@@ -196,7 +196,7 @@ ek_emit_result ek_emit_aot(const char *c_text, const char *out_path,
     /* the link lands on a temporary name and replaces the product by
        rename, so a failed compile leaves the previous binary whole;
        the extra arguments carry the host's libraries and shims */
-    cmd = aprintf(arena, "cc -std=c99 -I%s/rt %s.c %s/build/libekort.a"
+    cmd = aprintf(arena, "cc -std=c99 -pthread -I%s/rt %s.c %s/build/libekort.a"
                          " -lm %s -o %s.tmp 2>&1 && mv %s.tmp %s",
                   tree_root, out_path, tree_root,
                   extra != NULL ? extra : "", out_path, out_path,
