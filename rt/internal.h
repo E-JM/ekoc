@@ -58,6 +58,7 @@ extern const ek_typeinfo ekT_sys$OpenMode$Update;
 extern const ek_typeinfo ekT_sys$FileInfo;
 extern const ek_typeinfo ekT_time$Time$Time;
 extern const ek_typeinfo ekT_time$Mono$Mono;
+extern const ek_typeinfo ekT_time$Duration$Duration;
 
 /* The one-payload shape of a constructor family over the layout
    contract: the object header, then the payload slot. genval.c builds
@@ -77,6 +78,7 @@ ek_val ek_gen_zero(const ek_typeinfo *info);
 ek_val ek_gen_result_ok(ek_val payload);
 ek_val ek_gen_result_err(ek_val payload);
 
+
 /* The std Option constructors. */
 ek_val ek_gen_option_some(ek_val payload);
 ek_val ek_gen_option_none(void);
@@ -85,10 +87,11 @@ ek_val ek_gen_option_none(void);
    String over the message, the others read no message. */
 ek_val ek_gen_ioerr(int kind, const char *msg);
 
-/* The time companion's wall-clock point and monotonic reading, from
-   their nanosecond payloads. */
+/* The time companion's wall-clock point, monotonic reading, and span,
+   from their nanosecond payloads. */
 ek_val ek_gen_time(int64_t ns);
 ek_val ek_gen_mono(int64_t ns);
+ek_val ek_gen_duration(int64_t ns);
 
 /* The FileInfo record of the capability module: size in bytes, the
    modification time as a Time value, and the directory flag. */

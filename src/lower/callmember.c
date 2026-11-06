@@ -159,7 +159,8 @@ static lower_val intrinsic_member(lower_ctx *c, lower_scope *scope,
     } else if (head && head->symbol && head->symbol->module
                && (strcmp(head->symbol->module, "std") == 0
                    || strcmp(head->symbol->module, "sys") == 0
-                   || strcmp(head->symbol->module, "cap") == 0)) {
+                   || strcmp(head->symbol->module, "cap") == 0
+                   || strcmp(head->symbol->module, "time") == 0)) {
         family = head->symbol->name;
     }
     if (!family) {

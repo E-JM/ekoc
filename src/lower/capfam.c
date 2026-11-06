@@ -71,6 +71,18 @@ static const fam_step steps_finfo[] = {
 static const fam_step steps_time[] = {
     {"time", "Time", "Time", 0},
     {"time", "Mono", "Mono", 0},
+    {"time", "Duration", "Duration", 0},
+};
+
+static const fam_step steps_span[] = {
+    {"time", "Time", "Time", 0},
+    {"time", "Duration", "Duration", 0},
+};
+
+static const fam_step steps_parse[] = {
+    {"std", "ParseError", "Empty", 0},
+    {"std", "ParseError", "Invalid", 0},
+    {"std", "ParseError", "OutOfRange", 0},
 };
 
 static const fam_step steps_modes[] = {
@@ -94,6 +106,12 @@ static const fam_group group_finfo = {
 };
 static const fam_group group_time = {
     steps_time, sizeof steps_time / sizeof *steps_time
+};
+static const fam_group group_span = {
+    steps_span, sizeof steps_span / sizeof *steps_span
+};
+static const fam_group group_parse = {
+    steps_parse, sizeof steps_parse / sizeof *steps_parse
 };
 static const fam_group group_modes = {
     steps_modes, sizeof steps_modes / sizeof *steps_modes
@@ -291,14 +309,6 @@ void lower_json_shapes(lower_ctx *c, const ek_node *at)
    fires exactly at the routing. */
 void lower_json_families(lower_ctx *c, const ek_node *at)
 {
-    static const fam_step steps_parse[] = {
-        {"std", "ParseError", "Empty", 0},
-        {"std", "ParseError", "Invalid", 0},
-        {"std", "ParseError", "OutOfRange", 0},
-    };
-    static const fam_group group_parse = {
-        steps_parse, sizeof steps_parse / sizeof *steps_parse
-    };
     static const fam_group *const groups_build[] = {&group_status};
     static const fam_group *const groups_reader[] = {&group_parse};
 
@@ -307,4 +317,18 @@ void lower_json_families(lower_ctx *c, const ek_node *at)
     lower_json_shapes(c, at);
     register_groups(c, at, groups_reader,
                     sizeof groups_reader / sizeof *groups_reader);
+}
+
+/* The time companion's parse identities: the reading and span
+   constructors the runtime's parsers build values over, with the
+   status and parse-error sets their Results stand on. The parsers
+   share the document reader's error builders, so pulling them pulls
+   the reader's object file, whose Json identities come with it. */
+void lower_time_families(lower_ctx *c, const ek_node *at)
+{
+    static const fam_group *const groups_span[] = {&group_span};
+
+    register_groups(c, at, groups_span,
+                    sizeof groups_span / sizeof *groups_span);
+    lower_json_families(c, at);
 }

@@ -56,8 +56,9 @@ json_status json_parse_string(json_scan *s, ek_val *out, ek_obj **detail);
 json_status json_parse_number(json_scan *s, ek_val *out, ek_obj **detail);
 
 /* The std Json constructors and the ParseError of the parse family,
-   defined in json.c and shared with jsontext.c. A payload argument is
-   owned by the caller and owned by the built value afterwards. */
+   defined in json.c and shared with jsontext.c and the time parsers.
+   A payload argument is owned by the caller and owned by the built
+   value afterwards. */
 ek_val json_null(void);
 ek_val json_bool(int b);
 ek_val json_int(int64_t n);

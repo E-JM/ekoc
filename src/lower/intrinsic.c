@@ -10,8 +10,9 @@
    receivers keeps the ordinary member path. */
 
 /* The family a receiver type names: the structural containers, the
-   std placeholder scalars, and the capability module's own types --
-   the File family's rows route through the same table. */
+   std placeholder scalars, the capability module's own types, and the
+   time companion's rows -- the File family's rows route through the
+   same table. */
 const char *lower_intrinsic_family(const ek_type *t)
 {
     if (!t) {
@@ -26,7 +27,8 @@ const char *lower_intrinsic_family(const ek_type *t)
     if (t->kind == EK_T_NOMINAL && t->u.nominal.sym && t->u.nominal.sym->module
         && (strcmp(t->u.nominal.sym->module, "std") == 0
             || strcmp(t->u.nominal.sym->module, "sys") == 0
-            || strcmp(t->u.nominal.sym->module, "cap") == 0)) {
+            || strcmp(t->u.nominal.sym->module, "cap") == 0
+            || strcmp(t->u.nominal.sym->module, "time") == 0)) {
         return t->u.nominal.sym->name;
     }
     return NULL;
@@ -299,6 +301,9 @@ lower_val lower_intrinsic_call(lower_ctx *c, lower_scope *scope,
     }
     if (strcmp(family, "Json") == 0) {
         lower_json_families(c, e);
+    } else if (strcmp(family, "Time") == 0
+               || strcmp(family, "Duration") == 0) {
+        lower_time_families(c, e);
     } else if (keys_over_domain(family, callee->u.field.name)) {
         stamp_key_domain(c, e, callee, family, has_recv);
     }

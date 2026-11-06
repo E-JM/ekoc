@@ -484,7 +484,8 @@ const ek_surface_row ek_surface_rows[] = {
     /* The wall-clock namespace: the printed form's parser alone; the
        arithmetic and the payload are companion source (std/time). */
     {"Time", "parse", SIG_FN(EK_ARROW_PURE, SIG_RESULT(SIG_STD("Time")),
-                             SIG_STD("String")), .route = EK_ROUTE_NONE},
+                             SIG_STD("String")),
+     .sym = "ek_parse_time", .args = "o"},
 
     /* The monotonic namespace is companion source. */
 
@@ -492,7 +493,7 @@ const ek_surface_row ek_surface_rows[] = {
     {"Duration", "parse", SIG_FN(EK_ARROW_PURE,
                                  SIG_RESULT(SIG_STD("Duration")),
                                  SIG_STD("String")),
-     .route = EK_ROUTE_NONE},
+     .sym = "ek_parse_duration", .args = "o"},
 
     /* The interchange namespace: parsing only; show and its JSON
        mapping are derived services over the seven variants. */

@@ -11,10 +11,23 @@ duration_show: test =
     assert_eq(Duration.secs(0).show(), "0s")
     assert_eq(Duration.millis(-500).show(), "-0.5s")
 
+duration_parse: test =
+    assert_eq(Duration.parse("0.5s"), Ok (Duration.millis(500)))
+    assert_eq(Duration.parse("2s"), Ok (Duration.secs(2)))
+    assert_eq(Duration.parse("-0.001s"), Ok (Duration.neg(Duration.millis(1))))
+    assert_eq(Duration.parse("1.5"), Err (Invalid "expected the unit and the end"))
+
 time_show: test =
     t := Time 1792632540123000000
     assert_eq(t.show(), "2026-10-22T01:29:00.123Z")
     assert_eq((Time 0).show(), "1970-01-01T00:00:00Z")
+
+time_parse: test =
+    t := Time 1792632540123000000
+    assert_eq(Time.parse("2026-10-22T01:29:00.123Z"), Ok t)
+    assert_eq(Time.parse("1970-01-01T00:00:00Z"), Ok (Time 0))
+    assert_eq(Time.parse(""), Err Empty)
+    assert_eq(Time.parse("2026-02-30T00:00:00Z").is_err(), True)
 
 json_show: test =
     assert_eq(Null.show(), "null")

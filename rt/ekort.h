@@ -366,6 +366,16 @@ ek_parse_status ek_parse_float(ek_obj *s, double *out);
    caller's to release. */
 ek_val ek_json_parse(ek_obj *text);
 
+/* The time parsers, the two rows of the time companion the compiler
+   itself supplies. Time.parse reads the ISO 8601 UTC forms the
+   wall-clock display produces, Duration.parse the decimal seconds
+   form with its unit letter; both wrap their payload in the Result
+   the parse family returns, with the same Empty, Invalid, and
+   OutOfRange reasons over their own identities. The returned Result
+   is the caller's to release. */
+ek_val ek_parse_time(ek_obj *text);
+ek_val ek_parse_duration(ek_obj *text);
+
 /* The conversion family moves one domain word into another slot. The
    ek_try_ entries are the narrowing rows: they return nonzero and
    write *out when the value lies in the target's limits, and return

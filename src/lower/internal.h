@@ -800,6 +800,11 @@ void lower_cap_families(lower_ctx *c, const ek_node *at);
    unit without the routing links without the identities. */
 void lower_json_families(lower_ctx *c, const ek_node *at);
 
+/* capfam.c: the time parse identities -- the reading and span
+   constructors with the status and error sets -- stamped when the two
+   time parse rows route. */
+void lower_time_families(lower_ctx *c, const ek_node *at);
+
 /* capfam.c: the seven Json variant shapes the derived decode bodies
    read, stamped as one set without the construction helpers. */
 void lower_json_shapes(lower_ctx *c, const ek_node *at);

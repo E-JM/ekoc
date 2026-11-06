@@ -197,7 +197,7 @@ RT_SRC := rt/value.c rt/rc.c rt/num.c rt/numbits.c rt/nummath.c rt/panic.c \
 	rt/conc.c rt/worldcall.c \
 	rt/gentime.c rt/geninfo.c rt/in.c rt/clock.c rt/rand.c \
 	rt/file.c rt/fs.c rt/fsdir.c rt/path.c rt/range.c rt/ptr.c \
-	rt/set.c rt/jsontext.c rt/json.c
+	rt/set.c rt/jsontext.c rt/json.c rt/timeparse.c
 LIB_RT := $(BUILD)/libekort.a
 RT_OBJ := $(RT_SRC:rt/%.c=$(BUILD)/rt/%.o)
 
