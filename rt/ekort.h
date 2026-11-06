@@ -393,6 +393,20 @@ ek_val ek_char_to_code(ek_val c);
    untouched otherwise. */
 int ek_try_char_from_code(ek_val n, uint32_t *out);
 
+/* Char classification. The letter and digit predicates classify the
+   ASCII range; is_space is the Unicode White_Space property; the XID
+   pair is the Unicode property the lexer's identifier rule builds on
+   (the lexer admits '_' as a first character on top of it). A value
+   that is not a Char classifies as false. */
+int ek_char_is_alpha(ek_val c);
+int ek_char_is_digit(ek_val c);
+int ek_char_is_alnum(ek_val c);
+int ek_char_is_space(ek_val c);
+int ek_char_is_upper(ek_val c);
+int ek_char_is_lower(ek_val c);
+int ek_char_is_xid_start(ek_val c);
+int ek_char_is_xid_continue(ek_val c);
+
 /* A string is an immutable UTF-8 byte sequence on the heap. The
    accessors take the object of a string value; passing an object of
    another family is undefined. */
