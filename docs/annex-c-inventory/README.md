@@ -1,19 +1,20 @@
 # Annex C. Standard Library Inventory
 
 This annex is normative. It is the complete inventory of the shipped surface:
-the `std` root, the shipped companion `std/time`, and the capability module,
+the `std` root, the shipped companions `std/time` and `std/regex`, and the
+capability module,
 every free function, type, and namespace member, with its signature.
 Signatures in this annex are normative. Semantics are owned by Clause 9 and by
 the clauses cited in each row, and are cross-referenced rather than restated
 here where those clauses state them.
 
 The delivery model, the implicit import, and the companion modules are
-specified in Clause 9.1. Companion modules are inventoried in C.13 (Clause
-11.5). The shipped companion `std/time` is listed there, and a future shipped
-companion is added there. An entry marked **derived** is
+specified in Clause 9.1. Companion modules are inventoried in C.13 and
+C.14 (Clause 11.5). The shipped companions `std/time` and `std/regex` are
+listed there, and a future shipped companion is added there. An entry marked **derived** is
 compiler-generated. An entry in C.9 is capability-module source or a
-compiler-provided declaration (Clauses 9.1.1, 10.8). An entry in C.13 is
-companion source or a compiler-supplied row attached to the companion. An
+compiler-provided declaration (Clauses 9.1.1, 10.8). An entry in C.13 or C.14
+is companion source or a compiler-supplied row attached to the companion. An
 entry whose Clause is 7.5.4, 7.9.1, 8.9, or 10.3 is language or native
 vocabulary rather than source. Every other entry is `std` root source (Clause
 9.1.1). `Set` and `Range` are compiler-supplied nominal types with intrinsic
@@ -32,4 +33,4 @@ members that share one signature.
 | C.3–C.8 | Collections, text, data, numerics | [02-collections-numerics.md](02-collections-numerics.md) |
 | C.9 | Capability surface | [03-capabilities.md](03-capabilities.md) |
 | C.10–C.12 | JSON; path; not in the library | [04-time-path-exclusions.md](04-time-path-exclusions.md) |
-| C.13 | The std/time Companion | [05-companions.md](05-companions.md) |
+| C.13–C.14 | The std/time and std/regex Companions | [05-companions.md](05-companions.md) |

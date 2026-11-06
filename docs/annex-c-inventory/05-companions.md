@@ -43,3 +43,26 @@ no operator sugar: every operation is a named function (Clause 9.7.1).
 `Duration.parse` accepts decimal seconds (Clause 9.7.4). The two parsers are
 compiler-supplied intrinsic rows of the companion. `ParseError` remains in
 the `std` root (Clause 9.6.3).
+
+## C.14 The std/regex Companion
+
+The regular-expression family is delivered by the companion module
+`std/regex` (Clauses 9.1.3, 9.11.3), not by the `std` root. The import opens
+the type `Regex` and makes its members reachable; the qualified spellings
+`regex.Regex` and `regex.Regex.compile` are legal alternatives, and a receiver
+call needs no import (Clauses 7.2.3, 7.4.3, 7.4.4). The companion source is
+compiler-embedded and versioned with the compiler. A compiled pattern carries
+its automaton in a closure, so no pattern text or automaton state is
+observable. The payload is a function, so the type has no `eq` (Clause 9.8.4),
+`inspect` renders it as `Regex <fn>`, and `to_json` is not available over it.
+
+| Namespace | Member | Signature | Clause |
+|---|---|---|---|
+| `Regex` | `Regex.compile` | `(String) -> Result Regex String` | Clause 9.11.3 |
+| `Regex` | `Regex.is_match` | `(Regex, String, Bool) -> Bool` | Clause 9.11.3 |
+
+`Regex.compile` parses and compiles a pattern; a malformed pattern is `Err`
+with the position and the cause, and is never a panic. `Regex.is_match`
+reports whether the pattern matches anywhere in the line, and its `Bool`
+parameter folds ASCII letters only. Both members are pure. The pattern
+language and its exclusions are specified in Clause 9.11.3.

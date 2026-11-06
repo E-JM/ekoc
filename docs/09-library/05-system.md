@@ -314,7 +314,6 @@ top level is pure, so parallel execution is permitted.
 The following are not part of the standard library:
 
 - a format-string or printf-style DSL;
-- regular expressions;
 - Unicode case mapping;
 - an encoding family other than UTF-8, including UTF-16, latin-1, and GBK;
 - byte literals, index syntax, mutable `Bytes`, and a mutable builder or

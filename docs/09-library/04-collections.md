@@ -136,8 +136,9 @@ no lines and yields the empty list; `"\n"` is one empty line.
 "\n".lines()           // {""}
 ```
 
-Unicode case mapping and regular expressions are not part of the standard
-library.
+Unicode case mapping is not part of the standard library (Clause 9.15).
+Regular expressions are delivered by the companion `std/regex` (Clause
+9.11.3).
 
 ### 9.11.2 Path
 
@@ -151,3 +152,51 @@ applies the platform rule. `Path.normalize` is syntax, not semantics: it does
 not consult the file system and cannot know whether a component is a symbolic
 link. Resolution against the working directory and through symbolic links is
 `Fs.realpath` (Clause 9.12.6). No `Path` nominal type exists.
+
+### 9.11.3 Regular Expressions
+
+Regular expressions are delivered by the companion `std/regex` (Clause 9.1.3),
+not by the `std` root. `import std/regex` opens the type `Regex` and makes its
+members `Regex.compile` and `Regex.is_match` reachable (Annex C.14); a
+receiver call on a `Regex` value resolves through the type namespace and
+requires no import (Clause 7.4.3). The engine performs no world contact and
+declares no capability member.
+
+The engine is a Thompson NFA simulation with no backtracking. For a fixed
+pattern, matching a line costs time proportional to the product of the line's
+length and the automaton's size, and nested quantifiers such as `(a*)*` cannot
+blow up. A compiled pattern carries its automaton in a closure; no pattern
+text, automaton state, or other implementation detail is observable.
+
+The pattern language is exactly this set of forms.
+
+| Form | Meaning |
+|---|---|
+| `c` | the literal scalar value, except the metacharacters below |
+| `.` | any scalar value |
+| `[abc]`, `[a-z]`, `[^...]` | a class, a range inside a class, a negated class |
+| `\n`, `\t`, `\r`, `\` before a metacharacter | the scalar value or the literal metacharacter |
+| `r1r2` | concatenation |
+| `r1\|r2` | alternation |
+| `(r)` | grouping |
+| `r*`, `r+`, `r?` | zero or more, one or more, zero or one |
+| `^`, `$` | start of the line, end of the line |
+
+An empty alternative and an empty group are legal and denote the empty match;
+the empty pattern matches every line. `Regex.is_match(re, line,
+ignore_case)` matches anywhere in the line unless the pattern anchors it.
+
+A malformed pattern is rejected by `Regex.compile` with `Err`, whose text
+names the position and the cause; a malformed pattern is never a panic. The
+following are not forms of the language, and a pattern that uses one is
+rejected at compile time rather than read as some other form:
+
+- a counted repetition `{m,n}`;
+- a lazy quantifier: `a+?` is a stacked quantifier, not a reading of
+  `(a+)?`, and `a**` and `a??` are rejected for the same reason;
+- backreferences, lookaround, and named classes;
+- an empty character class, and a class range whose start exceeds its end.
+
+`ignore_case` folds ASCII letters only, in the pattern's classes and in the
+line: `A`–`Z` and `a`–`z` are one class, nothing else folds. Unicode case
+mapping is not part of the library (Clause 9.15).

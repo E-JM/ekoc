@@ -55,8 +55,9 @@ ordinary Eko source.
 The **companions** are compiler-embedded Eko source under `lib/std/`, versioned
 with the compiler and target-independent. A companion is delivered under the
 reserved `std/` path and imported as an ordinary module (Clause 9.1.3).
-`lib/std/time.eko` is the shipped companion: it declares `Time`, `Mono`, and
-`Duration` and their source members. `ParseError` remains in the root, because
+`lib/std/time.eko` declares `Time`, `Mono`, and `Duration` and their source
+members; `lib/std/regex.eko` declares `Regex` and its members (Clause
+9.11.3). `ParseError` remains in the root, because
 `Json.parse` uses it (Clause 9.6.3). A companion contains no capability
 content: no capability type, no member of a capability namespace, no
 world-touching declaration. Every standard-library type namespace takes
@@ -80,8 +81,9 @@ the language ships: the reservation follows the companion itself, and the
 list needs no per-companion sentence here. A user module MUST NOT be named
 `std`, a reserved companion stem, or an embedded module's stem (Clause 7.2.2).
 
-The implicit import opens no time name: `Time`, `Mono`, and `Duration` enter
-scope only through `std/time` (Clause 9.7.1).
+The implicit import opens no companion name: `Time`, `Mono`, and `Duration`
+enter scope only through `std/time` (Clause 9.7.1), and `Regex` only through
+`std/regex` (Clause 9.11.3).
 
 The embedded modules' names resolve in every file without import: the
 capability namespaces through the type namespaces, as `List.map` does, and
@@ -114,7 +116,8 @@ spellings `time.Time`, `time.Mono`, and `time.Duration` are legal alternatives
 (Clause 7.4.4). A receiver call on a companion value resolves through the type
 namespace and requires no import (Clause 7.4.3). The stem enters a file's name
 scope only on an import in that file. The path prefix `std/` is reserved, and
-the stems of the shipped companions are reserved (`time` today). The capability
+the stems of the shipped companions are reserved, the list following the
+companions themselves. The capability
 module's `import std/time` makes the companion part of every compilation's
 module closure; it does not put the stem or its types into another file's
 scope, so a file still writes `import std/time` to name them. No other name is
@@ -124,9 +127,11 @@ grants, and the dependency graph is acyclic. A companion declares no free name
 that the implicit import could open. The admission condition is common utility:
 the unit is worth versioning with the compiler and is not needed by most files.
 
-`std/time` is the first companion. It declares `Time`, `Mono`, and `Duration`
-and their source members (Clause 9.7.1); `ParseError` remains in the root. It
-is compiler-embedded and versioned with the compiler (Clause 9.1.4).
+`std/time` and `std/regex` are the shipped companions. `std/time` declares
+`Time`, `Mono`, and `Duration` and their source members (Clause 9.7.1);
+`ParseError` remains in the root. `std/regex` declares `Regex` and its
+members (Clause 9.11.3). Each companion is compiler-embedded and versioned
+with the compiler (Clause 9.1.4).
 
 ### 9.1.4 Versioning
 
