@@ -142,13 +142,16 @@ static lower_val name_expr(lower_ctx *c, lower_scope *scope, const ek_node *e)
     return lower_val_unit();
 }
 
-/* A module-qualified read of a top-level binding or function: the
-   value the name read gives, spelled through the qualified path. */
+/* A qualified read of a top-level binding, a namespace member, or a
+   function: the value the name read gives, spelled through the
+   qualified path. */
 static lower_val qualified_read(lower_ctx *c, const ek_node *e)
 {
     const ek_ref *ref = lower_ref(c, e);
 
-    if (!ref || ref->kind != EK_SYM_FUNC || !ref->symbol) {
+    if (!ref || !ref->symbol
+        || (ref->kind != EK_SYM_FUNC
+            && ref->kind != EK_SYM_NAMESPACE)) {
         return (lower_val){ NULL, 0 };
     }
     if (lower_is_value(ref->symbol)) {

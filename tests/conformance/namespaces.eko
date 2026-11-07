@@ -74,3 +74,22 @@ module_path_namespaces: test =
     xs: []Int = {1, 2, 3}
     assert_eq(xs.std.List.length(), 3)
     assert_eq("ab".std.String.rep(2), "abab")
+
+// The namespace member at value position: a declared member is the
+// function value its signature names, and a non-arrow member is the
+// module's shared value (Clauses 7.4.3, 7.4.5).
+Tape: type = [n: Int]
+
+Tape.step: Int = 3
+
+Tape.bump: (t: Tape) -> Tape = {n: t.n + Tape.step}
+
+member_values: test =
+    assert_eq(Tape.step, 3)
+    xs: []String = {" a", " b"}
+    ys: []String = xs.map(String.trim)
+    assert_eq(ys, {"a", "b"})
+    t: Tape = {n: 1}
+    assert_eq(t.bump().n, 4)
+    f := Tape.bump
+    assert_eq(f(t).n, 4)

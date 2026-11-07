@@ -10,26 +10,43 @@
    The initializer lowers like any function body: its own references
    pull their definitions into the unit. */
 
-/* True when the symbol is a top-level value binding: a plain binding
-   whose annotation is not a function type. A generic one keeps the
-   value false and is diagnosed at its emission. */
+/* True when the symbol is a top-level value binding: a plain or
+   namespace binding whose annotation is not a function type. A
+   generic one keeps the value false and is diagnosed at its
+   emission. */
 int lower_is_value(const ek_symbol *sym)
 {
-    return sym && sym->kind == EK_SYM_FUNC && sym->decl
-        && sym->decl->kind == EK_N_LET && sym->type
-        && sym->type->kind != EK_N_T_FN;
+    return sym && (sym->kind == EK_SYM_FUNC
+                   || sym->kind == EK_SYM_NAMESPACE)
+        && sym->decl
+        && (sym->decl->kind == EK_N_LET
+            || sym->decl->kind == EK_N_NAMESPACE)
+        && sym->type && sym->type->kind != EK_N_T_FN;
+}
+
+/* The C name pieces of one value binding: the kind letter joins the
+   module, the namespace owner when the binding carries one, and the
+   name on `$`, so no two bindings share a spelling. */
+static const char *value_id(lower_ctx *c, const ek_symbol *sym,
+                            const char *kind)
+{
+    if (sym->owner) {
+        return lower_str(c, "%s_%s$%s$%s", kind, sym->module, sym->owner,
+                         sym->name);
+    }
+    return lower_str(c, "%s_%s$%s", kind, sym->module, sym->name);
 }
 
 /* The getter's C name of one value binding. */
 const char *lower_value_getter(lower_ctx *c, const ek_symbol *sym)
 {
-    return lower_str(c, "eks_%s$%s", sym->module, sym->name);
+    return value_id(c, sym, "eks");
 }
 
 /* The slot's C name of one value binding. */
 static const char *value_slot(lower_ctx *c, const ek_symbol *sym)
 {
-    return lower_str(c, "ekv_%s$%s", sym->module, sym->name);
+    return value_id(c, sym, "ekv");
 }
 
 /* The slot, its flag, and the getter's declaration: the text the
@@ -54,7 +71,9 @@ static void emit_slot_head(lower_ctx *c, const ek_symbol *sym)
 void lower_value_binding(lower_ctx *c, const lower_item *item)
 {
     const ek_symbol *sym = item->sym;
-    const ek_node *value = sym->decl->u.bind.value;
+    const ek_node *value = sym->decl->kind == EK_N_NAMESPACE
+                               ? sym->decl->u.namespace.value
+                               : sym->decl->u.bind.value;
     const ek_ck_row *row = lower_row(c, sym->type);
     const char *slot = value_slot(c, sym);
     const char *flag = lower_str(c, "%s_on", slot);
