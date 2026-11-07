@@ -121,6 +121,42 @@ static void emit_err_arm(lower_ctx *c, lower_scope *scope, const char *t,
     lower_emitf(c, "ek_release(%s);\n", ioerr);
 }
 
+/* The constructors of a wrap: the Result arms, the five zero-payload
+   IoError reasons, the two payload reasons, and the Option pair at the
+   OPT shape. 0 when any is missing. */
+static int io_ctors(lower_ctx *c, const ek_node *e, lower_io_ok ok,
+                    const char **okh, const char **errh, const char **inv,
+                    const char **oth, const char **zero,
+                    const char **some, const char **none)
+{
+    static const char *zero_names[5] = {"NotFound", "Permission", "Exists",
+                                        "NotFile", "Closed"};
+    int nok = 0, nerr = 0, nsome = 0, nnone = 0;
+    int nz[5] = {0, 0, 0, 0, 0};
+    int ninv = 0, noth = 0;
+    size_t i;
+
+    *okh = lower_ctor_helper(c, e, "std", "Result", "Ok", &nok);
+    *errh = lower_ctor_helper(c, e, "std", "Result", "Err", &nerr);
+    *inv = lower_ctor_helper(c, e, "sys", "IoError", "InvalidData", &ninv);
+    *oth = lower_ctor_helper(c, e, "sys", "IoError", "Other", &noth);
+    for (i = 0; i < 5; i++) {
+        zero[i] = lower_ctor_helper(c, e, "sys", "IoError", zero_names[i],
+                                    &nz[i]);
+    }
+    if (ok == LOWER_IO_OK_OPT) {
+        *some = lower_ctor_helper(c, e, "std", "Option", "Some", &nsome);
+        *none = lower_ctor_helper(c, e, "std", "Option", "None", &nnone);
+    }
+    for (i = 0; i < 5; i++) {
+        if (!zero[i]) {
+            return 0;
+        }
+    }
+    return *okh && *errh && *inv && *oth
+        && (ok != LOWER_IO_OK_OPT || (*some && *none));
+}
+
 lower_val lower_wrap_io(lower_ctx *c, lower_scope *scope, const ek_node *e,
                         const char *sym, const char *args, lower_io_ok ok)
 {
@@ -129,37 +165,12 @@ lower_val lower_wrap_io(lower_ctx *c, lower_scope *scope, const ek_node *e,
     const char *o = lower_temp(c, scope);
     const char *y = lower_temp(c, scope);
     const char *k = lower_temp(c, scope);
-    int nok = 0, nerr = 0, nsome = 0, nnone = 0;
-    int nz[5] = {0, 0, 0, 0, 0};
-    int ninv = 0, noth = 0;
-    static const char *zero_names[5] = {"NotFound", "Permission", "Exists",
-                                        "NotFile", "Closed"};
-    const char *okh = lower_ctor_helper(c, e, "std", "Result", "Ok", &nok);
-    const char *errh = lower_ctor_helper(c, e, "std", "Result", "Err", &nerr);
-    const char *inv = lower_ctor_helper(c, e, "sys", "IoError",
-                                        "InvalidData", &ninv);
-    const char *oth = lower_ctor_helper(c, e, "sys", "IoError", "Other",
-                                        &noth);
     const char *zero[5];
+    const char *okh, *errh, *inv, *oth;
     const char *some = NULL;
     const char *none = NULL;
-    size_t i;
 
-    for (i = 0; i < 5; i++) {
-        zero[i] = lower_ctor_helper(c, e, "sys", "IoError", zero_names[i],
-                                    &nz[i]);
-    }
-    if (ok == LOWER_IO_OK_OPT) {
-        some = lower_ctor_helper(c, e, "std", "Option", "Some", &nsome);
-        none = lower_ctor_helper(c, e, "std", "Option", "None", &nnone);
-    }
-    for (i = 0; i < 5; i++) {
-        if (!zero[i]) {
-            return lower_val_unit();
-        }
-    }
-    if (!okh || !errh || !inv || !oth
-        || (ok == LOWER_IO_OK_OPT && (!some || !none))) {
+    if (!io_ctors(c, e, ok, &okh, &errh, &inv, &oth, zero, &some, &none)) {
         return lower_val_unit();
     }
     lower_pad(c);
@@ -246,6 +257,58 @@ static const char *value_args(lower_ctx *c, const char *letters,
     return lower_take(c, &b);
 }
 
+/* The written slots of the call: the receiver first at a member link,
+   then the call's arguments, each a temp in source order. */
+static const char **cap_args(lower_ctx *c, lower_scope *scope,
+                             const ek_node *e, const ek_node *callee,
+                             size_t na, size_t written, int has_recv,
+                             size_t *cap)
+{
+    const char **as = lower_grow(c, NULL, cap, na ? na : 1, sizeof *as);
+    size_t i;
+
+    if (!as) {
+        return NULL;
+    }
+    if (has_recv) {
+        lower_val a = lower_sub(c, scope, callee->u.field.recv);
+
+        as[0] = lower_as_temp(c, scope, &a);
+    }
+    for (i = 0; i < written; i++) {
+        lower_val a = lower_sub(c, scope, e->u.call.args.data[i]);
+
+        as[has_recv + i] = lower_as_temp(c, scope, &a);
+    }
+    return as;
+}
+
+/* The row's shape picks the wrap: the plain call, the three status
+   contracts, or the bare exit. */
+static lower_val cap_shape_call(lower_ctx *c, lower_scope *scope,
+                                const ek_node *e, const ek_surface_row *row,
+                                const char *args)
+{
+    switch (row->shape) {
+    case EK_CAP_PLAIN: {
+        const char *t = lower_temp(c, scope);
+
+        lower_pad(c);
+        lower_emitf(c, "ek_val %s = %s(%s);\n", t, row->sym, args);
+        return (lower_val){ t, 1 };
+    }
+    case EK_CAP_IO_REF:
+        return lower_wrap_io(c, scope, e, row->sym, args, LOWER_IO_OK_REF);
+    case EK_CAP_IO_UNIT:
+        return lower_wrap_io(c, scope, e, row->sym, args,
+                             LOWER_IO_OK_UNIT);
+    case EK_CAP_IO_OPT:
+        return lower_wrap_io(c, scope, e, row->sym, args, LOWER_IO_OK_OPT);
+    default:
+        return lower_wrap_exit(c, scope, row->sym, args);
+    }
+}
+
 lower_val lower_cap_call(lower_ctx *c, lower_scope *scope,
                          const ek_node *e, const ek_node *callee,
                          const char *family, int has_recv)
@@ -267,50 +330,12 @@ lower_val lower_cap_call(lower_ctx *c, lower_scope *scope,
         return lower_val_unit();
     }
     register_static_families(c, e, row);
-    as = lower_grow(c, NULL, &cap, na ? na : 1, sizeof *as);
+    as = cap_args(c, scope, e, callee, na, written, has_recv, &cap);
     if (!as) {
         return lower_val_unit();
     }
-    if (has_recv) {
-        lower_val a = lower_sub(c, scope, callee->u.field.recv);
-
-        as[0] = lower_as_temp(c, scope, &a);
-    }
-    for (i = 0; i < written; i++) {
-        lower_val a = lower_sub(c, scope, e->u.call.args.data[i]);
-
-        as[has_recv + i] = lower_as_temp(c, scope, &a);
-    }
-    {
-        const char *args = value_args(c, row->args ? row->args : "v", as,
-                                      na);
-
-        switch (row->shape) {
-        case EK_CAP_PLAIN: {
-            const char *t = lower_temp(c, scope);
-
-            lower_pad(c);
-            lower_emitf(c, "ek_val %s = %s(%s);\n", t, row->sym, args);
-            out = (lower_val){ t, 1 };
-            break;
-        }
-        case EK_CAP_IO_REF:
-            out = lower_wrap_io(c, scope, e, row->sym, args,
-                                LOWER_IO_OK_REF);
-            break;
-        case EK_CAP_IO_UNIT:
-            out = lower_wrap_io(c, scope, e, row->sym, args,
-                                LOWER_IO_OK_UNIT);
-            break;
-        case EK_CAP_IO_OPT:
-            out = lower_wrap_io(c, scope, e, row->sym, args,
-                                LOWER_IO_OK_OPT);
-            break;
-        default:
-            out = lower_wrap_exit(c, scope, row->sym, args);
-            break;
-        }
-    }
+    out = cap_shape_call(c, scope, e, row,
+                         value_args(c, row->args ? row->args : "v", as, na));
     for (i = na; i-- > 0;) {
         lower_pad(c);
         lower_emitf(c, "ek_release(%s);\n", as[i]);

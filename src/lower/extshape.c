@@ -161,23 +161,15 @@ static lower_ms_kind ms_of_c_name(const ek_node *tn)
     return MS_BAD;
 }
 
-lower_mshape lower_ms_of(lower_ctx *c, const ek_node *tn)
+/* The shape of a C.In application: the copy-in element array over a
+   machine word, or the copy-in struct over a ctype declaration. */
+static lower_mshape ms_of_apply(lower_ctx *c, const ek_node *tn)
 {
     lower_mshape s;
 
     memset(&s, 0, sizeof s);
     s.kind = MS_BAD;
-    tn = tn && tn->kind == EK_N_T_PAREN ? tn->u.wrap.inner : tn;
-    if (!tn) {
-        s.kind = MS_UNIT; /* an elided result is the unit */
-        return s;
-    }
-    if (tn->kind == EK_N_T_FN) {
-        s.kind = MS_CLOSURE;
-        s.fn = tn;
-        return s;
-    }
-    if (tn->kind == EK_N_T_APPLY) {
+    {
         const ek_node *head = tn->u.t_apply.head;
         const ek_node *arg0;
         const ek_symbol *inner;
@@ -208,6 +200,27 @@ lower_mshape lower_ms_of(lower_ctx *c, const ek_node *tn)
         s.kind = MS_CIN;
         s.ctype = inner;
         return s;
+    }
+}
+
+lower_mshape lower_ms_of(lower_ctx *c, const ek_node *tn)
+{
+    lower_mshape s;
+
+    memset(&s, 0, sizeof s);
+    s.kind = MS_BAD;
+    tn = tn && tn->kind == EK_N_T_PAREN ? tn->u.wrap.inner : tn;
+    if (!tn) {
+        s.kind = MS_UNIT; /* an elided result is the unit */
+        return s;
+    }
+    if (tn->kind == EK_N_T_FN) {
+        s.kind = MS_CLOSURE;
+        s.fn = tn;
+        return s;
+    }
+    if (tn->kind == EK_N_T_APPLY) {
+        return ms_of_apply(c, tn);
     }
     if (tn->kind != EK_N_T_NAME) {
         return s;

@@ -102,6 +102,33 @@ static void reads_ctl(lower_reads *r, const ek_node *e)
     }
 }
 
+/* The pattern shapes: the alternatives walk their sub-patterns, and
+   the brace's items name binds rather than read. */
+static void reads_pattern(lower_reads *r, const ek_node *e)
+{
+    switch (e->kind) {
+    case EK_N_P_PAREN:
+    case EK_N_P_OR:
+        reads_kids(r, e->u.kids.data, e->u.kids.count);
+        return;
+    case EK_N_P_BRACE:
+        /* the rest name binds; it is not a read */
+        reads_kids(r, e->u.p_brace.items.data, e->u.p_brace.items.count);
+        return;
+    case EK_N_P_LIT:
+        lower_reads_walk(r, e->u.wrap.inner);
+        return;
+    case EK_N_P_FIELD:
+        lower_reads_walk(r, e->u.p_field.pattern);
+        return;
+    case EK_N_P_CONS:
+        lower_reads_walk(r, e->u.cons.payload);
+        return;
+    default:
+        return;
+    }
+}
+
 /* The name reads of a body. A nested lambda descends as well: a free
    name read only inside it must still reach the creation site's own
    capture set when the site can see the name, or a closure body
@@ -125,14 +152,8 @@ void lower_reads_walk(lower_reads *r, const ek_node *e)
     case EK_N_BLOCK:
     case EK_N_MODULE:
     case EK_N_LAMBDA_PARAMS:
-    case EK_N_P_PAREN:
-    case EK_N_P_OR:
     case EK_N_COMPOSITE:
         reads_kids(r, e->u.kids.data, e->u.kids.count);
-        return;
-    case EK_N_P_BRACE:
-        /* the rest name binds; it is not a read */
-        reads_kids(r, e->u.p_brace.items.data, e->u.p_brace.items.count);
         return;
     case EK_N_STRING_LIT:
         for (i = 0; i < e->u.str.count; i++) {
@@ -141,7 +162,6 @@ void lower_reads_walk(lower_reads *r, const ek_node *e)
         return;
     case EK_N_PAREN:
     case EK_N_UNARY:
-    case EK_N_P_LIT:
         lower_reads_walk(r, e->u.wrap.inner);
         return;
     case EK_N_APPLY:
@@ -149,15 +169,10 @@ void lower_reads_walk(lower_reads *r, const ek_node *e)
         lower_reads_walk(r, e->u.pair.a);
         lower_reads_walk(r, e->u.pair.b);
         return;
-    case EK_N_P_FIELD:
-        lower_reads_walk(r, e->u.p_field.pattern);
-        return;
-    case EK_N_P_CONS:
-        lower_reads_walk(r, e->u.cons.payload);
-        return;
     default:
         reads_oper(r, e);
         reads_ctl(r, e);
+        reads_pattern(r, e);
         return;
     }
 }

@@ -208,54 +208,6 @@ static lower_val open_call(lower_ctx *c, lower_scope *scope,
     return lower_derived_call(c, scope, e, callee, row, CF_MEMBER);
 }
 
-/* The result type of a derived-service call at a receiver the
-   instantiation substituted concrete: the fixed result of the service,
-   the receiver itself for `with`. NULL when the site is not such a
-   call. */
-const ek_type *lower_open_call_result(lower_ctx *c, const ek_node *e)
-{
-    const ek_node *callee;
-    const char *name = NULL;
-    const ek_node *recv = NULL;
-    lower_dsvc_kind kind;
-    const ek_type *rs;
-
-    if (!e || e->kind != EK_N_CALL) {
-        return NULL;
-    }
-    callee = e->u.call.callee;
-    if (callee && callee->kind == EK_N_FIELD) {
-        name = callee->u.field.name;
-        recv = callee->u.field.recv;
-    } else if (callee && callee->kind == EK_N_NAME
-               && callee->u.path.count == 1) {
-        name = callee->u.path.data[0];
-        recv = e->u.call.args.count ? e->u.call.args.data[0] : NULL;
-    }
-    if (!name || !recv) {
-        return NULL;
-    }
-    rs = lower_row_type(c, recv);
-    if (!rs || lower_type_has_var(rs)) {
-        return NULL;
-    }
-    if (lower_service_kind(name, &kind)) {
-        switch (kind) {
-        case DSV_EQ:
-        case DSV_ORD:
-            return lower_std_nominal(c, "Bool");
-        case DSV_SHOW:
-        case DSV_INSPECT:
-            return lower_std_nominal(c, "String");
-        case DSV_TOJSON:
-            return lower_std_nominal(c, "Json");
-        default:
-            return NULL;
-        }
-    }
-    return strcmp(name, "with") == 0 ? rs : NULL;
-}
-
 /* The free-call form of a declared namespace member: `m(recv, rest)`
    means `recv.m(rest)`, with the link's reading the receiver form's.
    A NULL result hands the decision back. */
@@ -316,6 +268,41 @@ static const ek_symbol *root_module_fn(lower_ctx *c, const char *name)
     return NULL;
 }
 
+/* The receiver-form call of a found function: the link's receiver
+   joins the form before the arguments fill their slots. */
+static lower_val recv_call(lower_ctx *c, lower_scope *scope,
+                           const ek_node *e, const ek_node *callee,
+                           const ek_symbol *fn, const ek_node *recv,
+                           const call_form *form)
+{
+    call_form member = *form;
+
+    set_recv(c, scope, &member, recv, &e->u.call.args,
+             lower_row_type(c, callee));
+    return direct_call(c, scope, e, fn, &member);
+}
+
+/* The namespace member the link denotes: the receiver type's scan, or
+   at a qualified head the owner the type ref names. */
+static const ek_symbol *member_target(lower_ctx *c, const ek_type *rt,
+                                      const ek_node *recv,
+                                      const ek_node *callee,
+                                      const ek_ref **head)
+{
+    if (rt) {
+        *head = NULL;
+        return member_symbol(c, rt, callee->u.field.name);
+    }
+    /* a qualified head names its type: the receiver node carries no
+       value row, and the type ref names the namespace owner */
+    *head = recv ? lower_ref(c, recv) : NULL;
+    return *head && (*head)->kind == EK_SYM_TYPE && (*head)->symbol
+               && (*head)->station == EK_ST_QUALIFIED
+           ? member_scan(c, (*head)->symbol->name, (*head)->symbol->module,
+                         (*head)->symbol, callee->u.field.name)
+           : NULL;
+}
+
 /* A receiver-form member call: a function-valued field is the callee
    value, a derived reading lowers to its service, an open receiver the
    instantiation substituted concrete re-routes at the applied type,
@@ -348,11 +335,7 @@ lower_val member_call(lower_ctx *c, lower_scope *scope,
         const ek_symbol *fn = root_module_fn(c, callee->u.field.name);
 
         if (fn) {
-            call_form member = *form;
-
-            set_recv(c, scope, &member, recv, &e->u.call.args,
-                     lower_row_type(c, callee));
-            return direct_call(c, scope, e, fn, &member);
+            return recv_call(c, scope, e, callee, fn, recv, form);
         }
     }
     if (frow && frow->reading == EK_RD_UNKNOWN && !form->extra && rt) {
@@ -362,25 +345,10 @@ lower_val member_call(lower_ctx *c, lower_scope *scope,
             return v;
         }
     }
-    if (rt) {
-        ms = member_symbol(c, rt, callee->u.field.name);
-    } else {
-        /* a qualified head names its type: the receiver node carries
-           no value row, and the type ref names the namespace owner */
-        head = recv ? lower_ref(c, recv) : NULL;
-        ms = head && head->kind == EK_SYM_TYPE && head->symbol
-                 && head->station == EK_ST_QUALIFIED
-                 ? member_scan(c, head->symbol->name, head->symbol->module,
-                               head->symbol, callee->u.field.name)
-                 : NULL;
-    }
+    ms = member_target(c, rt, recv, callee, &head);
     if (ms) {
         if (rt) {
-            call_form member = *form;
-
-            set_recv(c, scope, &member, recv, &e->u.call.args,
-                     lower_row_type(c, callee));
-            return direct_call(c, scope, e, ms, &member);
+            return recv_call(c, scope, e, callee, ms, recv, form);
         }
         /* the head supplies namespace context, not a receiver value:
            the written arguments fill the signature's slots, receiver

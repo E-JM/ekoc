@@ -2,27 +2,16 @@
 
 #include "lower/internal.h"
 
-/* The structural hash service and the key-domain stamping. The hash
-   mirrors the equality service's shape walk: the family identity (the
-   typeinfo pointer) mixes in first, then each field's tag and payload
-   -- integers by value, floats by their bits with negative zero read
-   as plain zero and a NaN by its own bits, and a reference through the
-   child typeinfo's hash or, when the child carries none, the child's
+/* The structural hash service. The hash mirrors the equality
+   service's shape walk: the family identity (the typeinfo pointer)
+   mixes in first, then each field's tag and payload -- integers by
+   value, floats by their bits with negative zero read as plain zero
+   and a NaN by its own bits, and a reference through the child
+   typeinfo's hash or, when the child carries none, the child's
    address. Lists walk the spine and dictionaries and sets accumulate
    their entries order-insensitively, the way their equalities ignore
    order. One FNV-1a word step is the mixing primitive, and the
-   determinism it needs holds within one process run.
-
-   lower_key_pair names the hook pair a construction site passes the
-   runtime: the stamped family services for the record, tuple, and
-   algebraic domains, the minted container services for a list or a
-   dictionary standing as the key domain, and the runtime's default
-   pair for the scalar and text slots. lower_key_hooks stamps those
-   services onto the families that carry the domain's values, lazily
-   at the dict and set sites that build over the domain. A family
-   stamps once, so two instantiations of one generic family keep the
-   first domain's hooks. The domains whose derivation halts answer
-   zero, and the construction sites diagnose the refusal. */
+   determinism it needs holds within one process run. */
 
 /* The mixing step every generated hash shares, emitted once per unit
    ahead of the first body that calls it. */
@@ -43,10 +32,67 @@ static void emit_mix_helper(lower_ctx *c, lower_demit *d)
     lower_d_printf(d, "}\n\n");
 }
 
+/* The float payload mixes by its bits, negative zero read as plain
+   zero and a NaN by its own bits. */
+static void emit_float_mix(lower_ctx *c, lower_demit *d, const char *slot)
+{
+    c->uses_string_h = 1;
+    lower_d_printf(d, "    {\n");
+    lower_d_printf(d, "        double x = %s.as.f;\n", slot);
+    lower_d_printf(d, "        unsigned long b;\n\n");
+    lower_d_printf(d, "        if (x == 0.0) {\n");
+    lower_d_printf(d, "            x = 0.0;\n");
+    lower_d_printf(d, "        }\n");
+    lower_d_printf(d, "        memcpy(&b, &x, sizeof b);\n");
+    lower_d_printf(d, "        h = ek_hash_mix(h, b);\n");
+    lower_d_printf(d, "    }\n");
+}
+
+/* The text families hash their own bytes: no service exists to call,
+   and the runtime's key hash belongs to its table. */
+static void emit_text_mix(lower_demit *d, lower_scalar sk, const char *slot)
+{
+    int is_str = sk == EKSC_STRING;
+
+    lower_d_printf(d, "    {\n");
+    lower_d_printf(d, "        const unsigned char *ekp = (const "
+                      "unsigned char *)%s(%s.as.ref);\n",
+                   is_str ? "ek_str_cstr" : "ek_bytes_data", slot);
+    lower_d_printf(d, "        size_t ekn = %s(%s.as.ref);\n",
+                   is_str ? "ek_str_len" : "ek_bytes_len", slot);
+    lower_d_printf(d, "        size_t eki;\n\n");
+    lower_d_printf(d, "        for (eki = 0; eki < ekn; eki++)\n");
+    lower_d_printf(d, "            h = ek_hash_mix(h, "
+                      "(unsigned long)ekp[eki]);\n");
+    lower_d_printf(d, "    }\n");
+}
+
+/* A reference whose family carries no hash of its own keys on its
+   address, the identity fallback the key domains without per-value
+   families read. */
+static void emit_ref_mix(lower_ctx *c, lower_demit *d, const ek_type *t,
+                         const char *slot)
+{
+    const char *svc = t ? lower_dsvc_request(c, NULL, DSV_HASH, t) : NULL;
+
+    if (svc) {
+        lower_d_printf(d, "    h = ek_hash_mix(h, %s(%s));\n", svc, slot);
+        return;
+    }
+    lower_d_printf(d, "    if (%s.tag == EK_VAL_REF && %s.as.ref"
+                      " != NULL) {\n", slot, slot);
+    lower_d_printf(d, "        h = ek_hash_mix(h, "
+                      "(unsigned long)%s.as.ref);\n", slot);
+    lower_d_printf(d, "    } else {\n");
+    lower_d_printf(d, "        h = ek_hash_mix(h, "
+                      "(unsigned long)%s.as.u);\n", slot);
+    lower_d_printf(d, "    }\n");
+}
+
 /* The mixing statements over one slot read through the given
    expression: the tag first, then the payload in the slot's own form. */
 static void emit_slot_mix(lower_ctx *c, lower_demit *d, const ek_type *t,
-                   const char *slot)
+                          const char *slot)
 {
     lower_scalar sk = lower_scalar_kind(t);
 
@@ -67,58 +113,15 @@ static void emit_slot_mix(lower_ctx *c, lower_demit *d, const ek_type *t,
                        slot);
         return;
     case EKSC_FLOAT:
-        c->uses_string_h = 1;
-        lower_d_printf(d, "    {\n");
-        lower_d_printf(d, "        double x = %s.as.f;\n", slot);
-        lower_d_printf(d, "        unsigned long b;\n\n");
-        lower_d_printf(d, "        if (x == 0.0) {\n");
-        lower_d_printf(d, "            x = 0.0;\n");
-        lower_d_printf(d, "        }\n");
-        lower_d_printf(d, "        memcpy(&b, &x, sizeof b);\n");
-        lower_d_printf(d, "        h = ek_hash_mix(h, b);\n");
-        lower_d_printf(d, "    }\n");
+        emit_float_mix(c, d, slot);
         return;
     case EKSC_STRING:
-    case EKSC_BYTES: {
-        int is_str = sk == EKSC_STRING;
-
-        /* the text families hash their own bytes: no service exists to
-           call, and the runtime's key hash belongs to its table */
-        lower_d_printf(d, "    {\n");
-        lower_d_printf(d, "        const unsigned char *ekp = (const "
-                          "unsigned char *)%s(%s.as.ref);\n",
-                       is_str ? "ek_str_cstr" : "ek_bytes_data", slot);
-        lower_d_printf(d, "        size_t ekn = %s(%s.as.ref);\n",
-                       is_str ? "ek_str_len" : "ek_bytes_len", slot);
-        lower_d_printf(d, "        size_t eki;\n\n");
-        lower_d_printf(d, "        for (eki = 0; eki < ekn; eki++)\n");
-        lower_d_printf(d, "            h = ek_hash_mix(h, "
-                          "(unsigned long)ekp[eki]);\n");
-        lower_d_printf(d, "    }\n");
+    case EKSC_BYTES:
+        emit_text_mix(d, sk, slot);
         return;
-    }
-    default: {
-        const char *svc = t ? lower_dsvc_request(c, NULL, DSV_HASH, t)
-                            : NULL;
-
-        /* A reference whose family carries no hash of its own keys on
-           its address, the identity fallback the key domains without
-           per-value families read. */
-        if (svc) {
-            lower_d_printf(d, "    h = ek_hash_mix(h, %s(%s));\n", svc,
-                           slot);
-        } else {
-            lower_d_printf(d, "    if (%s.tag == EK_VAL_REF && %s.as.ref"
-                              " != NULL) {\n", slot, slot);
-            lower_d_printf(d, "        h = ek_hash_mix(h, "
-                              "(unsigned long)%s.as.ref);\n", slot);
-            lower_d_printf(d, "    } else {\n");
-            lower_d_printf(d, "        h = ek_hash_mix(h, "
-                              "(unsigned long)%s.as.u);\n", slot);
-            lower_d_printf(d, "    }\n");
-        }
+    default:
+        emit_ref_mix(c, d, t, slot);
         return;
-    }
     }
 }
 
@@ -255,6 +258,35 @@ static void emit_dict_hash(lower_ctx *c, lower_demit *d, const ek_type *t)
     lower_d_printf(d, "    return h;\n");
 }
 
+/* The nominal receiver: the algebraic dispatch, or the representation
+   walk over the family's fields; a nominal with neither mixes the
+   identity fallback. */
+static void emit_nominal_hash(lower_ctx *c, lower_demit *d, const ek_type *t)
+{
+    lower_variant *vs = NULL;
+    lower_gtype *g = NULL;
+    const char **fnames;
+    const ek_type **ftypes;
+    size_t nv = 0, nf;
+
+    if (lower_variants_of(c, NULL, t, &vs, &nv, 0)
+        || lower_shape_of(c, NULL, t, &fnames, &ftypes, &nf, &g)) {
+        emit_identity_mix(d);
+        if (vs) {
+            emit_adt_hash(c, d, vs, nv);
+        } else if (g && g->shape == GT_REC) {
+            emit_fields_hash(c, d, g->stem, fnames, ftypes, nf);
+        } else if (g) {
+            emit_fields_hash(c, d, g->stem, NULL, ftypes, nf);
+        } else {
+            lower_d_printf(d, "    return h;\n");
+        }
+        return;
+    }
+    emit_slot_mix(c, d, NULL, "v");
+    lower_d_printf(d, "    return h;\n");
+}
+
 void lower_dsvc_hash_emit(lower_ctx *c, const char *name, const ek_type *t)
 {
     lower_demit d;
@@ -262,8 +294,7 @@ void lower_dsvc_hash_emit(lower_ctx *c, const char *name, const ek_type *t)
     lower_gtype *g = NULL;
     const char **fnames;
     const ek_type **ftypes;
-    lower_variant *vs;
-    size_t nf, nv;
+    size_t nf;
 
     lower_d_begin(c, &d, &b);
     emit_mix_helper(c, &d);
@@ -296,162 +327,12 @@ void lower_dsvc_hash_emit(lower_ctx *c, const char *name, const ek_type *t)
             emit_slot_mix(c, &d, NULL, "v");
             lower_d_printf(&d, "    return h;\n");
         }
-    } else if (t->kind == EK_T_NOMINAL
-               && (lower_variants_of(c, NULL, t, &vs, &nv, 0)
-                   || lower_shape_of(c, NULL, t, &fnames, &ftypes, &nf,
-                                     &g))) {
-        emit_identity_mix(&d);
-        if (vs) {
-            emit_adt_hash(c, &d, vs, nv);
-        } else if (g && g->shape == GT_REC) {
-            emit_fields_hash(c, &d, g->stem, fnames, ftypes, nf);
-        } else if (g) {
-            emit_fields_hash(c, &d, g->stem, NULL, ftypes, nf);
-        } else {
-            lower_d_printf(&d, "    return h;\n");
-        }
+    } else if (t->kind == EK_T_NOMINAL) {
+        emit_nominal_hash(c, &d, t);
     } else {
         emit_slot_mix(c, &d, NULL, "v");
         lower_d_printf(&d, "    return h;\n");
     }
     lower_d_printf(&d, "}\n\n");
     lower_d_end(c, &b);
-}
-
-/* Stamps the eq and hash of the applied type onto the family, once:
-   the family carries its first stamping, and the typeinfo it names
-   joins the unit through the family's own emission. */
-static void stamp_family(lower_ctx *c, lower_gtype *g, const ek_type *t)
-{
-    if (!g || g->eq_name || g->hash_name) {
-        return;
-    }
-    g->eq_name = lower_dsvc_request(c, NULL, DSV_EQ, t);
-    g->hash_name = lower_dsvc_request(c, NULL, DSV_HASH, t);
-    if (!g->constructed && !g->shared) {
-        g->shared = 1; /* the typeinfo the hooks name joins the unit */
-    }
-}
-
-/* Stamps the record, tuple, or ctype representation the applied type
-   names, answering the family the stamping landed on. */
-static lower_gtype *stamp_shape(lower_ctx *c, const ek_type *t)
-{
-    lower_gtype *g = NULL;
-    const char **fnames;
-    const ek_type **ftypes;
-    size_t nf;
-
-    if (lower_shape_of(c, NULL, t, &fnames, &ftypes, &nf, &g) && g) {
-        stamp_family(c, g, t);
-    }
-    return g;
-}
-
-/* The stamped pair of the record, tuple, and nominal domains: the
-   services read back off the family the stamping landed on -- every
-   constructor of an algebraic type carries the same pair. Zero when
-   the domain has no family, a capability or handle whose derivation
-   halts. */
-static int stamp_pair(lower_ctx *c, const ek_type *t, const char **keq,
-                      const char **khash)
-{
-    lower_variant *vs;
-    lower_gtype *g = NULL;
-    size_t nv, i;
-
-    if (t->kind == EK_T_NOMINAL) {
-        if (lower_is_range(t)) {
-            const ek_type *elem = t->u.nominal.argc == 1
-                                      ? t->u.nominal.args[0] : NULL;
-
-            g = elem ? lower_range_family(c, lower_scalar_kind(elem)) : NULL;
-            if (g) {
-                stamp_family(c, g, t);
-            }
-        } else if (lower_variants_of(c, NULL, t, &vs, &nv, 0)) {
-            for (i = 0; i < nv; i++) {
-                stamp_family(c, lower_gtype_of_stem(c, vs[i].stem), t);
-            }
-            g = lower_gtype_of_stem(c, vs[0].stem);
-        } else if (t->u.nominal.sym && t->u.nominal.sym->decl) {
-            g = stamp_shape(c, t);
-        }
-    } else {
-        g = stamp_shape(c, t);
-    }
-    if (!g || !g->eq_name || !g->hash_name) {
-        return 0;
-    }
-    *keq = g->eq_name;
-    *khash = g->hash_name;
-    return 1;
-}
-
-/* The minted pair of a container domain: the services that walk the
-   container itself, named for its applied spelling. */
-static int mint_pair(lower_ctx *c, const ek_type *t, const char **keq,
-                     const char **khash)
-{
-    const char *q = lower_dsvc_request(c, NULL, DSV_EQ, t);
-    const char *h = lower_dsvc_request(c, NULL, DSV_HASH, t);
-
-    if (!q || !h) {
-        return 0;
-    }
-    *keq = q;
-    *khash = h;
-    return 1;
-}
-
-/* The hook pair a construction site passes the runtime over the key
-   domain: the family services the domain stamps for the record, tuple,
-   and algebraic shapes, the minted services for a container standing
-   as the domain -- a list, a dictionary, the runtime-backed set, or
-   the runtime-backed vector -- and the runtime's default pair for the
-   scalar and text slots. Zero when the domain keys nowhere -- the
-   refusal the construction sites diagnose. The names stand at the
-   default pair whatever the answer, so the drained unit still
-   compiles. */
-int lower_key_pair(lower_ctx *c, const ek_type *t, const char **keq,
-                   const char **khash)
-{
-    *keq = "ek_key_eq";
-    *khash = "ek_key_hash";
-    if (!t) {
-        return 1;
-    }
-    if (lower_scalar_kind(t) != EKSC_OTHER) {
-        return 1;
-    }
-    switch (t->kind) {
-    case EK_T_FN:
-        return 0; /* the backstop: a checked construction refuses an
-                     arrow domain before lower runs */
-    case EK_T_NEVER:
-        return 1; /* a Never key never answers: no value exists */
-    case EK_T_LIST:
-    case EK_T_DICT:
-        return mint_pair(c, t, keq, khash);
-    case EK_T_NOMINAL:
-        if (lower_is_set(t) || lower_is_vector(t)) {
-            return mint_pair(c, t, keq, khash);
-        }
-        return stamp_pair(c, t, keq, khash);
-    case EK_T_RECORD:
-    case EK_T_TUPLE:
-        return stamp_pair(c, t, keq, khash);
-    default:
-        return 1;
-    }
-}
-
-/* The key-domain stamping: whether the domain keys at all, stamping
-   its pair onto the families that carry its values along the way. */
-int lower_key_hooks(lower_ctx *c, const ek_type *t)
-{
-    const char *keq;
-    const char *khash;
-
-    return lower_key_pair(c, t, &keq, &khash);
 }

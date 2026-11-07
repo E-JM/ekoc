@@ -132,7 +132,9 @@ LOWER_SRC := \
 	src/lower/derived.c \
 	src/lower/derivedadt.c \
 	src/lower/derivedcall.c \
+	src/lower/derivedcmp.c \
 	src/lower/derivedeq.c \
+	src/lower/derivedord.c \
 	src/lower/derivedfrom.c \
 	src/lower/derivedhash.c \
 	src/lower/derivedjson.c \
@@ -140,8 +142,12 @@ LOWER_SRC := \
 	src/lower/derivedshow.c \
 	src/lower/derivedvec.c \
 	src/lower/derivedwith.c \
+	src/lower/demit.c \
 	src/lower/dsvcreg.c \
+	src/lower/dsvcspell.c \
+	src/lower/dsvcstamp.c \
 	src/lower/extcback.c \
+	src/lower/extproto.c \
 	src/lower/extern.c \
 	src/lower/extctype.c \
 	src/lower/extshape.c \
@@ -156,6 +162,7 @@ LOWER_SRC := \
 	src/lower/pattern.c \
 	src/lower/patlist.c \
 	src/lower/subst.c \
+	src/lower/shapeadapt.c \
 	src/lower/tce.c \
 	src/lower/type.c \
 	src/lower/typeemit.c \

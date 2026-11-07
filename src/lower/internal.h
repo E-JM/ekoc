@@ -334,14 +334,9 @@ struct lower_ctx {
     int oom;
 };
 
-/* derived.c: shared classification and emission plumbing. */
+/* demit.c: the writer of one service body. */
 void lower_d_begin(lower_ctx *c, lower_demit *d, ek_buf *b);
 void lower_d_end(lower_ctx *c, ek_buf *b);
-lower_scalar lower_scalar_kind(const ek_type *t);
-int lower_is_range(const ek_type *t);
-int lower_is_handle(const ek_type *t);
-int lower_is_set(const ek_type *t);
-int lower_is_vector(const ek_type *t);
 void lower_d_printf(lower_demit *d, const char *fmt, ...);
 const char *lower_d_temp(lower_demit *d);
 void lower_d_concat_lit(lower_demit *d, const char *indent, const char *acc,
@@ -349,6 +344,14 @@ void lower_d_concat_lit(lower_demit *d, const char *indent, const char *acc,
 void lower_d_concat_obj(lower_demit *d, const char *indent, const char *acc,
                         const char *part);
 const char *lower_d_cstr(lower_ctx *c, const char *s);
+
+/* derived.c: the derived services' classification, and the shape and
+   variant readers that feed the body emitters. */
+lower_scalar lower_scalar_kind(const ek_type *t);
+int lower_is_range(const ek_type *t);
+int lower_is_handle(const ek_type *t);
+int lower_is_set(const ek_type *t);
+int lower_is_vector(const ek_type *t);
 int lower_shape_of(lower_ctx *c, const ek_node *at, const ek_type *t,
                    const char ***fnames, const ek_type ***ftypes, size_t *nf,
                    lower_gtype **g);
@@ -364,7 +367,7 @@ const ek_type *lower_applied_type(lower_ctx *c, const ek_node *tnode,
 const ek_symbol *lower_type_symbol(lower_ctx *c, const char *mod,
                                    const char *name);
 
-/* call.c: the result type a derived-service call returns, when the
+/* dsvcreg.c: the result type a derived-service call returns, when the
    site's open receiver substitutes concrete under the instantiation
    being emitted -- the type the specialized body reads the call at.
    NULL when the site is not such a call. */
@@ -418,8 +421,8 @@ void lower_vec_tojson_emit(lower_ctx *c, lower_demit *d, const char *name,
 void lower_vec_fromjson_emit(lower_ctx *c, lower_demit *d, const char *name,
                              const ek_type *t);
 
-/* derivedeq.c, derivedhash.c, derivedshow.c, derivedjson.c: the body
-   emitters. */
+/* derivedeq.c, derivedord.c, derivedhash.c, derivedshow.c,
+   derivedjson.c: the body emitters. */
 void lower_dsvc_eq_emit(lower_ctx *c, const char *name, const ek_type *t);
 void lower_dsvc_ord_emit(lower_ctx *c, const char *name, const ek_type *t);
 void lower_dsvc_hash_emit(lower_ctx *c, const char *name, const ek_type *t);
@@ -429,7 +432,7 @@ void lower_dsvc_json_emit(lower_ctx *c, const char *name, const ek_type *t,
                           int from);
 void lower_dsvc_from_emit(lower_ctx *c, const char *name, const ek_type *t);
 
-/* derivedhash.c: the key-domain stamping. lower_key_pair names the
+/* dsvcstamp.c: the key-domain stamping. lower_key_pair names the
    hook pair a construction site passes the runtime over the key
    domain -- the stamped family services, the minted services of a
    container standing as the domain, or the runtime's default pair for
@@ -448,8 +451,9 @@ typedef enum {
     CF_MEMBER, CF_FREE, CF_QUALIFIED
 } lower_cmp_form;
 
-/* dsvcreg.c: the applied-type spelling the service names and the
+/* dsvcspell.c: the applied-type spelling the service names and the
    specialized function names share. */
+void spell_into(lower_ctx *c, ek_buf *b, const ek_type *t);
 const char *lower_spell_apply(lower_ctx *c, const ek_type *const *args,
                               size_t n);
 
@@ -462,8 +466,9 @@ lower_val lower_derived_call(lower_ctx *c, lower_scope *scope,
 lower_val lower_derived_with(lower_ctx *c, lower_scope *scope,
                              const ek_node *e, const ek_node *recv);
 const char *lower_derived_cmp(lower_ctx *c, const ek_node *e, ek_binop op);
-/* The service behind a comparison operator over the value layer's
-   object slots (String, Bytes); NULL keeps the runtime entry. */
+/* derivedcmp.c: the service behind a comparison operator over the
+   value layer's object slots (String, Bytes); NULL keeps the runtime
+   entry. */
 
 /* derivedcall.c: the service spelling behind a member name, -1 when
    the name is no service. */
@@ -595,9 +600,6 @@ void lower_emit_types(lower_ctx *c, ek_buf *unit);
 /* composite.c: constructors and composite literals. */
 lower_val lower_ctor_value(lower_ctx *c, const ek_node *e, const ek_ref *ref);
 
-/* The one-directional shape adaptation of one value: a nominal record
-   flowing into an anonymous record expectation rebuilds field by field;
-   any other pair comes back unchanged. */
 /* composite.c: the item machinery behind every literal. The walkers
    are shared with the container and constructor constructions of
    construct.c. */
@@ -614,13 +616,17 @@ lower_val lower_list_literal(lower_ctx *c, lower_scope *scope,
                              const ek_node *e);
 lower_val lower_dict_literal(lower_ctx *c, lower_scope *scope,
                              const ek_node *e);
-lower_val lower_shape_adapt(lower_ctx *c, lower_scope *scope, lower_val v,
-                            const ek_node *at, const ek_type *from,
-                            const ek_type *to);
 lower_val lower_ctor_apply(lower_ctx *c, lower_scope *scope,
                            const ek_node *e);
 lower_val lower_composite(lower_ctx *c, lower_scope *scope,
                           const ek_node *e);
+
+/* shapeadapt.c: the one-directional shape adaptation of one value: a
+   nominal record flowing into an anonymous record expectation rebuilds
+   field by field; any other pair comes back unchanged. */
+lower_val lower_shape_adapt(lower_ctx *c, lower_scope *scope, lower_val v,
+                            const ek_node *at, const ek_type *from,
+                            const ek_type *to);
 
 /* expr.c: expressions and construct naming for diagnostics. */
 lower_val lower_expr(lower_ctx *c, lower_scope *scope, const ek_node *e);
@@ -941,6 +947,11 @@ const char *lower_scalar_out_expr(lower_ctx *c, const lower_mshape *s,
 const char *lower_scalar_in_expr(lower_ctx *c, const lower_mshape *s,
                                  const char *r);
 const char *lower_ms_param_type(lower_ctx *c, const lower_mshape *s);
+
+/* extproto.c: the registry entry of one extern declaration, created
+   at its first call site and carrying its prototype and its bad flag;
+   NULL on an allocation failure. */
+lower_ext *extern_entry(lower_ctx *c, const ek_symbol *sym);
 
 /* extern.c: the native call path. lower_extern_call lowers one call
    whose reference denotes an extern declaration: the prototype joins

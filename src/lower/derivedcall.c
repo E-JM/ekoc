@@ -298,6 +298,50 @@ static lower_val discard_all(lower_ctx *c, lower_scope *scope,
     return lower_val_unit();
 }
 
+/* The service body of the call: a comparison over the scalar slots
+   rides the runtime's numeric entries and needs no service; every
+   other call requests its family, and a refused type diagnoses and
+   discards the call. 1 carries on, with *svc NULL at the numeric
+   entries. */
+static int call_service(lower_ctx *c, lower_scope *scope,
+                        const ek_node *e, const ek_node *callee,
+                        const char *name, lower_dsvc_kind kind,
+                        const ek_type *spec, int family,
+                        lower_cmp_form form, lower_scalar *sk,
+                        const char **svc)
+{
+    *sk = lower_scalar_kind(spec);
+    *svc = NULL;
+    if (family && num_slot(*sk, family == 2)) {
+        return 1; /* the runtime comparison entries answer directly */
+    }
+    *svc = lower_dsvc_request(c, e, kind, spec);
+    if (*svc) {
+        return 1;
+    }
+    lower_error(c, e, "the derived `%s` has no lowering here", name);
+    discard_all(c, scope, e, callee, form, spec);
+    return 0;
+}
+
+/* The service call line: the display channels read their object
+   through the reference slot, and the arguments die once it stands. */
+static lower_val svc_call(lower_ctx *c, lower_scope *scope,
+                          lower_dsvc_kind kind, const char *svc,
+                          const char **argv, const int *owned, size_t n)
+{
+    const char *t = lower_temp(c, scope);
+
+    lower_pad(c);
+    if (kind == DSV_SHOW || kind == DSV_INSPECT) {
+        lower_emitf(c, "ek_val %s = ek_val_ref(%s(%s));\n", t, svc, argv[0]);
+    } else {
+        lower_emitf(c, "ek_val %s = %s(%s);\n", t, svc, argv[0]);
+    }
+    release_temps(c, argv, owned, n);
+    return (lower_val){ t, 1 };
+}
+
 lower_val lower_derived_call(lower_ctx *c, lower_scope *scope,
                              const ek_node *e, const ek_node *callee,
                              const ek_ck_row *frow, lower_cmp_form form)
@@ -313,20 +357,9 @@ lower_val lower_derived_call(lower_ctx *c, lower_scope *scope,
     int *owned = NULL;
     size_t n, want;
     int family = cmp_family(name);
-    const char *t;
     lower_scalar sk;
 
-    if (strcmp(name, "show") == 0) {
-        kind = DSV_SHOW;
-    } else if (strcmp(name, "inspect") == 0) {
-        kind = DSV_INSPECT;
-    } else if (strcmp(name, "to_json") == 0) {
-        kind = DSV_TOJSON;
-    } else if (strcmp(name, "from_json") == 0) {
-        kind = DSV_FROMJSON;
-    } else if (family) {
-        kind = family == 1 ? DSV_EQ : DSV_ORD;
-    } else {
+    if (!lower_service_kind(name, &kind)) {
         return (lower_val){ NULL, 0 };
     }
     spec = spec_type(c, e, callee, frow, form, name);
@@ -338,16 +371,9 @@ lower_val lower_derived_call(lower_ctx *c, lower_scope *scope,
         lower_error(c, e, "the call of `%s` is malformed", name);
         return discard_all(c, scope, e, callee, form, spec);
     }
-    sk = lower_scalar_kind(spec);
-    if (family && num_slot(sk, family == 2)) {
-        svc = NULL; /* the runtime comparison entries answer directly */
-    } else {
-        svc = lower_dsvc_request(c, e, kind, spec);
-        if (!svc) {
-            lower_error(c, e, "the derived `%s` has no lowering here",
-                        name);
-            return discard_all(c, scope, e, callee, form, spec);
-        }
+    if (!call_service(c, scope, e, callee, name, kind, spec, family, form,
+                      &sk, &svc)) {
+        return lower_val_unit();
     }
     n = (size_t)(form == CF_MEMBER) + want;
     argv = call_temps(c, scope, e, callee, form, n, &owned,
@@ -361,37 +387,5 @@ lower_val lower_derived_call(lower_ctx *c, lower_scope *scope,
         release_temps(c, argv, owned, n);
         return out;
     }
-    t = lower_temp(c, scope);
-    lower_pad(c);
-    if (kind == DSV_SHOW || kind == DSV_INSPECT) {
-        lower_emitf(c, "ek_val %s = ek_val_ref(%s(%s));\n", t, svc, argv[0]);
-    } else {
-        lower_emitf(c, "ek_val %s = %s(%s);\n", t, svc, argv[0]);
-    }
-    release_temps(c, argv, owned, n);
-    return (lower_val){ t, 1 };
-}
-
-/* The comparison service of a binary operator over the value layer's
-   two object slots: String and Bytes, whose payloads the runtime's
-   numeric comparisons cannot read. Every other operator domain stays
-   on the runtime entries; equality over the remaining types arrives as
-   the derived member call. NULL hands the operator back. */
-const char *lower_derived_cmp(lower_ctx *c, const ek_node *e, ek_binop op)
-{
-    const ek_type *t = e->u.binary.lhs ? lower_row_type(c, e->u.binary.lhs)
-                                       : NULL;
-    lower_scalar sk = t ? lower_scalar_kind(t) : EKSC_OTHER;
-
-    if (sk != EKSC_STRING && sk != EKSC_BYTES) {
-        return NULL;
-    }
-    if (op == EK_BIN_EQ || op == EK_BIN_NE) {
-        return lower_dsvc_request(c, e, DSV_EQ, t);
-    }
-    if (op == EK_BIN_LT || op == EK_BIN_LE || op == EK_BIN_GT
-        || op == EK_BIN_GE) {
-        return lower_dsvc_request(c, e, DSV_ORD, t);
-    }
-    return NULL;
+    return svc_call(c, scope, kind, svc, argv, owned, n);
 }
