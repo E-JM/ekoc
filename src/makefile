@@ -122,6 +122,7 @@ LOWER_SRC := \
 	src/lower/derived.c \
 	src/lower/derivedadt.c \
 	src/lower/derivedcall.c \
+	src/lower/derivedcmp.c \
 	src/lower/derivedeq.c \
 	src/lower/derivedord.c \
 	src/lower/derivedfrom.c \

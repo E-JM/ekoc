@@ -466,8 +466,9 @@ lower_val lower_derived_call(lower_ctx *c, lower_scope *scope,
 lower_val lower_derived_with(lower_ctx *c, lower_scope *scope,
                              const ek_node *e, const ek_node *recv);
 const char *lower_derived_cmp(lower_ctx *c, const ek_node *e, ek_binop op);
-/* The service behind a comparison operator over the value layer's
-   object slots (String, Bytes); NULL keeps the runtime entry. */
+/* derivedcmp.c: the service behind a comparison operator over the
+   value layer's object slots (String, Bytes); NULL keeps the runtime
+   entry. */
 
 /* derivedcall.c: the service spelling behind a member name, -1 when
    the name is no service. */
