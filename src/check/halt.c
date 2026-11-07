@@ -105,6 +105,23 @@ static void kid_push(ck_ctx *c, halt_graph *g, size_t row)
     g->kids[g->nk++] = row;
 }
 
+/* The element the compiler-supplied set and vector placeholders
+   directly contain: the two runtime-backed containers carry no
+   declaration whose representation or payloads could be read, so
+   their single argument is the only type they hold. */
+static int placeholder_element(const ek_type *t, const ek_type **elem)
+{
+    if (!t->u.nominal.sym || t->u.nominal.sym->decl
+        || t->u.nominal.argc != 1) {
+        return 0;
+    }
+    if (!ck_is_std(t, "Set") && !ck_is_std(t, "Vector")) {
+        return 0;
+    }
+    *elem = t->u.nominal.args[0];
+    return 1;
+}
+
 /* The nodes a nominal directly contains: its representation, or the
    constructor payloads with the instance's arguments applied. */
 static void nominal_children(ck_ctx *c, halt_graph *g, const ek_type *t)
@@ -120,6 +137,14 @@ static void nominal_children(ck_ctx *c, halt_graph *g, const ek_type *t)
     if (repr) {
         kid_push(c, g, halt_add(c, g, repr));
         return;
+    }
+    {
+        const ek_type *elem;
+
+        if (placeholder_element(t, &elem)) {
+            kid_push(c, g, halt_add(c, g, elem));
+            return;
+        }
     }
     d = ck_decl_of(c, t->u.nominal.sym);
     if (!d) {
@@ -305,6 +330,17 @@ void ck_no_eq_error(ck_ctx *c, const ek_node *at, const ek_type *t)
              "handles, functions, and ctypes carrying C.Ptr.Void have "
              "no `eq` (Clause 9.8.4)",
              ck_type_name(c, t));
+}
+
+/* The key-domain rule at a construction site: the pair a dictionary
+   or a set builds over its domain keys by the domain's own equality,
+   so the judgment is the equality halt itself. A domain the site does
+   not determine rides the obligation record and is decided at the
+   type the site takes. */
+void ck_key_domain_error(ck_ctx *c, const ek_node *at, const ek_type *t)
+{
+    ck_req_note(c, at, t, "eq");
+    ck_no_eq_error(c, at, t);
 }
 
 void ck_json_shape_error(ck_ctx *c, const ek_node *at, const ek_type *t)

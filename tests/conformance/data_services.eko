@@ -6,6 +6,7 @@ import std/time
 
 Sex: type = Man | Woman
 Profile: type = [name: String, sex: Sex]
+Token: type = Word String | Num Int
 
 bytes_text: test =
     b := "héllo".to_bytes()
@@ -44,6 +45,17 @@ json_tagging: test =
     jn: Json = ok_num.to_json()
     assert(Json.show(jn).contains("\"Ok\""))
     assert_eq(Json.parse(Json.show(jn)), Ok jn)
+
+json_adt_decode: test =
+    man: Sex = Man
+    assert_eq(Sex.from_json(man.to_json()), Ok man)
+    assert_eq(Sex.from_json(Json.parse("\"Woman\"").unwrap()), Ok Woman)
+    assert(Sex.from_json(Json.parse("\"Alien\"").unwrap()).is_err())
+    w: Token = Word "hi"
+    assert_eq(Token.from_json(w.to_json()), Ok w)
+    n: Token = Num 7
+    assert_eq(Token.from_json(n.to_json()), Ok n)
+    assert(Token.from_json(Json.parse("\{\"Sep\":1}").unwrap()).is_err())
 
 json_errors: test =
     assert(Json.parse("not json").is_err())

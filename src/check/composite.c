@@ -216,6 +216,9 @@ static const ek_type *empty_literal(ck_ctx *c, const ek_node *e,
                                     const ek_type *exp, int allow_partial)
 {
     if (exp->kind == EK_T_LIST || exp->kind == EK_T_DICT) {
+        if (exp->kind == EK_T_DICT) {
+            ck_key_domain_error(c, e, exp->u.dict.key);
+        }
         return exp;
     }
     if (exp->kind == EK_T_RECORD) {
@@ -268,6 +271,7 @@ static const ek_type *composite_colons(ck_ctx *c, const ek_node *e,
         }
     }
     if (exp->kind == EK_T_DICT) {
+        ck_key_domain_error(c, e, exp->u.dict.key);
         for (i = 0; i < e->u.kids.count; i++) {
             const ek_node *item = e->u.kids.data[i];
 

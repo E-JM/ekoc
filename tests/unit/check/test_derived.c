@@ -339,9 +339,7 @@ static void json_halts(void)
 /* The List and Dict type heads are the unapplied spellings of the
    structural composites: a service written at the head derives over
    the structural shape the arguments determine, with the link type
-   naming the composite and not the placeholder, and a non-string
-   dictionary key halts at the head form as it does at the receiver
-   form. */
+   naming the composite and not the placeholder. */
 static void head_over_containers(void)
 {
     cfx f;
@@ -395,12 +393,71 @@ static void head_over_containers(void)
              && row->type->u.fn.result->u.nominal.args[0]->kind
                  == EK_T_DICT);
     cfx_end(&f);
+}
+
+/* A non-string dictionary key halts the JSON mapping at the head form
+   as it does at the receiver form. */
+static void head_json_key_halt(void)
+{
+    cfx f;
 
     cfx_begin(&f,
               "d: [Int]String = {1: \"a\"}\n"
               "j: Json = Dict.to_json(d)\n");
     EK_CHECK_U64(cfx_errors(&f), 1);
     EK_CHECK(cfx_code_at_line(&f, "E-json-shape", 2));
+    cfx_end(&f);
+}
+
+/* The construction sites that mint a key pair answer the same halt
+   the .eq member answers: a dictionary literal refuses a key domain
+   without a derivation, with entries or empty, and the set-building
+   row refuses a function element at the call, whichever of the list
+   argument and the expected set determines the domain. */
+static void key_domain_constructions(void)
+{
+    cfx f;
+
+    cfx_begin(&f,
+              "g: (n: Int) -> Int = n\n"
+              "f: (v: Vector ((Int) -> Int)) -> Int =\n"
+              "    d: [Vector ((Int) -> Int)]Int = {v: 1}\n"
+              "    d.length()\n");
+    EK_CHECK(cfx_code_at_line(&f, "E-no-eq", 3));
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "f: () -> Int =\n"
+              "    d: [Vector ((Int) -> Int)]Int = {}\n"
+              "    d.length()\n");
+    EK_CHECK(cfx_code_at_line(&f, "E-no-eq", 2));
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "g: (n: Int) -> Int = n\n"
+              "f: (xs: []((Int) -> Int)) -> Bool =\n"
+              "    s: Set ((Int) -> Int) = Set.of(xs)\n"
+              "    s.length() == 1\n");
+    EK_CHECK(cfx_code_at_line(&f, "E-no-eq", 3));
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "g: (n: Int) -> Int = n\n"
+              "f: () -> Bool =\n"
+              "    s: Set ((Int) -> Int) = Set.of({})\n"
+              "    s.length() == 0\n");
+    EK_CHECK(cfx_code_at_line(&f, "E-no-eq", 3));
+    cfx_end(&f);
+
+    /* A key domain with a derivation constructs, with entries or
+       empty. */
+    cfx_begin(&f,
+              "f: () -> Bool =\n"
+              "    d: [[]Int]String = {{1}: \"a\"}\n"
+              "    e: [Vector Int]String = {}\n"
+              "    s: Set Int = Set.of({1, 2})\n"
+              "    d.length() == 1 && e.length() == 0 && s.length() == 2\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
     cfx_end(&f);
 }
 
@@ -474,6 +531,8 @@ int main(void)
     json_derived();
     json_core_and_composites();
     head_over_containers();
+    head_json_key_halt();
+    key_domain_constructions();
     json_halts();
     equality_and_order_families();
     return ek_test_report("check/derived");

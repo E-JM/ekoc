@@ -48,6 +48,8 @@ vector_keys: test =
     assert_eq(d.get(Vector.of({1, 2, 3})), None)
     r := d.remove(Vector.of({1, 2}))
     assert_eq(r.length(), 0)
+    d := r.insert(Vector.of({}), "empty")
+    assert_eq(d.get(Vector.of({})), Some "empty") // the empty vector keys
 
 vector_set_elements: test =
     a: Vector Int = Vector.of({1, 2})

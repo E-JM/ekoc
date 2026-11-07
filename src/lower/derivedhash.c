@@ -451,8 +451,10 @@ int lower_key_pair(lower_ctx *c, const ek_type *t, const char **keq,
     }
     switch (t->kind) {
     case EK_T_FN:
+        return 0; /* the backstop: a checked construction refuses an
+                     arrow domain before lower runs */
     case EK_T_NEVER:
-        return 0;
+        return 1; /* a Never key never answers: no value exists */
     case EK_T_LIST:
     case EK_T_DICT:
         return mint_pair(c, t, keq, khash);

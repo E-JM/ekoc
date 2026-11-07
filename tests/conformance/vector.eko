@@ -114,3 +114,13 @@ json_record_round_trip: test =
     h: Holder = {v: Vector.of({4, 5})}
     assert_eq(Holder.from_json(h.to_json()), Ok h)
     assert_eq(Json.show(h.to_json()), "\{\"v\":[4,5]}")
+
+vector_record_show: test =
+    v: Vector Holder = Vector.of({{v: Vector.of({1, 2})}, {v: Vector.of({3})}})
+    assert_eq(show(v), "\{\{v: \{1, 2}}, \{v: \{3}}}")
+
+json_result_payload: test =
+    v: Vector Int = Vector.of({1, 2})
+    r: Result (Vector Int) String = Ok v
+    j: Json = r.to_json()
+    assert_eq(Result.from_json(j), Ok r)

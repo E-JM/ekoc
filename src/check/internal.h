@@ -449,6 +449,7 @@ int ck_is_handle(const ek_type *t); /* File, Scope, Task: opaque
 int ck_no_eq(ck_ctx *c, const ek_type *t); /* the eq derivation halts
                                               here */
 void ck_no_eq_error(ck_ctx *c, const ek_node *at, const ek_type *t);
+void ck_key_domain_error(ck_ctx *c, const ek_node *at, const ek_type *t);
 int ck_no_json(ck_ctx *c, const ek_type *t); /* the JSON mapping halts
                                                 here */
 void ck_json_shape_error(ck_ctx *c, const ek_node *at, const ek_type *t);

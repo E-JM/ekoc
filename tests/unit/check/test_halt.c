@@ -117,6 +117,41 @@ static void case_generic_payload(void)
     cfx_end(&f);
 }
 
+/* The compiler-supplied set and vector placeholders carry their one
+   argument into the graph: a function or a handle element halts the
+   equality and JSON derivations at the container, as the same list
+   shape does, while a determined element keeps them. */
+static void case_placeholder_containers(void)
+{
+    cfx f;
+
+    cfx_begin(&f,
+              "f: (v: Vector ((Int) -> Int)) -> Bool = v.eq(v)\n");
+    EK_CHECK(cfx_has_code(&f, "E-no-eq"));
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "f: (s: Set ((Int) -> Int)) -> Bool = s.eq(s)\n");
+    EK_CHECK(cfx_has_code(&f, "E-no-eq"));
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "f: (v: Vector ((Int) -> Int)) -> Json = v.to_json()\n");
+    EK_CHECK(cfx_has_code(&f, "E-json-shape"));
+    cfx_end(&f);
+
+    cfx_begin(&f, "f: (v: Vector File) -> Json = v.to_json()\n");
+    EK_CHECK(cfx_has_code(&f, "E-json-shape"));
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "f: (v: Vector Int) -> Bool = v.eq(v)\n"
+              "g: (v: Vector Int) -> Json = v.to_json()\n"
+              "h: (s: Set Int) -> Bool = s.eq(s)\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+}
+
 /* The JSON form wants a string key; any other key halts whatever the
    value is. */
 static void case_json_keys(void)
@@ -158,6 +193,7 @@ int main(void)
     case_deep_json();
     case_recursive();
     case_generic_payload();
+    case_placeholder_containers();
     case_json_keys();
     case_handle_json();
     return ek_test_report("check/halt");

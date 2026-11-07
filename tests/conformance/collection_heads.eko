@@ -49,3 +49,11 @@ head_element_shape: test =
     assert_eq(Json.show(j), "[[1,2],[3]]")
     r: Result ([][]Int) ParseError = List.from_json(j)
     assert_eq(r, Ok xss)
+
+vector_head_services: test =
+    a: Vector Int = Vector.of({1, 2})
+    b: Vector Int = Vector.of({1, 2})
+    assert(Vector.eq(a, b))
+    assert_eq(Vector.show(a), "\{1, 2}")
+    j: Json = Vector.to_json(a)
+    assert_eq(Json.show(j), "[1,2]")

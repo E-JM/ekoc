@@ -135,6 +135,29 @@ static const ek_type *call_with(ck_ctx *c, const ek_node *e,
     return result;
 }
 
+/* The Set.of row builds the set over the element domain the list
+   argument, or the expected set, determines, and the set keys its
+   elements by that domain's own equality: the halt judgment answers
+   at the call, with a domain the call leaves open riding the
+   obligation record to the type the call takes. head is the type head
+   of the qualified spelling, NULL for any other reading. */
+static void set_of_key_domain(ck_ctx *c, const ek_node *e,
+                              const ek_node *callee, const ek_type *head,
+                              const ek_type *out)
+{
+    const ek_type *r = ck_prune(out);
+
+    if (!head || !ck_is_std(head, "Set")
+        || strcmp(callee->u.field.name, "of") != 0) {
+        return;
+    }
+    if (!r || r->kind != EK_T_NOMINAL || r->u.nominal.argc != 1
+        || !ck_is_std(r, "Set")) {
+        return;
+    }
+    ck_key_domain_error(c, e, r->u.nominal.args[0]);
+}
+
 /* A receiver-chain call: the link is typed at the receiver, and a
    function-valued field calls its value. `pre` reuses a walk the
    caller already made. */
@@ -176,8 +199,12 @@ static const ek_type *call_member_walk(ck_ctx *c, const ek_node *e,
         /* Namespace, module, derived, and opaque readings all take
            the receiver first; a type head supplies namespace context,
            not an argument. */
-        return call_fn(c, e, t, callee->u.field.name, w.recv,
-                       qualified ? head : NULL, &e->u.call.args, 0, implicit);
+        const ek_type *out = call_fn(c, e, t, callee->u.field.name, w.recv,
+                                     qualified ? head : NULL,
+                                     &e->u.call.args, 0, implicit);
+
+        set_of_key_domain(c, e, callee, head, out);
+        return out;
     }
     if (pt && pt->kind == EK_T_FN) {
         return call_fn(c, e, t, callee->u.field.name, NULL, NULL,
