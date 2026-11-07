@@ -114,6 +114,83 @@ static int raw_has_delimiter(const raw_line *ln)
     return 0;
 }
 
+/* Gathers the content lines through the closing delimiter. Returns 1
+   when closed, 0 on arena exhaustion, -1 when the literal was
+   diagnosed inside and no token is owed. */
+static int raw_scan_lines(lex_ctx *c, raw_line **lines, size_t *nlines,
+                          size_t *cap, int sline, int scol)
+{
+    for (;;) {
+        raw_line ln;
+
+        if (ctx_byte(c, 0) < 0) {
+            str_unterminated(c, sline, scol);
+            return -1;
+        }
+        raw_scan_line(c, &ln, 1);
+        if (*nlines == *cap) {
+            *lines = raw_grow(c, *lines, cap, *nlines);
+            if (!*lines) {
+                return 0;
+            }
+        }
+        (*lines)[(*nlines)++] = ln;
+        if (!ln.blank && raw_is_closer(&ln)) {
+            return 1;
+        }
+        if (raw_has_delimiter(&ln)) {
+            ctx_error(c, "E-syntax", sline, scol,
+                      "a raw string's content may not contain its "
+                      "delimiter, and no escape exists");
+            raw_skip(c);
+            return -1;
+        }
+        if (!raw_newline(c)) {
+            str_unterminated(c, sline, scol);
+            return -1;
+        }
+    }
+}
+
+/* The common indent of the gathered lines: the closer rides as the
+   last line, its indent counts toward the common one, and a blank
+   line constrains nothing. */
+static size_t raw_strip(const raw_line *lines, size_t nlines)
+{
+    size_t strip = lines[nlines - 1].indent;
+    size_t i;
+
+    for (i = 0; i + 1 < nlines; i++) {
+        if (!lines[i].blank && lines[i].indent < strip) {
+            strip = lines[i].indent;
+        }
+    }
+    return strip;
+}
+
+/* Joins the content lines under the common indent; a blank line
+   yields an empty line of content. */
+static int raw_join(lex_ctx *c, gbuf *seg, const raw_line *lines,
+                    size_t nlines, size_t strip)
+{
+    size_t i, ncontent = nlines - 1;
+
+    for (i = 0; i < ncontent; i++) {
+        size_t from = lines[i].indent < strip ? lines[i].indent : strip;
+        size_t take = lines[i].blank ? 0 : lines[i].len - from;
+
+        if (i > 0 && !gbuf_char(seg, '\n')) {
+            ctx_oom(c);
+            return 0;
+        }
+        if (take && !gbuf_put(seg, lines[i].text + from, take)) {
+            ctx_oom(c);
+            return 0;
+        }
+    }
+    return 1;
+}
+
 /* The raw string: three quotes, a line break, content lines, and a
    closing delimiter alone on its line. No escape and no interpolation
    exist inside, the common indent of the content lines and the closing
@@ -123,10 +200,10 @@ static int raw_has_delimiter(const raw_line *ln)
 int lex_raw_string(lex_ctx *c, gbuf *out)
 {
     int sline = c->line, scol = c->col;
-    gbuf seg, parts;
     raw_line *lines = NULL;
-    size_t nlines = 0, cap = 0, i, strip, ncontent;
-    int closed = 0;
+    size_t nlines = 0, cap = 0;
+    gbuf seg, parts;
+    int r;
 
     c->pos += 3;
     c->col += 3;
@@ -141,63 +218,17 @@ int lex_raw_string(lex_ctx *c, gbuf *out)
         str_unterminated(c, sline, scol);
         return 1;
     }
-    for (;;) {
-        raw_line ln;
-
-        if (ctx_byte(c, 0) < 0) {
-            break;
-        }
-        raw_scan_line(c, &ln, 1);
-        if (nlines == cap) {
-            lines = raw_grow(c, lines, &cap, nlines);
-            if (!lines) {
-                return 0;
-            }
-        }
-        lines[nlines++] = ln;
-        if (!ln.blank && raw_is_closer(&ln)) {
-            closed = 1;
-            break;
-        }
-        if (raw_has_delimiter(&ln)) {
-            ctx_error(c, "E-syntax", sline, scol,
-                      "a raw string's content may not contain its "
-                      "delimiter, and no escape exists");
-            raw_skip(c);
-            return 1;
-        }
-        if (!raw_newline(c)) {
-            break;
-        }
-    }
-    if (!closed) {
-        str_unterminated(c, sline, scol);
-        return 1;
-    }
-    /* The closer rides as the last line: its indent counts toward the
-       common one, and the content is every line before it. A blank
-       line constrains nothing and yields an empty line of content. */
-    strip = lines[nlines - 1].indent;
-    for (i = 0; i + 1 < nlines; i++) {
-        if (!lines[i].blank && lines[i].indent < strip) {
-            strip = lines[i].indent;
-        }
-    }
     gbuf_init(&seg, c->arena);
     gbuf_init(&parts, c->arena);
-    ncontent = nlines - 1;
-    for (i = 0; i < ncontent; i++) {
-        size_t from = lines[i].indent < strip ? lines[i].indent : strip;
-        size_t take = lines[i].blank ? 0 : lines[i].len - from;
-
-        if (i > 0 && !gbuf_char(&seg, '\n')) {
-            ctx_oom(c);
-            return 0;
-        }
-        if (take && !gbuf_put(&seg, lines[i].text + from, take)) {
-            ctx_oom(c);
-            return 0;
-        }
+    r = raw_scan_lines(c, &lines, &nlines, &cap, sline, scol);
+    if (r == 0) {
+        return 0;
+    }
+    if (r < 0) {
+        return 1;
+    }
+    if (!raw_join(c, &seg, lines, nlines, raw_strip(lines, nlines))) {
+        return 0;
     }
     return str_emit(c, out, &seg, &parts, 1, sline, scol);
 }

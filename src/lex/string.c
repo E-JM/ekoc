@@ -245,6 +245,36 @@ static void recover_at_bracket(lex_ctx *c, int have_bound, size_t pos,
     }
 }
 
+/* One body byte other than an end of line, the closing quote, or a
+   first bracket: an escape, a slot, a stray '}', or a cooked scalar.
+   Returns 1 to continue, 0 on arena exhaustion, -1 when the literal
+   ends here unconsumed and the caller owes the unterminated
+   diagnostic, -2 when the fault is already diagnosed. */
+static int literal_byte(lex_ctx *c, gbuf *seg, gbuf *parts)
+{
+    int b = ctx_byte(c, 0);
+
+    if (b == '\r') {
+        return lex_consume_cr(c) ? -1 : 1;
+    }
+    if (b == '\\') {
+        return string_escape(c, seg);
+    }
+    if (b == '{') {
+        return open_slot(c, seg, parts);
+    }
+    if (b == '}') {
+        if (!gbuf_char(seg, '}')) {
+            ctx_oom(c);
+            return 0;
+        }
+        c->pos++;
+        c->col++;
+        return 1;
+    }
+    return cook_scalar(c, seg) ? 1 : 0;
+}
+
 int lex_string_literal(lex_ctx *c, gbuf *out)
 {
     int sline = c->line, scol = c->col;
@@ -275,23 +305,7 @@ int lex_string_literal(lex_ctx *c, gbuf *out)
             bound_pos = c->pos;
             bound_col = c->col;
         }
-        if (b == '\r') {
-            r = lex_consume_cr(c) ? -1 : 1;
-        } else if (b == '\\') {
-            r = string_escape(c, &seg);
-        } else if (b == '{') {
-            r = open_slot(c, &seg, &parts);
-        } else if (b == '}') {
-            if (!gbuf_char(&seg, '}')) {
-                ctx_oom(c);
-                return 0;
-            }
-            c->pos++;
-            c->col++;
-            continue;
-        } else {
-            r = cook_scalar(c, &seg) ? 1 : 0;
-        }
+        r = literal_byte(c, &seg, &parts);
         if (r < 0) {
             if (r == -1) {
                 recover_at_bracket(c, have_bound, bound_pos, bound_col);
