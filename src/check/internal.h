@@ -460,7 +460,8 @@ void ck_reconcile(ck_ctx *c, const ek_node *at, const ek_type *bound,
                   const ek_node *val);
 
 /* pattern.c: pattern typing. patbind.c: or-patterns and the
-   binding-shape judgments. */
+   binding-shape judgments. irrefutable.c: the value binding's
+   irrefutability judgment. */
 int ck_invert_pattern(const ek_node *pat);
 const ek_type *ck_invert_binding(ck_ctx *c, const ek_node *m,
                                   const ek_node *pat, int top);
