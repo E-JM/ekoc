@@ -201,13 +201,69 @@ static int all_catchall_at(const ex_state *st, size_t pos)
     return 1;
 }
 
-/* One walk step at column `pos`. */
+/* A nominal column: the variants split over the constructors, a
+   record or tuple right-hand side rewrites the column to its
+   representation, and anything else is a scalar. */
+static int nominal_branch(ck_ctx *c, ex_state *st, size_t pos, ex_memo *memo,
+                          int depth, const ek_type *t)
+{
+    const ck_decl *d;
+    const ek_type *repr;
+    int covered = 1;
+    size_t k;
+
+    if (!t->u.nominal.sym) {
+        return ex_scalar_branch(c, st, pos, memo, depth);
+    }
+    d = ck_decl_of(c, t->u.nominal.sym);
+    if (d && d->rhs == EK_TYPE_RHS_VARIANTS && d->nctors) {
+        for (k = 0; k < d->nctors && covered; k++) {
+            covered = ex_ctor_branch(c, st, pos, memo, depth, d->ctors[k]);
+        }
+        return covered;
+    }
+    if (d && (d->rhs == EK_TYPE_RHS_RECORD || d->rhs == EK_TYPE_RHS_TUPLE)
+        && (repr = ck_decl_repr(c, t)) && repr != t) {
+        st->cols[pos] = repr;
+        return covers_walk(c, st, pos, memo, depth + 1);
+    }
+    return ex_scalar_branch(c, st, pos, memo, depth);
+}
+
+/* The first constrained column splits by its type's kind. */
+static int walk_split(ck_ctx *c, ex_state *st, size_t pos, ex_memo *memo,
+                      int depth, const ek_type *t)
+{
+    switch (t->kind) {
+    case EK_T_FN:
+    case EK_T_DICT:
+    case EK_T_UNIT:
+    case EK_T_NEVER:
+        /* No pattern form but a catch-all matches these. */
+        if (!all_catchall_at(st, pos)) {
+            return 0;
+        }
+        return covers_walk(c, st, pos + 1, memo, depth + 1);
+    case EK_T_LIST:
+        return ex_list_branch(c, st, pos, memo, depth);
+    case EK_T_TUPLE:
+    case EK_T_RECORD:
+        return ex_shape_branch(c, st, pos, memo, depth, t);
+    case EK_T_NOMINAL:
+        return nominal_branch(c, st, pos, memo, depth, t);
+    default:
+        return ex_scalar_branch(c, st, pos, memo, depth);
+    }
+}
+
+/* One walk step at column `pos`: skip the columns every row answers
+   with a catch-all, consult the memo, and split the first constrained
+   column by its type's kind. */
 int covers_walk(ck_ctx *c, ex_state *st, size_t pos, ex_memo *memo,
                        int depth)
 {
     const ek_type *t;
-    const ck_decl *d;
-    int hit, covered = 1;
+    int covered;
 
     if (c->oom) {
         return 1;
@@ -224,61 +280,15 @@ int covers_walk(ck_ctx *c, ex_state *st, size_t pos, ex_memo *memo,
     if (depth > EXH_MAX_DEPTH) {
         return 0;
     }
-    hit = memo_get(memo, st, pos);
-    if (hit >= 0) {
-        return hit;
+    covered = memo_get(memo, st, pos);
+    if (covered >= 0) {
+        return covered;
     }
     t = ck_prune(st->cols[pos]);
     if (!t || t->kind == EK_T_IVAR || t->kind == EK_T_TVAR) {
         return 1; /* the bridge or a rigid variable owes the column */
     }
-    switch (t->kind) {
-    case EK_T_FN:
-    case EK_T_DICT:
-    case EK_T_UNIT:
-    case EK_T_NEVER:
-        /* No pattern form but a catch-all matches these. */
-        if (!all_catchall_at(st, pos)) {
-            covered = 0;
-            break;
-        }
-        covered = covers_walk(c, st, pos + 1, memo, depth + 1);
-        break;
-    case EK_T_LIST:
-        covered = ex_list_branch(c, st, pos, memo, depth);
-        break;
-    case EK_T_TUPLE:
-    case EK_T_RECORD:
-        covered = ex_shape_branch(c, st, pos, memo, depth, t);
-        break;
-    case EK_T_NOMINAL: {
-        const ek_type *repr;
-
-        if (!t->u.nominal.sym) {
-            covered = ex_scalar_branch(c, st, pos, memo, depth);
-            break;
-        }
-        d = ck_decl_of(c, t->u.nominal.sym);
-        if (d && d->rhs == EK_TYPE_RHS_VARIANTS && d->nctors) {
-            size_t k;
-
-            for (k = 0; k < d->nctors && covered; k++) {
-                covered = ex_ctor_branch(c, st, pos, memo, depth, d->ctors[k]);
-            }
-        } else if (d && (d->rhs == EK_TYPE_RHS_RECORD
-                         || d->rhs == EK_TYPE_RHS_TUPLE)
-                   && (repr = ck_decl_repr(c, t)) && repr != t) {
-            st->cols[pos] = repr;
-            covered = covers_walk(c, st, pos, memo, depth + 1);
-        } else {
-            covered = ex_scalar_branch(c, st, pos, memo, depth);
-        }
-        break;
-    }
-    default:
-        covered = ex_scalar_branch(c, st, pos, memo, depth);
-        break;
-    }
+    covered = walk_split(c, st, pos, memo, depth, t);
     memo_put(c, memo, st, covered);
     return covered;
 }
@@ -303,6 +313,34 @@ static size_t live_arms(const ek_node *const *arms, const int *contrib,
     return nlive;
 }
 
+/* The live arms' patterns laid out over the scrutinee columns; a
+   column past an arm's pattern count contributes no constraint.
+   Returns NULL with the arena exhausted. */
+static const ek_node ***arm_rows(ck_ctx *c, const ek_node *const *live,
+                                 size_t nlive, size_t nscrut)
+{
+    const ek_node ***rows = ek_arena_alloc(c->arena, nlive * sizeof *rows);
+    size_t i, j;
+
+    if (!rows) {
+        c->oom = 1;
+        return NULL;
+    }
+    for (i = 0; i < nlive && !c->oom; i++) {
+        const ek_nlist *pats = &live[i]->u.arm.patterns;
+
+        rows[i] = ek_arena_alloc(c->arena, nscrut * sizeof **rows);
+        if (!rows[i]) {
+            c->oom = 1;
+            return NULL;
+        }
+        for (j = 0; j < nscrut; j++) {
+            rows[i][j] = j < pats->count ? pats->data[j] : NULL;
+        }
+    }
+    return rows;
+}
+
 void ck_exhaust(ck_ctx *c, const ek_node *cs, const ek_type **scrut,
                 size_t nscrut, const ek_node *const *arms, const int *contrib,
                 size_t narms)
@@ -312,7 +350,7 @@ void ck_exhaust(ck_ctx *c, const ek_node *cs, const ek_type **scrut,
     ex_state st;
     ex_memo memo;
     int guarded = 0, covered;
-    size_t i, j, nlive;
+    size_t nlive;
 
     if (c->oom) {
         return;
@@ -336,22 +374,9 @@ void ck_exhaust(ck_ctx *c, const ek_node *cs, const ek_type **scrut,
     if (!nlive) {
         return;
     }
-    rows = ek_arena_alloc(c->arena, nlive * sizeof *rows);
+    rows = arm_rows(c, live, nlive, nscrut);
     if (!rows) {
-        c->oom = 1;
         return;
-    }
-    for (i = 0; i < nlive && !c->oom; i++) {
-        const ek_nlist *pats = &live[i]->u.arm.patterns;
-
-        rows[i] = ek_arena_alloc(c->arena, nscrut * sizeof **rows);
-        if (!rows[i]) {
-            c->oom = 1;
-            return;
-        }
-        for (j = 0; j < nscrut; j++) {
-            rows[i][j] = j < pats->count ? pats->data[j] : NULL;
-        }
     }
     memset(&memo, 0, sizeof memo);
     st.cols = (const ek_type **)scrut;
