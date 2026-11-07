@@ -5,6 +5,10 @@ CFLAGS := -std=c99 -Wall -Wextra -Wpedantic -Werror
 BUILD  := build
 JOBS   ?= $(shell nproc 2>/dev/null || echo 1)
 
+# the fragments' rules would otherwise take the default goal from the
+# first target they carry
+.DEFAULT_GOAL := all
+
 # Fragment order is load-bearing: tests/makefile reads STAGE_LIBS from
 # src/makefile and LIB_RT from rt/makefile; every fragment appends DEPS,
 # and the -include of the dependency files must stay the last line.
