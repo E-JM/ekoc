@@ -73,6 +73,8 @@ static int is_tomb(ek_val v)
 
 static void hleaf_drop(ek_obj *o);
 static void hbranch_drop(ek_obj *o);
+static ek_val ham_add(const ek_dict *dict, ek_val root, unsigned long h,
+                      unsigned level, ek_val key, ek_val val, ek_val pos);
 
 static const ek_typeinfo ek_typeinfo_hleaf = { EK_KIND_DICT, hleaf_drop,
                                                NULL, NULL };
@@ -274,6 +276,84 @@ static ek_val *ham_find(const ek_dict *dict, ek_val root, unsigned long h,
     return NULL;
 }
 
+/* Nonzero when the entry's hash word parts from the new key's exactly
+   at the level: their nibbles agree through it and disagree on it. */
+static int parts_here(unsigned long he, unsigned long h, unsigned level)
+{
+    unsigned level2 = level;
+
+    while (level2 < HAM_LEVELS
+           && nibble(he, level2) == nibble(h, level2))
+        level2++;
+    return level2 == level && level2 < HAM_LEVELS;
+}
+
+/* The branch that takes a leaf parting from the new key at the level:
+   every entry and the new one drop one level, each into the sub-trie
+   of its own nibble, so a sub-trie's members agree through this level
+   and their insertions at level + 1 key on their own. */
+static ek_val leaf_split(const ek_dict *dict, const ek_hleaf *leaf,
+                         unsigned long h, unsigned level, ek_val key,
+                         ek_val val, ek_val pos)
+{
+    ek_val kids[HAM_WAY];
+    ek_hbranch *fresh;
+    unsigned nib = nibble(h, level);
+    uint32_t k, slot = 0;
+    uint32_t map = 0;
+
+    for (k = 0; k < HAM_WAY; k++)
+        kids[k] = ek_val_unit();
+    for (k = 0; k < leaf->n; k++) {
+        ek_val keyk = leaf->trip[k * 3];
+        unsigned long hk = hash_key(dict, keyk);
+
+        kids[nibble(hk, level)] = ham_add(
+            dict, kids[nibble(hk, level)], hk, level + 1, keyk,
+            leaf->trip[k * 3 + 1], leaf->trip[k * 3 + 2]);
+    }
+    kids[nib] = ham_add(dict, kids[nib], h, level + 1, key, val, pos);
+    for (k = 0; k < HAM_WAY; k++) {
+        if (kids[k].as.ref)
+            map |= 1u << k;
+    }
+    fresh = ek_rt_alloc_zeroed(sizeof *fresh
+                               + __builtin_popcount(map) * sizeof(ek_val));
+    fresh->obj.info = &ek_typeinfo_hbranch;
+    fresh->obj.rc = 1;
+    fresh->map = map;
+    for (k = 0; k < HAM_WAY; k++) {
+        if (kids[k].as.ref)
+            fresh->kids[slot++] = kids[k];
+    }
+    return node_val(&fresh->obj);
+}
+
+/* The leaf with the new triplet appended: every entry agrees with the
+   new key through this level, so the linear span takes one more. */
+static ek_val leaf_append(const ek_hleaf *leaf, ek_val key, ek_val val,
+                          ek_val pos)
+{
+    ek_hleaf *fresh = ek_rt_alloc_zeroed(
+        sizeof *fresh + (leaf->n + 1) * 3 * sizeof(ek_val));
+    uint32_t k;
+
+    fresh->obj.info = &ek_typeinfo_hleaf;
+    fresh->obj.rc = 1;
+    fresh->n = leaf->n + 1;
+    for (k = 0; k < leaf->n * 3; k++) {
+        fresh->trip[k] = leaf->trip[k];
+        if (k % 3 != 2)
+            ek_retain(fresh->trip[k]);
+    }
+    ek_retain(key);
+    ek_retain(val);
+    fresh->trip[leaf->n * 3] = key;
+    fresh->trip[leaf->n * 3 + 1] = val;
+    fresh->trip[leaf->n * 3 + 2] = pos;
+    return node_val(&fresh->obj);
+}
+
 /* The trie with the key's entry added; the key is known absent. All
    inputs are borrowed and the returned root is owned. A leaf whose
    entries part from the new key at this level splits under a branch;
@@ -289,73 +369,10 @@ static ek_val ham_add(const ek_dict *dict, ek_val root, unsigned long h,
         uint32_t i;
 
         for (i = 0; i < leaf->n; i++) {
-            unsigned long he = hash_key(dict, leaf->trip[i * 3]);
-            unsigned level2 = level;
-
-            while (level2 < HAM_LEVELS
-                   && nibble(he, level2) == nibble(h, level2))
-                level2++;
-            if (level2 == level && level2 < HAM_LEVELS) {
-                /* this entry parts from the new key at this level, so
-                   the leaf splits: every entry and the new one drop
-                   one level, each into the sub-trie of its own nibble,
-                   so a sub-trie's members agree through this level and
-                   their insertions at level + 1 key on their own */
-                ek_val kids[HAM_WAY];
-                ek_hbranch *fresh;
-                unsigned nib = nibble(h, level);
-                uint32_t k, slot = 0;
-                uint32_t map = 0;
-
-                for (k = 0; k < HAM_WAY; k++)
-                    kids[k] = ek_val_unit();
-                for (k = 0; k < leaf->n; k++) {
-                    ek_val keyk = leaf->trip[k * 3];
-                    unsigned long hk = hash_key(dict, keyk);
-
-                    kids[nibble(hk, level)] = ham_add(
-                        dict, kids[nibble(hk, level)], hk, level + 1, keyk,
-                        leaf->trip[k * 3 + 1], leaf->trip[k * 3 + 2]);
-                }
-                kids[nib] = ham_add(dict, kids[nib], h, level + 1, key,
-                                    val, pos);
-                for (k = 0; k < HAM_WAY; k++) {
-                    if (kids[k].as.ref)
-                        map |= 1u << k;
-                }
-                fresh = ek_rt_alloc_zeroed(sizeof *fresh
-                                           + __builtin_popcount(map)
-                                                 * sizeof(ek_val));
-                fresh->obj.info = &ek_typeinfo_hbranch;
-                fresh->obj.rc = 1;
-                fresh->map = map;
-                for (k = 0; k < HAM_WAY; k++) {
-                    if (kids[k].as.ref)
-                        fresh->kids[slot++] = kids[k];
-                }
-                return node_val(&fresh->obj);
-            }
+            if (parts_here(hash_key(dict, leaf->trip[i * 3]), h, level))
+                return leaf_split(dict, leaf, h, level, key, val, pos);
         }
-        { /* every entry agrees with the new key through this level */
-            ek_hleaf *fresh = ek_rt_alloc_zeroed(
-                sizeof *fresh + (leaf->n + 1) * 3 * sizeof(ek_val));
-            uint32_t k;
-
-            fresh->obj.info = &ek_typeinfo_hleaf;
-            fresh->obj.rc = 1;
-            fresh->n = leaf->n + 1;
-            for (k = 0; k < leaf->n * 3; k++) {
-                fresh->trip[k] = leaf->trip[k];
-                if (k % 3 != 2)
-                    ek_retain(fresh->trip[k]);
-            }
-            ek_retain(key);
-            ek_retain(val);
-            fresh->trip[leaf->n * 3] = key;
-            fresh->trip[leaf->n * 3 + 1] = val;
-            fresh->trip[leaf->n * 3 + 2] = pos;
-            return node_val(&fresh->obj);
-        }
+        return leaf_append(leaf, key, val, pos);
     }
     {
         const ek_hbranch *br = (const ek_hbranch *)root.as.ref;
@@ -405,6 +422,55 @@ static ek_val ham_update(const ek_dict *dict, ek_val root, unsigned long h,
     }
 }
 
+/* The leaf without its one triplet: the entries before it keep their
+   slots, the entries after it shift down three, and an only child
+   leaves nothing. */
+static ek_val leaf_del(const ek_hleaf *leaf, size_t at)
+{
+    ek_hleaf *fresh;
+    uint32_t k;
+
+    if (leaf->n == 1)
+        return ek_val_unit();
+    fresh = ek_rt_alloc_zeroed(sizeof *fresh
+                               + (leaf->n - 1) * 3 * sizeof(ek_val));
+    fresh->obj.info = &ek_typeinfo_hleaf;
+    fresh->obj.rc = 1;
+    fresh->n = leaf->n - 1;
+    for (k = 0; k < leaf->n * 3; k++) {
+        if (k >= at && k < at + 3)
+            continue;
+        fresh->trip[k < at ? k : k - 3] = leaf->trip[k];
+        if (k % 3 != 2)
+            ek_retain(leaf->trip[k]);
+    }
+    return node_val(&fresh->obj);
+}
+
+/* The branch without the one child at slot i: an only child gives way
+   to nothing, a wider map keeps the rest in their order. */
+static ek_val branch_shrink(const ek_hbranch *br, unsigned nib, uint32_t i)
+{
+    uint32_t n = __builtin_popcount(br->map);
+    ek_hbranch *fresh;
+    uint32_t k, keep = 0;
+
+    if (n == 1)
+        return ek_val_unit();
+    fresh = ek_rt_alloc_zeroed(sizeof *fresh + (n - 1) * sizeof(ek_val));
+    fresh->obj.info = &ek_typeinfo_hbranch;
+    fresh->obj.rc = 1;
+    fresh->map = br->map & ~(1u << nib);
+    for (k = 0; k < n; k++) {
+        if (k == i)
+            continue;
+        fresh->kids[keep] = br->kids[k];
+        ek_retain(fresh->kids[keep]);
+        keep++;
+    }
+    return node_val(&fresh->obj);
+}
+
 /* The trie without the key's entry; the key is known present. A
    branch left with no child of its own gives way to nothing here. */
 static ek_val ham_del(const ek_dict *dict, ek_val root, unsigned long h,
@@ -412,27 +478,9 @@ static ek_val ham_del(const ek_dict *dict, ek_val root, unsigned long h,
 {
     if (is_leaf(root.as.ref)) {
         const ek_hleaf *leaf = (const ek_hleaf *)root.as.ref;
-        size_t at = leaf_find(dict, leaf, key) - leaf->trip;
 
-        if (leaf->n == 1)
-            return ek_val_unit();
-        {
-            ek_hleaf *fresh = ek_rt_alloc_zeroed(
-                sizeof *fresh + (leaf->n - 1) * 3 * sizeof(ek_val));
-            uint32_t k;
-
-            fresh->obj.info = &ek_typeinfo_hleaf;
-            fresh->obj.rc = 1;
-            fresh->n = leaf->n - 1;
-            for (k = 0; k < leaf->n * 3; k++) {
-                if (k >= at && k < at + 3)
-                    continue;
-                fresh->trip[k < at ? k : k - 3] = leaf->trip[k];
-                if (k % 3 != 2)
-                    ek_retain(leaf->trip[k]);
-            }
-            return node_val(&fresh->obj);
-        }
+        return leaf_del(leaf, (size_t)(leaf_find(dict, leaf, key)
+                                       - leaf->trip));
     }
     {
         const ek_hbranch *br = (const ek_hbranch *)root.as.ref;
@@ -441,27 +489,8 @@ static ek_val ham_del(const ek_dict *dict, ek_val root, unsigned long h,
         ek_val grown = ham_del(dict, *at, h, level + 1, key);
         uint32_t i = (uint32_t)(at - br->kids);
 
-        if (!grown.as.ref) {
-            uint32_t n = __builtin_popcount(br->map);
-            ek_hbranch *fresh;
-            uint32_t k, keep = 0;
-
-            if (n == 1)
-                return ek_val_unit();
-            fresh = ek_rt_alloc_zeroed(sizeof *fresh
-                                       + (n - 1) * sizeof(ek_val));
-            fresh->obj.info = &ek_typeinfo_hbranch;
-            fresh->obj.rc = 1;
-            fresh->map = br->map & ~(1u << nib);
-            for (k = 0; k < n; k++) {
-                if (k == i)
-                    continue;
-                fresh->kids[keep] = br->kids[k];
-                ek_retain(fresh->kids[keep]);
-                keep++;
-            }
-            return node_val(&fresh->obj);
-        }
+        if (!grown.as.ref)
+            return branch_shrink(br, nib, i);
         return branch_replace(br, i, grown);
     }
 }
