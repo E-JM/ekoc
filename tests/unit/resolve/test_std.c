@@ -339,6 +339,31 @@ static void qualified_std_constructors(void)
     rfx_end(&f);
 }
 
+/* The module-path spelling of a compiler-supplied type heads its
+   namespace: the link reads as the type, and a constructor sharing
+   the spelling never hides it (Clause 7.4.4). */
+static void qualified_placeholder_heads(void)
+{
+    rfx f;
+    const ek_ref *r;
+
+    rfx_begin(&f,
+        "p: test =\n"
+        "    x := std.Set.of({1, 2})\n"
+        "    y := std.Int.add(1, 2)\n"
+        "    _\n");
+    EK_CHECK_U64(rfx_errors(&f), 0);
+    r = rfx_ref_named(&f, 2, "Set");
+    EK_CHECK(r != NULL);
+    EK_CHECK(r->kind == EK_SYM_TYPE);
+    EK_CHECK(r->station == EK_ST_QUALIFIED);
+    r = rfx_ref_named(&f, 3, "Int");
+    EK_CHECK(r != NULL);
+    EK_CHECK(r->kind == EK_SYM_TYPE);
+    EK_CHECK(r->station == EK_ST_QUALIFIED);
+    rfx_end(&f);
+}
+
 /* The qualified spelling of an opened std type names that type's file
    row even when a user type shadows the bare name; a name the
    placeholder does not declare stays the bridge. */
@@ -496,6 +521,7 @@ int main(void)
     top_level_service_name();
     qualified_std_constructors();
     qualified_std_types();
+    qualified_placeholder_heads();
     local_shadow_free_name();
     return ek_test_report("resolve/std");
 }

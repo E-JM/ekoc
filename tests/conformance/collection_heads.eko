@@ -57,3 +57,23 @@ vector_head_services: test =
     assert_eq(Vector.show(a), "\{1, 2}")
     j: Json = Vector.to_json(a)
     assert_eq(Json.show(j), "[1,2]")
+
+// The module-path spelling of the same heads: the qualified form
+// resolves, checks, and lowers exactly as the bare one (Clause 7.4.4).
+
+std_qualified_heads: test =
+    a: Set Int = std.Set.of({1, 2})
+    b: Set Int = std.Set.of({2, 1})
+    assert(std.Set.eq(a, b))
+    assert_eq(std.Set.show(a), "\{1, 2}")
+    j: Json = std.Set.to_json(a)
+    assert_eq(Json.show(j), "[1,2]")
+    r: Result (Set Int) ParseError = std.Set.from_json(j)
+    assert_eq(r, Ok a)
+    v: Vector Int = std.Vector.of({1, 2})
+    assert(std.Vector.eq(v, std.Vector.of({1, 2})))
+
+std_qualified_declared_rows: test =
+    assert_eq(std.String.rep("ab", 2), "abab")
+    assert_eq(std.Int.add(2, 3), 5)
+    assert_eq(std.List.length({1, 2, 3}), 3)

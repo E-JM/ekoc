@@ -101,6 +101,25 @@ const ek_symbol *r_module_ctor(const r_mod *m, const char *name)
     return NULL;
 }
 
+/* A module's type of one spelling; a constructor may share it, and a
+   namespace link continues at the type, never at the constructor. */
+static const ek_symbol *module_type(const r_mod *m, const char *name)
+{
+    size_t i;
+
+    if (!m || !m->surf) {
+        return NULL;
+    }
+    for (i = 0; i < m->surf->count; i++) {
+        const ek_symbol *s = &m->surf->syms[i];
+
+        if (s->kind == EK_SYM_TYPE && strcmp(s->name, name) == 0) {
+            return s;
+        }
+    }
+    return NULL;
+}
+
 static const ek_symbol *namespace_member(const r_mod *m, const char *type,
                                          const char *name)
 {
@@ -210,6 +229,15 @@ static int module_walk(r_ctx *c, r_file *f, r_head *cur, const ek_node *link,
         return 1;
     }
     m = r_module_member(*walk_mod, name);
+    if (!last) {
+        /* A namespace link continues at the type a shared spelling
+           may hide behind a constructor row. */
+        const ek_symbol *t = module_type(*walk_mod, name);
+
+        if (t) {
+            m = t;
+        }
+    }
     if (!m) {
         if ((*walk_mod)->surf == c->std
             && r_embedded_type_name(c, name)) {
@@ -243,11 +271,23 @@ static int module_walk(r_ctx *c, r_file *f, r_head *cur, const ek_node *link,
         return 1;
     }
     if (r_is_placeholder(m)) {
-        /* A placeholder row without a declaration behind it keeps its
-           bridged reading. */
-        external_link(c, cur, link);
-        *state = 0;
-        *walk_mod = NULL;
+        if (last) {
+            /* A placeholder row without a declaration behind it keeps
+               its bridged reading. */
+            external_link(c, cur, link);
+            *state = 0;
+            *walk_mod = NULL;
+            return 1;
+        }
+        /* The module-path spelling of a compiler-supplied type
+           continues as its namespace, the same walk a bare head
+           takes (Clause 7.4.4). */
+        cur->sym = m;
+        cur->kind = EK_SYM_TYPE;
+        cur->st = from_receiver ? EK_ST_MODULE_PATH : EK_ST_QUALIFIED;
+        r_add_ref(c, link, cur->kind, cur->st, cur->sym);
+        *state = 2; /* Mod.Type.member: the namespace of the type */
+        *walk_type = m;
         return 1;
     }
     if (!m->public) {
