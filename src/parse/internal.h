@@ -106,20 +106,22 @@ void p_check_invert_pattern(p_ctx *c, const ek_node *pat);
 /* import.c */
 ek_node *p_import(p_ctx *c);
 
-/* binding.c: binding forms and member/suite bodies. */
+/* binding.c: binding forms. */
 ek_node *p_binding_line(p_ctx *c, int top_level);
 ek_node *p_invert_bare(p_ctx *c); /* `<-` without a pattern */
 ek_node *p_binding_after_pattern(p_ctx *c, ek_node *pat);
 ek_node *p_binding_name_head(p_ctx *c, int top_level);
+ek_node *p_after_colon(p_ctx *c, int top_level, const ek_slist *path,
+                       const ek_layout_token *head);
+ek_node *p_namespace_tail(p_ctx *c, const ek_slist *path,
+                          const ek_layout_token *head, ek_node *ann);
+
+/* suite.c: member lists and suite bodies. */
 ek_node *p_member_list(p_ctx *c);      /* members until DEDENT (consumed) */
 ek_node *p_block_suite(p_ctx *c);      /* NEWLINE INDENT members DEDENT */
 ek_node *p_inline_suite(p_ctx *c);     /* expr {';' expr} -> expr | BLOCK */
 ek_node *p_body_suite(p_ctx *c);       /* ':' seen: block or inline suite */
 ek_node *p_binding_rhs(p_ctx *c);      /* after '=': block or one expression */
-ek_node *p_after_colon(p_ctx *c, int top_level, const ek_slist *path,
-                       const ek_layout_token *head);
-ek_node *p_namespace_tail(p_ctx *c, const ek_slist *path,
-                          const ek_layout_token *head, ek_node *ann);
 
 /* decl.c */
 void p_check_case(p_ctx *c, const char *name, const ek_layout_token *t,
