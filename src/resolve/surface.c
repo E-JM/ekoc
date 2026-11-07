@@ -385,10 +385,43 @@ static int private_type_here(const r_surf *s, const char *name)
 
 /* Every nominal spelling a type expression mentions must be public
    where the expression is exported surface. */
-static void private_in_type(r_surf *s, const ek_node *t, const char *what)
+static void private_in_type(r_surf *s, const ek_node *t, const char *what);
+
+/* The type forms whose children are lists: the function's parameters
+   and result, the tuple and record members, the apply head and args. */
+static void private_in_type_kids(r_surf *s, const ek_node *t,
+                                 const char *what)
 {
     size_t i;
 
+    switch (t->kind) {
+    case EK_N_T_FN:
+        for (i = 0; i < t->u.t_fn.params.count; i++) {
+            private_in_type(s, t->u.t_fn.params.data[i], what);
+        }
+        private_in_type(s, t->u.t_fn.result, what);
+        return;
+    case EK_N_T_TUPLE:
+    case EK_N_T_RECORD:
+        for (i = 0; i < t->u.kids.count; i++) {
+            private_in_type(s, t->u.kids.data[i], what);
+        }
+        return;
+    case EK_N_T_APPLY:
+        private_in_type(s, t->u.t_apply.head, what);
+        for (i = 0; i < t->u.t_apply.args.count; i++) {
+            private_in_type(s, t->u.t_apply.args.data[i], what);
+        }
+        return;
+    default:
+        return;
+    }
+}
+
+/* Every nominal spelling a type expression mentions must be public
+   where the expression is exported surface. */
+static void private_in_type(r_surf *s, const ek_node *t, const char *what)
+{
     if (!t || s->c->oom) {
         return;
     }
@@ -407,18 +440,6 @@ static void private_in_type(r_surf *s, const ek_node *t, const char *what)
     case EK_N_T_PARAM:
         private_in_type(s, t->u.t_field.type, what);
         return;
-    case EK_N_T_FN:
-        for (i = 0; i < t->u.t_fn.params.count; i++) {
-            private_in_type(s, t->u.t_fn.params.data[i], what);
-        }
-        private_in_type(s, t->u.t_fn.result, what);
-        return;
-    case EK_N_T_TUPLE:
-    case EK_N_T_RECORD:
-        for (i = 0; i < t->u.kids.count; i++) {
-            private_in_type(s, t->u.kids.data[i], what);
-        }
-        return;
     case EK_N_T_LIST:
     case EK_N_T_PAREN:
         private_in_type(s, t->u.wrap.inner, what);
@@ -427,13 +448,8 @@ static void private_in_type(r_surf *s, const ek_node *t, const char *what)
         private_in_type(s, t->u.pair.a, what);
         private_in_type(s, t->u.pair.b, what);
         return;
-    case EK_N_T_APPLY:
-        private_in_type(s, t->u.t_apply.head, what);
-        for (i = 0; i < t->u.t_apply.args.count; i++) {
-            private_in_type(s, t->u.t_apply.args.data[i], what);
-        }
-        return;
     default:
+        private_in_type_kids(s, t, what);
         return;
     }
 }
