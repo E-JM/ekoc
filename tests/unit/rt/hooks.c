@@ -3,6 +3,7 @@
 #include <signal.h>
 #include <stddef.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -66,6 +67,48 @@ static ek_val pair_of(const ek_typeinfo *info, int64_t x, int64_t y)
     p->obj.rc = 1;
     p->x = ek_val_int(x);
     p->y = ek_val_int(y);
+    return ek_val_ref(&p->obj);
+}
+
+/* A boxed Double over the hooks a Double-carrying family passes: the
+   equality is the Float rules, so the two zeros are one value and a
+   NaN equals nothing, not even itself. The hash normalizes the zeros
+   the same way, so equal values hash equal. */
+typedef struct {
+    ek_obj obj;
+    double d;
+} ek_boxed;
+
+static int boxed_eq(ek_val a, ek_val b)
+{
+    const ek_boxed *pa = (const ek_boxed *)a.as.ref;
+    const ek_boxed *pb = (const ek_boxed *)b.as.ref;
+
+    return a.as.ref->info == b.as.ref->info && pa->d == pb->d;
+}
+
+static unsigned long boxed_hash(ek_val v)
+{
+    const ek_boxed *p = (const ek_boxed *)v.as.ref;
+    unsigned long h = 14695981039346656037ULL;
+    unsigned long bits;
+    double d = p->d == 0.0 ? 0.0 : p->d;
+
+    memcpy(&bits, &d, sizeof bits);
+    return (h ^ bits) * 1099511628211ULL;
+}
+
+static const ek_typeinfo boxed_info = { EK_KIND_STRUCT, NULL,
+                                        boxed_eq, boxed_hash };
+
+/* A boxed Double the caller owns and releases with one reference. */
+static ek_val boxed_of(double d)
+{
+    ek_boxed *p = calloc(1, sizeof *p);
+
+    p->obj.info = &boxed_info;
+    p->obj.rc = 1;
+    p->d = d;
     return ek_val_ref(&p->obj);
 }
 
@@ -304,6 +347,75 @@ static void set_float_elements_follow_ieee_equality(void)
     ek_release(s0);
 }
 
+/* The same Float key rules for the dictionary: 0.0 and -0.0 are one
+   key under either spelling, and a NaN key is never itself, so its
+   insert returns the original unchanged and no lookup finds it. */
+static void dict_float_keys_follow_ieee_equality(void)
+{
+    ek_val d0 = ek_dict_new(ek_key_eq, ek_key_hash);
+    ek_val d1 = ek_dict_set(d0, ek_val_float(-0.0), ek_val_int(1));
+    ek_val d2 = ek_dict_set(d1, ek_val_float(0.0), ek_val_int(2));
+    ek_val d3 = ek_dict_set(d2, ek_val_float(1.5), ek_val_int(3));
+    ek_val nan = ek_val_float(0.0 / 0.0);
+    ek_val d4 = ek_dict_set(d3, nan, ek_val_int(4));
+    ek_val e0 = ek_dict_new(ek_key_eq, ek_key_hash);
+    ek_val e1 = ek_dict_set(e0, nan, ek_val_int(5));
+    ek_val out = ek_val_unit();
+
+    EK_CHECK_U64(ek_dict_len(d1), 1);
+    EK_CHECK(ek_dict_get(d1, ek_val_float(0.0), &out)); /* found under 0.0 */
+    EK_CHECK_U64(out.as.i, 1);
+    EK_CHECK_U64(ek_dict_len(d2), 1); /* 0.0 found -0.0 and replaced it */
+    EK_CHECK(ek_dict_get(d2, ek_val_float(-0.0), &out));
+    EK_CHECK_U64(out.as.i, 2);
+    EK_CHECK(d4.as.ref == d3.as.ref); /* the NaN insert returned the original */
+    EK_CHECK_U64(d3.as.ref->rc, 2); /* the caller's and the alias's */
+    EK_CHECK_U64(ek_dict_len(d4), 2);
+    EK_CHECK(!ek_dict_get(d4, nan, &out));
+    EK_CHECK(ek_dict_get(d4, ek_val_float(1.5), &out) && out.as.i == 3);
+    EK_CHECK(e1.as.ref == e0.as.ref); /* a NaN cannot even start a table */
+    EK_CHECK_U64(ek_dict_len(e1), 0);
+    EK_CHECK(!ek_dict_get(e1, nan, &out));
+    ek_release(e1);
+    ek_release(e0);
+    ek_release(d4);
+    ek_release(d3);
+    ek_release(d2);
+    ek_release(d1);
+    ek_release(d0);
+}
+
+/* The self-identity the NaN rule needs also runs through a carried
+   pair: the insert consults the carried eq for the key against itself,
+   so a boxed Double carrying a NaN inserts nothing and the insert
+   returns the original, while the same pair still keys its equal
+   boxes as one. */
+static void dict_carried_pair_keeps_the_nan_rule(void)
+{
+    ek_val a = boxed_of(2.5);
+    ek_val b = boxed_of(2.5);
+    ek_val nan = boxed_of(0.0 / 0.0);
+    ek_val d0 = ek_dict_new(boxed_eq, boxed_hash);
+    ek_val d1 = ek_dict_set(d0, a, ek_val_int(1));
+    ek_val d2 = ek_dict_set(d1, b, ek_val_int(2));
+    ek_val d3 = ek_dict_set(d2, nan, ek_val_int(3));
+    ek_val out = ek_val_unit();
+
+    EK_CHECK_U64(ek_dict_len(d2), 1); /* the carried eq found b equal to a */
+    EK_CHECK(ek_dict_get(d2, a, &out) && out.as.i == 2);
+    EK_CHECK(d3.as.ref == d2.as.ref); /* the NaN box is not even itself */
+    EK_CHECK_U64(d2.as.ref->rc, 2); /* the caller's and the alias's */
+    EK_CHECK_U64(ek_dict_len(d3), 1);
+    EK_CHECK(!ek_dict_get(d3, nan, &out));
+    ek_release(d3);
+    ek_release(d2);
+    ek_release(d1);
+    ek_release(d0);
+    ek_release(nan);
+    ek_release(b);
+    ek_release(a);
+}
+
 /* The carried pair travels with every copy-on-insert step: a build
    chain over the pair hooks keeps keying structurally after each
    insert, and a merge reads through the left side's pair. */
@@ -491,6 +603,8 @@ int main(void)
     text_keys_stay_byte_based();
     set_text_hooks();
     set_float_elements_follow_ieee_equality();
+    dict_float_keys_follow_ieee_equality();
+    dict_carried_pair_keeps_the_nan_rule();
     dict_set_clones_the_pair();
     set_insert_clones_the_pair();
     dict_bytes_key_by_content();
