@@ -600,9 +600,6 @@ void lower_emit_types(lower_ctx *c, ek_buf *unit);
 /* composite.c: constructors and composite literals. */
 lower_val lower_ctor_value(lower_ctx *c, const ek_node *e, const ek_ref *ref);
 
-/* The one-directional shape adaptation of one value: a nominal record
-   flowing into an anonymous record expectation rebuilds field by field;
-   any other pair comes back unchanged. */
 /* composite.c: the item machinery behind every literal. The walkers
    are shared with the container and constructor constructions of
    construct.c. */
@@ -619,13 +616,17 @@ lower_val lower_list_literal(lower_ctx *c, lower_scope *scope,
                              const ek_node *e);
 lower_val lower_dict_literal(lower_ctx *c, lower_scope *scope,
                              const ek_node *e);
-lower_val lower_shape_adapt(lower_ctx *c, lower_scope *scope, lower_val v,
-                            const ek_node *at, const ek_type *from,
-                            const ek_type *to);
 lower_val lower_ctor_apply(lower_ctx *c, lower_scope *scope,
                            const ek_node *e);
 lower_val lower_composite(lower_ctx *c, lower_scope *scope,
                           const ek_node *e);
+
+/* shapeadapt.c: the one-directional shape adaptation of one value: a
+   nominal record flowing into an anonymous record expectation rebuilds
+   field by field; any other pair comes back unchanged. */
+lower_val lower_shape_adapt(lower_ctx *c, lower_scope *scope, lower_val v,
+                            const ek_node *at, const ek_type *from,
+                            const ek_type *to);
 
 /* expr.c: expressions and construct naming for diagnostics. */
 lower_val lower_expr(lower_ctx *c, lower_scope *scope, const ek_node *e);
