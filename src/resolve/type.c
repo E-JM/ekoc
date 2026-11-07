@@ -51,6 +51,47 @@ static void declared(r_ctx *c, r_file *f, const ek_node *t, const char *name)
     r_add_ref(c, t, EK_SYM_EXTERNAL, EK_ST_TYPE, NULL);
 }
 
+/* The module surface behind a qualified spelling: the declared type
+   the name spells, or the miss the surface keeps -- the std placeholder
+   bridges, and a plain miss is unbound. */
+static void qualified_type(r_ctx *c, r_file *f, const ek_node *t,
+                           const char *mname, const char *tname,
+                           const r_mod *m)
+{
+    const char *file = f->mod->file;
+    size_t i;
+
+    for (i = 0; i < m->surf->count; i++) {
+        const ek_symbol *s = &m->surf->syms[i];
+
+        if (s->kind == EK_SYM_TYPE && strcmp(s->name, tname) == 0) {
+            if (!s->public) {
+                r_error(c, file, t->line, t->col, "E-private-name",
+                        "type `%s` is private in `%s` (Clause 7.3.1)",
+                        tname, mname);
+            }
+            r_add_ref(c, t, EK_SYM_TYPE, EK_ST_QUALIFIED, s);
+            return;
+        }
+    }
+    if (m->surf == c->std) {
+        /* A std type the file does not declare yet keeps the external
+           bridge (resolve.h) — except `Never`, a type of the language
+           that no module declares. */
+        if (strcmp(tname, "Never") == 0) {
+            r_error(c, file, t->line, t->col, "E-unbound-member",
+                    "module `%s` declares no type `%s`; `Never` is a type "
+                    "of the language (Clause 7.5.4)", mname, tname);
+        }
+        r_add_ref(c, t, EK_SYM_EXTERNAL, EK_ST_TYPE, NULL);
+        return;
+    }
+    r_error(c, file, t->line, t->col, "E-unbound-member",
+            "module `%s` declares no type `%s` (Clause 7.4.4)", mname,
+            tname);
+    r_add_ref(c, t, EK_SYM_EXTERNAL, EK_ST_TYPE, NULL);
+}
+
 static void qualified(r_ctx *c, r_file *f, const ek_node *t)
 {
     const char *file = f->mod->file;
@@ -91,39 +132,7 @@ static void qualified(r_ctx *c, r_file *f, const ek_node *t)
         r_add_ref(c, t, EK_SYM_EXTERNAL, EK_ST_TYPE, NULL);
         return;
     }
-    {
-        size_t i;
-
-        for (i = 0; i < m->surf->count; i++) {
-            const ek_symbol *s = &m->surf->syms[i];
-
-            if (s->kind == EK_SYM_TYPE && strcmp(s->name, tname) == 0) {
-                if (!s->public) {
-                    r_error(c, file, t->line, t->col, "E-private-name",
-                            "type `%s` is private in `%s` (Clause 7.3.1)",
-                            tname, mname);
-                }
-                r_add_ref(c, t, EK_SYM_TYPE, EK_ST_QUALIFIED, s);
-                return;
-            }
-        }
-    }
-    if (m->surf == c->std) {
-        /* A std type the file does not declare yet keeps the external
-           bridge (resolve.h) — except `Never`, a type of the language
-           that no module declares. */
-        if (strcmp(tname, "Never") == 0) {
-            r_error(c, file, t->line, t->col, "E-unbound-member",
-                    "module `%s` declares no type `%s`; `Never` is a type "
-                    "of the language (Clause 7.5.4)", mname, tname);
-        }
-        r_add_ref(c, t, EK_SYM_EXTERNAL, EK_ST_TYPE, NULL);
-        return;
-    }
-    r_error(c, file, t->line, t->col, "E-unbound-member",
-            "module `%s` declares no type `%s` (Clause 7.4.4)", mname,
-            tname);
-    r_add_ref(c, t, EK_SYM_EXTERNAL, EK_ST_TYPE, NULL);
+    qualified_type(c, f, t, mname, tname, m);
 }
 
 /* The recursive container and function forms. */
