@@ -421,8 +421,8 @@ void lower_vec_tojson_emit(lower_ctx *c, lower_demit *d, const char *name,
 void lower_vec_fromjson_emit(lower_ctx *c, lower_demit *d, const char *name,
                              const ek_type *t);
 
-/* derivedeq.c, derivedhash.c, derivedshow.c, derivedjson.c: the body
-   emitters. */
+/* derivedeq.c, derivedord.c, derivedhash.c, derivedshow.c,
+   derivedjson.c: the body emitters. */
 void lower_dsvc_eq_emit(lower_ctx *c, const char *name, const ek_type *t);
 void lower_dsvc_ord_emit(lower_ctx *c, const char *name, const ek_type *t);
 void lower_dsvc_hash_emit(lower_ctx *c, const char *name, const ek_type *t);

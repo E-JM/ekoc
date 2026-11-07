@@ -123,6 +123,7 @@ LOWER_SRC := \
 	src/lower/derivedadt.c \
 	src/lower/derivedcall.c \
 	src/lower/derivedeq.c \
+	src/lower/derivedord.c \
 	src/lower/derivedfrom.c \
 	src/lower/derivedhash.c \
 	src/lower/derivedjson.c \
