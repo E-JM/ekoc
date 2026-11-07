@@ -36,15 +36,24 @@ lower_scalar lower_scalar_kind(const ek_type *t)
     return EKSC_OTHER;
 }
 
+/* True when the nominal is a compiler-supplied std placeholder of the
+   name and applied arity: a type with no declaration behind it whose
+   services the compiler supplies and the runtime traversals read. */
+static int lower_is_std_placeholder(const ek_type *t, const char *name,
+                                    size_t argc)
+{
+    return t && t->kind == EK_T_NOMINAL && t->u.nominal.sym
+        && t->u.nominal.argc == argc && t->u.nominal.sym->module
+        && strcmp(t->u.nominal.sym->module, "std") == 0
+        && strcmp(t->u.nominal.sym->name, name) == 0;
+}
+
 /* True when the nominal is the compiler-supplied Range placeholder:
    the type whose generated struct family the range operators build
    and the runtime traversals read. */
 int lower_is_range(const ek_type *t)
 {
-    return t && t->kind == EK_T_NOMINAL && t->u.nominal.sym
-        && t->u.nominal.sym->module
-        && strcmp(t->u.nominal.sym->module, "std") == 0
-        && strcmp(t->u.nominal.sym->name, "Range") == 0;
+    return lower_is_std_placeholder(t, "Range", 1);
 }
 
 /* True when the nominal is the compiler-supplied Set placeholder: the
@@ -52,10 +61,7 @@ int lower_is_range(const ek_type *t)
    the insertion-order list. */
 int lower_is_set(const ek_type *t)
 {
-    return t && t->kind == EK_T_NOMINAL && t->u.nominal.sym
-        && t->u.nominal.argc == 1 && t->u.nominal.sym->module
-        && strcmp(t->u.nominal.sym->module, "std") == 0
-        && strcmp(t->u.nominal.sym->name, "Set") == 0;
+    return lower_is_std_placeholder(t, "Set", 1);
 }
 
 /* True when the nominal is the compiler-supplied Vector placeholder:
@@ -63,10 +69,7 @@ int lower_is_set(const ek_type *t)
    services walk through the index-order list. */
 int lower_is_vector(const ek_type *t)
 {
-    return t && t->kind == EK_T_NOMINAL && t->u.nominal.sym
-        && t->u.nominal.argc == 1 && t->u.nominal.sym->module
-        && strcmp(t->u.nominal.sym->module, "std") == 0
-        && strcmp(t->u.nominal.sym->name, "Vector") == 0;
+    return lower_is_std_placeholder(t, "Vector", 1);
 }
 
 /* True when the nominal is a handle type of the system vocabulary:
