@@ -320,3 +320,51 @@ const char *lower_dsvc_request(lower_ctx *c, const ek_node *at,
     emit_service(c, s, t);
     return s->name;
 }
+
+/* The result type of a derived-service call at a receiver the
+   instantiation substituted concrete: the fixed result of the
+   service, the receiver itself for `with`. NULL when the site is not
+   such a call. */
+const ek_type *lower_open_call_result(lower_ctx *c, const ek_node *e)
+{
+    const ek_node *callee;
+    const char *name = NULL;
+    const ek_node *recv = NULL;
+    lower_dsvc_kind kind;
+    const ek_type *rs;
+
+    if (!e || e->kind != EK_N_CALL) {
+        return NULL;
+    }
+    callee = e->u.call.callee;
+    if (callee && callee->kind == EK_N_FIELD) {
+        name = callee->u.field.name;
+        recv = callee->u.field.recv;
+    } else if (callee && callee->kind == EK_N_NAME
+               && callee->u.path.count == 1) {
+        name = callee->u.path.data[0];
+        recv = e->u.call.args.count ? e->u.call.args.data[0] : NULL;
+    }
+    if (!name || !recv) {
+        return NULL;
+    }
+    rs = lower_row_type(c, recv);
+    if (!rs || lower_type_has_var(rs)) {
+        return NULL;
+    }
+    if (lower_service_kind(name, &kind)) {
+        switch (kind) {
+        case DSV_EQ:
+        case DSV_ORD:
+            return lower_std_nominal(c, "Bool");
+        case DSV_SHOW:
+        case DSV_INSPECT:
+            return lower_std_nominal(c, "String");
+        case DSV_TOJSON:
+            return lower_std_nominal(c, "Json");
+        default:
+            return NULL;
+        }
+    }
+    return strcmp(name, "with") == 0 ? rs : NULL;
+}

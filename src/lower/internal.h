@@ -367,7 +367,7 @@ const ek_type *lower_applied_type(lower_ctx *c, const ek_node *tnode,
 const ek_symbol *lower_type_symbol(lower_ctx *c, const char *mod,
                                    const char *name);
 
-/* call.c: the result type a derived-service call returns, when the
+/* dsvcreg.c: the result type a derived-service call returns, when the
    site's open receiver substitutes concrete under the instantiation
    being emitted -- the type the specialized body reads the call at.
    NULL when the site is not such a call. */
