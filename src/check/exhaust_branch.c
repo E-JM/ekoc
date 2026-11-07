@@ -6,6 +6,46 @@
    structure: the constructor branch of an algebraic column and the
    component branch of a tuple or record column. */
 
+/* The constructor's payload instantiated at the column's arguments. */
+static const ek_type *ctor_payload(ck_ctx *c, const ck_ctor *ct,
+                                   const ek_type *col, const ck_decl *d)
+{
+    size_t nb = d ? d->nbinders : 0;
+
+    if (!ct->payload) {
+        return NULL;
+    }
+    if (nb && col->kind == EK_T_NOMINAL && col->u.nominal.argc == nb) {
+        return ck_apply_binders(c, ct->payload, d->binders,
+                                col->u.nominal.args, nb);
+    }
+    return ct->payload;
+}
+
+/* The constructor's matching alternatives contribute their payload
+   patterns; a bare arm over a payload-carrying constructor matches
+   nothing. */
+static void ctor_alts(ck_ctx *c, ex_rows *out, const ek_node **row,
+                      size_t ncols, size_t pos, const ck_ctor *ct,
+                      const ek_node *const *alts, size_t nalt)
+{
+    size_t na;
+
+    for (na = 0; na < nalt && !c->oom; na++) {
+        const ek_node *alt = alts[na];
+        const ek_node *one[1];
+
+        if (alt->kind != EK_N_P_CONS || ck_pat_head(c, alt) != ct->sym
+            || (!alt->u.cons.payload && ct->payload)) {
+            continue;
+        }
+        one[0] = alt->u.cons.payload;
+        ex_rows_add(c, out, ex_vec_at(c, row, ncols, pos,
+                                ct->payload ? one : NULL,
+                                ct->payload ? 1 : 0));
+    }
+}
+
 /* The constructor branch of an algebraic column: each surviving row
    contributes the constructor's payload pattern, and the instantiated
    payload type replaces the column. */
@@ -13,68 +53,31 @@ int ex_ctor_branch(ck_ctx *c, ex_state *st, size_t pos, ex_memo *memo,
                        int depth, const ck_ctor *ct)
 {
     const ck_decl *d = ck_decl_of(c, ct->owner);
-    const ek_type *payload = NULL;
+    const ek_node *any[1];
     const ek_type *ins[1];
     ex_rows out;
     ex_buf buf;
-    size_t i, nb = d ? d->nbinders : 0;
+    size_t i;
 
     memset(&out, 0, sizeof out);
     memset(&buf, 0, sizeof buf);
-    if (ct->payload) {
-        if (nb && st->cols[pos]->kind == EK_T_NOMINAL
-            && st->cols[pos]->u.nominal.argc == nb) {
-            payload = ck_apply_binders(c, ct->payload, d->binders,
-                                       st->cols[pos]->u.nominal.args, nb);
-        } else {
-            payload = ct->payload;
-        }
-        ins[0] = payload;
-    }
+    ins[0] = ctor_payload(c, ct, st->cols[pos], d);
     for (i = 0; i < st->nrows && !c->oom; i++) {
         const ek_node *p = st->rows[i][pos];
-        size_t nalt, na;
-        int all = 0;
+        size_t nalt;
 
         if (!p) {
-            const ek_node *any[1];
-
-            any[0] = NULL;
-            ex_rows_add(c, &out, ex_vec_at(c, st->rows[i], st->ncols, pos,
-                                     ct->payload ? any : NULL,
-                                     ct->payload ? 1 : 0));
+            ex_rows_wild(c, &out, st->rows[i], st->ncols, pos, any,
+                         ct->payload ? 1 : 0);
             continue;
         }
         nalt = ex_flat_into(c, p, &buf);
-        for (na = 0; na < nalt; na++) {
-            if (ck_pat_catchall(buf.v[na])) {
-                all = 1;
-            }
-        }
-        if (all) {
-            const ek_node *any[1];
-
-            any[0] = NULL;
-            ex_rows_add(c, &out, ex_vec_at(c, st->rows[i], st->ncols, pos,
-                                     ct->payload ? any : NULL,
-                                     ct->payload ? 1 : 0));
+        if (ex_any_catchall(buf.v, nalt)) {
+            ex_rows_wild(c, &out, st->rows[i], st->ncols, pos, any,
+                         ct->payload ? 1 : 0);
             continue;
         }
-        for (na = 0; na < nalt && !c->oom; na++) {
-            const ek_node *alt = buf.v[na];
-            const ek_node *one[1];
-
-            /* A bare arm over a payload-carrying constructor matches
-               nothing. */
-            if (alt->kind != EK_N_P_CONS || ck_pat_head(c, alt) != ct->sym
-                || (!alt->u.cons.payload && ct->payload)) {
-                continue;
-            }
-            one[0] = alt->u.cons.payload;
-            ex_rows_add(c, &out, ex_vec_at(c, st->rows[i], st->ncols, pos,
-                                     ct->payload ? one : NULL,
-                                     ct->payload ? 1 : 0));
-        }
+        ctor_alts(c, &out, st->rows[i], st->ncols, pos, ct, buf.v, nalt);
     }
     if (c->oom) {
         return 1;
@@ -82,19 +85,7 @@ int ex_ctor_branch(ck_ctx *c, ex_state *st, size_t pos, ex_memo *memo,
     if (!out.n) {
         return 0;
     }
-    {
-        ex_state next;
-
-        next.cols = ex_cols_at(c, st->cols, st->ncols, pos,
-                            ct->payload ? ins : NULL, ct->payload ? 1 : 0);
-        next.ncols = st->ncols - 1 + (ct->payload ? 1 : 0);
-        next.rows = out.v;
-        next.nrows = out.n;
-        if (c->oom) {
-            return 1;
-        }
-        return covers_walk(c, &next, pos, memo, depth + 1);
-    }
+    return ex_step(c, st, pos, memo, depth, ins, ct->payload ? 1 : 0, &out);
 }
 
 /* The component contributions of one alternative at a shape column:
@@ -144,6 +135,17 @@ static int shape_contrib(const ek_node *a, const ek_type *t,
     return 0;
 }
 
+/* The component types of a record or tuple shape. */
+static void shape_ins(const ek_type *shape, size_t k, const ek_type **ins)
+{
+    size_t j;
+
+    for (j = 0; j < k; j++) {
+        ins[j] = shape->kind == EK_T_RECORD ? shape->u.record.fields[j].type
+                                            : shape->u.tuple.items[j];
+    }
+}
+
 /* A tuple or record column: the components replace the column. */
 int ex_shape_branch(ck_ctx *c, ex_state *st, size_t pos, ex_memo *memo,
                         int depth, const ek_type *shape)
@@ -164,39 +166,22 @@ int ex_shape_branch(ck_ctx *c, ex_state *st, size_t pos, ex_memo *memo,
         c->oom = 1;
         return 1;
     }
-    for (j = 0; j < k; j++) {
-        ins[j] = shape->kind == EK_T_RECORD ? shape->u.record.fields[j].type
-                                            : shape->u.tuple.items[j];
-    }
+    shape_ins(shape, k, ins);
     for (i = 0; i < st->nrows && !c->oom; i++) {
         const ek_node *p = st->rows[i][pos];
-        size_t nalt, na;
-        int all = 0;
+        size_t nalt;
 
         if (!p) {
-            for (j = 0; j < k; j++) {
-                contrib[j] = NULL;
-            }
-            ex_rows_add(c, &out, ex_vec_at(c, st->rows[i], st->ncols, pos, contrib,
-                                     k));
+            ex_rows_wild(c, &out, st->rows[i], st->ncols, pos, contrib, k);
             continue;
         }
         nalt = ex_flat_into(c, p, &buf);
-        for (na = 0; na < nalt; na++) {
-            if (ck_pat_catchall(buf.v[na])) {
-                all = 1;
-            }
-        }
-        if (all) {
-            for (j = 0; j < k; j++) {
-                contrib[j] = NULL;
-            }
-            ex_rows_add(c, &out, ex_vec_at(c, st->rows[i], st->ncols, pos, contrib,
-                                     k));
+        if (ex_any_catchall(buf.v, nalt)) {
+            ex_rows_wild(c, &out, st->rows[i], st->ncols, pos, contrib, k);
             continue;
         }
-        for (na = 0; na < nalt && !c->oom; na++) {
-            if (shape_contrib(buf.v[na], shape, contrib, k)) {
+        for (j = 0; j < nalt && !c->oom; j++) {
+            if (shape_contrib(buf.v[j], shape, contrib, k)) {
                 ex_rows_add(c, &out, ex_vec_at(c, st->rows[i], st->ncols, pos,
                                          contrib, k));
             }
@@ -208,16 +193,5 @@ int ex_shape_branch(ck_ctx *c, ex_state *st, size_t pos, ex_memo *memo,
     if (!out.n) {
         return 0;
     }
-    {
-        ex_state next;
-
-        next.cols = ex_cols_at(c, st->cols, st->ncols, pos, ins, k);
-        next.ncols = st->ncols - 1 + k;
-        next.rows = out.v;
-        next.nrows = out.n;
-        if (c->oom) {
-            return 1;
-        }
-        return covers_walk(c, &next, pos, memo, depth + 1);
-    }
+    return ex_step(c, st, pos, memo, depth, ins, k, &out);
 }

@@ -258,6 +258,13 @@ const ek_type **ex_cols_at(ck_ctx *c, const ek_type **cols, size_t ncols,
                            size_t pos, const ek_type *const *ins,
                            size_t nins);
 void ex_rows_add(ck_ctx *c, ex_rows *r, const ek_node **vec);
+/* One surviving row answered with wildcards, and one branch's child
+   state walked at the same position. */
+void ex_rows_wild(ck_ctx *c, ex_rows *r, const ek_node **row,
+                  size_t ncols, size_t pos, const ek_node **wild, size_t k);
+int ex_step(ck_ctx *c, const ex_state *st, size_t pos, ex_memo *memo,
+            int depth, const ek_type *const *ins, size_t nins,
+            const ex_rows *rows);
 /* exhaust_prod.c: one walk step, recursive into the branches. */
 int covers_walk(ck_ctx *c, ex_state *st, size_t pos, ex_memo *memo,
                 int depth);
@@ -368,8 +375,9 @@ void ck_tvars_collect(ck_ctx *c, const ek_type *t, const ek_type ***out,
                       size_t *n, size_t *cap);
 void ck_check_phantom(ck_ctx *c, const ek_node *ann, const ek_type *t);
 
-/* elab.c: annotations and representations. decl.c: declared types,
-   their binder scope, and the phantom rule. entry.c: entry rules. */
+/* elab.c: annotations. repr.c: the anonymous representation of a
+   shaped nominal type. decl.c: declared types, their binder scope,
+   and the phantom rule. entry.c: entry rules. */
 const ek_type *ck_elaborate(ck_ctx *c, const ek_node *t, ck_tvars *tv);
 void ck_tv_add(ck_ctx *c, ck_tvars *tv, const char *name, const ek_type *t,
                const ek_node *first);
@@ -423,6 +431,11 @@ const ek_type *ck_place(ck_ctx *c, const ek_node *lit, const ek_type *expected,
                         int neg);
 const ek_type *ck_composite(ck_ctx *c, const ek_node *e,
                             const ek_type *expected, int allow_partial);
+/* recordlit.c: the record family of composite literals. */
+const ek_type *ck_record_lit(ck_ctx *c, const ek_node *e, const ek_type *rec,
+                             int allow_partial);
+void ck_item_value(ck_ctx *c, const ek_node *val, const ek_type *expected,
+                   int allow_partial);
 void ck_pending_literal(ck_ctx *c, const ek_node *e);
 const ek_ck_row *ck_row_of(const ck_ctx *c, const ek_node *n);
 void finish_rows(ck_ctx *c); /* rows.c: sort, snapshot, world bits */
@@ -464,8 +477,9 @@ ek_bit ck_own_bit(const ek_type *bound);
 void ck_reconcile(ck_ctx *c, const ek_node *at, const ek_type *bound,
                   const ek_node *val);
 
-/* pattern.c: pattern typing. patbind.c: or-patterns and the
-   binding-shape judgments. */
+/* pattern.c: pattern typing. patcons.c: constructor patterns.
+   patbind.c: or-patterns and the binding-shape judgments.
+   irrefutable.c: the value binding's irrefutability judgment. */
 int ck_invert_pattern(const ek_node *pat);
 const ek_type *ck_invert_binding(ck_ctx *c, const ek_node *m,
                                   const ek_node *pat, int top);
@@ -473,6 +487,8 @@ const ek_type *ck_invert_block(ck_ctx *c, const ek_node *m,
                                const ek_node *block, size_t start,
                                const ek_type *expected);
 const ek_type *ck_pattern(ck_ctx *c, const ek_node *p, const ek_type *scrut);
+const ek_type *cons_pattern(ck_ctx *c, const ek_node *p,
+                            const ek_type *scrut);
 const ek_symbol *ck_cons_select(ck_ctx *c, const ek_node *p,
                                 const ek_type *scrut);
 const ek_type *ck_or_pattern(ck_ctx *c, const ek_node *p, const ek_type *scrut);
@@ -489,6 +505,7 @@ size_t ck_pat_flatten(ck_ctx *c, const ek_node *p, const ek_node **out,
                       size_t n, size_t cap);
 const ek_symbol *ck_pat_head(ck_ctx *c, const ek_node *p);
 int ck_pat_catchall(const ek_node *p);
+int ex_any_catchall(const ek_node *const *alts, size_t n);
 void ck_exhaust(ck_ctx *c, const ek_node *cs, const ek_type **scrut,
                 size_t nscrut, const ek_node *const *arms, const int *contrib,
                 size_t narms);

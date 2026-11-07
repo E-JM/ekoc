@@ -95,6 +95,7 @@ CHECK_SRC := \
 	src/check/halt.c \
 	src/check/instdepth.c \
 	src/check/invert.c \
+	src/check/irrefutable.c \
 	src/check/link.c \
 	src/check/literal.c \
 	src/check/member.c \
@@ -103,8 +104,11 @@ CHECK_SRC := \
 	src/check/nsrows.c \
 	src/check/op.c \
 	src/check/patbind.c \
+	src/check/patcons.c \
 	src/check/pattern.c \
 	src/check/reconcile.c \
+	src/check/recordlit.c \
+	src/check/repr.c \
 	src/check/reqs.c \
 	src/check/rows.c \
 	src/check/scheme.c \
