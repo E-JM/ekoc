@@ -432,7 +432,7 @@ void lower_dsvc_json_emit(lower_ctx *c, const char *name, const ek_type *t,
                           int from);
 void lower_dsvc_from_emit(lower_ctx *c, const char *name, const ek_type *t);
 
-/* derivedhash.c: the key-domain stamping. lower_key_pair names the
+/* dsvcstamp.c: the key-domain stamping. lower_key_pair names the
    hook pair a construction site passes the runtime over the key
    domain -- the stamped family services, the minted services of a
    container standing as the domain, or the runtime's default pair for
