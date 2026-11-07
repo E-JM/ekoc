@@ -43,6 +43,13 @@ timeouts (Clause 8.9.4). The design record preserves these costs; the
 normative clauses state the resulting rules. The table is not a priority
 order.
 
+Visible cost decides the sequence surface too. The cost model names every
+non-constant operation, so the quadratic scan shape is called out where it
+can bite and the linear shape is stated instead (Clauses 8.10, 9.10.1);
+`Vector.get` carries random access at O(log n) (Clause 9.10.6). An O(1)
+cursor or reader type is a considered structure, deliberately absent until
+a need beyond the vector's is shown.
+
 ## E.3 Worked Example
 
 The program below is the complete running example. It reads a CSV file, parses
