@@ -149,6 +149,7 @@ LOWER_SRC := \
 	src/lower/tce.c \
 	src/lower/type.c \
 	src/lower/typeemit.c \
+	src/lower/typevar.c \
 	src/lower/typewalk.c \
 	src/lower/unit.c \
 	src/lower/unwrap.c \

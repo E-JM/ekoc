@@ -516,14 +516,18 @@ int lower_is_value(const ek_symbol *sym);
 const char *lower_value_getter(lower_ctx *c, const ek_symbol *sym);
 void lower_value_binding(lower_ctx *c, const lower_item *item);
 
-/* subst.c: the instantiation substitution. lower_type_has_var is true
-   when a tvar or an inference variable occurs anywhere; env build
-   pairs the annotation's rigid variables with the applied function
-   type of the call that keyed the emission, and every row-type read
-   the emitter makes goes through lower_row_type so a specialized body
-   sees its instantiation's types. */
+/* typevar.c: the variable-occurrence queries over a type.
+   lower_type_has_var is true when a tvar or an inference variable
+   occurs anywhere; lower_type_has_ivar is the inference-variable-only
+   form. */
 int lower_type_has_var(const ek_type *t);
 int lower_type_has_ivar(const ek_type *t);
+
+/* subst.c: the instantiation substitution. Env build pairs the
+   annotation's rigid variables with the applied function type of the
+   call that keyed the emission, and every row-type read the emitter
+   makes goes through lower_row_type so a specialized body sees its
+   instantiation's types. */
 int lower_env_build(lower_ctx *c, const ek_symbol *sym, const ek_type *fn);
 size_t lower_inst_args(lower_ctx *c, const ek_symbol *sym,
                        const ek_type *fn, const ek_type ***out);
