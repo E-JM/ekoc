@@ -319,7 +319,8 @@ static int module_walk(r_ctx *c, r_file *f, r_head *cur, const ek_node *link,
 
 static int namespace_walk(r_ctx *c, r_file *f, r_head *cur,
                           const ek_node *link, const char *name,
-                          const ek_symbol *type, r_mod *owner, int *state)
+                          const ek_symbol *type, r_mod *owner,
+                          int from_receiver, int *state)
 {
     const ek_symbol *nm = namespace_member(owner, type->name, name);
 
@@ -332,7 +333,7 @@ static int namespace_walk(r_ctx *c, r_file *f, r_head *cur,
         }
         cur->sym = nm;
         cur->kind = EK_SYM_NAMESPACE;
-        cur->st = EK_ST_QUALIFIED;
+        cur->st = from_receiver ? EK_ST_MODULE_PATH : EK_ST_QUALIFIED;
         r_add_ref(c, link, cur->kind, cur->st, cur->sym);
     } else {
         /* Derived services attach as defaults; check owns them.
@@ -393,7 +394,7 @@ static void walk_links(r_ctx *c, r_file *f, const r_links *l, int is_call,
                         walk_mod, walk_type, state);
         } else if (*state == 2) {
             namespace_walk(c, f, cur, link, name, *walk_type, *walk_mod,
-                           state);
+                           *from_receiver, state);
         } else if (!last && (msym = r_lookup_mod(f, name)) != NULL) {
             /* A module segment inside the chain; a field of the same
                name would win at the receiver reading, which check
