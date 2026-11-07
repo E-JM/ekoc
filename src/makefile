@@ -73,6 +73,7 @@ CHECK_SRC := \
 	src/check/ctor.c \
 	src/check/ctl.c \
 	src/check/decl.c \
+	src/check/declcheck.c \
 	src/check/elab.c \
 	src/check/entry.c \
 	src/check/exhaust.c \

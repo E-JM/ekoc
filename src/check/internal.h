@@ -553,8 +553,20 @@ const ek_type *ck_instantiate_use(ck_ctx *c, const char *name,
                                   const ck_scheme *s);
 void ck_inst_depth(ck_ctx *c);
 
-/* bind.c: the binding forms. */
+/* bind.c: the binding forms and ck_stmt. declcheck.c: the annotated
+   bindings and the declared members; a namespace member or a test
+   body runs under a fresh instantiation state. */
 ck_scheme *ck_mono(ck_ctx *c, const ek_type *t);
 const ek_type *ck_stmt(ck_ctx *c, const ek_node *m, int top);
+void annotated_fn_body(ck_ctx *c, const ek_node *ann, const ek_node *val,
+                       const ek_type *bound);
+const ek_type *annotated_binding(ck_ctx *c, const ek_node *m,
+                                 const ek_node *val, ck_scheme *gen,
+                                 int top);
+const ek_type *ck_annotated_decl(ck_ctx *c, const ek_node *m,
+                                 const ek_node *ann, const ek_node *body,
+                                 int binding);
+const ek_type *ck_namespace_member(ck_ctx *c, const ek_node *m);
+void ck_test_decl(ck_ctx *c, const ek_node *m);
 
 #endif
