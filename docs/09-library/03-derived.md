@@ -179,7 +179,7 @@ Result t ParseError` by default.
 | Eko type | JSON form |
 |---|---|
 | record, string-keyed dictionary | `Obj` with field names as keys |
-| list, tuple, `Set` | `Arr` in iteration order |
+| list, tuple, `Set`, `Vector` | `Arr` in iteration order |
 | `String`, `Char`, `Bytes` | `Str`; `Bytes` in lowercase hexadecimal |
 | `Int`, `Float`, `Bool`, `_` | number, `true` or `false`, `null` |
 | ADT | external tagging (Clause 9.9.4) |

@@ -145,7 +145,7 @@ the decoding direction and returns a `Result` (Clause 9.5.3). `pad_left` and
 `String.eq`, `String.ne`, and the ordering members are compiler-owned on the
 value layer (Clause 9.8.4, Clause 9.8.5).
 
-## C.7 Char, Bytes, Option, Result, Range
+## C.7 Char, Bytes, Option, Result, Range, Vector
 
 | Namespace | Member | Signature | Clause |
 |---|---|---|---|
@@ -191,6 +191,12 @@ value layer (Clause 9.8.4, Clause 9.8.5).
 | `Range` | `Range.eq` | `(Range t, Range t) -> Bool` | Clause 9.10.5 |
 | `Range` | `Range.lt`, `Range.le`, `Range.gt`, `Range.ge` | `(Range t, Range t) -> Bool` | Clause 9.10.5 |
 | `Range` | `Range.show` | `(Range t) -> String` | Clause 9.10.5 |
+| `Vector` | `Vector.of` | `([]t) -> Vector t` | Clause 9.10.6 |
+| `Vector` | `Vector.to_list` | `(Vector t) -> []t` | Clause 9.10.6 |
+| `Vector` | `Vector.get` | `(Vector t, Int) -> Option t` | Clause 9.10.6 |
+| `Vector` | `Vector.set` | `(Vector t, Int, t) -> Option (Vector t)` | Clause 9.10.6 |
+| `Vector` | `Vector.push` | `(Vector t, t) -> Vector t` | Clause 9.10.6 |
+| `Vector` | `Vector.length` | `(Vector t) -> Int` | Clause 9.10.6 |
 
 **Char.** `Char` is a value-layer scalar type ordered by code point
 (Clause 9.4.3). **Bytes.** `Bytes` is an immutable byte sequence with no
@@ -228,6 +234,18 @@ over `Int`, `UInt`, or `Char` endpoints (Clause 6.5.6). Its members are
 compiler-supplied; the member semantics are Clause 9.10.5. `Range.eq`
 compares the endpoints and the closed flag structurally, and `Range.show` uses
 the operator form (`1..5`, `1..=5`).
+
+**Vector.** `Vector t` is a compiler-supplied nominal generic container
+(Clause 9.1.1) with no notation and no literal; all members are pure
+(Clause 9.10.6). `of` builds over a list's elements in their order, and the
+empty vector is `Vector.of({})` with an expected type. `push` appends at the
+end. `get` and `set` never clamp: an index that names no position yields
+`None`. `set` and `push` return a new vector and never mutate the receiver;
+a vector shares every subtree an update does not touch, so `get`, `set`,
+and `push` are O(log n) (Clause 8.10). The element domain is the key domain
+(Clause 9.10.4) when a vector stands as a key, and the keying travels with
+the value by the same carried pair as the other containers.
+`Vector.eq` is derived (Annex C.2); `Vector` has no derived ordering.
 
 ## C.8 Int, UInt, Float, Machine Words
 

@@ -45,7 +45,8 @@ value and keeps the key's position; a literal naming a key twice follows the
 same rule, the later value winning at the first position. The new dictionary
 is a copy, O(n) in the
 number of entries, so building a dictionary by n successive inserts costs
-O(n²) (Clause 8.10). `Dict.merge` and `++` return a dictionary in which the
+O(n²) (Clause 8.10). `Dict.merge` and
+`++` return a dictionary in which the
 right operand wins on duplicate keys; the result keeps the left operand's
 order and appends the right operand's new keys in right order. `Dict.map`,
 `Dict.filter`, `Dict.fold`, and `Dict.each` dispatch on the key and value in
@@ -77,7 +78,7 @@ element type. `Set.empty: ()
 ### 9.10.4 Key Domains
 
 The key domain is the set of data types that have `eq`. Structural equality is
-key equality. Lists, records, tuples, ADTs, `Bytes`, `Set`, and dictionaries
+key equality. Lists, records, tuples, ADTs, `Bytes`, `Set`, `Vector`, and dictionaries
 themselves are admissible keys; the type `[[]String]Int` is well formed.
 Capabilities and functions are excluded; their equality derivation halts
 (Clause 9.8.4). A `Float` key follows IEEE equality. Since `NaN != NaN`, a
@@ -112,6 +113,28 @@ the two endpoints and the closed flag. `Range.lt` and its family (`le`, `gt`,
 `inspect` prints a constructor name. `Range` has no default JSON mapping
 (Clause 9.9.3).
 A member is world-touching exactly when its callback is (Clause 7.9).
+
+### 9.10.6 Vector
+
+`Vector t` is an ordinary nominal standard-library generic type. It has no
+notation and no literal; the four composite forms are unchanged. A vector is
+a persistent sequence: no member mutates a receiver, every update returns a
+fresh vector, and a position the update does not touch reads the same in
+every version (Clause 2.5). `Vector.of` constructs a vector over a list's
+elements in their order; the empty vector is `Vector.of({})` with an
+expected type supplying the element type. `Vector.push` appends one element
+at the end. `Vector.get` yields `Option t`: the element at a zero-based
+index, and `None` for any index that names no position, negative included.
+`Vector.set` replaces the element at an index and yields the fresh vector
+as `Some`; an index that names no position yields `None`, and the original
+is unchanged. `Vector.length` counts elements. `Vector.to_list` yields the
+elements as a fresh list in index order. `Vector.eq` is structural equality
+over the elements in index order: two vectors are equal when they have the
+same length and equal elements at every index. `Vector` has no `<`, by the
+same rule as for `Set`. The default JSON mapping is the array of the
+elements' JSON in index order (Clause 9.9.3). `Vector.get`, `Vector.set`,
+and `Vector.push` are O(log n): a vector shares every subtree an update
+does not touch (Clause 8.10). `Vector.of` and `Vector.to_list` are O(n).
 
 ## 9.11 Text Utilities
 

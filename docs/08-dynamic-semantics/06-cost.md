@@ -12,6 +12,7 @@ the length of the list.
 | Scalar arithmetic; field access `p.name` | O(1) |
 | `p.with(update)` | O(number of top-level fields) shallow copy; untouched fields shared; nested partial literals paid per path |
 | `xs ++ ys` (lists) | O(\|xs\|) new nodes; `ys` fully shared |
+| `Vector.get`, `Vector.set`, `Vector.push` (Clause 9.10.6) | O(log n) path; untouched positions shared |
 | String `++` | O(n) full copy |
 | `==`, `show`, `inspect` | O(structure size) |
 | Deep structural recursion | proportional to data depth; stack guarantees in Clause 8.8 |
@@ -20,7 +21,8 @@ the length of the list.
 
 Dictionary merge magnitude is implementation-defined, because dictionaries are
 persistent structures (Clause 2.5). Index-based access keeps the same
-accounting: `Dict.get` is O(1), while `List.get` is O(n) because a list is
+accounting: `Dict.get` is O(1), `Vector.get` is O(log n) because a vector
+shares the path an update touches, while `List.get` is O(n) because a list is
 an inductive sequence, and `String.at` and `String.slice` are O(n) because
 UTF-8 is variable-width (Clause 9.4.2).
 

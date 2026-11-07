@@ -53,6 +53,7 @@ the namespace member below, by operand type (Clause 7.8.3).
 | `Option t` | built-in ADT; constructors `Some t` and `None` | Clause 9.2.2 |
 | `Result t e` | built-in ADT; constructors `Ok t` and `Err e` | Clause 9.2.1 |
 | `Set t` | compiler-supplied nominal generic container | Clause 9.1.1, Clause 9.10.3 |
+| `Vector t` | compiler-supplied nominal generic container | Clause 9.1.1, Clause 9.10.6 |
 | `Range t` | compiler-supplied nominal generic type; no constructor; the operators are its only construction | Clause 6.5.6, Clause 9.1.1, Clause 9.10.5 |
 | `ParseError` | closed ADT | Clause 9.6.3 |
 | `IoError` | closed ADT | Clause 9.12.2 |
@@ -69,9 +70,11 @@ the namespace member below, by operand type (Clause 7.8.3).
 
 The variant set of each type is stated with the type's own clause: the table
 above gives the clause for every row, and `Range` is Clause 9.10.5. `Set`,
+`Vector`,
 `Range`, `File`, `Scope`, `Task t`, the capabilities, and the machine words
 have no public variant declaration; their interfaces are the namespaces of
-Annex C.5, Annex C.7, Annex C.8, and Annex C.9. `Set` and `Range` are
+Annex C.5, Annex C.7, Annex C.8, and Annex C.9. `Set`, `Vector`, and `Range`
+are
 compiler-supplied (Clause 9.1.1). `Range` has no constructor and no pattern
 form; `..` and `..=` are its only construction (Clause 6.5.6). `ParseError`
 and `IoError` are closed and are not extended by programs (Clause 9.6.3,
