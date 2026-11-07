@@ -94,6 +94,40 @@ static int variant_seen(const r_surf *s, size_t first, const char *name)
     return 0;
 }
 
+/* The constructor rows of a type declaration: one per variant, the
+   type's visibility beside a `_` spelling. */
+static void collect_variants(r_surf *s, const ek_node *d,
+                             const ek_symbol *type, size_t first)
+{
+    const char *name = d->u.type_decl.name;
+    size_t i;
+
+    for (i = 0; i < d->u.type_decl.variants.count; i++) {
+        const ek_node *v = d->u.type_decl.variants.data[i];
+        ek_symbol *cs;
+
+        if (variant_seen(s, first, v->u.variant.name)) {
+            r_error(s->c, s->m->file, v->line, v->col, "E-name-conflict",
+                    "the constructor `%s` is declared twice in the type "
+                    "`%s` (Clause 7.4.6)", v->u.variant.name, name);
+            continue;
+        }
+        cs = r_sym(s->c, v->u.variant.name, EK_SYM_CONSTRUCTOR,
+                   s->m->stem, v->line, v->col);
+
+        if (!cs) {
+            return;
+        }
+        cs->decl = d;
+        cs->owner = d->u.type_decl.name;
+        /* Visibility follows the type; a `_`-prefixed constructor
+           spelling is the one split, private to the declaring
+           module. */
+        cs->public = type->public && v->u.variant.name[0] != '_';
+        emit(s, cs);
+    }
+}
+
 /* A declared type or ctype: one symbol of the identity layer. */
 static void collect_type(r_surf *s, const ek_node *d)
 {
@@ -101,7 +135,7 @@ static void collect_type(r_surf *s, const ek_node *d)
                            ? d->u.type_decl.name : d->u.decl.name;
     ek_symbol *sym = r_sym(s->c, name, EK_SYM_TYPE,
                            s->m->stem, d->line, d->col);
-    size_t i, first = s->n;
+    size_t first = s->n;
     int seen;
 
     if (!sym) {
@@ -128,30 +162,7 @@ static void collect_type(r_surf *s, const ek_node *d)
     if (d->kind != EK_N_TYPE_DECL) {
         return;
     }
-    for (i = 0; i < d->u.type_decl.variants.count; i++) {
-        const ek_node *v = d->u.type_decl.variants.data[i];
-        ek_symbol *cs;
-
-        if (variant_seen(s, first, v->u.variant.name)) {
-            r_error(s->c, s->m->file, v->line, v->col, "E-name-conflict",
-                    "the constructor `%s` is declared twice in the type "
-                    "`%s` (Clause 7.4.6)", v->u.variant.name, name);
-            continue;
-        }
-        cs = r_sym(s->c, v->u.variant.name, EK_SYM_CONSTRUCTOR,
-                   s->m->stem, v->line, v->col);
-
-        if (!cs) {
-            return;
-        }
-        cs->decl = d;
-        cs->owner = d->u.type_decl.name;
-        /* Visibility follows the type; a `_`-prefixed constructor
-           spelling is the one split, private to the declaring
-           module. */
-        cs->public = sym->public && v->u.variant.name[0] != '_';
-        emit(s, cs);
-    }
+    collect_variants(s, d, sym, first);
 }
 
 /* The full head of a namespace binding, segments joined with `.`:
