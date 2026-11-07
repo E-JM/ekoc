@@ -18,6 +18,7 @@ SUPPORT_SRC := \
 	src/support/xid_tables.c
 
 LEX_SRC := \
+	src/lex/buf.c \
 	src/lex/charlit.c \
 	src/lex/escape.c \
 	src/lex/ident.c \
