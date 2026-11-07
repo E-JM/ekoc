@@ -5,7 +5,6 @@
 #include <ctype.h>
 #include <stdarg.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
@@ -104,14 +103,12 @@ static void emit_failure(ek_diag *diag, const char *out_path,
 }
 
 /* Drops the temporary product a failed link may have left behind. */
-static void remove_tmp(const char *out_path)
+static void remove_tmp(ek_arena *arena, const char *out_path)
 {
-    char *tmp = malloc(strlen(out_path) + 5);
+    char *tmp = aprintf(arena, "%s.tmp", out_path);
 
     if (tmp) {
-        sprintf(tmp, "%s.tmp", out_path);
         remove(tmp);
-        free(tmp);
     }
 }
 
@@ -209,7 +206,7 @@ ek_emit_result ek_emit_aot(const char *c_text, const char *out_path,
     ek_buf_init(&raw);
     status = run_cc(cmd, &raw);
     if (status < 0 || !WIFEXITED(status) || WEXITSTATUS(status) != 0) {
-        remove_tmp(out_path);
+        remove_tmp(arena, out_path);
         emit_failure(diag, out_path, raw.data, raw.len);
     } else {
         r.ok = 1;
