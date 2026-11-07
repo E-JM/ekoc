@@ -402,77 +402,85 @@ static void std_redundant(r_ctx *c, const char *file, const ek_node *imp)
     }
 }
 
-static void load_import(r_ctx *c, r_mod *from, const ek_node *imp)
+/* A stem the std/ line names that the closure already holds: the
+   shipped companion shares as a diamond, a root claiming a reserved
+   stem is already rejected, a user module holding it collides, and an
+   unknown companion's stub keeps it. Returns 1 when the line is
+   handled. */
+static int std_held(r_ctx *c, const char *file, const ek_node *imp,
+                    const char *stem, const r_mod *held)
 {
-    const char *file = from->file;
-    const char *stem;
+    if (shipped_companion(held)) {
+        /* The shipped companion is already in the closure — the
+           capability module imports it at boot — so this line is a
+           legal diamond share, and the stem opens in the importing
+           file's own scope pass. */
+        return 1;
+    }
+    if (held == c->mods && r_companion_stem(stem)) {
+        /* A root illegally named as a shipped companion claims the
+           stem; the root is already rejected (E-module-name), and
+           the companion stays out of the closure rather than
+           compounding the rejection with a conflict at cap.eko
+           and unbound names in the capability source. */
+        return 1;
+    }
+    if (held && !held->external) {
+        /* The std/ path is reserved; a user module already holding
+           the companion's stem collides over the closure, whichever
+           import came first. */
+        r_error(c, file, imp->line, imp->col, "E-name-conflict",
+                "module stem `%s` is already imported from `%s` "
+                "(Clauses 7.2.2, 7.4.6)", stem, held->file);
+        return 1;
+    }
+    return held != NULL;
+}
+
+/* The std/ path of an import line: a bare line is redundant, a stem
+   the closure holds is judged, and a new companion is booted or
+   reserved. */
+static void load_std(r_ctx *c, const char *file, const ek_node *imp,
+                     const char *stem)
+{
+    if (imp->u.imports.path.count == 1) {
+        /* The implicit import already put the std module in the
+           closure; an explicit line only repeats it. */
+        std_redundant(c, file, imp);
+        return;
+    }
+    if (std_held(c, file, imp, stem, r_module_find(c, stem))) {
+        return;
+    }
+    /* A companion stem obeys the stem rules like any module name. */
+    if (!r_stem_legal(c, file, imp->line, imp->col, stem)) {
+        return;
+    }
+    if (r_companion_stem(stem)) {
+        load_companion(c, stem);
+    } else {
+        r_module_companion(c, stem);
+    }
+}
+
+/* The embedded modules are compiler-embedded and have no import path;
+   their names resolve without one (Clauses 9.1.1, 9.1.2). */
+static void embedded_rejected(r_ctx *c, const char *file,
+                              const ek_node *imp)
+{
+    r_error(c, file, imp->line, imp->col, "E-module-name",
+            "no import path names an embedded module (Clauses "
+            "9.1.1, 9.1.2)");
+}
+
+/* A user module: the stem rules, the closure guards, then the file the
+   module path resolves the line to. */
+static void load_user(r_ctx *c, const char *file, const ek_node *imp,
+                      const char *stem)
+{
     r_mod *m;
     char *path;
 
-    if (c->oom || imp->u.imports.path.count == 0) {
-        return;
-    }
-    stem = imp->u.imports.path.data[imp->u.imports.path.count - 1];
-    if (strcmp(imp->u.imports.path.data[0], "std") == 0) {
-        r_mod *held;
-
-        if (imp->u.imports.path.count == 1) {
-            /* The implicit import already put the std module in the
-               closure; an explicit line only repeats it. */
-            std_redundant(c, file, imp);
-            return;
-        }
-        held = r_module_find(c, stem);
-        if (shipped_companion(held)) {
-            /* The shipped companion is already in the closure — the
-               capability module imports it at boot — so this line is a
-               legal diamond share, and the stem opens in the importing
-               file's own scope pass. */
-            return;
-        }
-        if (held == c->mods && r_companion_stem(stem)) {
-            /* A root illegally named as a shipped companion claims the
-               stem; the root is already rejected (E-module-name), and
-               the companion stays out of the closure rather than
-               compounding the rejection with a conflict at cap.eko
-               and unbound names in the capability source. */
-            return;
-        }
-        if (held && !held->external) {
-            /* The std/ path is reserved; a user module already holding
-               the companion's stem collides over the closure, whichever
-               import came first. */
-            r_error(c, file, imp->line, imp->col, "E-name-conflict",
-                    "module stem `%s` is already imported from `%s` "
-                    "(Clauses 7.2.2, 7.4.6)", stem, held->file);
-            return;
-        }
-        if (held) {
-            /* An unknown companion's stub holds the stem. */
-            return;
-        }
-        /* A companion stem obeys the stem rules like any module
-           name. */
-        if (!r_stem_legal(c, file, imp->line, imp->col, stem)) {
-            return;
-        }
-        if (r_companion_stem(stem)) {
-            load_companion(c, stem);
-        } else {
-            r_module_companion(c, stem);
-        }
-        return;
-    }
-    if (strcmp(imp->u.imports.path.data[0], "cap") == 0
-        || strcmp(imp->u.imports.path.data[0], "sys") == 0) {
-        /* The embedded modules are compiler-embedded and have no import
-           path; their names resolve without one (Clauses 9.1.1,
-           9.1.2). */
-        r_error(c, file, imp->line, imp->col, "E-module-name",
-                "no import path names an embedded module (Clauses "
-                "9.1.1, 9.1.2)");
-        return;
-    }
     if (!r_stem_legal(c, file, imp->line, imp->col, stem)) {
         return;
     }
@@ -490,6 +498,29 @@ static void load_import(r_ctx *c, r_mod *from, const ek_node *imp)
     }
     m = register_mod(c, stem, path, parse_file(c, path), 0);
     r_closure_walk(c, m);
+}
+
+/* One import line of one module: the std/ path, an embedded module's
+   name, or a user module found on the module path. */
+static void load_import(r_ctx *c, r_mod *from, const ek_node *imp)
+{
+    const char *file = from->file;
+    const char *stem;
+
+    if (c->oom || imp->u.imports.path.count == 0) {
+        return;
+    }
+    stem = imp->u.imports.path.data[imp->u.imports.path.count - 1];
+    if (strcmp(imp->u.imports.path.data[0], "std") == 0) {
+        load_std(c, file, imp, stem);
+        return;
+    }
+    if (strcmp(imp->u.imports.path.data[0], "cap") == 0
+        || strcmp(imp->u.imports.path.data[0], "sys") == 0) {
+        embedded_rejected(c, file, imp);
+        return;
+    }
+    load_user(c, file, imp, stem);
 }
 
 /* Depth-first walk over the imports of one module. */
