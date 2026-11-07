@@ -160,7 +160,10 @@ static const char **call_temps(lower_ctx *c, lower_scope *scope,
         k = member_recv_temp(c, scope, callee, args, recv_pt, argv, ow,
                              k);
     }
-    for (i = 0; i < n - k; i++) {
+    /* One slot per written argument: the count, not the shrinking
+       remainder, bounds the walk, so a free or qualified call with
+       several written arguments fills every slot. */
+    for (i = 0; i < args->count; i++) {
         const char *bn = lower_borrow_local(c, scope, args->data[i]);
 
         if (bn) {

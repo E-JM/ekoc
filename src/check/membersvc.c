@@ -191,19 +191,43 @@ const ek_type *ck_derive_panic(ck_ctx *c, const ek_type *r,
     return service_fn(c, ck_std_type(c, "String"), ck_never(c));
 }
 
+/* The structural receiver of a compiler-supplied container head: List
+   and Dict are the unapplied spellings of the structural composites,
+   so a service written at such a head is written at the composite over
+   fresh variables the arguments and the expected type then determine.
+   NULL for any other head. */
+static const ek_type *container_receiver(ck_ctx *c, const ek_type *r)
+{
+    if (ck_is_std(r, "List")) {
+        return ck_list(c, ck_ivar(c));
+    }
+    if (ck_is_std(r, "Dict")) {
+        return ck_dict(c, ck_ivar(c), ck_ivar(c));
+    }
+    return NULL;
+}
+
 /* The receiver a derived service is written at: an unapplied generic
    type head takes fresh variables, which the arguments and the
    expected type then determine. A declared head counts its binders; a
    head with no declaration behind it is compiler-supplied, so its
-   count comes from the surface table. */
+   count comes from the surface table, and the two container heads
+   take their structural shapes directly. */
 const ek_type *ck_service_receiver(ck_ctx *c, const ek_type *r)
 {
     const ek_symbol *sym;
+    const ek_type *shape;
     size_t nb;
 
     if (r->kind != EK_T_NOMINAL || !(sym = r->u.nominal.sym)
         || r->u.nominal.argc != 0) {
         return r;
+    }
+    if (!sym->decl) {
+        shape = container_receiver(c, r);
+        if (shape) {
+            return shape;
+        }
     }
     nb = sym->decl ? ck_decl_of(c, sym)->nbinders
                    : ek_surface_generic_arity(sym->module, sym->name);

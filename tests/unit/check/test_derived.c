@@ -336,6 +336,74 @@ static void json_halts(void)
     cfx_end(&f);
 }
 
+/* The List and Dict type heads are the unapplied spellings of the
+   structural composites: a service written at the head derives over
+   the structural shape the arguments determine, with the link type
+   naming the composite and not the placeholder, and a non-string
+   dictionary key halts at the head form as it does at the receiver
+   form. */
+static void head_over_containers(void)
+{
+    cfx f;
+    const ek_ck_row *row;
+
+    cfx_begin(&f,
+              "xs: []Int = {1, 2}\n"
+              "ys: []Int = {1, 2}\n"
+              "d: [String]Int = {\"a\": 1}\n"
+              "e: [String]Int = {\"a\": 1}\n"
+              "a: Bool = List.eq(xs, ys)\n"
+              "b: Bool = Dict.eq(d, e)\n"
+              "s: String = List.show(xs)\n"
+              "j1: Json = List.to_json(xs)\n"
+              "j2: Json = Dict.to_json(d)\n"
+              "r1: Result ([]Int) ParseError = List.from_json(j1)\n"
+              "r2: Result ([String]Int) ParseError = Dict.from_json(j2)\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    EK_CHECK(cfx_reading_at(&f, 5, EK_RD_DERIVED));
+    EK_CHECK(cfx_reading_at(&f, 6, EK_RD_DERIVED));
+    EK_CHECK(cfx_reading_at(&f, 7, EK_RD_DERIVED));
+    EK_CHECK(cfx_reading_at(&f, 8, EK_RD_DERIVED));
+    EK_CHECK(cfx_reading_at(&f, 9, EK_RD_DERIVED));
+    EK_CHECK(cfx_reading_at(&f, 10, EK_RD_DERIVED));
+    EK_CHECK(cfx_reading_at(&f, 11, EK_RD_DERIVED));
+    row = row_of_kind(&f, 5, EK_N_FIELD);
+    EK_CHECK(row != NULL && row->type && row->type->kind == EK_T_FN
+             && row->type->u.fn.count == 2
+             && row->type->u.fn.params[0]->kind == EK_T_LIST
+             && row->type->u.fn.params[1]->kind == EK_T_LIST);
+    row = row_of_kind(&f, 9, EK_N_FIELD);
+    EK_CHECK(row != NULL && row->type && row->type->kind == EK_T_FN
+             && row->type->u.fn.count == 1
+             && row->type->u.fn.params[0]->kind == EK_T_DICT
+             && row->type->u.fn.params[0]->u.dict.key->kind == EK_T_NOMINAL
+             && row->type->u.fn.params[0]->u.dict.key->u.nominal.sym
+             && strcmp(row->type->u.fn.params[0]->u.dict.key->u.nominal.sym
+                           ->name,
+                       "String")
+                 == 0);
+    row = row_of_kind(&f, 10, EK_N_FIELD);
+    EK_CHECK(row != NULL && row->type && row->type->kind == EK_T_FN
+             && row->type->u.fn.result->kind == EK_T_NOMINAL
+             && row->type->u.fn.result->u.nominal.argc == 2
+             && row->type->u.fn.result->u.nominal.args[0]->kind
+                 == EK_T_LIST);
+    row = row_of_kind(&f, 11, EK_N_FIELD);
+    EK_CHECK(row != NULL && row->type && row->type->kind == EK_T_FN
+             && row->type->u.fn.result->kind == EK_T_NOMINAL
+             && row->type->u.fn.result->u.nominal.argc == 2
+             && row->type->u.fn.result->u.nominal.args[0]->kind
+                 == EK_T_DICT);
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "d: [Int]String = {1: \"a\"}\n"
+              "j: Json = Dict.to_json(d)\n");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-json-shape", 2));
+    cfx_end(&f);
+}
+
 /* The equality pair and the ordering family derive over the value layer
    and declared ADTs; capabilities and functions carry neither. */
 static void equality_and_order_families(void)
@@ -405,6 +473,7 @@ int main(void)
     declared_show_wins();
     json_derived();
     json_core_and_composites();
+    head_over_containers();
     json_halts();
     equality_and_order_families();
     return ek_test_report("check/derived");
