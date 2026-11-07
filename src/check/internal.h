@@ -188,9 +188,9 @@ typedef struct ck_tvars {
 } ck_tvars;
 
 /* check.c: the entry point, the shared growable buffers and pointer
-   maps, and the row table with its diagnostics. store.c: interning
-   and the type constructors. subst.c: the closed snapshot, the binder
-   substitution, and printable names. */
+   maps. rows.c: the row table, its diagnostics, and its final
+   finishing. store.c: interning and the type constructors. subst.c:
+   the closed snapshot, the binder substitution, and printable names. */
 void *ck_grow(ck_ctx *c, void *old, size_t n, size_t *cap, size_t elem);
 void ck_map_put(ck_ctx *c, ck_map *m, const void *key, const void *val);
 const void *ck_map_get(const ck_map *m, const void *key);
@@ -421,6 +421,7 @@ const ek_type *ck_composite(ck_ctx *c, const ek_node *e,
                             const ek_type *expected, int allow_partial);
 void ck_pending_literal(ck_ctx *c, const ek_node *e);
 const ek_ck_row *ck_row_of(const ck_ctx *c, const ek_node *n);
+void finish_rows(ck_ctx *c); /* rows.c: sort, snapshot, world bits */
 
 /* op.c: operator typing. */
 const ek_type *ck_unary(ck_ctx *c, const ek_node *e, const ek_type *expected);

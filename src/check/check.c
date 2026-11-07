@@ -1,6 +1,3 @@
-#include <stdarg.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
 #include "check/internal.h"
@@ -116,16 +113,6 @@ const void *ck_map_get(const ck_map *m, const void *key)
     return NULL;
 }
 
-static int row_cmp(const void *a, const void *b)
-{
-    const ek_ck_row *x = a, *y = b;
-
-    if ((size_t)x->node < (size_t)y->node) {
-        return -1;
-    }
-    return x->node == y->node ? 0 : 1;
-}
-
 /* One module's body: binding forms through ck_stmt, everything
    else as an expression; type declarations and imports were built by
    ck_decls. */
@@ -156,6 +143,24 @@ static void check_module(ck_ctx *c, const ek_node *mod)
     }
 }
 
+static const ek_type *undetermined_in(ck_ctx *c, const ek_type *t);
+
+/* The first plain inference variable among n types. */
+static const ek_type *undetermined_among(ck_ctx *c,
+                                         const ek_type *const *ts, size_t n)
+{
+    size_t i;
+
+    for (i = 0; i < n; i++) {
+        const ek_type *v = undetermined_in(c, ts[i]);
+
+        if (v) {
+            return v;
+        }
+    }
+    return NULL;
+}
+
 /* The first plain inference variable of a type. A rigid variable and
    a bridge-marked one are legal residents; a plain one that survived
    the module's checking was never determined. */
@@ -172,14 +177,7 @@ static const ek_type *undetermined_in(ck_ctx *c, const ek_type *t)
     }
     switch (t->kind) {
     case EK_T_NOMINAL:
-        for (i = 0; i < t->u.nominal.argc; i++) {
-            const ek_type *v = undetermined_in(c, t->u.nominal.args[i]);
-
-            if (v) {
-                return v;
-            }
-        }
-        return NULL;
+        return undetermined_among(c, t->u.nominal.args, t->u.nominal.argc);
     case EK_T_LIST:
         return undetermined_in(c, t->u.list.elem);
     case EK_T_DICT: {
@@ -188,14 +186,7 @@ static const ek_type *undetermined_in(ck_ctx *c, const ek_type *t)
         return v ? v : undetermined_in(c, t->u.dict.val);
     }
     case EK_T_TUPLE:
-        for (i = 0; i < t->u.tuple.count; i++) {
-            const ek_type *v = undetermined_in(c, t->u.tuple.items[i]);
-
-            if (v) {
-                return v;
-            }
-        }
-        return NULL;
+        return undetermined_among(c, t->u.tuple.items, t->u.tuple.count);
     case EK_T_RECORD:
         for (i = 0; i < t->u.record.count; i++) {
             const ek_type *v =
@@ -206,15 +197,12 @@ static const ek_type *undetermined_in(ck_ctx *c, const ek_type *t)
             }
         }
         return NULL;
-    case EK_T_FN:
-        for (i = 0; i < t->u.fn.count; i++) {
-            const ek_type *v = undetermined_in(c, t->u.fn.params[i]);
+    case EK_T_FN: {
+        const ek_type *v =
+            undetermined_among(c, t->u.fn.params, t->u.fn.count);
 
-            if (v) {
-                return v;
-            }
-        }
-        return undetermined_in(c, t->u.fn.result);
+        return v ? v : undetermined_in(c, t->u.fn.result);
+    }
     default:
         return NULL;
     }
@@ -239,23 +227,6 @@ static void ck_undetermined(ck_ctx *c, size_t from)
                      ck_type_name(c, c->rows[i].type));
         }
     }
-}
-
-/* The sorted row of one node, by address. */
-const ek_ck_row *ck_row_of(const ck_ctx *c, const ek_node *n)
-{
-    size_t lo = 0, hi = c->nrows;
-
-    while (lo < hi) {
-        size_t mid = lo + (hi - lo) / 2;
-
-        if ((size_t)c->rows[mid].node < (size_t)n) {
-            lo = mid + 1;
-        } else {
-            hi = mid;
-        }
-    }
-    return lo < c->nrows && c->rows[lo].node == n ? &c->rows[lo] : NULL;
 }
 
 /* The composite literals placed under an undetermined expectation:
@@ -288,12 +259,60 @@ static void sweep_literals(ck_ctx *c)
     }
 }
 
+/* The binding rows and declared types of every module are in place
+   before any body is checked: a body reaches across the closure, and
+   the tables are keyed by the closure's symbols. The entry rules read
+   the closure once. */
+static void prebind_modules(ck_ctx *c, const ek_resolve_result *in)
+{
+    size_t i;
+
+    for (i = 0; i < in->module_count && !c->oom; i++) {
+        const ek_node *mod = in->modules[i].ast;
+
+        if (!mod || mod->kind != EK_N_MODULE) {
+            continue;
+        }
+        c->cur = &in->modules[i];
+        ck_prebind(c);
+        ck_decls(c);
+        if (strcmp(in->modules[i].module, "cap") == 0) {
+            /* The injected pair's symbols carry no declaration, so
+               their schemes hang before any body reads them (Clause
+               10.8). */
+            ck_cap_schemes(c);
+        }
+    }
+    ck_entry_rules(c);
+}
+
+/* Every body of the closure, root first: each module's pass checks
+   its bodies and externs, then rejects the variables its checking
+   left undetermined. */
+static void check_bodies(ck_ctx *c, const ek_resolve_result *in)
+{
+    size_t i;
+
+    for (i = 0; i < in->module_count && !c->oom; i++) {
+        const ek_node *mod = in->modules[i].ast;
+        size_t from = c->nrows;
+
+        if (!mod || mod->kind != EK_N_MODULE) {
+            continue;
+        }
+        c->cur = &in->modules[i];
+        check_module(c, mod);
+        ck_externs(c);
+        ck_undetermined(c, from);
+        c->locals = NULL;
+    }
+}
+
 ek_check_result ek_check(ek_resolve_result in, ek_arena *arena,
                          ek_diag *diag)
 {
     ck_ctx c;
     ek_check_result r;
-    size_t i;
 
     memset(&c, 0, sizeof c);
     memset(&r, 0, sizeof r);
@@ -305,119 +324,19 @@ ek_check_result ek_check(ek_resolve_result in, ek_arena *arena,
     }
     c.root = &in.modules[0];
     c.cur = c.root;
-
-    /* The binding rows and declared types of every module are in place
-       before any body is checked: a body reaches across the closure,
-       and the tables are keyed by the closure's symbols. The entry
-       rules read the closure once. */
-    for (i = 0; i < in.module_count && !c.oom; i++) {
-        const ek_node *mod = in.modules[i].ast;
-
-        if (!mod || mod->kind != EK_N_MODULE) {
-            continue;
-        }
-        c.cur = &in.modules[i];
-        ck_prebind(&c);
-        ck_decls(&c);
-        if (strcmp(in.modules[i].module, "cap") == 0) {
-            /* The injected pair's symbols carry no declaration, so
-               their schemes hang before any body reads them (Clause
-               10.8). */
-            ck_cap_schemes(&c);
-        }
-    }
-    ck_entry_rules(&c);
+    prebind_modules(&c, &in);
     c.locals = NULL;
-    for (i = 0; i < in.module_count && !c.oom; i++) {
-        const ek_node *mod = in.modules[i].ast;
-        size_t from = c.nrows;
-
-        if (!mod || mod->kind != EK_N_MODULE) {
-            continue;
-        }
-        c.cur = &in.modules[i];
-        check_module(&c, mod);
-        ck_externs(&c);
-        ck_undetermined(&c, from);
-        c.locals = NULL;
-    }
+    check_bodies(&c, &in);
     /* The instantiation graph is complete once every body is checked;
        the instance-set simulation reports a non-terminating
        expansion (Clause 8.7.3). */
     ck_inst_depth(&c);
     ck_reqs_check(&c);
     if (c.nrows) {
-        qsort(c.rows, c.nrows, sizeof *c.rows, row_cmp);
-        for (i = 0; i < c.nrows; i++) {
-            c.rows[i].type = ck_subst(&c, c.rows[i].type);
-        }
-        ck_fill_bits(&c);
+        finish_rows(&c);
     }
     sweep_literals(&c);
     r.rows = c.rows;
     r.count = c.nrows;
     return r;
-}
-
-void ck_row(ck_ctx *c, const ek_node *n, const ek_type *t, ek_reading r)
-{
-    if (c->oom || !n || c->sweep_recheck) {
-        /* A recheck reads the table; it does not grow it. */
-        return;
-    }
-    if (c->nrows == c->crows) {
-        c->rows = ck_grow(c, c->rows, c->nrows, &c->crows, sizeof *c->rows);
-        if (c->oom) {
-            return;
-        }
-    }
-    c->rows[c->nrows].node = n;
-    c->rows[c->nrows].type = t;
-    c->rows[c->nrows].reading = r;
-    c->rows[c->nrows].bit = EK_BIT_UNSET;
-    c->nrows++;
-}
-
-static void row_diag(ck_ctx *c, ek_severity sev, const ek_node *n,
-                     const char *code, const char *fmt, va_list ap)
-{
-    char msg[400];
-
-    vsnprintf(msg, sizeof msg, fmt, ap);
-    ek_diag_emit(c->diag, sev, code, ck_file(c),
-                 n ? n->line : 1, n ? n->col : 1, "%s", msg);
-}
-
-void ck_error(ck_ctx *c, const ek_node *n, const char *code, const char *fmt,
-              ...)
-{
-    va_list ap;
-
-    if (c->oom) {
-        return;
-    }
-    va_start(ap, fmt);
-    row_diag(c, EK_SEV_ERROR, n, code, fmt, ap);
-    va_end(ap);
-}
-
-void ck_warn(ck_ctx *c, const ek_node *n, const char *code, const char *fmt,
-             ...)
-{
-    va_list ap;
-
-    if (c->oom) {
-        return;
-    }
-    va_start(ap, fmt);
-    row_diag(c, EK_SEV_WARNING, n, code, fmt, ap);
-    va_end(ap);
-}
-
-const char *ck_file(const ck_ctx *c)
-{
-    if (c->cur) {
-        return c->cur->file;
-    }
-    return c->in->module_count ? c->root->file : "test.eko";
 }
