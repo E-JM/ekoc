@@ -142,6 +142,25 @@ static void emit_cb_params(lower_ctx *c, ek_buf *b, const ek_nlist *cps)
     }
 }
 
+/* The parameter list every adapter text opens with: each callback
+   parameter's C type and its a%zu spelling, then the context slot. */
+static void emit_param_list(lower_ctx *c, ek_buf *b, const ek_nlist *cps)
+{
+    size_t j;
+
+    for (j = 0; j < cps->count; j++) {
+        lower_mshape s = lower_ms_of(c, cps->data[j]->u.t_field.type);
+
+        if (!ek_buf_printf(b, "%s%s a%zu", j ? ", " : "",
+                           lower_cbr_param_type(c, &s), j)) {
+            c->oom = 1;
+        }
+    }
+    if (!ek_buf_printf(b, "%svoid *ctx)", cps->count ? ", " : "")) {
+        c->oom = 1;
+    }
+}
+
 /* One adapter definition: the parameters convert to the uniform ABI's
    argument array, the context's closure runs, and the result converts
    back. */
@@ -158,15 +177,8 @@ static void emit_adapter(lower_ctx *c, const char *name, const char *ctxty,
                        name)) {
         c->oom = 1;
     }
-    for (j = 0; j < cps->count; j++) {
-        lower_mshape s = lower_ms_of(c, cps->data[j]->u.t_field.type);
-
-        if (!ek_buf_printf(&b, "%s%s a%zu", j ? ", " : "",
-                           lower_cbr_param_type(c, &s), j)) {
-            c->oom = 1;
-        }
-    }
-    if (!ek_buf_printf(&b, "%svoid *ctx)\n{\n", cps->count ? ", " : "")) {
+    emit_param_list(c, &b, cps);
+    if (!ek_buf_printf(&b, "\n{\n")) {
         c->oom = 1;
     }
     emit_cb_params(c, &b, cps);
@@ -255,27 +267,14 @@ static void emit_ctx_typedef(lower_ctx *c, const char *cty)
 static void push_adapter_sig(lower_ctx *c, const char *name,
                              const ek_node *cb, const lower_mshape *res)
 {
-    const ek_nlist *cps = &cb->u.t_fn.params;
     ek_buf sigb;
-    size_t j;
 
     ek_buf_init(&sigb);
     if (!ek_buf_printf(&sigb, "static %s %s(", lower_cbr_ret_type(c, res),
                        name)) {
         c->oom = 1;
     }
-    for (j = 0; j < cps->count; j++) {
-        lower_mshape s = lower_ms_of(c, cps->data[j]->u.t_field.type);
-
-        if (!ek_buf_printf(&sigb, "%s%s a%zu", j ? ", " : "",
-                           lower_cbr_param_type(c, &s), j)) {
-            c->oom = 1;
-        }
-    }
-    if (!ek_buf_printf(&sigb, "%svoid *ctx)",
-                       cps->count ? ", " : "")) {
-        c->oom = 1;
-    }
+    emit_param_list(c, &sigb, &cb->u.t_fn.params);
     lower_push_sig(c, lower_take(c, &sigb));
 }
 
