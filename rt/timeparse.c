@@ -95,12 +95,43 @@ static ek_val failed(ek_val reason)
    its nanoseconds in a signed 64-bit word, fraction included. */
 #define SECS_DOMAIN ((INT64_MAX - 999999999) / 1000000000)
 
+/* The fraction past the whole part: a dot and one to nine digits, the
+   digits' value into *frac and their count into *nfrac. The result is
+   the failure of a malformed fraction -- an empty or oversized digit
+   run -- and unit when the text carries none or a well formed one. */
+static ek_val fraction(time_scan *s, int64_t *frac, int *nfrac)
+{
+    int64_t f = 0;
+    int n = 0;
+
+    if (peek(s) != '.')
+        return ek_val_unit();
+    s->pos++;
+    for (;;) {
+        int c = peek(s);
+
+        if (c < '0' || c > '9')
+            break;
+        s->pos++;
+        if (n < 9)
+            f = f * 10 + (c - '0');
+        n++;
+    }
+    if (n == 0)
+        return invalid("expected fraction digits");
+    if (n > 9)
+        return invalid("the fraction exceeds nine digits");
+    *frac = f;
+    *nfrac = n;
+    return ek_val_unit();
+}
+
 ek_val ek_parse_time(ek_obj *text)
 {
     time_scan s = {ek_str_cstr(text), ek_str_len(text), 0};
     int64_t y, mo, d, h, mi, sec, frac = 0, days, secs;
     int nfrac = 0;
-    ek_val v;
+    ek_val v, bad;
 
     if (s.len == 0)
         return failed(parse_error_empty());
@@ -116,23 +147,9 @@ ek_val ek_parse_time(ek_obj *text)
         return failed(invalid("expected the clock"));
     if (h > 23 || mi > 59 || sec > 59)
         return failed(invalid("the clock leaves the day"));
-    if (peek(&s) == '.') {
-        s.pos++;
-        for (;;) {
-            int c = peek(&s);
-
-            if (c < '0' || c > '9')
-                break;
-            s.pos++;
-            if (nfrac < 9)
-                frac = frac * 10 + (c - '0');
-            nfrac++;
-        }
-        if (nfrac == 0)
-            return failed(invalid("expected fraction digits"));
-        if (nfrac > 9)
-            return failed(invalid("the fraction exceeds nine digits"));
-    }
+    bad = fraction(&s, &frac, &nfrac);
+    if (!ek_val_is_unit(bad))
+        return failed(bad);
     if (!expect(&s, 'Z') || peek(&s) >= 0)
         return failed(invalid("expected the zone marker and the end"));
     days = days_from_civil(y, (int)mo, (int)d);
@@ -152,7 +169,7 @@ ek_val ek_parse_duration(ek_obj *text)
     time_scan s = {ek_str_cstr(text), ek_str_len(text), 0};
     int64_t whole = 0, frac = 0;
     int neg = 0, nfrac = 0, any = 0;
-    ek_val v;
+    ek_val v, bad;
 
     if (s.len == 0)
         return failed(parse_error_empty());
@@ -169,23 +186,9 @@ ek_val ek_parse_duration(ek_obj *text)
     }
     if (!any)
         return failed(invalid("expected whole seconds"));
-    if (peek(&s) == '.') {
-        s.pos++;
-        for (;;) {
-            int c = peek(&s);
-
-            if (c < '0' || c > '9')
-                break;
-            s.pos++;
-            if (nfrac < 9)
-                frac = frac * 10 + (c - '0');
-            nfrac++;
-        }
-        if (nfrac == 0)
-            return failed(invalid("expected fraction digits"));
-        if (nfrac > 9)
-            return failed(invalid("the fraction exceeds nine digits"));
-    }
+    bad = fraction(&s, &frac, &nfrac);
+    if (!ek_val_is_unit(bad))
+        return failed(bad);
     if (!expect(&s, 's') || peek(&s) >= 0)
         return failed(invalid("expected the unit and the end"));
     if (whole > SECS_DOMAIN)
