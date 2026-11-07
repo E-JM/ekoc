@@ -86,6 +86,33 @@ static const ek_type *type_name(ck_ctx *c, const ek_node *t,
     return ck_opaque(c); /* the placeholder std bridge */
 }
 
+/* A qualified name of two segments. */
+static const ek_type *elab_qualified(ck_ctx *c, const ek_node *t,
+                                     const char *n0)
+{
+    const char *n1 = t->u.path.data[1];
+    const ek_ref *ref = NULL;
+
+    if (n1[0] >= 'a' && n1[0] <= 'z') {
+        /* The identity space is PascalCase: a lowercase name in a
+           qualified type. */
+        ck_error(c, t, "E-name-case",
+                 "the type name `%s` is not PascalCase "
+                 "(Clause 5.5.2)", n1);
+        return ck_opaque(c);
+    }
+    if (!ck_ref_at(c, t, EK_SYM_TYPE, &ref)) {
+        return ck_opaque(c);
+    }
+    if (ref->symbol && type_arity(c, ref->symbol)) {
+        ck_error(c, t, "E-type-arity",
+                 "the generic type `%s.%s` needs %zu type "
+                 "arguments (Clause 7.6.2)", n0, n1,
+                 type_arity(c, ref->symbol));
+    }
+    return ref->symbol ? ck_nominal(c, ref->symbol, NULL, 0) : ck_opaque(c);
+}
+
 /* A type-position name of one or two path segments. */
 static const ek_type *elab_name(ck_ctx *c, const ek_node *t, ck_tvars *tv)
 {
@@ -111,27 +138,7 @@ static const ek_type *elab_name(ck_ctx *c, const ek_node *t, ck_tvars *tv)
            annotation. */
         out = ck_opaque(c);
     } else if (t->u.path.count == 2) {
-        const char *n1 = t->u.path.data[1];
-
-        if (n1[0] >= 'a' && n1[0] <= 'z') {
-            /* The identity space is PascalCase: a lowercase name in a
-               qualified type. */
-            ck_error(c, t, "E-name-case",
-                     "the type name `%s` is not PascalCase "
-                     "(Clause 5.5.2)", n1);
-            out = ck_opaque(c);
-        } else if (ck_ref_at(c, t, EK_SYM_TYPE, &ref)) {
-            if (ref->symbol && type_arity(c, ref->symbol)) {
-                ck_error(c, t, "E-type-arity",
-                         "the generic type `%s.%s` needs %zu type "
-                         "arguments (Clause 7.6.2)", n0, n1,
-                         type_arity(c, ref->symbol));
-            }
-            out = ref->symbol ? ck_nominal(c, ref->symbol, NULL, 0)
-                              : ck_opaque(c);
-        } else {
-            out = ck_opaque(c);
-        }
+        out = elab_qualified(c, t, n0);
     }
     if (!out && c->oom) {
         return NULL;
