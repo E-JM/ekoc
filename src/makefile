@@ -29,6 +29,7 @@ LEX_SRC := \
 	src/lex/string.c
 
 LAYOUT_SRC := \
+	src/layout/blocks.c \
 	src/layout/layout.c \
 	src/layout/process.c
 
