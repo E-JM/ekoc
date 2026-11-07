@@ -38,31 +38,11 @@ $(BUILD)/run/cli/test $(BUILD)/run/cli/run: $(BUILD)/ekoc
 # module rides the check pipeline. An E-lower rejection fails the gate
 # outright: a program check accepted must lower.
 conformance: $(BUILD)/ekoc $(LIB_RT)
-	@status=0; \
-	for f in tests/conformance/*.eko; do \
-		out=`./build/ekoc test $$f 2>&1`; rc=$$?; \
-		if echo "$$out" | grep -q 'E-lower'; then \
-			echo "gate $$f: a checked program was rejected in lower"; \
-			echo "$$out" | grep 'E-lower' | head -3; \
-			status=1; \
-		elif echo "$$out" | grep -q 'declares no test bindings'; then \
-			out=`./build/ekoc check $$f 2>&1`; \
-			if echo "$$out" | grep -q 'E-lower'; then \
-				echo "gate $$f: a checked program was rejected in lower"; \
-				echo "$$out" | grep 'E-lower' | head -3; \
-				status=1; \
-			elif echo "$$out" | grep ' E-' | grep -qv 'E-entry-point'; then \
-				echo "fail $$f"; \
-				echo "$$out" | grep ' E-' | grep -v 'E-entry-point' | head -3; \
-				status=1; \
-			fi; \
-		elif [ $$rc -ne 0 ]; then \
-			echo "fail $$f"; echo "$$out" | tail -5; \
-			status=1; \
-		fi; \
-	done; \
-	if [ $$status -eq 0 ]; then echo "ekoc: conformance suite passed"; fi; \
-	exit $$status
+	@set -- tests/conformance/*.eko; [ -f "$$1" ] || \
+		{ echo "ekoc: no conformance files"; exit 1; }
+	@printf '%s\n' tests/conformance/*.eko | \
+		xargs -P $(JOBS) -n 1 tests/conformance/gate.sh $(BUILD)/ekoc \
+		&& echo "ekoc: conformance suite passed"
 
 $(BUILD)/tests/%: $(BUILD)/tests/%.o $(STAGE_LIBS) $(LIB_RT)
 	@mkdir -p $(dir $@)
