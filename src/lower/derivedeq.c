@@ -201,38 +201,6 @@ static void emit_set_eq(lower_ctx *c, lower_demit *d, const ek_type *t)
     lower_d_printf(d, "    return same;\n");
 }
 
-/* Vector equality is index-order equality: the lengths agree and the
-   elements compare equal at every index. The element comparison is
-   the derived service, so a vector of structural values compares
-   structurally. */
-static void emit_vec_eq(lower_ctx *c, lower_demit *d, const ek_type *t)
-{
-    const ek_type *elem = t->u.nominal.argc == 1 ? t->u.nominal.args[0]
-                                                 : NULL;
-    const char *eq = elem ? eq_of(c, elem) : NULL;
-
-    if (!eq) {
-        lower_d_printf(d, "    return 0;\n");
-        return;
-    }
-    lower_d_printf(d, "    ek_val la = ek_vec_to_list(a);\n");
-    lower_d_printf(d, "    ek_val lb = ek_vec_to_list(b);\n");
-    lower_d_printf(d, "    int same = ek_list_len(la) == ek_list_len(lb);\n");
-    lower_d_printf(d, "    ek_val p = la;\n");
-    lower_d_printf(d, "    ek_val q = lb;\n\n");
-    lower_d_printf(d, "    while (same && ek_val_is_cons(p)\n");
-    lower_d_printf(d, "                   && ek_val_is_cons(q)) {\n");
-    lower_d_printf(d, "        if (!%s(ek_cons_head(p.as.ref),\n", eq);
-    lower_d_printf(d, "                   ek_cons_head(q.as.ref)))\n");
-    lower_d_printf(d, "            same = 0;\n");
-    lower_d_printf(d, "        p = ek_cons_tail(p.as.ref);\n");
-    lower_d_printf(d, "        q = ek_cons_tail(q.as.ref);\n");
-    lower_d_printf(d, "    }\n");
-    lower_d_printf(d, "    ek_release(la);\n");
-    lower_d_printf(d, "    ek_release(lb);\n");
-    lower_d_printf(d, "    return same;\n");
-}
-
 /* An undetermined payload compares by its tag and payload bytes. */
 static void emit_opaque_eq(lower_demit *d)
 {
@@ -292,7 +260,7 @@ void lower_dsvc_eq_emit(lower_ctx *c, const char *name, const ek_type *t)
     } else if (lower_is_set(t)) {
         emit_set_eq(c, &d, t);
     } else if (lower_is_vector(t)) {
-        emit_vec_eq(c, &d, t);
+        lower_vec_eq_emit(c, &d, t);
     } else if (lower_scalar_kind(t) != EKSC_OTHER) {
         emit_scalar_eq(c, &d, lower_scalar_kind(t));
     } else if (t->kind == EK_T_UNIT) {

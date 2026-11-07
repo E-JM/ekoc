@@ -396,6 +396,24 @@ void lower_from_record_emit(lower_ctx *c, lower_demit *d, const char *name,
                             const char **fnames, const ek_type **ftypes,
                             size_t nf, lower_gtype *g);
 
+/* derivedshow.c, derivedjson.c, derivedfrom.c: the walkers the
+   container bodies build on -- the brace form over one cons spine,
+   the recursive cell walk behind an Arr, and its decode. */
+void lower_seq_show_emit(lower_ctx *c, lower_demit *d, const ek_type *elemt,
+                         const char *src, int owned);
+void lower_to_list_aux(lower_ctx *c, const char *aux, const ek_type *elemt);
+void lower_from_list_aux(lower_ctx *c, const char *aux, const ek_type *elemt);
+
+/* derivedvec.c: the vector's derived-service bodies, one per family
+   the registry mints over the placeholder. */
+void lower_vec_show_emit(lower_ctx *c, lower_demit *d, const ek_type *t);
+void lower_vec_eq_emit(lower_ctx *c, lower_demit *d, const ek_type *t);
+void lower_vec_hash_emit(lower_ctx *c, lower_demit *d, const ek_type *t);
+void lower_vec_tojson_emit(lower_ctx *c, lower_demit *d, const char *name,
+                           const ek_type *t);
+void lower_vec_fromjson_emit(lower_ctx *c, lower_demit *d, const char *name,
+                             const ek_type *t);
+
 /* derivedeq.c, derivedhash.c, derivedshow.c, derivedjson.c: the body
    emitters. */
 void lower_dsvc_eq_emit(lower_ctx *c, const char *name, const ek_type *t);

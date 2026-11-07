@@ -126,6 +126,7 @@ LOWER_SRC := \
 	src/lower/derivedjson.c \
 	src/lower/derivedrec.c \
 	src/lower/derivedshow.c \
+	src/lower/derivedvec.c \
 	src/lower/derivedwith.c \
 	src/lower/dsvcreg.c \
 	src/lower/extcback.c \
