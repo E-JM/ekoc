@@ -432,11 +432,12 @@ static int mint_pair(lower_ctx *c, const ek_type *t, const char **keq,
 /* The hook pair a construction site passes the runtime over the key
    domain: the family services the domain stamps for the record, tuple,
    and algebraic shapes, the minted services for a container standing
-   as the domain -- a list, a dictionary, or the runtime-backed set --
-   and the runtime's default pair for the scalar and text slots. Zero
-   when the domain keys nowhere -- the refusal the construction sites
-   diagnose. The names stand at the default pair whatever the answer,
-   so the drained unit still compiles. */
+   as the domain -- a list, a dictionary, the runtime-backed set, or
+   the runtime-backed vector -- and the runtime's default pair for the
+   scalar and text slots. Zero when the domain keys nowhere -- the
+   refusal the construction sites diagnose. The names stand at the
+   default pair whatever the answer, so the drained unit still
+   compiles. */
 int lower_key_pair(lower_ctx *c, const ek_type *t, const char **keq,
                    const char **khash)
 {
@@ -456,7 +457,7 @@ int lower_key_pair(lower_ctx *c, const ek_type *t, const char **keq,
     case EK_T_DICT:
         return mint_pair(c, t, keq, khash);
     case EK_T_NOMINAL:
-        if (lower_is_set(t)) {
+        if (lower_is_set(t) || lower_is_vector(t)) {
             return mint_pair(c, t, keq, khash);
         }
         return stamp_pair(c, t, keq, khash);

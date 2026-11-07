@@ -206,6 +206,38 @@ static void container_domains_mint_their_pair(void)
     lfx_end(&f);
 }
 
+static const char *vector_key_src =
+    "main: () -> _ =\n"
+    "    d: [Vector Int]Int = {}\n"
+    "    d := d.insert(Vector.of({1, 2}), 5)\n"
+    "    _ := d\n"
+    "    _\n";
+
+static void vector_domains_mint_their_pair(void)
+{
+    lfx f;
+
+    lfx_begin(&f, vector_key_src);
+    EK_CHECK(lfx_check_clean(&f));
+    EK_CHECK(lfx_lower_clean(&f));
+    /* a vector key domain mints its own services the way a list key
+       domain does, and the construction passes them so the runtime
+       keys the vectors structurally */
+    EK_CHECK(lfx_has(&f, "static int ekq_N$std$Vector$Int(ek_val a, "
+                         "ek_val b);\n"));
+    EK_CHECK(lfx_has(&f, "static unsigned long ekh_N$std$Vector$Int"
+                         "(ek_val v);\n"));
+    EK_CHECK(lfx_has(&f, "ek_dict_new(ekq_N$std$Vector$Int, "
+                         "ekh_N$std$Vector$Int);"));
+    /* the vector eq walks both index-order lists and compares element
+       for element */
+    EK_CHECK(lfx_has(&f, "ek_val la = ek_vec_to_list(a);\n"));
+    EK_CHECK(lfx_has(&f, "ek_val lb = ek_vec_to_list(b);\n"));
+    /* the vector hash walks one index-order list */
+    EK_CHECK(lfx_has(&f, "ek_val list = ek_vec_to_list(v);\n"));
+    lfx_end(&f);
+}
+
 int main(void)
 {
     record_stamps_eq_and_hash();
@@ -215,5 +247,6 @@ int main(void)
     anon_record_stamps_too();
     set_elements_stamp_too();
     container_domains_mint_their_pair();
+    vector_domains_mint_their_pair();
     return ek_test_report("lower/keys");
 }

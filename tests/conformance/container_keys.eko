@@ -1,7 +1,7 @@
-// Container keys: a list, a set, and a dictionary standing as a key
-// domain, and a nested container key, key by structure -- equal but
-// distinct values are one key and unequal values miss (Clauses
-// 9.10.3, 9.10.4).
+// Container keys: a list, a set, a vector, and a dictionary standing
+// as a key domain, and a nested container key, key by structure --
+// equal but distinct values are one key and unequal values miss
+// (Clauses 9.10.3, 9.10.4, 9.10.6).
 
 list_keys: test =
     d: [[]Int]String = {}
@@ -35,3 +35,42 @@ nested_keys: test =
     assert_eq(d.get(k2), None)
     k3: [][]Int = {{3}}
     assert_eq(d.get(k3), None)
+
+Keyed: type = [v: Vector Int]
+
+vector_keys: test =
+    d: [Vector Int]String = {}
+    k: Vector Int = Vector.of({1, 2})
+    d := d.insert(k, "hit")
+    assert_eq(d.length(), 1)
+    assert_eq(d.get(Vector.of({1, 2})), Some "hit")
+    assert_eq(d.get(Vector.of({2, 1})), None) // index order is the key
+    assert_eq(d.get(Vector.of({1, 2, 3})), None)
+    r := d.remove(Vector.of({1, 2}))
+    assert_eq(r.length(), 0)
+
+vector_set_elements: test =
+    a: Vector Int = Vector.of({1, 2})
+    b: Vector Int = Vector.of({2, 1})
+    s := Set.of({a, b, Vector.of({3})})
+    assert_eq(s.length(), 3) // index order separates the two vectors
+    assert(s.contains(Vector.of({2, 1})))
+    assert(s.contains(Vector.of({1, 2})))
+    assert(s.contains(Vector.of({3})))
+
+nested_vector_keys: test =
+    d: [Vector (Vector Int)]Int = {}
+    k: Vector (Vector Int) = Vector.of({Vector.of({1}), Vector.of({2})})
+    d := d.insert(k, 7)
+    assert_eq(d.get(Vector.of({Vector.of({1}), Vector.of({2})})), Some 7)
+    assert_eq(d.get(Vector.of({Vector.of({2}), Vector.of({1})})), None)
+    assert_eq(d.get(Vector.of({Vector.of({3})})), None)
+
+keyed_by_a_vector_record: test =
+    a: Keyed = {v: Vector.of({1, 2})}
+    b: Keyed = {v: Vector.of({1, 2})}
+    e: [Keyed]String = {}
+    d := e.insert(a, "x")
+    assert_eq(d.get(b), Some "x") // the stamped family keys structurally
+    c: Keyed = {v: Vector.of({2, 1})}
+    assert_eq(d.get(c), None)
