@@ -419,6 +419,11 @@ const ek_type *ck_place(ck_ctx *c, const ek_node *lit, const ek_type *expected,
                         int neg);
 const ek_type *ck_composite(ck_ctx *c, const ek_node *e,
                             const ek_type *expected, int allow_partial);
+/* recordlit.c: the record family of composite literals. */
+const ek_type *ck_record_lit(ck_ctx *c, const ek_node *e, const ek_type *rec,
+                             int allow_partial);
+void ck_item_value(ck_ctx *c, const ek_node *val, const ek_type *expected,
+                   int allow_partial);
 void ck_pending_literal(ck_ctx *c, const ek_node *e);
 const ek_ck_row *ck_row_of(const ck_ctx *c, const ek_node *n);
 
