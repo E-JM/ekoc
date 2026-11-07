@@ -300,29 +300,30 @@ static char *find_file(r_ctx *c, const ek_node *imp)
 }
 
 /* A stem is snake_case, never begins with `_`, and is never `std`; the
-   reserved std/ paths return before this call. */
-static int stem_legal(r_ctx *c, const char *file, const ek_node *imp,
-                      const char *stem)
+   reserved names the callers judge beside it, so the std/ paths return
+   before this call and the root check names the embedded modules. */
+int r_stem_legal(r_ctx *c, const char *file, int line, int col,
+                 const char *stem)
 {
     if (!r_is_ident(stem)) {
-        r_error(c, file, imp->line, imp->col, "E-name-case",
+        r_error(c, file, line, col, "E-name-case",
                 "module name `%s` is not an identifier (Clauses 5.5.1, "
                 "7.2.1)", stem);
         return 0;
     }
     if (!r_is_snake(stem)) {
-        r_error(c, file, imp->line, imp->col, "E-name-case",
+        r_error(c, file, line, col, "E-name-case",
                 "module name `%s` is not snake_case (Clauses 5.5.2, "
                 "7.2.1)", stem);
         return 0;
     }
     if (stem[0] == '_') {
-        r_error(c, file, imp->line, imp->col, "E-module-name",
+        r_error(c, file, line, col, "E-module-name",
                 "module file `%s` begins with `_` (Clause 7.2.1)", stem);
         return 0;
     }
     if (strcmp(stem, "std") == 0) {
-        r_error(c, file, imp->line, imp->col, "E-module-name",
+        r_error(c, file, line, col, "E-module-name",
                 "a user module MUST NOT be named `std` (Clauses 7.2.2, "
                 "9.1.2)");
         return 0;
@@ -452,7 +453,7 @@ static void load_import(r_ctx *c, r_mod *from, const ek_node *imp)
         }
         /* A companion stem obeys the stem rules like any module
            name. */
-        if (!stem_legal(c, file, imp, stem)) {
+        if (!r_stem_legal(c, file, imp->line, imp->col, stem)) {
             return;
         }
         if (r_companion_stem(stem)) {
@@ -472,7 +473,7 @@ static void load_import(r_ctx *c, r_mod *from, const ek_node *imp)
                 "9.1.1, 9.1.2)");
         return;
     }
-    if (!stem_legal(c, file, imp, stem)) {
+    if (!r_stem_legal(c, file, imp->line, imp->col, stem)) {
         return;
     }
     m = r_module_find(c, stem);

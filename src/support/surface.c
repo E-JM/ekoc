@@ -341,7 +341,8 @@ const ek_surface_row ek_surface_rows[] = {
 
     /* The Vector namespace: the element variable of the receiver ties
        the argument and the result. Vector.of takes no hook pair --
-       the vector keys nothing, so the plain call carries it. */
+       the vector's family carries no hooks, so the row routes as a
+       plain call. */
     {"Vector", "of", SIG_FN(EK_ARROW_PURE, SIG_APP1("Vector", SIG_VAR(0)),
                             SIG_LIST(SIG_VAR(0))), .sym = "ek_vec_of"},
     {"Vector", "to_list", SIG_FN(EK_ARROW_PURE, SIG_LIST(SIG_VAR(0)),

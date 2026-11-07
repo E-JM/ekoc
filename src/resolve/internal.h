@@ -168,6 +168,11 @@ r_mod *r_module_add(r_ctx *c, const char *stem, const char *file,
                     const ek_node *ast);
 r_mod *r_module_companion(r_ctx *c, const char *stem);
 int r_companion_stem(const char *stem);
+/* The stem rules one module name answers wherever it is spelled: the
+   import walk and the root's file stem judge alike, at the position
+   the caller names. The reserved names the caller judges beside it. */
+int r_stem_legal(r_ctx *c, const char *file, int line, int col,
+                 const char *stem);
 ek_node *r_parse_source(r_ctx *c, const char *src, size_t len,
                         const char *path);
 void r_closure_walk(r_ctx *c, r_mod *m);

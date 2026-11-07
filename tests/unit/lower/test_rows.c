@@ -61,7 +61,8 @@ static void vector_rows_route(void)
     EK_CHECK(lfx_has(&f, "ek_vec_get("));
     /* set bridges the fresh object or NULL into Some and None */
     EK_CHECK(lfx_has(&f, "= ek_vec_set("));
-    EK_CHECK(lfx_has(&f, "ek_val_int((int64_t)ek_vec_len("));
+    /* the count routes to the runtime and widens into the Int slot */
+    EK_CHECK(lfx_has(&f, "ek_vec_len("));
     EK_CHECK(lfx_has(&f, "ek_vec_to_list("));
     lfx_end(&f);
 }

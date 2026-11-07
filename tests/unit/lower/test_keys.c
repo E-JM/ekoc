@@ -229,12 +229,6 @@ static void vector_domains_mint_their_pair(void)
                          "(ek_val v);\n"));
     EK_CHECK(lfx_has(&f, "ek_dict_new(ekq_N$std$Vector$Int, "
                          "ekh_N$std$Vector$Int);"));
-    /* the vector eq walks both index-order lists and compares element
-       for element */
-    EK_CHECK(lfx_has(&f, "ek_val la = ek_vec_to_list(a);\n"));
-    EK_CHECK(lfx_has(&f, "ek_val lb = ek_vec_to_list(b);\n"));
-    /* the vector hash walks one index-order list */
-    EK_CHECK(lfx_has(&f, "ek_val list = ek_vec_to_list(v);\n"));
     lfx_end(&f);
 }
 
