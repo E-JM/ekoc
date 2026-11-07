@@ -11,11 +11,10 @@
 static const ek_type *build(ck_ctx *c, const ek_sig *s, const ek_type **slots,
                             size_t nslots);
 
-/* An embedded module's type symbol of one name, or NULL: the handles
-   and data types live in the system vocabulary, the private bundle
-   type of an injected pair only in the capability module. */
-static const ek_symbol *module_sym(ck_ctx *c, const char *module,
-                                   const char *name)
+/* A module's type symbol of one name, or NULL: the handles and data
+   types live in the system vocabulary, the private bundle type of an
+   injected pair only in the capability module. */
+const ek_symbol *module_sym(ck_ctx *c, const char *module, const char *name)
 {
     size_t k, i;
 
@@ -55,10 +54,88 @@ static const ek_type *build_fn(ck_ctx *c, const ek_sig *s,
 }
 
 static const ek_type *build(ck_ctx *c, const ek_sig *s, const ek_type **slots,
-                            size_t nslots)
+                            size_t nslots);
+
+/* The nominal an applied arm builds over its argument array: the
+   bridge when the symbol is missing, the fresh variable when the
+   array's allocation failed. */
+static const ek_type *build_applied(ck_ctx *c, const ek_symbol *sym,
+                                    const ek_type **args, size_t n)
+{
+    if (!args) {
+        c->oom = 1;
+        return ck_ivar(c);
+    }
+    return sym ? ck_nominal(c, sym, args, n) : ck_opaque(c);
+}
+
+/* The applied arms of one and two arguments: the symbol is the
+   embedded module's, or the std spelling's. */
+static const ek_type *build_head(ck_ctx *c, const ek_sig *s,
+                                 const ek_type **slots, size_t nslots)
 {
     const ek_symbol *sym;
+    const ek_type **args;
+    size_t n = s->kind == NS_APP2 ? 2 : 1;
 
+    if (s->kind == NS_EMB1) {
+        sym = module_sym(c, s->mod, s->std);
+    } else {
+        sym = ck_std_symbol(c, s->std);
+    }
+    args = ek_arena_alloc(c->arena, n * sizeof *args);
+    if (args) {
+        args[0] = build(c, s->arg, slots, nslots);
+        if (n == 2) {
+            args[1] = build(c, s->arg2, slots, nslots);
+        }
+    }
+    return build_applied(c, sym, args, n);
+}
+
+/* The applied arms: a std or embedded symbol over the argument
+   signatures, the nominal built when the symbol and the argument
+   array both come up. */
+static const ek_type *build_applied_arms(ck_ctx *c, const ek_sig *s,
+                                         const ek_type **slots,
+                                         size_t nslots)
+{
+    const ek_symbol *sym;
+    const ek_type **args;
+
+    switch (s->kind) {
+    case NS_EMB:
+        sym = module_sym(c, s->mod, s->std);
+        return sym ? ck_nominal(c, sym, NULL, 0) : ck_opaque(c);
+    case NS_EMB1:
+    case NS_APP1:
+    case NS_APP2:
+        return build_head(c, s, slots, nslots);
+    case NS_OPTION:
+        sym = ck_std_symbol(c, "Option");
+        args = ek_arena_alloc(c->arena, sizeof *args);
+        if (args) {
+            args[0] = build(c, s->arg, slots, nslots);
+        }
+        return build_applied(c, sym, args, 1);
+    case NS_RESULT:
+        sym = ck_std_symbol(c, "Result");
+        args = ek_arena_alloc(c->arena, 2 * sizeof *args);
+        if (args) {
+            const ek_symbol *perr = ck_std_symbol(c, "ParseError");
+
+            args[0] = build(c, s->arg, slots, nslots);
+            args[1] = perr ? ck_nominal(c, perr, NULL, 0) : ck_opaque(c);
+        }
+        return build_applied(c, sym, args, 2);
+    default:
+        return ck_opaque(c); /* not an applied kind */
+    }
+}
+
+static const ek_type *build(ck_ctx *c, const ek_sig *s, const ek_type **slots,
+                            size_t nslots)
+{
     switch (s->kind) {
     case NS_VAR:
         return s->slot < (int)nslots && slots[s->slot]
@@ -70,78 +147,18 @@ static const ek_type *build(ck_ctx *c, const ek_sig *s, const ek_type **slots,
         }
         return ck_std_type(c, s->std);
     case NS_EMB:
-        sym = module_sym(c, s->mod, s->std);
-        return sym ? ck_nominal(c, sym, NULL, 0) : ck_opaque(c);
     case NS_EMB1:
-        sym = module_sym(c, s->mod, s->std);
-        {
-            const ek_type **args = ek_arena_alloc(c->arena, sizeof *args);
-
-            if (!args) {
-                c->oom = 1;
-                return ck_ivar(c);
-            }
-            args[0] = build(c, s->arg, slots, nslots);
-            return sym ? ck_nominal(c, sym, args, 1) : ck_opaque(c);
-        }
+    case NS_OPTION:
+    case NS_RESULT:
+    case NS_APP1:
+    case NS_APP2:
+        return build_applied_arms(c, s, slots, nslots);
     case NS_UNIT:
         return ck_unit(c);
     case NS_FN:
         return build_fn(c, s, slots, nslots);
     case NS_LIST:
         return ck_list(c, build(c, s->arg, slots, nslots));
-    case NS_OPTION:
-        sym = ck_std_symbol(c, "Option");
-        {
-            const ek_type **args = ek_arena_alloc(c->arena, sizeof *args);
-            const ek_type *a = build(c, s->arg, slots, nslots);
-
-            if (!args) {
-                c->oom = 1;
-                return ck_ivar(c);
-            }
-            args[0] = a;
-            return sym ? ck_nominal(c, sym, args, 1) : ck_opaque(c);
-        }
-    case NS_RESULT:
-        sym = ck_std_symbol(c, "Result");
-        {
-            const ek_symbol *perr = ck_std_symbol(c, "ParseError");
-            const ek_type **args = ek_arena_alloc(c->arena, 2 * sizeof *args);
-
-            if (!args) {
-                c->oom = 1;
-                return ck_ivar(c);
-            }
-            args[0] = build(c, s->arg, slots, nslots);
-            args[1] = perr ? ck_nominal(c, perr, NULL, 0) : ck_opaque(c);
-            return sym ? ck_nominal(c, sym, args, 2) : ck_opaque(c);
-        }
-    case NS_APP1:
-        sym = ck_std_symbol(c, s->std);
-        {
-            const ek_type **args = ek_arena_alloc(c->arena, sizeof *args);
-
-            if (!args) {
-                c->oom = 1;
-                return ck_ivar(c);
-            }
-            args[0] = build(c, s->arg, slots, nslots);
-            return sym ? ck_nominal(c, sym, args, 1) : ck_opaque(c);
-        }
-    case NS_APP2:
-        sym = ck_std_symbol(c, s->std);
-        {
-            const ek_type **args = ek_arena_alloc(c->arena, 2 * sizeof *args);
-
-            if (!args) {
-                c->oom = 1;
-                return ck_ivar(c);
-            }
-            args[0] = build(c, s->arg, slots, nslots);
-            args[1] = build(c, s->arg2, slots, nslots);
-            return sym ? ck_nominal(c, sym, args, 2) : ck_opaque(c);
-        }
     case NS_DICT:
         return ck_dict(c, build(c, s->arg, slots, nslots),
                        build(c, s->arg2, slots, nslots));

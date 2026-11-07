@@ -8,8 +8,6 @@
    the symbol is canonicalized per run so every site reaches the same
    one, with a synthetic stand-in only for a name no row carries. */
 
-static const ek_symbol *std_sym(ck_ctx *c, const char *name);
-
 static int is_std_named(const ek_type *t, const char *name)
 {
     return t && t->kind == EK_T_NOMINAL && t->u.nominal.sym
@@ -42,58 +40,12 @@ int ck_is_numeric(const ek_type *t)
         || is_std_named(t, "Float");
 }
 
-/* Canonical std type symbol for name: memoized by spelling; the std
-   module's surface row, or the one synthesized symbol for names no
-   row declares. The synthesized table is content-keyed: a name
-   reaches several call sites as distinct literals, and two symbols
-   for one spelling would split nominal identity. */
-static const ek_symbol *std_sym(ck_ctx *c, const char *name)
+/* The one synthesized symbol for a name no surface row declares,
+   content-keyed so one spelling keeps one identity. */
+static const ek_symbol *std_synth(ck_ctx *c, const char *name)
 {
-    ek_symbol *fresh;
-    size_t k, i;
+    ek_symbol *fresh = ek_arena_alloc(c->arena, sizeof *fresh);
 
-    for (k = 0; k < c->nsynth; k++) {
-        if (strcmp(c->synth[k].name, name) == 0) {
-            return c->synth[k].sym;
-        }
-    }
-    if (c->oom) {
-        return NULL;
-    }
-    for (k = 0; k < c->in->module_count; k++) {
-        const ek_surface *s = &c->in->modules[k];
-
-        if (strcmp(s->module, "std") != 0) {
-            continue;
-        }
-        for (i = 0; i < s->count; i++) {
-            const ek_symbol *sym = &s->syms[i];
-
-            if (sym->kind == EK_SYM_TYPE && strcmp(sym->name, name) == 0) {
-                return sym;
-            }
-        }
-    }
-    /* The shipped companions carry their types under their own module
-       names (Clause 9.1.3); the stem list mirrors r_companion_stem
-       (resolve/module.c). The scan precedes synthesis so a companion
-       nominal keeps the resolve-stage symbol, and one identity, when
-       the rows table builds its signatures. */
-    for (k = 0; k < c->in->module_count; k++) {
-        const ek_surface *s = &c->in->modules[k];
-
-        if (strcmp(s->module, "time") != 0) {
-            continue;
-        }
-        for (i = 0; i < s->count; i++) {
-            const ek_symbol *sym = &s->syms[i];
-
-            if (sym->kind == EK_SYM_TYPE && strcmp(sym->name, name) == 0) {
-                return sym;
-            }
-        }
-    }
-    fresh = ek_arena_alloc(c->arena, sizeof *fresh);
     if (!fresh) {
         c->oom = 1;
         return NULL;
@@ -121,6 +73,40 @@ static const ek_symbol *std_sym(ck_ctx *c, const char *name)
     c->synth[c->nsynth].sym = fresh;
     c->nsynth++;
     return fresh;
+}
+
+/* Canonical std type symbol for name: memoized by spelling; the std
+   module's surface row, or the one synthesized symbol for names no
+   row declares. The synthesized table is content-keyed: a name
+   reaches several call sites as distinct literals, and two symbols
+   for one spelling would split nominal identity. */
+static const ek_symbol *std_sym(ck_ctx *c, const char *name)
+{
+    const ek_symbol *sym;
+    size_t k;
+
+    for (k = 0; k < c->nsynth; k++) {
+        if (strcmp(c->synth[k].name, name) == 0) {
+            return c->synth[k].sym;
+        }
+    }
+    if (c->oom) {
+        return NULL;
+    }
+    sym = module_sym(c, "std", name);
+    if (sym) {
+        return sym;
+    }
+    /* The shipped companions carry their types under their own module
+       names (Clause 9.1.3); the stem list mirrors r_companion_stem
+       (resolve/module.c). The scan precedes synthesis so a companion
+       nominal keeps the resolve-stage symbol, and one identity, when
+       the rows table builds its signatures. */
+    sym = module_sym(c, "time", name);
+    if (sym) {
+        return sym;
+    }
+    return std_synth(c, name);
 }
 
 const ek_type *ck_std_type(ck_ctx *c, const char *name)

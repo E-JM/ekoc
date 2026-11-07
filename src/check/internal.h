@@ -271,6 +271,10 @@ int ex_list_branch(ck_ctx *c, ex_state *st, size_t pos, ex_memo *memo,
 int ex_scalar_branch(ck_ctx *c, ex_state *st, size_t pos, ex_memo *memo,
                      int depth);
 
+/* namespace.c: the compiler namespace rows and the sig builder.
+   module_sym is the surface type-symbol scan the std lookup of
+   literal.c shares. */
+const ek_symbol *module_sym(ck_ctx *c, const char *module, const char *name);
 const ek_type *ck_ns_row(ck_ctx *c, const ek_type *recv, const char *name,
                          int *owned); /* a compiler namespace row, or NULL */
 int ck_ns_owned(const ek_type *recv); /* the namespace has compiler rows */
