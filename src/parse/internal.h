@@ -150,6 +150,9 @@ size_t p_match_bracket(p_ctx *c, size_t from); /* index of the bracket
 ek_node *p_composite(p_ctx *c);     /* '{' consumed */
 ek_node *p_slot_expr(p_ctx *c, const ek_token *toks, size_t n);
 
+/* lambda.c */
+ek_node *p_lambda(p_ctx *c); /* cursor at the '(' */
+
 /* ctl.c */
 ek_node *p_case_expr(p_ctx *c); /* cursor at 'case' */
 ek_node *p_if_expr(p_ctx *c);   /* cursor at 'if' */
