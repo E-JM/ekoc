@@ -364,8 +364,9 @@ void ck_tvars_collect(ck_ctx *c, const ek_type *t, const ek_type ***out,
                       size_t *n, size_t *cap);
 void ck_check_phantom(ck_ctx *c, const ek_node *ann, const ek_type *t);
 
-/* elab.c: annotations and representations. decl.c: declared types,
-   their binder scope, and the phantom rule. entry.c: entry rules. */
+/* elab.c: annotations. repr.c: the anonymous representation of a
+   shaped nominal type. decl.c: declared types, their binder scope,
+   and the phantom rule. entry.c: entry rules. */
 const ek_type *ck_elaborate(ck_ctx *c, const ek_node *t, ck_tvars *tv);
 void ck_tv_add(ck_ctx *c, ck_tvars *tv, const char *name, const ek_type *t,
                const ek_node *first);

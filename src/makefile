@@ -96,6 +96,7 @@ CHECK_SRC := \
 	src/check/pattern.c \
 	src/check/reconcile.c \
 	src/check/recordlit.c \
+	src/check/repr.c \
 	src/check/reqs.c \
 	src/check/scheme.c \
 	src/check/store.c \
