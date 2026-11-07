@@ -270,26 +270,6 @@ static int module_walk(r_ctx *c, r_file *f, r_head *cur, const ek_node *link,
         *walk_mod = NULL;
         return 1;
     }
-    if (r_is_placeholder(m)) {
-        if (last) {
-            /* A placeholder row without a declaration behind it keeps
-               its bridged reading. */
-            external_link(c, cur, link);
-            *state = 0;
-            *walk_mod = NULL;
-            return 1;
-        }
-        /* The module-path spelling of a compiler-supplied type
-           continues as its namespace, the same walk a bare head
-           takes (Clause 7.4.4). */
-        cur->sym = m;
-        cur->kind = EK_SYM_TYPE;
-        cur->st = from_receiver ? EK_ST_MODULE_PATH : EK_ST_QUALIFIED;
-        r_add_ref(c, link, cur->kind, cur->st, cur->sym);
-        *state = 2; /* Mod.Type.member: the namespace of the type */
-        *walk_type = m;
-        return 1;
-    }
     if (!m->public) {
         if (from_receiver) {
             /* The same deferral as a miss: the field that wins the
@@ -304,24 +284,34 @@ static int module_walk(r_ctx *c, r_file *f, r_head *cur, const ek_node *link,
                 "member `%s` is private in module `%s` (Clause 7.3.1)",
                 name, (*walk_mod)->stem);
     }
-    if (last && m->kind == EK_SYM_TYPE) {
-        /* A qualified spelling at a value position denotes the
-           constructor when one shares the type's spelling. */
-        const ek_symbol *cs = r_module_ctor(*walk_mod, name);
-
-        if (cs) {
-            m = cs;
+    if (m->kind == EK_SYM_TYPE) {
+        /* A type spelling continues as its namespace; at a value
+           position it denotes a constructor of the same spelling. */
+        if (!last) {
+            cur->sym = m;
+            cur->kind = EK_SYM_TYPE;
+            cur->st = from_receiver ? EK_ST_MODULE_PATH : EK_ST_QUALIFIED;
+            r_add_ref(c, link, cur->kind, cur->st, cur->sym);
+            *state = 2; /* Mod.Type.member: the namespace of the type */
+            *walk_type = m;
+            return 1;
+        }
+        m = r_module_ctor(*walk_mod, name);
+        if (!m) {
+            r_error(c, f->mod->file, link->line, link->col,
+                    "E-unbound-name",
+                    "`%s` names no visible constructor (Clause 7.4.2)",
+                    name);
+            external_link(c, cur, link);
+            *state = 0;
+            *walk_mod = NULL;
+            return 1;
         }
     }
     cur->sym = m;
     cur->kind = m->kind;
     cur->st = from_receiver ? EK_ST_MODULE_PATH : EK_ST_QUALIFIED;
     r_add_ref(c, link, cur->kind, cur->st, cur->sym);
-    if (m->kind == EK_SYM_TYPE && !last) {
-        *state = 2; /* Mod.Type.member: the namespace of the type */
-        *walk_type = m;
-        return 1;
-    }
     *state = 0;
     *walk_mod = NULL;
     return 1;
