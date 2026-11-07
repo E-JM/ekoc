@@ -13,8 +13,8 @@ const char *const ek_std_source_parts[] = {
     "// The compiler supplies the intrinsic rows this source builds on: the\n",
     "// Int/UInt/Float arithmetic, conversions, formatting, and parsers; the\n",
     "// machine-word padding rows; Char's code-point bridge; String's scalar\n",
-    "// access and the Bytes operations; the Dict, Set, Range, and Path\n",
-    "// operations; Json.parse; List.append; and the\n",
+    "// access and the Bytes operations; the Dict, Set, Vector, Range, and\n",
+    "// Path operations; Json.parse; List.append; and the\n",
     "// panic-coded unwrap/expect pair. Every other member of the inventory\n",
     "// is declared here. The time family lives in the std/time companion\n",
     "// (Clause 9.1.3).\n",
@@ -555,7 +555,7 @@ const char *const ek_std_source_parts[] = {
 };
 
 const size_t ek_std_source_nparts = 547;
-const size_t ek_std_source_len = 17607;
+const size_t ek_std_source_len = 17615;
 
 char *ek_std_source_join(ek_arena *arena)
 {

@@ -36,6 +36,36 @@ static void set_rows_route(void)
     lfx_end(&f);
 }
 
+static void vector_rows_route(void)
+{
+    lfx f;
+
+    lfx_begin(&f,
+              "main: () -> _ =\n"
+              "    v: Vector Int = Vector.of({3, 1})\n"
+              "    w := v.push(9)\n"
+              "    g := w.get(0)\n"
+              "    s := w.set(1, 5)\n"
+              "    n := v.length()\n"
+              "    xs := v.to_list()\n"
+              "    _ := g\n"
+              "    _ := s\n"
+              "    _ := n\n"
+              "    _ := xs\n"
+              "    _\n");
+    EK_CHECK(lfx_check_clean(&f));
+    EK_CHECK(lfx_lower_clean(&f));
+    EK_CHECK(lfx_has(&f, "ek_vec_of("));
+    EK_CHECK(lfx_has(&f, "ek_vec_push("));
+    /* get wraps the status contract into Some and None */
+    EK_CHECK(lfx_has(&f, "ek_vec_get("));
+    /* set bridges the fresh object or NULL into Some and None */
+    EK_CHECK(lfx_has(&f, "= ek_vec_set("));
+    EK_CHECK(lfx_has(&f, "ek_val_int((int64_t)ek_vec_len("));
+    EK_CHECK(lfx_has(&f, "ek_vec_to_list("));
+    lfx_end(&f);
+}
+
 static void radix_rows_route(void)
 {
     lfx f;
@@ -159,6 +189,7 @@ static void json_stamp_fires_only_on_routing(void)
 int main(void)
 {
     set_rows_route();
+    vector_rows_route();
     radix_rows_route();
     hex_pad_rows_route();
     dict_traversal_rows_route();

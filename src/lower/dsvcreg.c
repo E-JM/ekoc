@@ -312,6 +312,12 @@ static int supported(lower_dsvc_kind kind, const ek_type *t)
                the equality, which is set equality. */
             return kind != DSV_ORD;
         }
+        if (lower_is_vector(t)) {
+            /* The vector's services walk its elements in index order
+               through the runtime's list; the order of the walk is
+               the equality, which compares index for index. */
+            return kind != DSV_ORD;
+        }
         return t->u.nominal.sym && t->u.nominal.sym->decl != NULL;
     default:
         return kind != DSV_ORD;

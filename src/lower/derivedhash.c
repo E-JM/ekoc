@@ -232,6 +232,31 @@ static void emit_list_hash(lower_ctx *c, lower_demit *d, const ek_type *t)
     lower_d_printf(d, "    return h;\n");
 }
 
+/* Element mixing over a vector, in index order: the walk runs in the
+   equality's own order, so vectors equal under the derived eq mix the
+   same word. The runtime's list dies once the walk ends. */
+static void emit_vec_hash(lower_ctx *c, lower_demit *d, const ek_type *t)
+{
+    const ek_type *elem = t->u.nominal.argc == 1 ? t->u.nominal.args[0]
+                                                 : NULL;
+    const char *eh = elem ? lower_dsvc_request(c, NULL, DSV_HASH, elem)
+                          : NULL;
+
+    if (!eh) {
+        lower_d_printf(d, "    return h;\n");
+        return;
+    }
+    lower_d_printf(d, "    ek_val list = ek_vec_to_list(v);\n");
+    lower_d_printf(d, "    ek_val p = list;\n\n");
+    lower_d_printf(d, "    while (ek_val_is_cons(p)) {\n");
+    lower_d_printf(d, "        h = ek_hash_mix(h, %s(ek_cons_head"
+                      "(p.as.ref)));\n", eh);
+    lower_d_printf(d, "        p = ek_cons_tail(p.as.ref);\n");
+    lower_d_printf(d, "    }\n");
+    lower_d_printf(d, "    ek_release(list);\n");
+    lower_d_printf(d, "    return h;\n");
+}
+
 /* Entry mixing over a dictionary: each key's and each value's hash
    adds, so two dictionaries built in different orders mix the same
    word, matching the dictionary equality that ignores order. */
@@ -275,6 +300,9 @@ void lower_dsvc_hash_emit(lower_ctx *c, const char *name, const ek_type *t)
     } else if (lower_is_set(t)) {
         emit_identity_mix(&d);
         emit_set_hash(c, &d, t);
+    } else if (lower_is_vector(t)) {
+        emit_identity_mix(&d);
+        emit_vec_hash(c, &d, t);
     } else if (t->kind == EK_T_UNIT) {
         lower_d_printf(&d, "    return h;\n");
     } else if (t->kind == EK_T_LIST) {

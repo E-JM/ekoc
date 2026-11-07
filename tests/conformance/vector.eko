@@ -1,0 +1,85 @@
+// The vector's member face and derived services (Clauses 9.10.6,
+// 9.8.1, 9.8.4): of and to_list in index order, push growth,
+// persistence across set and push, the get and set domain rules,
+// order-sensitive equality, and the brace display form.
+
+build: (v: Vector Int, n: Int) -> Vector Int =
+    if n == 0: v
+    else: build(v.push(n), n - 1)
+
+member_face: test =
+    v := Vector.of({10, 20, 30})
+    assert_eq(v.length(), 3)
+    assert_eq(v.get(0), Some 10)
+    assert_eq(v.get(2), Some 30)
+    assert_eq(v.to_list(), {10, 20, 30})
+    w: Vector Int = Vector.of({})
+    assert_eq(w.length(), 0)
+    assert_eq(w.to_list(), {})
+    assert_eq(w.get(0), None)
+
+push_grows: test =
+    v: Vector Int = Vector.of({})
+    v := v.push(1).push(2).push(3)
+    assert_eq(v.length(), 3)
+    assert_eq(v.get(2), Some 3)
+    assert_eq(v.to_list(), {1, 2, 3})
+
+push_hundred: test =
+    v := build(Vector.of({}), 100)
+    assert_eq(v.length(), 100)
+    assert_eq(v.get(0), Some 100)
+    assert_eq(v.get(99), Some 1)
+
+get_bounds: test =
+    v := Vector.of({7, 8})
+    assert_eq(v.get(-1), None)
+    assert_eq(v.get(2), None)
+    assert_eq(v.get(1), Some 8)
+
+set_domain: test =
+    v := Vector.of({1, 2, 3})
+    u := v.set(1, 99).unwrap()
+    assert_eq(u.to_list(), {1, 99, 3})
+    assert_eq(v.get(1), Some 2) // the original is unchanged
+    assert_eq(v.set(3, 0), None)
+    assert_eq(v.set(-1, 0), None)
+
+set_persists: test =
+    v := Vector.of({1, 2, 3, 4, 5})
+    w := v.set(2, 30)
+    assert_eq(w.unwrap().get(2), Some 30)
+    assert_eq(v.get(2), Some 3) // the old version keeps its element
+    assert_eq(v.length(), 5)
+    assert_eq(w.unwrap().length(), 5)
+
+push_persists: test =
+    v50 := build(Vector.of({}), 50)
+    v := build(v50, 50)
+    assert_eq(v.length(), 100)
+    assert_eq(v50.length(), 50) // the earlier version keeps its reads
+    assert_eq(v50.get(0), Some 50)
+    assert_eq(v50.get(49), Some 1)
+    assert_eq(v.get(99), Some 1)
+
+vector_equality: test =
+    a := Vector.of({1, 2})
+    b := Vector.of({2, 1})
+    c := Vector.of({1, 2})
+    assert(a.eq(c))
+    assert(a.eq(b).not()) // index order is the equality
+    assert(b.eq(a).not())
+    d: Vector Int = Vector.of({})
+    e: Vector Int = Vector.of({})
+    assert(d.eq(e))
+
+vector_show: test =
+    a: Vector Int = Vector.of({1, 2})
+    assert_eq(show(a), "\{1, 2}")
+    assert_eq(inspect(a), "\{1, 2}")
+    empty: Vector Int = Vector.of({})
+    assert_eq(show(empty), "\{}")
+
+nested_show: test =
+    v := Vector.of({Vector.of({1, 2}), Vector.of({3})})
+    assert_eq(show(v), "\{\{1, 2}, \{3}}")

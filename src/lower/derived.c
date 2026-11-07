@@ -58,6 +58,17 @@ int lower_is_set(const ek_type *t)
         && strcmp(t->u.nominal.sym->name, "Set") == 0;
 }
 
+/* True when the nominal is the compiler-supplied Vector placeholder:
+   the runtime-backed persistent sequence whose values the compiler's
+   services walk through the index-order list. */
+int lower_is_vector(const ek_type *t)
+{
+    return t && t->kind == EK_T_NOMINAL && t->u.nominal.sym
+        && t->u.nominal.argc == 1 && t->u.nominal.sym->module
+        && strcmp(t->u.nominal.sym->module, "std") == 0
+        && strcmp(t->u.nominal.sym->name, "Vector") == 0;
+}
+
 /* True when the nominal is a handle type of the system vocabulary:
    the closed three-name list the checker's own judgment reads, so the
    display channels and the halt rules stay one list apart. */

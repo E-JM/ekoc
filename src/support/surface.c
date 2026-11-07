@@ -339,6 +339,31 @@ const ek_surface_row ek_surface_rows[] = {
                            SIG_APP1("Set", SIG_VAR(0))),
      .sym = "ek_set_diff", .args = "vv"},
 
+    /* The Vector namespace: the element variable of the receiver ties
+       the argument and the result. Vector.of takes no hook pair --
+       the vector keys nothing, so the plain call carries it. */
+    {"Vector", "of", SIG_FN(EK_ARROW_PURE, SIG_APP1("Vector", SIG_VAR(0)),
+                            SIG_LIST(SIG_VAR(0))), .sym = "ek_vec_of"},
+    {"Vector", "to_list", SIG_FN(EK_ARROW_PURE, SIG_LIST(SIG_VAR(0)),
+                                 SIG_APP1("Vector", SIG_VAR(0))),
+     .sym = "ek_vec_to_list"},
+    {"Vector", "get", SIG_FN(EK_ARROW_PURE, SIG_OPTION(SIG_VAR(0)),
+                             SIG_APP1("Vector", SIG_VAR(0)),
+                             SIG_STD("Int")),
+     .sym = "ek_vec_get", .args = "vv", .wrap = EK_WRAP_OPTION,
+     .out = EK_OUT_VAL},
+    {"Vector", "set", SIG_FN(EK_ARROW_PURE,
+                             SIG_OPTION(SIG_APP1("Vector", SIG_VAR(0))),
+                             SIG_APP1("Vector", SIG_VAR(0)),
+                             SIG_STD("Int"), SIG_VAR(0)),
+     .sym = "ek_vec_set", .args = "vvv", .wrap = EK_WRAP_OPTION_OBJ},
+    {"Vector", "push", SIG_FN(EK_ARROW_PURE, SIG_APP1("Vector", SIG_VAR(0)),
+                              SIG_APP1("Vector", SIG_VAR(0)), SIG_VAR(0)),
+     .sym = "ek_vec_push", .args = "vv"},
+    {"Vector", "length", SIG_FN(EK_ARROW_PURE, SIG_STD("Int"),
+                                SIG_APP1("Vector", SIG_VAR(0))),
+     .sym = "ek_vec_len", .wrap = EK_WRAP_LEN},
+
     /* The String namespace: the scalar sequence primitives. The
        composition (split, trim, replace, slice, padding) is std
        source over these. */
@@ -808,6 +833,7 @@ const ek_surface_row ek_surface_rows[] = {
     {"U64", NULL, NULL, .route = EK_ROUTE_NONE},
     {"U8", NULL, NULL, .route = EK_ROUTE_NONE},
     {"UInt", NULL, NULL, .route = EK_ROUTE_NONE},
+    {"Vector", NULL, NULL, .route = EK_ROUTE_NONE},
 };
 
 /* The table's length, for the consult loops. */
@@ -822,6 +848,7 @@ static const struct {
     size_t arity;
 } supplied_generics[] = {
     {"Set", 1},
+    {"Vector", 1},
 };
 
 const ek_surface_row *ek_surface_find(const char *ns, const char *member)

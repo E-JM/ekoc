@@ -22,7 +22,7 @@ static const char *opened_names[] = {
 
 static const char *type_names[] = {
     "Char", "String", "Bytes", "Int", "UInt", "Float",
-    "Range", "Set", "List", "Dict", "Path",
+    "Range", "Set", "Vector", "List", "Dict", "Path",
     "Out", "In", "Fs", "Env", "Args", "Clock", "Rand", "Proc", "Conc",
     NULL
 };

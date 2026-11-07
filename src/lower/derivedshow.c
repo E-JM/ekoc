@@ -158,6 +158,14 @@ static void emit_set_show(lower_ctx *c, lower_demit *d, const ek_type *t)
     emit_seq_show(c, d, t->u.nominal.args[0], "list", 1);
 }
 
+/* The brace form over a vector: the runtime's index-order list, which
+   the walk owns and releases. */
+static void emit_vec_show(lower_ctx *c, lower_demit *d, const ek_type *t)
+{
+    lower_d_printf(d, "    ek_val list = ek_vec_to_list(v);\n");
+    emit_seq_show(c, d, t->u.nominal.args[0], "list", 1);
+}
+
 static void emit_dict_show(lower_ctx *c, lower_demit *d, const ek_type *t)
 {
     const char *ks = show_of(c, t->u.dict.key);
@@ -322,6 +330,8 @@ static void emit_struct_show(lower_ctx *c, lower_demit *d, const ek_type *t)
         emit_list_show(c, d, t);
     } else if (lower_is_set(t)) {
         emit_set_show(c, d, t);
+    } else if (lower_is_vector(t)) {
+        emit_vec_show(c, d, t);
     } else if (t->kind == EK_T_DICT) {
         emit_dict_show(c, d, t);
     } else if (lower_is_range(t)) {

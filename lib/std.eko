@@ -6,8 +6,8 @@
 // The compiler supplies the intrinsic rows this source builds on: the
 // Int/UInt/Float arithmetic, conversions, formatting, and parsers; the
 // machine-word padding rows; Char's code-point bridge; String's scalar
-// access and the Bytes operations; the Dict, Set, Range, and Path
-// operations; Json.parse; List.append; and the
+// access and the Bytes operations; the Dict, Set, Vector, Range, and
+// Path operations; Json.parse; List.append; and the
 // panic-coded unwrap/expect pair. Every other member of the inventory
 // is declared here. The time family lives in the std/time companion
 // (Clause 9.1.3).
