@@ -151,6 +151,34 @@ size_t r_lookup_ctor(r_ctx *c, const r_file *f, const char *name,
     return n;
 }
 
+/* The constructor value miss: a private std or embedded spelling
+   diagnoses as private, and everything else is an unbound name. */
+static void cons_miss(r_ctx *c, r_file *f, const ek_node *n,
+                      const char *name, r_head *out)
+{
+    /* A private constructor is unreferenceable rather than
+       unknown: the `_` spellings of std and the embedded modules
+       diagnose, and the handle stays unforgeable (Clause 7.3.3). */
+    const ek_symbol *priv = r_std_find(f->std, EK_SYM_CONSTRUCTOR, name);
+
+    if (!priv) {
+        priv = r_embedded_find(f, EK_SYM_CONSTRUCTOR, name);
+    }
+    if (priv && !priv->public) {
+        r_error(c, f->mod->file, n->line, n->col, "E-private-name",
+                "the constructor `%s` is private in module `%s` "
+                "(Clause 7.3.3)", name, priv->module);
+    }
+    /* Unknown to the file, std, and the embedded modules: an
+       unbound name, not the unresolved-external bridge
+       (resolve.h). */
+    r_error(c, f->mod->file, n->line, n->col, "E-unbound-name",
+            "`%s` names no visible constructor (Clause 7.4.2)", name);
+    out->kind = EK_SYM_EXTERNAL;
+    out->st = EK_ST_EXTERNAL;
+    r_add_ref(c, n, out->kind, out->st, NULL);
+}
+
 /* Constructor value position: the visible same-named constructors are
    handed to check as a candidate set; the first one is the recorded
    symbol. */
@@ -173,28 +201,7 @@ void r_cons_head(r_ctx *c, r_file *f, const ek_node *n, r_head *out)
         return;
     }
     if (k == 0) {
-        /* A private constructor is unreferenceable rather than
-           unknown: the `_` spellings of std and the embedded modules
-           diagnose, and the handle stays unforgeable (Clause 7.3.3). */
-        const ek_symbol *priv = r_std_find(f->std, EK_SYM_CONSTRUCTOR,
-                                           name);
-
-        if (!priv) {
-            priv = r_embedded_find(f, EK_SYM_CONSTRUCTOR, name);
-        }
-        if (priv && !priv->public) {
-            r_error(c, f->mod->file, n->line, n->col, "E-private-name",
-                    "the constructor `%s` is private in module `%s` "
-                    "(Clause 7.3.3)", name, priv->module);
-        }
-        /* Unknown to the file, std, and the embedded modules: an
-           unbound name, not the unresolved-external bridge
-           (resolve.h). */
-        r_error(c, f->mod->file, n->line, n->col, "E-unbound-name",
-                "`%s` names no visible constructor (Clause 7.4.2)", name);
-        out->kind = EK_SYM_EXTERNAL;
-        out->st = EK_ST_EXTERNAL;
-        r_add_ref(c, n, out->kind, out->st, NULL);
+        cons_miss(c, f, n, name, out);
         return;
     }
     out->sym = cands[0];
