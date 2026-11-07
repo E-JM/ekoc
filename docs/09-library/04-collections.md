@@ -43,9 +43,8 @@ counts keys. `Dict.insert` and `Dict.remove` return a new dictionary; removing
 an absent key returns the original. An insert whose key is present updates the
 value and keeps the key's position; a literal naming a key twice follows the
 same rule, the later value winning at the first position. The new dictionary
-is a copy, O(n) in the
-number of entries, so building a dictionary by n successive inserts costs
-O(n²) (Clause 8.10). `Dict.merge` and
+shares every structure the update does not touch, so building a dictionary
+by n successive inserts costs O(n log n) (Clause 8.10). `Dict.merge` and
 `++` return a dictionary in which the
 right operand wins on duplicate keys; the result keeps the left operand's
 order and appends the right operand's new keys in right order. `Dict.map`,
