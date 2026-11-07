@@ -459,9 +459,9 @@ ek_bit ck_own_bit(const ek_type *bound);
 void ck_reconcile(ck_ctx *c, const ek_node *at, const ek_type *bound,
                   const ek_node *val);
 
-/* pattern.c: pattern typing. patbind.c: or-patterns and the
-   binding-shape judgments. irrefutable.c: the value binding's
-   irrefutability judgment. */
+/* pattern.c: pattern typing. patcons.c: constructor patterns.
+   patbind.c: or-patterns and the binding-shape judgments.
+   irrefutable.c: the value binding's irrefutability judgment. */
 int ck_invert_pattern(const ek_node *pat);
 const ek_type *ck_invert_binding(ck_ctx *c, const ek_node *m,
                                   const ek_node *pat, int top);
@@ -469,6 +469,8 @@ const ek_type *ck_invert_block(ck_ctx *c, const ek_node *m,
                                const ek_node *block, size_t start,
                                const ek_type *expected);
 const ek_type *ck_pattern(ck_ctx *c, const ek_node *p, const ek_type *scrut);
+const ek_type *cons_pattern(ck_ctx *c, const ek_node *p,
+                            const ek_type *scrut);
 const ek_symbol *ck_cons_select(ck_ctx *c, const ek_node *p,
                                 const ek_type *scrut);
 const ek_type *ck_or_pattern(ck_ctx *c, const ek_node *p, const ek_type *scrut);

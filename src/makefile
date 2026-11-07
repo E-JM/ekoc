@@ -92,6 +92,7 @@ CHECK_SRC := \
 	src/check/nsrows.c \
 	src/check/op.c \
 	src/check/patbind.c \
+	src/check/patcons.c \
 	src/check/pattern.c \
 	src/check/reconcile.c \
 	src/check/reqs.c \
