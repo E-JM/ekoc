@@ -232,22 +232,14 @@ static int service_name(const char *name)
         || strcmp(name, "panic") == 0;
 }
 
-/* The expression-head lookup. */
-void r_name_head(r_ctx *c, r_file *f, const ek_node *n, int chained,
-                 r_head *out)
+/* The snake name over the layers: a local, a top-level binding or
+   opened free name, a module, the C namespace, a receiver service, or
+   unbound. */
+static void name_layers(r_ctx *c, r_file *f, const ek_node *n,
+                        const char *name, int chained, r_head *out)
 {
-    const char *name = n->u.path.count == 1 ? n->u.path.data[0] : "";
     const ek_symbol *sym;
 
-    memset(out, 0, sizeof *out);
-    if (strcmp(name, "_") == 0) {
-        /* The unit value at value position, not a name. */
-        return;
-    }
-    if (!r_is_snake(name)) {
-        r_cons_head(c, f, n, out);
-        return;
-    }
     if ((sym = r_lookup_local(f, name)) != NULL) {
         out->sym = sym;
         out->kind = sym->kind;
@@ -290,6 +282,24 @@ void r_name_head(r_ctx *c, r_file *f, const ek_node *n, int chained,
         out->kind = EK_SYM_EXTERNAL;
     }
     r_add_ref(c, n, out->kind, out->st, out->sym);
+}
+
+/* The expression-head lookup. */
+void r_name_head(r_ctx *c, r_file *f, const ek_node *n, int chained,
+                 r_head *out)
+{
+    const char *name = n->u.path.count == 1 ? n->u.path.data[0] : "";
+
+    memset(out, 0, sizeof *out);
+    if (strcmp(name, "_") == 0) {
+        /* The unit value at value position, not a name. */
+        return;
+    }
+    if (!r_is_snake(name)) {
+        r_cons_head(c, f, n, out);
+        return;
+    }
+    name_layers(c, f, n, name, chained, out);
 }
 
 static void r_apply(r_ctx *c, r_file *f, const ek_node *e)
