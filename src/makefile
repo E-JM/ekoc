@@ -51,6 +51,7 @@ RESOLVE_SRC := \
 	src/resolve/import.c \
 	src/resolve/expr.c \
 	src/resolve/module.c \
+	src/resolve/lookup.c \
 	src/resolve/opens.c \
 	src/resolve/pattern.c \
 	src/resolve/regex_source.c \

@@ -248,9 +248,9 @@ void r_tops(r_ctx *c, r_file *f, const ek_node *mod);
 /* expr.c: expressions, chains, calls. */
 void r_expr(r_ctx *c, r_file *f, const ek_node *e);
 
-/* The layer lookups, shared with chain.c and type.c. A free name
-   answers from the file's own bindings or the opened table; the std
-   surface still supplies the opened types and constructors.
+/* lookup.c: the layer lookups, shared with chain.c and type.c. A free
+   name answers from the file's own bindings or the opened table; the
+   std surface still supplies the opened types and constructors.
    r_lookup_type counts visible same-named entries: ambiguity is an
    error at the use site. r_lookup_ctor returns every visible
    same-named constructor, user candidates first and the std
