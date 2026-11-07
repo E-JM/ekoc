@@ -166,6 +166,40 @@ void ek_dict_drop(ek_obj *obj);
 void ek_set_drop(ek_obj *obj);
 void ek_closure_drop(ek_obj *obj);
 
+/* The dictionary object: the live mapping count, the trie's root, the
+   order vector of keys and tombstones behind it, and the eq and hash
+   pair its key domain was built with. dict.c owns the object and its
+   surface; hamt.c owns the nodes and walks of the trie it points at. */
+typedef struct {
+    ek_obj obj;
+    size_t count;   /* the live mappings */
+    ek_val root;    /* the trie's root node, unit when empty */
+    ek_val order;   /* the order vector of keys and tombstones */
+    ek_key_eq_fn keq;
+    ek_key_hash_fn kh;
+} ek_dict;
+
+/* The key domain of one dictionary: nonzero when the two keys name
+   one mapping, and the slot word the trie spreads over its levels.
+   The domains the runtime keys itself answer before any carried hook
+   runs; a reference key outside them with no hook aborts. */
+int ek_dict_key_eq(const ek_dict *dict, ek_val a, ek_val b);
+unsigned long ek_dict_hash_key(const ek_dict *dict, ek_val v);
+
+/* The entry walks of the trie under a dictionary (hamt.c): the entry
+   of the key or NULL, and the trie with one entry added, its value
+   replaced, or the entry removed. All key and value inputs are
+   borrowed and a returned node or root is owned; the add takes a key
+   known absent, the update and del keys known present. */
+ek_val *ek_ham_find(const ek_dict *dict, ek_val root, unsigned long h,
+                    unsigned level, ek_val key);
+ek_val ek_ham_add(const ek_dict *dict, ek_val root, unsigned long h,
+                  unsigned level, ek_val key, ek_val val, ek_val pos);
+ek_val ek_ham_update(const ek_dict *dict, ek_val root, unsigned long h,
+                     unsigned level, ek_val key, ek_val val);
+ek_val ek_ham_del(const ek_dict *dict, ek_val root, unsigned long h,
+                  unsigned level, ek_val key);
+
 /* Steps one count down and returns the count after the step. A zero
    result hands the reclamation to the caller, which releases the
    children and frees the storage; the list spine release uses it to
