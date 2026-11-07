@@ -195,6 +195,39 @@ static void emit_from_set(lower_ctx *c, lower_demit *d, const char *name,
     lower_json_err_lit(d, "    ", "");
 }
 
+/* A vector decodes through the list walk in array order, then builds
+   over the decoded elements by push, so the array's order is the
+   index order; the list dies once the vector holds its own refs. */
+static void emit_from_vec(lower_ctx *c, lower_demit *d, const char *name,
+                          const ek_type *t)
+{
+    const char *aux = lower_str(c, "%s_aux", name);
+    const char *ok = lower_result_ctor(c, "Ok");
+
+    emit_from_list_aux(c, aux, t->u.nominal.args[0]);
+    lower_d_printf(d, "    if (v.as.ref->info == &ekT_std$Json$Arr) {\n");
+    lower_d_printf(d, "        ek_val r = %s(%s);\n", aux,
+                   lower_json_slot(c, "Arr", "v"));
+    lower_d_printf(d, "        ek_val list, vec, out;\n\n");
+    lower_d_printf(d, "        if (r.as.ref->info != %s)\n", LOWER_OK_INFO);
+    lower_d_printf(d, "            return r;\n");
+    lower_d_printf(d, "        list = ((ekS_std$Result$Ok *)r.as.ref)->p0;\n");
+    lower_d_printf(d, "        vec = ek_vec_new();\n");
+    lower_d_printf(d, "        while (ek_val_is_cons(list)) {\n");
+    lower_d_printf(d, "            ek_val next = ek_vec_push(vec, "
+                       "ek_cons_head(list.as.ref));\n");
+    lower_d_printf(d, "            ek_release(vec);\n");
+    lower_d_printf(d, "            vec = next;\n");
+    lower_d_printf(d, "            list = ek_cons_tail(list.as.ref);\n");
+    lower_d_printf(d, "        }\n");
+    lower_d_printf(d, "        out = %s(vec);\n", ok);
+    lower_d_printf(d, "        ek_release(vec);\n");
+    lower_d_printf(d, "        ek_release(r);\n");
+    lower_d_printf(d, "        return out;\n");
+    lower_d_printf(d, "    }\n");
+    lower_json_err_lit(d, "    ", "");
+}
+
 static void emit_from_dict(lower_ctx *c, lower_demit *d, const ek_type *t)
 {
     const char *f = lower_fromj_of(c, t->u.dict.val);
@@ -348,6 +381,10 @@ static void emit_from_shape(lower_ctx *c, lower_demit *d, const char *name,
     }
     if (lower_is_set(t)) {
         emit_from_set(c, d, name, t);
+        return;
+    }
+    if (lower_is_vector(t)) {
+        emit_from_vec(c, d, name, t);
         return;
     }
     if (t->kind == EK_T_DICT) {

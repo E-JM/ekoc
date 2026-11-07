@@ -159,6 +159,21 @@ static void emit_to_set_arr(lower_ctx *c, lower_demit *d, const char *name,
     lower_d_printf(d, "    return %s(%s);\n", lower_json_ctor(c, "Arr"), arr);
 }
 
+/* A vector maps to the Arr of its elements in index order: the walk
+   over the runtime's list, released once the Arr stands. */
+static void emit_to_vec_arr(lower_ctx *c, lower_demit *d, const char *name,
+                            const ek_type *t)
+{
+    const char *aux = lower_str(c, "%s_aux", name);
+    const char *arr = lower_d_temp(d);
+
+    emit_to_list_aux(c, aux, t->u.nominal.args[0]);
+    lower_d_printf(d, "    ek_val list = ek_vec_to_list(v);\n");
+    lower_d_printf(d, "    ek_val %s = %s(list);\n", arr, aux);
+    lower_d_printf(d, "    ek_release(list);\n");
+    lower_d_printf(d, "    return %s(%s);\n", lower_json_ctor(c, "Arr"), arr);
+}
+
 /* One Obj entry: the key text and the mapped value, stored over the
    running dictionary named by dict. */
 static void emit_obj_entry(lower_ctx *c, lower_demit *d, const char *dict,
@@ -361,6 +376,8 @@ void lower_dsvc_json_emit(lower_ctx *c, const char *name, const ek_type *t,
         emit_to_arr(c, &d, name, t);
     } else if (lower_is_set(t)) {
         emit_to_set_arr(c, &d, name, t);
+    } else if (lower_is_vector(t)) {
+        emit_to_vec_arr(c, &d, name, t);
     } else if (t->kind == EK_T_DICT) {
         emit_to_dict(c, &d, t);
     } else if (t->kind == EK_T_TUPLE) {

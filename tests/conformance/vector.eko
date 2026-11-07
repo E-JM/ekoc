@@ -7,6 +7,8 @@ build: (v: Vector Int, n: Int) -> Vector Int =
     if n == 0: v
     else: build(v.push(n), n - 1)
 
+Holder: type = [v: Vector Int]
+
 member_face: test =
     v := Vector.of({10, 20, 30})
     assert_eq(v.length(), 3)
@@ -83,3 +85,32 @@ vector_show: test =
 nested_show: test =
     v := Vector.of({Vector.of({1, 2}), Vector.of({3})})
     assert_eq(show(v), "\{\{1, 2}, \{3}}")
+
+json_round_trip: test =
+    v: Vector Int = Vector.of({1, 2, 3})
+    assert_eq(Json.show(v.to_json()), "[1,2,3]")
+    r: Result (Vector Int) ParseError = Vector.from_json(v.to_json())
+    assert_eq(r, Ok v)
+    e: Vector Int = Vector.of({})
+    assert_eq(Json.show(e.to_json()), "[]")
+    r2: Result (Vector Int) ParseError = Vector.from_json(e.to_json())
+    assert_eq(r2, Ok e)
+
+json_errors: test =
+    j := Json.parse("[1, \"x\"]").unwrap()
+    r: Result (Vector Int) ParseError = Vector.from_json(j)
+    assert(r.is_err()) // the element's decode refuses
+    na := Json.parse("7").unwrap()
+    r2: Result (Vector Int) ParseError = Vector.from_json(na)
+    assert(r2.is_err()) // a non-array is no vector
+
+json_nested_round_trip: test =
+    v: Vector (Vector Int) = Vector.of({Vector.of({1, 2}), Vector.of({})})
+    assert_eq(Json.show(v.to_json()), "[[1,2],[]]")
+    r: Result (Vector (Vector Int)) ParseError = Vector.from_json(v.to_json())
+    assert_eq(r, Ok v)
+
+json_record_round_trip: test =
+    h: Holder = {v: Vector.of({4, 5})}
+    assert_eq(Holder.from_json(h.to_json()), Ok h)
+    assert_eq(Json.show(h.to_json()), "\{\"v\":[4,5]}")
