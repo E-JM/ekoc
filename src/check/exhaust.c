@@ -86,3 +86,17 @@ int ck_pat_catchall(const ek_node *p)
     return pat_catchall(p);
 }
 
+/* Whether any of one cell's flattened alternatives is a catch-all:
+   the row answers a branch as a whole when one alternative does. */
+int ex_any_catchall(const ek_node *const *alts, size_t n)
+{
+    size_t i;
+
+    for (i = 0; i < n; i++) {
+        if (ck_pat_catchall(alts[i])) {
+            return 1;
+        }
+    }
+    return 0;
+}
+

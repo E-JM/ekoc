@@ -258,6 +258,13 @@ const ek_type **ex_cols_at(ck_ctx *c, const ek_type **cols, size_t ncols,
                            size_t pos, const ek_type *const *ins,
                            size_t nins);
 void ex_rows_add(ck_ctx *c, ex_rows *r, const ek_node **vec);
+/* One surviving row answered with wildcards, and one branch's child
+   state walked at the same position. */
+void ex_rows_wild(ck_ctx *c, ex_rows *r, const ek_node **row,
+                  size_t ncols, size_t pos, const ek_node **wild, size_t k);
+int ex_step(ck_ctx *c, const ex_state *st, size_t pos, ex_memo *memo,
+            int depth, const ek_type *const *ins, size_t nins,
+            const ex_rows *rows);
 /* exhaust_prod.c: one walk step, recursive into the branches. */
 int covers_walk(ck_ctx *c, ex_state *st, size_t pos, ex_memo *memo,
                 int depth);
@@ -493,6 +500,7 @@ size_t ck_pat_flatten(ck_ctx *c, const ek_node *p, const ek_node **out,
                       size_t n, size_t cap);
 const ek_symbol *ck_pat_head(ck_ctx *c, const ek_node *p);
 int ck_pat_catchall(const ek_node *p);
+int ex_any_catchall(const ek_node *const *alts, size_t n);
 void ck_exhaust(ck_ctx *c, const ek_node *cs, const ek_type **scrut,
                 size_t nscrut, const ek_node *const *arms, const int *contrib,
                 size_t narms);

@@ -158,6 +158,34 @@ void ex_rows_add(ck_ctx *c, ex_rows *r, const ek_node **vec)
     r->v[r->n++] = vec;
 }
 
+/* One surviving row answered with k wildcard contributions: the
+   branch's rows gain the row with the column replaced. */
+void ex_rows_wild(ck_ctx *c, ex_rows *r, const ek_node **row,
+                  size_t ncols, size_t pos, const ek_node **wild, size_t k)
+{
+    size_t j;
+
+    for (j = 0; j < k; j++) {
+        wild[j] = NULL;
+    }
+    ex_rows_add(c, r, ex_vec_at(c, row, ncols, pos, k ? wild : NULL, k));
+}
+
+/* One branch's child state: the surviving rows with the column
+   replaced by `nins` inserted columns, walked at the same position. */
+int ex_step(ck_ctx *c, const ex_state *st, size_t pos, ex_memo *memo,
+            int depth, const ek_type *const *ins, size_t nins,
+            const ex_rows *rows)
+{
+    ex_state next;
+
+    next.cols = ex_cols_at(c, st->cols, st->ncols, pos, ins, nins);
+    next.ncols = st->ncols - 1 + nins;
+    next.rows = rows->v;
+    next.nrows = rows->n;
+    return covers_walk(c, &next, pos, memo, depth + 1);
+}
+
 /* True when every surviving row answers the column with a
    catch-all — no contribution, or a variable or wildcard pattern: the
    column constrains nothing. */
