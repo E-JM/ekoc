@@ -217,31 +217,14 @@ lower_val direct_call(lower_ctx *c, lower_scope *scope,
     return (lower_val){ t, 1 };
 }
 
-/* A call on a function value: the closure ABI over the argument
-   array. The entries are borrowed -- the runtime callee retains
-   whatever it stores -- so an argument reading a frame-owned local
-   passes the local's own name. */
-lower_val value_call(lower_ctx *c, lower_scope *scope,
-                            const ek_node *e, lower_val callee,
-                            const char *extra)
+/* The written arguments and the appended callback, borrowed where the
+   read names a frame-owned local no later argument rebinds. */
+static void fill_values(lower_ctx *c, lower_scope *scope,
+                        const ek_nlist *args, const char *extra,
+                        const char **argv, int *owned)
 {
-    const ek_nlist *args = &e->u.call.args;
-    size_t n = args->count + (extra ? 1 : 0);
-    const char **argv = NULL;
-    int *owned = NULL;
-    size_t cap = 0, ocap = 0, i, k = 0;
-    const char *ft = lower_as_temp(c, scope, &callee);
-    const char *av = NULL;
-    const char *r = lower_temp(c, scope);
+    size_t i, k = 0;
 
-    if (n) {
-        argv = lower_grow(c, NULL, &cap, n, sizeof *argv);
-        owned = lower_grow(c, NULL, &ocap, n, sizeof *owned);
-        if (!argv || !owned) {
-            c->oom = 1;
-            return lower_val_unit();
-        }
-    }
     for (i = 0; i < args->count; i++) {
         const char *bn = lower_borrow_local(c, scope, args->data[i]);
 
@@ -262,8 +245,17 @@ lower_val value_call(lower_ctx *c, lower_scope *scope,
     if (extra) {
         argv[k] = extra;
         owned[k] = 1;
-        k++;
     }
+}
+
+/* The C argument array of the closure ABI, over the filled slots;
+   NULL at an empty call. */
+static const char *emit_arg_array(lower_ctx *c, lower_scope *scope,
+                                  const char **argv, size_t n)
+{
+    const char *av = NULL;
+    size_t i;
+
     if (n) {
         av = lower_temp(c, scope);
         lower_pad(c);
@@ -273,6 +265,36 @@ lower_val value_call(lower_ctx *c, lower_scope *scope,
         }
         lower_emitf(c, "};\n");
     }
+    return av;
+}
+
+/* A call on a function value: the closure ABI over the argument
+   array. The entries are borrowed -- the runtime callee retains
+   whatever it stores -- so an argument reading a frame-owned local
+   passes the local's own name. */
+lower_val value_call(lower_ctx *c, lower_scope *scope,
+                            const ek_node *e, lower_val callee,
+                            const char *extra)
+{
+    const ek_nlist *args = &e->u.call.args;
+    size_t n = args->count + (extra ? 1 : 0);
+    const char **argv = NULL;
+    int *owned = NULL;
+    size_t cap = 0, ocap = 0;
+    const char *ft = lower_as_temp(c, scope, &callee);
+    const char *av;
+    const char *r = lower_temp(c, scope);
+
+    if (n) {
+        argv = lower_grow(c, NULL, &cap, n, sizeof *argv);
+        owned = lower_grow(c, NULL, &ocap, n, sizeof *owned);
+        if (!argv || !owned) {
+            c->oom = 1;
+            return lower_val_unit();
+        }
+    }
+    fill_values(c, scope, args, extra, argv, owned);
+    av = emit_arg_array(c, scope, argv, n);
     lower_pad(c);
     {
         /* A world-touching call is a cancellation point: a task with
