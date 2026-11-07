@@ -9,18 +9,29 @@ endif
 UNIT_SRC := $(wildcard tests/unit/*/*.c)
 UNIT_BIN := $(UNIT_SRC:tests/unit/%.c=$(BUILD)/tests/%)
 
+# One run target per suite lets make -j schedule suites beside their
+# compilation. The run targets are never created as files, so every make
+# run executes every suite; they must not be .PHONY, because phony
+# targets skip the implicit rule search that pairs them with the binaries.
+UNIT_RUN := $(UNIT_BIN:$(BUILD)/tests/%=$(BUILD)/run/%)
+
 .PHONY: test conformance
 
-# keep object files between runs; they are cheap to reuse, not intermediates
-.SECONDARY: $(UNIT_BIN:%=%.o)
+# keep object files and binaries between runs; they are cheap to reuse,
+# not intermediates — the run targets make the binaries chain intermediates
+.SECONDARY: $(UNIT_BIN) $(UNIT_BIN:%=%.o)
 
-test: all $(UNIT_BIN)
-	@status=0; \
-	for bin in $(UNIT_BIN); do \
-		./$$bin || status=1; \
-	done; \
-	if [ $$status -eq 0 ]; then echo "ekoc: all unit tests passed"; fi; \
-	exit $$status
+test: $(BUILD)/ekoc $(UNIT_RUN)
+	@echo "ekoc: all unit tests passed"
+
+$(BUILD)/run/%: $(BUILD)/tests/%
+	@mkdir -p $(dir $@)
+	@./$< >$@.log 2>&1 && { rm -f $@.log $@.fail; echo "ok $*"; } \
+		|| { cat $@.log; mv $@.log $@.fail; exit 1; }
+
+# these two suites shell out to ./build/ekoc at runtime, so they wait
+# for the compiler binary even under make -j
+$(BUILD)/run/cli/test $(BUILD)/run/cli/run: $(BUILD)/ekoc
 
 # The conformance gate: every module of the suite through the real
 # pipeline. A module with test bindings runs as its own root; a library

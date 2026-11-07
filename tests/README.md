@@ -61,6 +61,14 @@ run `python3 tools/gen_annex_d.py`; it rewrites those fields and leaves the
 clause and coverage columns as written. `--check` reports drift without
 writing, so a suite change that forgot the annex fails before commit.
 
+## Unit tests
+
+`make test` builds the compiler and runs every suite under `unit/` in
+parallel, one `ok <stage>/<name>` line per suite. A failing suite prints
+its full output and leaves the captured log beside a `.fail` marker
+(`build/run/<stage>/<name>.fail`) for inspection. Make stops at the first
+failing suite; `make -k test` keeps going through all of them.
+
 ## Conventions
 
 - Four spaces per indentation level; tabs are an `E-tab` error
