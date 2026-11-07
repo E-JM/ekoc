@@ -103,6 +103,9 @@ ek_node *p_ctor_pattern(p_ctx *c, const ek_slist *path,
                         const ek_layout_token *head);
 void p_check_invert_pattern(p_ctx *c, const ek_node *pat);
 
+/* import.c */
+ek_node *p_import(p_ctx *c);
+
 /* binding.c: binding forms and member/suite bodies. */
 ek_node *p_binding_line(p_ctx *c, int top_level);
 ek_node *p_invert_bare(p_ctx *c); /* `<-` without a pattern */
