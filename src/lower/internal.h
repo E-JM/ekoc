@@ -541,6 +541,13 @@ int lower_has_self_tail(lower_ctx *c, const ek_symbol *self,
 void lower_emit_self_tail(lower_ctx *c, lower_scope *scope,
                           const ek_node *e, const ek_ref *ref);
 
+/* entryshim.c: the entry shim's bookkeeping. entry_manifest registers
+   the capabilities a main's parameters declare and rejects the ones
+   the shim cannot build; record_test registers one test binding for
+   the dispatching shim, unless its name was recorded already. */
+int entry_manifest(lower_ctx *c, const ek_node *decl, const ek_node *ann);
+void record_test(lower_ctx *c, const ek_symbol *sym, const char *name);
+
 /* name.c: the mangled function symbol, C spellings, string escapes. */
 const char *lower_mangled(lower_ctx *c, const ek_symbol *sym);
 const char *lower_inst_name(lower_ctx *c, const ek_symbol *sym,

@@ -131,6 +131,7 @@ LOWER_SRC := \
 	src/lower/derivedvec.c \
 	src/lower/derivedwith.c \
 	src/lower/dsvcreg.c \
+	src/lower/entryshim.c \
 	src/lower/extcback.c \
 	src/lower/extern.c \
 	src/lower/extctype.c \
