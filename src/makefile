@@ -130,6 +130,7 @@ LOWER_SRC := \
 	src/lower/derivedshow.c \
 	src/lower/derivedvec.c \
 	src/lower/derivedwith.c \
+	src/lower/demit.c \
 	src/lower/dsvcreg.c \
 	src/lower/extcback.c \
 	src/lower/extern.c \

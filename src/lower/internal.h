@@ -334,14 +334,9 @@ struct lower_ctx {
     int oom;
 };
 
-/* derived.c: shared classification and emission plumbing. */
+/* demit.c: the writer of one service body. */
 void lower_d_begin(lower_ctx *c, lower_demit *d, ek_buf *b);
 void lower_d_end(lower_ctx *c, ek_buf *b);
-lower_scalar lower_scalar_kind(const ek_type *t);
-int lower_is_range(const ek_type *t);
-int lower_is_handle(const ek_type *t);
-int lower_is_set(const ek_type *t);
-int lower_is_vector(const ek_type *t);
 void lower_d_printf(lower_demit *d, const char *fmt, ...);
 const char *lower_d_temp(lower_demit *d);
 void lower_d_concat_lit(lower_demit *d, const char *indent, const char *acc,
@@ -349,6 +344,14 @@ void lower_d_concat_lit(lower_demit *d, const char *indent, const char *acc,
 void lower_d_concat_obj(lower_demit *d, const char *indent, const char *acc,
                         const char *part);
 const char *lower_d_cstr(lower_ctx *c, const char *s);
+
+/* derived.c: the derived services' classification, and the shape and
+   variant readers that feed the body emitters. */
+lower_scalar lower_scalar_kind(const ek_type *t);
+int lower_is_range(const ek_type *t);
+int lower_is_handle(const ek_type *t);
+int lower_is_set(const ek_type *t);
+int lower_is_vector(const ek_type *t);
 int lower_shape_of(lower_ctx *c, const ek_node *at, const ek_type *t,
                    const char ***fnames, const ek_type ***ftypes, size_t *nf,
                    lower_gtype **g);
