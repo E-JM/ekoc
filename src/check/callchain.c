@@ -158,6 +158,20 @@ static void set_of_key_domain(ck_ctx *c, const ek_node *e,
     ck_key_domain_error(c, e, r->u.nominal.args[0]);
 }
 
+/* The walk a member call reads: the caller's, or a fresh one over the
+   receiver. */
+static void walk_of(ck_ctx *c, const ek_node *callee, int qualified,
+                    const chain_recv *pre, chain_recv *w)
+{
+    if (qualified) {
+        memset(w, 0, sizeof *w);
+    } else if (pre) {
+        *w = *pre;
+    } else {
+        chain_receiver(c, callee->u.field.recv, w);
+    }
+}
+
 /* A receiver-chain call: the link is typed at the receiver, and a
    function-valued field calls its value. `pre` reuses a walk the
    caller already made. */
@@ -172,13 +186,7 @@ static const ek_type *call_member_walk(ck_ctx *c, const ek_node *e,
     const ek_type *t;
     const ek_type *pt;
 
-    if (qualified) {
-        memset(&w, 0, sizeof w);
-    } else if (pre) {
-        w = *pre;
-    } else {
-        chain_receiver(c, callee->u.field.recv, &w);
-    }
+    walk_of(c, callee, qualified, pre, &w);
     {
         const ek_node *saved = c->inst_call;
 
@@ -281,6 +289,49 @@ const ek_type *call_ctor(ck_ctx *c, const ek_node *e,
                       e->u.call.args.count);
 }
 
+/* A plain head the resolver classified: a compiler service carries a
+   receiver-form ref and takes the identity reading, any other name
+   calls its symbol's type. */
+static const ek_type *call_name(ck_ctx *c, const ek_node *e,
+                                const ek_node *callee, int implicit)
+{
+    const ek_ref *ref = NULL;
+
+    if (ck_ref_at(c, callee, EK_SYM_MEMBER, &ref)
+        && ref->station == EK_ST_RECEIVER) {
+        return call_service(c, e, callee, implicit);
+    }
+    {
+        const ek_type *t = callee_expr(c, callee, e);
+
+        return call_fn(c, e, t, NULL, NULL, NULL, &e->u.call.args, 0,
+                       implicit);
+    }
+}
+
+/* A qualified or module-path member: the receiver is the first
+   argument. A record field of the same spelling wins a module segment
+   of the chain, so the walk decides whether this reading stands. */
+static const ek_type *call_path_member(ck_ctx *c, const ek_node *e,
+                                       const ek_node *callee,
+                                       const ek_ref *ref, int implicit)
+{
+    const ek_type *head = NULL;
+    chain_recv w;
+
+    memset(&w, 0, sizeof w);
+    if (!type_head(c, callee->u.field.recv, &head)) {
+        chain_receiver(c, callee->u.field.recv, &w);
+    }
+    if (!w.shadowed) {
+        const ek_type *t = callee_symbol_type(c, ref->symbol, e);
+
+        return call_fn(c, e, t, callee->u.field.name, w.recv, NULL,
+                       &e->u.call.args, 0, implicit);
+    }
+    return call_member_walk(c, e, callee, implicit, &w);
+}
+
 /* Typing one EK_N_CALL: a plain head, or the last link of a receiver
    chain. */
 const ek_type *ck_call(ck_ctx *c, const ek_node *e, const ek_type *expected)
@@ -298,18 +349,7 @@ const ek_type *ck_call(ck_ctx *c, const ek_node *e, const ek_type *expected)
         c->invert_cb = ck_opaque(c);
     }
     if (callee && callee->kind == EK_N_NAME) {
-        /* A head the resolver classified; a compiler service carries a
-           receiver-form ref and takes the identity reading. */
-        if (ck_ref_at(c, callee, EK_SYM_MEMBER, &ref)
-            && ref->station == EK_ST_RECEIVER) {
-            return call_service(c, e, callee, implicit);
-        }
-        {
-            const ek_type *t = callee_expr(c, callee, e);
-
-            return call_fn(c, e, t, NULL, NULL, NULL, &e->u.call.args, 0,
-                           implicit);
-        }
+        return call_name(c, e, callee, implicit);
     }
     if (!callee || callee->kind != EK_N_FIELD) {
         const ek_type *t = callee_expr(c, callee, e);
@@ -335,24 +375,7 @@ const ek_type *ck_call(ck_ctx *c, const ek_node *e, const ek_type *expected)
     if (ck_ref_at(c, callee, 0, &ref) && ref->symbol != NULL
         && (ref->kind == EK_SYM_FUNC || ref->kind == EK_SYM_NAMESPACE
             || ref->kind == EK_SYM_EXTERN)) {
-        /* A qualified or module-path member: the receiver is the
-           first argument. A record field of the same spelling wins a
-           module segment of the chain, so the walk decides whether
-           this reading stands. */
-        const ek_type *head = NULL;
-        chain_recv w;
-
-        memset(&w, 0, sizeof w);
-        if (!type_head(c, callee->u.field.recv, &head)) {
-            chain_receiver(c, callee->u.field.recv, &w);
-        }
-        if (!w.shadowed) {
-            const ek_type *t = callee_symbol_type(c, ref->symbol, e);
-
-            return call_fn(c, e, t, callee->u.field.name, w.recv, NULL,
-                           &e->u.call.args, 0, implicit);
-        }
-        return call_member_walk(c, e, callee, implicit, &w);
+        return call_path_member(c, e, callee, ref, implicit);
     }
     return call_member(c, e, callee, implicit);
 }
