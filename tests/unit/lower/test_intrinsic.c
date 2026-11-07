@@ -246,6 +246,43 @@ static void std_source_uses_the_rows(void)
     lfx_end(&f);
 }
 
+/* A wrong-arity call still reaches the dispatch: check refuses the
+   arity, the pipeline lowers anyway, and the routed row answers with
+   its own malformed-call refusal while the arguments die. */
+static void wrong_arity_refuses(void)
+{
+    static const char *want =
+        "the call of `String.length` is malformed";
+    lfx f;
+    size_t i;
+    int arity = 0;
+    int refusal = 0;
+
+    lfx_begin(&f,
+              "main: () -> _ =\n"
+              "    n = \"héllo\".length(1)\n"
+              "    _ := n\n"
+              "    _\n");
+    EK_CHECK(!lfx_check_clean(&f));
+    for (i = 0; i < f.cdn; i++) {
+        if (f.cds[i].code && strcmp(f.cds[i].code, "E-call-arity") == 0) {
+            arity = 1;
+        }
+    }
+    EK_CHECK(arity);
+    EK_CHECK(!lfx_lower_clean(&f));
+    for (i = 0; i < f.ldn; i++) {
+        if (f.lds[i].message && strcmp(f.lds[i].message, want) == 0) {
+            refusal = 1;
+        }
+    }
+    EK_CHECK(refusal);
+    /* the drained run still yields the unit: the receiver and the
+       argument evaluate and die */
+    EK_CHECK(f.low.text != NULL);
+    lfx_end(&f);
+}
+
 int main(void)
 {
     uint_to_int_wraps();
@@ -258,5 +295,6 @@ int main(void)
     widening_identity();
     set_algebra_routes();
     std_source_uses_the_rows();
+    wrong_arity_refuses();
     return ek_test_report("lower/intrinsic");
 }

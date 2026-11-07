@@ -32,7 +32,7 @@ typedef struct {
     ek_lower_result low;
     ek_diagnostic *ds;        /* malloc'd snapshot of the resolve drain */
     size_t dn;
-    const ek_diagnostic *cds; /* check drain */
+    ek_diagnostic *cds;       /* malloc'd snapshot of the check drain */
     size_t cdn;
     const ek_diagnostic *lds; /* lower drain */
     size_t ldn;
@@ -62,7 +62,15 @@ static inline void lfx_run_mode(lfx *f, const char *src, const char *name,
         }
     }
     f->chk = ek_check(f->res, f->arena, f->diag);
-    f->cds = ek_diag_drain(f->diag, &f->cdn);
+    /* the check slice is snapshotted the way the resolve slice is: the
+       lower stage drains and reuses the same buffer */
+    drain = ek_diag_drain(f->diag, &f->cdn);
+    if (f->cdn) {
+        f->cds = malloc(f->cdn * sizeof *f->cds);
+        if (f->cds) {
+            memcpy(f->cds, drain, f->cdn * sizeof *f->cds);
+        }
+    }
     f->low = ek_lower_with(f->res, f->chk, mode, f->arena, f->diag);
     f->lds = ek_diag_drain(f->diag, &f->ldn);
 }
@@ -86,6 +94,7 @@ static inline void lfx_begin_tests(lfx *f, const char *src)
 static inline void lfx_end(lfx *f)
 {
     free(f->ds);
+    free(f->cds);
     ek_diag_destroy(f->diag);
     ek_arena_destroy(f->arena);
 }

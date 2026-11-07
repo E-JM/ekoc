@@ -268,6 +268,23 @@ static lower_val emit_set_of(lower_ctx *c, lower_scope *scope,
     return (lower_val){ t, 1 };
 }
 
+/* The notes a routed call stamps beside its emission: the Json and
+   time constructor families join the unit, and a row that builds over
+   a key domain stamps the domain's hooks. */
+static void stamp_family_notes(lower_ctx *c, const ek_node *e,
+                               const ek_node *callee, const char *family,
+                               int has_recv)
+{
+    if (strcmp(family, "Json") == 0) {
+        lower_json_families(c, e);
+    } else if (strcmp(family, "Time") == 0
+               || strcmp(family, "Duration") == 0) {
+        lower_time_families(c, e);
+    } else if (keys_over_domain(family, callee->u.field.name)) {
+        stamp_key_domain(c, e, callee, family, has_recv);
+    }
+}
+
 lower_val lower_intrinsic_call(lower_ctx *c, lower_scope *scope,
                                const ek_node *e, const ek_node *callee,
                                const char *family, int has_recv)
@@ -299,14 +316,7 @@ lower_val lower_intrinsic_call(lower_ctx *c, lower_scope *scope,
     if (!as) {
         return lower_val_unit();
     }
-    if (strcmp(family, "Json") == 0) {
-        lower_json_families(c, e);
-    } else if (strcmp(family, "Time") == 0
-               || strcmp(family, "Duration") == 0) {
-        lower_time_families(c, e);
-    } else if (keys_over_domain(family, callee->u.field.name)) {
-        stamp_key_domain(c, e, callee, family, has_recv);
-    }
+    stamp_family_notes(c, e, callee, family, has_recv);
     if (strcmp(family, "Set") == 0 && strcmp(callee->u.field.name, "of") == 0) {
         out = emit_set_of(c, scope, e, callee, has_recv, as[0]);
     } else {
