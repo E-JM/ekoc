@@ -137,6 +137,7 @@ LOWER_SRC := \
 	src/lower/dsvcspell.c \
 	src/lower/dsvcstamp.c \
 	src/lower/extcback.c \
+	src/lower/extproto.c \
 	src/lower/extern.c \
 	src/lower/extctype.c \
 	src/lower/extshape.c \

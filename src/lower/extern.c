@@ -9,133 +9,6 @@
    world bit of a declaration is compile-time only and lowers the same
    either way. */
 
-/* The prototype text of the closure parameter: the target-callable
-   function pointer, whose tail slot receives the context, and the
-   extern's context data parameter beside it. */
-static int closure_prototype(lower_ctx *c, ek_buf *b, const ek_node *cb,
-                             int first)
-{
-    const ek_nlist *cps = &cb->u.t_fn.params;
-    lower_mshape cr = lower_ms_of(c, cb->u.t_fn.result);
-    const char *ret = lower_cbr_ret_type(c, &cr);
-    int bad = !ret;
-    size_t j;
-
-    if (!ek_buf_printf(b, "%s%s (*)(", first ? ", " : "", ret)) {
-        c->oom = 1;
-    }
-    for (j = 0; j < cps->count; j++) {
-        lower_mshape cs = lower_ms_of(c, cps->data[j]->u.t_field.type);
-        const char *ct = lower_cbr_param_type(c, &cs);
-
-        if (!ct || !ek_buf_printf(b, "%s%s", j ? ", " : "", ct)) {
-            c->oom = 1;
-            bad = 1;
-        }
-    }
-    if (!ek_buf_printf(b, "%svoid *)", cps->count ? ", " : "")
-        || !ek_buf_printf(b, ", void *")) {
-        c->oom = 1;
-    }
-    return !bad;
-}
-
-/* The parameter list of the prototype, left to right; a shape without
-   a parameter lowering answers 0. */
-static int prototype_params(lower_ctx *c, ek_buf *b, const ek_node *ann)
-{
-    const ek_nlist *params = &ann->u.t_fn.params;
-    size_t i;
-
-    for (i = 0; i < params->count; i++) {
-        const ek_node *tn = params->data[i]->u.t_field.type;
-        lower_mshape s = lower_ms_of(c, tn);
-
-        if (s.kind == MS_CLOSURE) {
-            if (!closure_prototype(c, b, tn, i)) {
-                return 0;
-            }
-            continue;
-        }
-        {
-            const char *pt = lower_ms_param_type(c, &s);
-
-            if (!pt || s.kind == MS_UNIT
-                || !ek_buf_printf(b, "%s%s", i ? ", " : "", pt)) {
-                return 0;
-            }
-        }
-    }
-    return 1;
-}
-
-/* The prototype line: the result must carry a lowering too. */
-static int emit_prototype(lower_ctx *c, const ek_symbol *sym,
-                          const ek_node *ann)
-{
-    ek_buf b;
-    lower_mshape res = lower_ms_of(c, ann->u.t_fn.result);
-    const char *ret = res.kind == MS_UNIT ? "void"
-                                          : lower_ms_param_type(c, &res);
-    int ok = ret && res.kind != MS_BYTES && res.kind != MS_CIN
-        && res.kind != MS_CIN_LIST
-        && res.kind != MS_CLOSURE && res.kind != MS_BAD;
-
-    if (!ok) {
-        return 0;
-    }
-    ek_buf_init(&b);
-    if (!prototype_params(c, &b, ann)) {
-        ek_buf_destroy(&b);
-        return 0;
-    }
-    if (!ek_buf_printf(&c->cext, "extern %s %s(", ret, sym->extern_symbol)
-        || (b.data && !ek_buf_append_bytes(&c->cext, b.data, b.len))
-        || !ek_buf_printf(&c->cext, b.len ? ");\n\n" : "void);\n\n")) {
-        c->oom = 1;
-    }
-    ek_buf_destroy(&b);
-    return 1;
-}
-
-/* The registry entry of one extern declaration, created at its first
-   call site: the shapes classify (registering the ctype structs), the
-   prototype joins the unit, and a shape without a lowering is
-   diagnosed once. */
-static lower_ext *extern_entry(lower_ctx *c, const ek_symbol *sym)
-{
-    const ek_node *ann = sym->type;
-    lower_ext *slots;
-    lower_ext *ent = NULL;
-    size_t i;
-
-    for (i = 0; i < c->next_r; i++) {
-        if (c->exts[i].sym == sym) {
-            return &c->exts[i];
-        }
-    }
-    slots = lower_grow(c, c->exts, &c->cext_r, c->next_r + 1, sizeof *slots);
-    if (!slots) {
-        return NULL;
-    }
-    c->exts = slots;
-    ent = &slots[c->next_r++];
-    ent->sym = sym;
-    ent->bad = 0;
-    if (!ann || ann->kind != EK_N_T_FN) {
-        lower_error(c, sym->decl, "the signature of `%s` is not a "
-                                  "function type", sym->name);
-        ent->bad = 1;
-        return ent;
-    }
-    if (!emit_prototype(c, sym, ann)) {
-        lower_error(c, sym->decl, "the signature of `%s` has no lowering at "
-                                  "the boundary", sym->name);
-        ent->bad = 1;
-    }
-    return ent;
-}
-
 /* The call's arguments evaluated and dying: the balance of a shape or
    arity the boundary refuses. */
 static lower_val discard_extern(lower_ctx *c, lower_scope *scope,
@@ -195,6 +68,64 @@ static void emit_string_result(lower_ctx *c, const char *out,
     lower_emitf(c, "}\n");
 }
 
+/* The copy-in list: the caller's list copies into a C element array,
+   valid for the call alone; the walk reads one element per spine
+   cell. */
+static int marshal_cin_list(lower_ctx *c, lower_scope *scope, ek_buf *b,
+                            const ek_node *e, const ek_symbol *sym,
+                            const lower_mshape *s, const char *arg, size_t i)
+{
+    const char *ct = lower_word_ctype(s->word);
+    const char *out = lower_scalar_out_expr(
+        c, &(lower_mshape){ MS_WORD, s->word, NULL, NULL },
+        "ek_cons_head(li.as.ref)");
+    const char *arr = lower_temp(c, scope);
+    const char *n = lower_temp(c, scope);
+
+    if (!out) {
+        lower_error(c, e, "the argument `%zu` of `%s` has no lowering "
+                          "at the boundary", i, sym->name);
+        return 0;
+    }
+    lower_pad(c);
+    lower_emitf(c, "size_t %s = ek_list_len(%s);\n", n, arg);
+    lower_pad(c);
+    lower_emitf(c, "%s *%s = ek_cin_array(%s, sizeof(%s));\n", ct, arr, n,
+                ct);
+    lower_pad(c);
+    lower_emitf(c, "{\n");
+    lower_emitf(c, "    ek_val li = %s;\n", arg);
+    lower_emitf(c, "    size_t j = 0;\n");
+    lower_emitf(c, "    while (ek_val_is_cons(li)) {\n");
+    lower_emitf(c, "        %s[j++] = %s;\n", arr, out);
+    lower_emitf(c, "        li = ek_cons_tail(li.as.ref);\n");
+    lower_emitf(c, "    }\n");
+    lower_emitf(c, "}\n");
+    return ek_buf_append_str(b, arr);
+}
+
+/* The callback: the context struct minted once, the closure moving
+   into it, and the adapter and context traveling as the pair. */
+static int marshal_closure(lower_ctx *c, lower_scope *scope, ek_buf *b,
+                           const ek_symbol *sym, const char *arg, size_t i,
+                           const char **ctx)
+{
+    const char *fn, *ctxty;
+    const char *cb = lower_temp(c, scope);
+
+    if (!lower_cbr_ensure(c, sym, i, &fn, &ctxty)) {
+        return 0;
+    }
+    lower_pad(c);
+    lower_emitf(c, "%s %s;\n", ctxty, cb);
+    lower_pad(c);
+    lower_emitf(c, "%s.clo = %s;\n", cb, arg);
+    lower_pad(c);
+    lower_emitf(c, "%s.keep = ek_val_unit();\n", cb);
+    *ctx = cb;
+    return ek_buf_printf(b, "%s, (void *)&%s", fn, cb);
+}
+
 /* The C argument text of one marshalled parameter; 0 when the shape
    has no argument lowering. The closure's temp moves into its
    context. */
@@ -223,51 +154,10 @@ static int marshal_arg(lower_ctx *c, lower_scope *scope, ek_buf *b,
                                        ? lower_str(c, "&%s", cs) : cs);
     }
     if (s.kind == MS_CIN_LIST) {
-        /* the caller's list copies into a C element array, valid for
-           the call alone; the walk reads one element per spine cell */
-        const char *ct = lower_word_ctype(s.word);
-        const char *out = lower_scalar_out_expr(
-            c, &(lower_mshape){ MS_WORD, s.word, NULL, NULL },
-            "ek_cons_head(li.as.ref)");
-        const char *arr = lower_temp(c, scope);
-        const char *n = lower_temp(c, scope);
-
-        if (!out) {
-            lower_error(c, e, "the argument `%zu` of `%s` has no lowering "
-                              "at the boundary", i, sym->name);
-            return 0;
-        }
-        lower_pad(c);
-        lower_emitf(c, "size_t %s = ek_list_len(%s);\n", n, arg);
-        lower_pad(c);
-        lower_emitf(c, "%s *%s = ek_cin_array(%s, sizeof(%s));\n", ct,
-                    arr, n, ct);
-        lower_pad(c);
-        lower_emitf(c, "{\n");
-        lower_emitf(c, "    ek_val li = %s;\n", arg);
-        lower_emitf(c, "    size_t j = 0;\n");
-        lower_emitf(c, "    while (ek_val_is_cons(li)) {\n");
-        lower_emitf(c, "        %s[j++] = %s;\n", arr, out);
-        lower_emitf(c, "        li = ek_cons_tail(li.as.ref);\n");
-        lower_emitf(c, "    }\n");
-        lower_emitf(c, "}\n");
-        return ek_buf_append_str(b, arr);
+        return marshal_cin_list(c, scope, b, e, sym, &s, arg, i);
     }
     if (s.kind == MS_CLOSURE) {
-        const char *fn, *ctxty;
-        const char *cb = lower_temp(c, scope);
-
-        if (!lower_cbr_ensure(c, sym, i, &fn, &ctxty)) {
-            return 0;
-        }
-        lower_pad(c);
-        lower_emitf(c, "%s %s;\n", ctxty, cb);
-        lower_pad(c);
-        lower_emitf(c, "%s.clo = %s;\n", cb, arg);
-        lower_pad(c);
-        lower_emitf(c, "%s.keep = ek_val_unit();\n", cb);
-        *ctx = cb;
-        return ek_buf_printf(b, "%s, (void *)&%s", fn, cb);
+        return marshal_closure(c, scope, b, sym, arg, i, ctx);
     }
     lower_error(c, e, "the argument `%zu` of `%s` has no lowering at "
                       "the boundary", i, sym->name);

@@ -947,6 +947,11 @@ const char *lower_scalar_in_expr(lower_ctx *c, const lower_mshape *s,
                                  const char *r);
 const char *lower_ms_param_type(lower_ctx *c, const lower_mshape *s);
 
+/* extproto.c: the registry entry of one extern declaration, created
+   at its first call site and carrying its prototype and its bad flag;
+   NULL on an allocation failure. */
+lower_ext *extern_entry(lower_ctx *c, const ek_symbol *sym);
+
 /* extern.c: the native call path. lower_extern_call lowers one call
    whose reference denotes an extern declaration: the prototype joins
    the unit at the first call site, every argument marshals per the
