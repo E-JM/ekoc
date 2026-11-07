@@ -156,6 +156,166 @@ static const ek_type *walk_apply(lower_ctx *c, const ek_node *t,
     return mk_nominal(c, sym, args, n);
 }
 
+/* A written list type: the element walks against the same
+   declaration. */
+static const ek_type *walk_list(lower_ctx *c, const ek_node *t,
+                                const ek_node *decl, const ek_type *owner)
+{
+    const ek_type *elem = walk_type(c, t->u.wrap.inner, decl, owner);
+
+    if (!elem) {
+        return NULL;
+    }
+    {
+        ek_type *out = ek_arena_alloc(c->arena, sizeof *out);
+
+        if (!out) {
+            c->oom = 1;
+            return NULL;
+        }
+        out->kind = EK_T_LIST;
+        out->u.list.elem = elem;
+        return out;
+    }
+}
+
+/* A written dictionary type: the key and the value walk against the
+   same declaration. */
+static const ek_type *walk_dict(lower_ctx *c, const ek_node *t,
+                                const ek_node *decl, const ek_type *owner)
+{
+    const ek_type *key = walk_type(c, t->u.pair.a, decl, owner);
+    const ek_type *val = walk_type(c, t->u.pair.b, decl, owner);
+    ek_type *out;
+
+    if (!key || !val) {
+        return NULL;
+    }
+    out = ek_arena_alloc(c->arena, sizeof *out);
+    if (!out) {
+        c->oom = 1;
+        return NULL;
+    }
+    out->kind = EK_T_DICT;
+    out->u.dict.key = key;
+    out->u.dict.val = val;
+    return out;
+}
+
+/* A written tuple type: the components walk against the same
+   declaration. */
+static const ek_type *walk_tuple(lower_ctx *c, const ek_node *t,
+                                 const ek_node *decl, const ek_type *owner)
+{
+    const ek_type **items;
+    ek_type *out;
+    size_t n = t->u.kids.count, cap = 0, i;
+
+    items = n ? lower_grow(c, NULL, &cap, n, sizeof *items) : NULL;
+    if (n && !items) {
+        return NULL;
+    }
+    for (i = 0; i < n; i++) {
+        items[i] = walk_type(c, t->u.kids.data[i], decl, owner);
+        if (!items[i]) {
+            return NULL;
+        }
+    }
+    out = ek_arena_alloc(c->arena, sizeof *out);
+    if (!out) {
+        c->oom = 1;
+        return NULL;
+    }
+    out->kind = EK_T_TUPLE;
+    out->u.tuple.items = items;
+    out->u.tuple.count = n;
+    return out;
+}
+
+/* A written record type: the fields keep their written names, their
+   types walk against the same declaration. */
+static const ek_type *walk_record(lower_ctx *c, const ek_node *t,
+                                  const ek_node *decl, const ek_type *owner)
+{
+    ek_tfield *fields;
+    ek_type *out;
+    size_t n = t->u.kids.count, cap = 0, i;
+
+    fields = n ? lower_grow(c, NULL, &cap, n, sizeof *fields) : NULL;
+    if (n && !fields) {
+        return NULL;
+    }
+    for (i = 0; i < n; i++) {
+        const ek_node *f = t->u.kids.data[i];
+
+        fields[i].name = f->u.t_field.name;
+        fields[i].type = walk_type(c, f->u.t_field.type, decl, owner);
+        if (!fields[i].type) {
+            return NULL;
+        }
+    }
+    out = ek_arena_alloc(c->arena, sizeof *out);
+    if (!out) {
+        c->oom = 1;
+        return NULL;
+    }
+    out->kind = EK_T_RECORD;
+    out->u.record.fields = fields;
+    out->u.record.count = n;
+    return out;
+}
+
+/* A written function type: the parameters and the result walk against
+   the same declaration, and an elided result is the unit type. */
+static const ek_type *walk_fn(lower_ctx *c, const ek_node *t,
+                              const ek_node *decl, const ek_type *owner)
+{
+    const ek_type **params;
+    const ek_type *result;
+    ek_type *out;
+    size_t n = t->u.t_fn.params.count, cap = 0, i;
+
+    params = n ? lower_grow(c, NULL, &cap, n, sizeof *params) : NULL;
+    if (n && !params) {
+        return NULL;
+    }
+    for (i = 0; i < n; i++) {
+        const ek_node *pn = t->u.t_fn.params.data[i];
+
+        params[i] = walk_type(c, pn->u.t_field.type, decl, owner);
+        if (!params[i]) {
+            return NULL;
+        }
+    }
+    /* an elided result is the unit type */
+    if (!t->u.t_fn.result) {
+        ek_type *unit = ek_arena_alloc(c->arena, sizeof *unit);
+
+        if (!unit) {
+            c->oom = 1;
+            return NULL;
+        }
+        unit->kind = EK_T_UNIT;
+        result = unit;
+    } else {
+        result = walk_type(c, t->u.t_fn.result, decl, owner);
+        if (!result) {
+            return NULL;
+        }
+    }
+    out = ek_arena_alloc(c->arena, sizeof *out);
+    if (!out) {
+        c->oom = 1;
+        return NULL;
+    }
+    out->kind = EK_T_FN;
+    out->u.fn.params = params;
+    out->u.fn.count = n;
+    out->u.fn.result = result;
+    out->u.fn.arrow = t->u.t_fn.arrow;
+    return out;
+}
+
 static const ek_type *walk_type(lower_ctx *c, const ek_node *t,
                                 const ek_node *decl, const ek_type *owner)
 {
@@ -169,141 +329,16 @@ static const ek_type *walk_type(lower_ctx *c, const ek_node *t,
         return walk_name(c, t, decl, owner);
     case EK_N_T_APPLY:
         return walk_apply(c, t, decl, owner);
-    case EK_N_T_LIST: {
-        const ek_type *elem = walk_type(c, t->u.wrap.inner, decl, owner);
-
-        if (!elem) {
-            return NULL;
-        }
-        {
-            ek_type *out = ek_arena_alloc(c->arena, sizeof *out);
-
-            if (!out) {
-                c->oom = 1;
-                return NULL;
-            }
-            out->kind = EK_T_LIST;
-            out->u.list.elem = elem;
-            return out;
-        }
-    }
-    case EK_N_T_DICT: {
-        const ek_type *key = walk_type(c, t->u.pair.a, decl, owner);
-        const ek_type *val = walk_type(c, t->u.pair.b, decl, owner);
-        ek_type *out;
-
-        if (!key || !val) {
-            return NULL;
-        }
-        out = ek_arena_alloc(c->arena, sizeof *out);
-        if (!out) {
-            c->oom = 1;
-            return NULL;
-        }
-        out->kind = EK_T_DICT;
-        out->u.dict.key = key;
-        out->u.dict.val = val;
-        return out;
-    }
-    case EK_N_T_TUPLE: {
-        const ek_type **items;
-        ek_type *out;
-        size_t n = t->u.kids.count, cap = 0, i;
-
-        items = n ? lower_grow(c, NULL, &cap, n, sizeof *items) : NULL;
-        if (n && !items) {
-            return NULL;
-        }
-        for (i = 0; i < n; i++) {
-            items[i] = walk_type(c, t->u.kids.data[i], decl, owner);
-            if (!items[i]) {
-                return NULL;
-            }
-        }
-        out = ek_arena_alloc(c->arena, sizeof *out);
-        if (!out) {
-            c->oom = 1;
-            return NULL;
-        }
-        out->kind = EK_T_TUPLE;
-        out->u.tuple.items = items;
-        out->u.tuple.count = n;
-        return out;
-    }
-    case EK_N_T_RECORD: {
-        ek_tfield *fields;
-        ek_type *out;
-        size_t n = t->u.kids.count, cap = 0, i;
-
-        fields = n ? lower_grow(c, NULL, &cap, n, sizeof *fields) : NULL;
-        if (n && !fields) {
-            return NULL;
-        }
-        for (i = 0; i < n; i++) {
-            const ek_node *f = t->u.kids.data[i];
-
-            fields[i].name = f->u.t_field.name;
-            fields[i].type = walk_type(c, f->u.t_field.type, decl, owner);
-            if (!fields[i].type) {
-                return NULL;
-            }
-        }
-        out = ek_arena_alloc(c->arena, sizeof *out);
-        if (!out) {
-            c->oom = 1;
-            return NULL;
-        }
-        out->kind = EK_T_RECORD;
-        out->u.record.fields = fields;
-        out->u.record.count = n;
-        return out;
-    }
-    case EK_N_T_FN: {
-        const ek_type **params;
-        const ek_type *result;
-        ek_type *out;
-        size_t n = t->u.t_fn.params.count, cap = 0, i;
-
-        params = n ? lower_grow(c, NULL, &cap, n, sizeof *params) : NULL;
-        if (n && !params) {
-            return NULL;
-        }
-        for (i = 0; i < n; i++) {
-            const ek_node *pn = t->u.t_fn.params.data[i];
-
-            params[i] = walk_type(c, pn->u.t_field.type, decl, owner);
-            if (!params[i]) {
-                return NULL;
-            }
-        }
-        /* an elided result is the unit type */
-        if (!t->u.t_fn.result) {
-            ek_type *unit = ek_arena_alloc(c->arena, sizeof *unit);
-
-            if (!unit) {
-                c->oom = 1;
-                return NULL;
-            }
-            unit->kind = EK_T_UNIT;
-            result = unit;
-        } else {
-            result = walk_type(c, t->u.t_fn.result, decl, owner);
-            if (!result) {
-                return NULL;
-            }
-        }
-        out = ek_arena_alloc(c->arena, sizeof *out);
-        if (!out) {
-            c->oom = 1;
-            return NULL;
-        }
-        out->kind = EK_T_FN;
-        out->u.fn.params = params;
-        out->u.fn.count = n;
-        out->u.fn.result = result;
-        out->u.fn.arrow = t->u.t_fn.arrow;
-        return out;
-    }
+    case EK_N_T_LIST:
+        return walk_list(c, t, decl, owner);
+    case EK_N_T_DICT:
+        return walk_dict(c, t, decl, owner);
+    case EK_N_T_TUPLE:
+        return walk_tuple(c, t, decl, owner);
+    case EK_N_T_RECORD:
+        return walk_record(c, t, decl, owner);
+    case EK_N_T_FN:
+        return walk_fn(c, t, decl, owner);
     default:
         return opaque_type(c);
     }
