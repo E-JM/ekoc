@@ -8,19 +8,34 @@
    admitting no other length. Every failing decode releases the ones
    decoded before it, and the kept Json field values beside them. */
 
-/* The component decodes of a tuple, each failing release keeping the
-   ones decoded before it. */
-void lower_from_tuple_emit(lower_ctx *c, lower_demit *d, lower_gtype *g,
-                           const ek_type **ftypes, size_t nf)
+/* The Ok value over the decoded rows: the constructor call reads each
+   row's payload, and the rows and their Json fields die once it
+   stands. */
+static void emit_ok_result(lower_ctx *c, lower_demit *d, lower_gtype *g,
+                           const char **rs, size_t nf)
 {
-    const char **rs;
-    size_t cap = 0, i;
+    size_t i;
 
-    rs = lower_grow(c, NULL, &cap, nf ? nf : 1, sizeof *rs);
-    if (!rs) {
-        return;
+    lower_d_printf(d, "        ek_val out = %s(", g->helper);
+    for (i = 0; i < nf; i++) {
+        lower_d_printf(d, "%s((ekS_std$Result$Ok *)%s.as.ref)->p0",
+                       i ? ", " : "", rs[i]);
     }
-    g->constructed = 1;
+    lower_d_printf(d, ");\n");
+    for (i = 0; i < nf; i++) {
+        lower_d_printf(d, "        ek_release(%s);\n", rs[i]);
+        lower_d_printf(d, "        ek_release(f%zu);\n", i);
+    }
+    lower_d_printf(d, "        w = %s(out);\n", lower_result_ctor(c, "Ok"));
+    lower_d_printf(d, "        ek_release(out);\n");
+    lower_d_printf(d, "        return w;\n");
+    lower_d_printf(d, "    }\n");
+}
+
+/* The Arr head of a tuple decode: the slot read and the length test,
+   a tuple admitting no other length. */
+static void emit_arr_probe(lower_ctx *c, lower_demit *d, size_t nf)
+{
     lower_d_printf(d, "    if (v.as.ref->info != &ekT_std$Json$Arr)\n");
     lower_json_err_lit(d, "    ", "");
     lower_d_printf(d, "    {\n");
@@ -34,6 +49,22 @@ void lower_from_tuple_emit(lower_ctx *c, lower_demit *d, lower_gtype *g,
     lower_d_printf(d, "        }\n");
     lower_d_printf(d, "        if (n != %zu)\n", nf);
     lower_json_err_lit(d, "            ", "");
+}
+
+/* The component decodes of a tuple, each failing release keeping the
+   ones decoded before it. */
+void lower_from_tuple_emit(lower_ctx *c, lower_demit *d, lower_gtype *g,
+                           const ek_type **ftypes, size_t nf)
+{
+    const char **rs;
+    size_t cap = 0, i;
+
+    rs = lower_grow(c, NULL, &cap, nf ? nf : 1, sizeof *rs);
+    if (!rs) {
+        return;
+    }
+    g->constructed = 1;
+    emit_arr_probe(c, d, nf);
     for (i = 0; i < nf; i++) {
         const char *f = lower_fromj_of(c, ftypes[i]);
 
@@ -62,20 +93,7 @@ void lower_from_tuple_emit(lower_ctx *c, lower_demit *d, lower_gtype *g,
             lower_d_printf(d, "        cell = ek_cons_tail(cell.as.ref);\n");
         }
     }
-    lower_d_printf(d, "        ek_val out = %s(", g->helper);
-    for (i = 0; i < nf; i++) {
-        lower_d_printf(d, "%s((ekS_std$Result$Ok *)%s.as.ref)->p0",
-                       i ? ", " : "", rs[i]);
-    }
-    lower_d_printf(d, ");\n");
-    for (i = 0; i < nf; i++) {
-        lower_d_printf(d, "        ek_release(%s);\n", rs[i]);
-        lower_d_printf(d, "        ek_release(f%zu);\n", i);
-    }
-    lower_d_printf(d, "        w = %s(out);\n", lower_result_ctor(c, "Ok"));
-    lower_d_printf(d, "        ek_release(out);\n");
-    lower_d_printf(d, "        return w;\n");
-    lower_d_printf(d, "    }\n");
+    emit_ok_result(c, d, g, rs, nf);
 }
 
 /* The content lookup of an Obj's entries: equal bytes, whichever
@@ -114,30 +132,12 @@ static void emit_find_helper(lower_ctx *c, const char *fn)
     lower_d_end(c, &b);
 }
 
-void lower_from_record_emit(lower_ctx *c, lower_demit *d, const char *name,
-                            const char **fnames, const ek_type **ftypes,
-                            size_t nf, lower_gtype *g)
+/* The unknown-key test: every entry key of the Obj must name one of
+   the record's fields, and an empty record admits no entry at all. */
+static void emit_key_scan(lower_demit *d, const char **fnames, size_t nf)
 {
-    const char *find = lower_str(c, "ekdJ_%s", name);
-    const char **rs;
-    size_t cap = 0, i;
+    size_t i;
 
-    rs = lower_grow(c, NULL, &cap, nf ? nf : 1, sizeof *rs);
-    if (!rs) {
-        return;
-    }
-    emit_find_helper(c, find);
-    g->constructed = 1;
-    lower_d_printf(d, "    if (v.as.ref->info != &ekT_std$Json$Obj)\n");
-    lower_json_err_lit(d, "    ", "");
-    lower_d_printf(d, "    {\n");
-    lower_d_printf(d, "        ek_val d = %s;\n", lower_json_slot(c, "Obj",
-                                                                 "v"));
-    lower_d_printf(d, "        ek_val k, x, w;\n");
-    for (i = 0; i < nf; i++) {
-        rs[i] = lower_str(c, "r%zu", i);
-        lower_d_printf(d, "        ek_val %s, f%zu;\n", rs[i], i);
-    }
     lower_d_printf(d, "        ek_dict_iter it;\n");
     lower_d_printf(d, "        int hit;\n");
     lower_d_printf(d, "        int bad = 0;\n\n");
@@ -152,8 +152,6 @@ void lower_from_record_emit(lower_ctx *c, lower_demit *d, const char *name,
     }
     if (nf) {
         lower_d_printf(d, "            )\n");
-    }
-    if (nf) {
         lower_d_printf(d, "            bad = 1;\n");
     } else {
         lower_d_printf(d, "            if (ek_dict_len(d) != 0)\n");
@@ -163,6 +161,16 @@ void lower_from_record_emit(lower_ctx *c, lower_demit *d, const char *name,
     lower_d_printf(d, "        ek_dict_iter_end(&it);\n");
     lower_d_printf(d, "        if (bad)\n");
     lower_json_err_obj(d, "            ", "ek_keep(k)");
+}
+
+/* The field lookups: each field's find over the content helper, the
+   Json fields kept before it dying on a missing one. */
+static void emit_field_lookups(lower_ctx *c, lower_demit *d,
+                               const char *find, const char **fnames,
+                               size_t nf)
+{
+    size_t i, cap;
+
     for (i = 0; i < nf; i++) {
         const char *lit = lower_d_cstr(c, fnames ? fnames[i] : "");
 
@@ -175,6 +183,16 @@ void lower_from_record_emit(lower_ctx *c, lower_demit *d, const char *name,
         lower_d_printf(d, "        }\n");
         lower_d_printf(d, "        f%zu = ek_keep(x);\n", i);
     }
+}
+
+/* The row decodes: each field's Result row is read by its service,
+   the rows and Json fields decoded before a failure dying with it. */
+static void emit_field_decodes(lower_ctx *c, lower_demit *d,
+                               const ek_type **ftypes, const char **rs,
+                               size_t nf)
+{
+    size_t i, cap;
+
     for (i = 0; i < nf; i++) {
         const char *f = lower_fromj_of(c, ftypes[i]);
 
@@ -201,19 +219,35 @@ void lower_from_record_emit(lower_ctx *c, lower_demit *d, const char *name,
         lower_d_printf(d, "            return %s;\n", rs[i]);
         lower_d_printf(d, "        }\n");
     }
-    lower_d_printf(d, "        ek_val out = %s(", g->helper);
-    for (i = 0; i < nf; i++) {
-        lower_d_printf(d, "%s((ekS_std$Result$Ok *)%s.as.ref)->p0",
-                       i ? ", " : "", rs[i]);
+}
+
+void lower_from_record_emit(lower_ctx *c, lower_demit *d, const char *name,
+                            const char **fnames, const ek_type **ftypes,
+                            size_t nf, lower_gtype *g)
+{
+    const char *find = lower_str(c, "ekdJ_%s", name);
+    const char **rs;
+    size_t cap = 0, i;
+
+    rs = lower_grow(c, NULL, &cap, nf ? nf : 1, sizeof *rs);
+    if (!rs) {
+        return;
     }
-    lower_d_printf(d, ");\n");
+    emit_find_helper(c, find);
+    g->constructed = 1;
+    lower_d_printf(d, "    if (v.as.ref->info != &ekT_std$Json$Obj)\n");
+    lower_json_err_lit(d, "    ", "");
+    lower_d_printf(d, "    {\n");
+    lower_d_printf(d, "        ek_val d = %s;\n", lower_json_slot(c, "Obj",
+                                                                 "v"));
+    lower_d_printf(d, "        ek_val k, x, w;\n");
     for (i = 0; i < nf; i++) {
-        lower_d_printf(d, "        ek_release(%s);\n", rs[i]);
-        lower_d_printf(d, "        ek_release(f%zu);\n", i);
+        rs[i] = lower_str(c, "r%zu", i);
+        lower_d_printf(d, "        ek_val %s, f%zu;\n", rs[i], i);
     }
-    lower_d_printf(d, "        w = %s(out);\n", lower_result_ctor(c, "Ok"));
-    lower_d_printf(d, "        ek_release(out);\n");
-    lower_d_printf(d, "        return w;\n");
-    lower_d_printf(d, "    }\n");
+    emit_key_scan(d, fnames, nf);
+    emit_field_lookups(c, d, find, fnames, nf);
+    emit_field_decodes(c, d, ftypes, rs, nf);
+    emit_ok_result(c, d, g, rs, nf);
 }
 
