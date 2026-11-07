@@ -65,13 +65,49 @@ lower_gtype *lower_gtype_of_stem(lower_ctx *c, const char *stem)
    the C-side mirror registers separately at the boundary. A std
    placeholder or an algebraic type has no representation and
    registers nothing. */
+/* Fills the family slot of one declared representation from its field
+   kids: a record layout carries the written names, a tuple layout
+   stays positional. */
+static lower_gtype *register_repr(lower_ctx *c, const ek_symbol *tsym,
+                                  const ek_nlist *kids, lower_gshape shape)
+{
+    lower_gtype *g;
+    size_t cap = 0, i;
+
+    g = lower_add_family(c);
+    if (!g) {
+        return NULL;
+    }
+    g->key_sym = tsym;
+    g->stem = lower_str(c, "%s$%s", tsym->module, tsym->name);
+    g->helper = lower_str(c, "ekn_%s$%s$rec", tsym->module, tsym->name);
+    g->shape = shape;
+    g->nf = kids->count;
+    if (shape == GT_REC) {
+        g->fnames = lower_grow(c, NULL, &cap, g->nf, sizeof *g->fnames);
+        if (!g->fnames) {
+            c->ngt--;
+            return NULL;
+        }
+        for (i = 0; i < g->nf; i++) {
+            g->fnames[i] = kids->data[i]->u.t_field.name;
+        }
+    }
+    g->used = 1;
+    return g;
+}
+
+/* Registers the record or tuple representation of a declared type:
+   the layout follows the declaration's right-hand side, records in
+   declaration order. A ctype's family takes its fields from its own
+   record body, in declaration order, and the layout is frozen there;
+   the C-side mirror registers separately at the boundary. A std
+   placeholder or an algebraic type has no representation and
+   registers nothing. */
 lower_gtype *lower_decl_repr(lower_ctx *c, const ek_symbol *tsym)
 {
     lower_gtype *g;
     const ek_node *dn;
-    const ek_node *rec;
-    const ek_nlist *kids;
-    size_t cap = 0, i;
 
     if (!tsym) {
         return NULL;
@@ -86,30 +122,12 @@ lower_gtype *lower_decl_repr(lower_ctx *c, const ek_symbol *tsym)
         return NULL;
     }
     if (dn->kind == EK_N_CTYPE_DECL) {
-        rec = dn->u.decl.body;
+        const ek_node *rec = dn->u.decl.body;
+
         if (!rec || rec->kind != EK_N_T_RECORD) {
             return NULL;
         }
-        kids = &rec->u.kids;
-        g = lower_add_family(c);
-        if (!g) {
-            return NULL;
-        }
-        g->key_sym = tsym;
-        g->stem = lower_str(c, "%s$%s", tsym->module, tsym->name);
-        g->helper = lower_str(c, "ekn_%s$%s$rec", tsym->module, tsym->name);
-        g->shape = GT_REC;
-        g->nf = kids->count;
-        g->fnames = lower_grow(c, NULL, &cap, g->nf, sizeof *g->fnames);
-        if (!g->fnames) {
-            c->ngt--;
-            return NULL;
-        }
-        for (i = 0; i < g->nf; i++) {
-            g->fnames[i] = kids->data[i]->u.t_field.name;
-        }
-        g->used = 1;
-        return g;
+        return register_repr(c, tsym, &rec->u.kids, GT_REC);
     }
     if (dn->kind != EK_N_TYPE_DECL) {
         return NULL;
@@ -118,28 +136,9 @@ lower_gtype *lower_decl_repr(lower_ctx *c, const ek_symbol *tsym)
         && dn->u.type_decl.rhs != EK_TYPE_RHS_TUPLE) {
         return NULL;
     }
-    kids = &dn->u.type_decl.type->u.kids;
-    g = lower_add_family(c);
-    if (!g) {
-        return NULL;
-    }
-    g->key_sym = tsym;
-    g->stem = lower_str(c, "%s$%s", tsym->module, tsym->name);
-    g->helper = lower_str(c, "ekn_%s$%s$rec", tsym->module, tsym->name);
-    g->shape = dn->u.type_decl.rhs == EK_TYPE_RHS_TUPLE ? GT_TUP : GT_REC;
-    g->nf = kids->count;
-    if (g->shape == GT_REC) {
-        g->fnames = lower_grow(c, NULL, &cap, g->nf, sizeof *g->fnames);
-        if (!g->fnames) {
-            c->ngt--;
-            return NULL;
-        }
-        for (i = 0; i < g->nf; i++) {
-            g->fnames[i] = kids->data[i]->u.t_field.name;
-        }
-    }
-    g->used = 1;
-    return g;
+    return register_repr(c, tsym, &dn->u.type_decl.type->u.kids,
+                         dn->u.type_decl.rhs == EK_TYPE_RHS_TUPLE ? GT_TUP
+                                                                  : GT_REC);
 }
 
 /* The registry key of an anonymous record: its field names in the
