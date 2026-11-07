@@ -222,17 +222,19 @@ static void map_keeps_the_insertion_order(void)
     ek_val d = int_dict(keys, keys, 3);
     ek_val f = ek_closure_new(keep_fn, ek_val_unit());
     ek_val m = ek_dict_map(d, f);
-    size_t cursor = 0;
+    ek_dict_iter it;
     ek_val key;
     ek_val val;
 
-    EK_CHECK(ek_dict_next(m, &cursor, &key, &val));
+    ek_dict_iter_begin(&it, m);
+    EK_CHECK(ek_dict_iter_next(&it, &key, &val));
     EK_CHECK_U64(key.as.i, 5);
-    EK_CHECK(ek_dict_next(m, &cursor, &key, &val));
+    EK_CHECK(ek_dict_iter_next(&it, &key, &val));
     EK_CHECK_U64(key.as.i, -3);
-    EK_CHECK(ek_dict_next(m, &cursor, &key, &val));
+    EK_CHECK(ek_dict_iter_next(&it, &key, &val));
     EK_CHECK_U64(key.as.i, 9);
-    EK_CHECK(!ek_dict_next(m, &cursor, &key, &val));
+    EK_CHECK(!ek_dict_iter_next(&it, &key, &val));
+    ek_dict_iter_end(&it);
     ek_release(m);
     ek_release(f);
     ek_release(d);
@@ -244,16 +246,18 @@ static void filter_keeps_the_true_mappings_in_order(void)
     ek_val d = int_dict(keys, (const int64_t[]){1, 2, 3, 4}, 4);
     ek_val f = ek_closure_new(even_fn, ek_val_unit());
     ek_val r = ek_dict_filter(d, f);
-    size_t cursor = 0;
+    ek_dict_iter it;
     ek_val key;
     ek_val val;
 
     EK_CHECK_U64(ek_dict_len(r), 2);
-    EK_CHECK(ek_dict_next(r, &cursor, &key, &val));
+    ek_dict_iter_begin(&it, r);
+    EK_CHECK(ek_dict_iter_next(&it, &key, &val));
     EK_CHECK_U64(key.as.i, 2);
-    EK_CHECK(ek_dict_next(r, &cursor, &key, &val));
+    EK_CHECK(ek_dict_iter_next(&it, &key, &val));
     EK_CHECK_U64(key.as.i, 4);
-    EK_CHECK(!ek_dict_next(r, &cursor, &key, &val));
+    EK_CHECK(!ek_dict_iter_next(&it, &key, &val));
+    ek_dict_iter_end(&it);
     ek_release(r);
     ek_release(f);
     ek_release(d);

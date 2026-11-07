@@ -650,17 +650,42 @@ size_t ek_dict_len(ek_val dict);
    Aborts on exhaustion. */
 ek_val ek_dict_remove(ek_val dict, ek_val key);
 
+/* The in-order walk of a vector's positions, one element per step.
+   The stack bound covers every tree a size_t length can spell. begin
+   retains the vector and end releases it, so the walk keeps its own
+   reference. */
+#define EK_VEC_ITER_MAX 96
+
+typedef struct {
+    ek_val hold;
+    const void *path[EK_VEC_ITER_MAX];
+    size_t index;
+    unsigned top;
+} ek_vec_iter;
+
+void ek_vec_iter_begin(ek_vec_iter *it, ek_val v);
+int ek_vec_iter_next(ek_vec_iter *it, size_t *index, ek_val *elem);
+void ek_vec_iter_end(ek_vec_iter *it);
+
 /* A fresh dictionary holding every mapping of a and then every
    mapping of b, b winning on duplicate keys: a's keys keep their
    order, and b's new keys append in b's order. Aborts on
    exhaustion. */
 ek_val ek_dict_merge(ek_val a, ek_val b);
 
-/* Visits the mappings in insertion order: writes the next key and
+/* Visits the mappings in insertion order. begin retains the
+   dictionary and the order walk; each step writes the next key and
    value into *key and *val (borrowed) and returns nonzero while a
-   mapping remains. *cursor starts at zero and is owned by the walk;
-   the caller passes it back unchanged between calls. */
-int ek_dict_next(ek_val dict, size_t *cursor, ek_val *key, ek_val *val);
+   mapping remains; end releases the walk. One iterator walks one
+   dictionary at a time. */
+typedef struct {
+    ek_val hold;
+    ek_vec_iter slots;
+} ek_dict_iter;
+
+void ek_dict_iter_begin(ek_dict_iter *it, ek_val dict);
+int ek_dict_iter_next(ek_dict_iter *it, ek_val *key, ek_val *val);
+void ek_dict_iter_end(ek_dict_iter *it);
 
 /* The traversals run as native loops over the insertion order, so
    their stack usage is independent of the entry count. The entries are

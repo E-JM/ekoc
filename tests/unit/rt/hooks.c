@@ -106,9 +106,11 @@ static void dict_keys_structurally(void)
     EK_CHECK(ek_dict_get(d2, a, &out)); /* the same key either spelling */
     EK_CHECK_U64(out.as.i, 9);
     EK_CHECK(!ek_dict_get(d2, c, &out));
-    EK_CHECK_U64(a.as.ref->rc, 3); /* the caller's, d1's and d2's */
+    EK_CHECK_U64(a.as.ref->rc, 4); /* the caller's, each version's trie's,
+                                      and the order vector's */
     ek_release(d2);
-    EK_CHECK_U64(a.as.ref->rc, 2); /* d1 keeps its own reference */
+    EK_CHECK_U64(a.as.ref->rc, 3); /* d1's trie and order vector keep
+                                      theirs */
     ek_release(d1);
     EK_CHECK_U64(a.as.ref->rc, 1);
     ek_release(d0);
@@ -430,7 +432,7 @@ static void run_abort(void (*body)(void), abort_run *run)
 
 static void body_dict_insert_without_eq(void)
 {
-    ek_val d = ek_dict_new(NULL, NULL);
+    ek_val d = ek_dict_new(NULL, ek_key_hash);
     ek_val a = pair_of(&plain_info, 1, 1);
 
     ek_dict_set(d, a, ek_val_int(1));

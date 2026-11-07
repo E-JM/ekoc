@@ -245,11 +245,13 @@ static void emit_dict_hash(lower_ctx *c, lower_demit *d, const ek_type *t)
         return;
     }
     lower_d_printf(d, "    ek_val k, x;\n");
-    lower_d_printf(d, "    size_t cur = 0;\n\n");
-    lower_d_printf(d, "    while (ek_dict_next(v, &cur, &k, &x)) {\n");
+    lower_d_printf(d, "    ek_dict_iter it;\n\n");
+    lower_d_printf(d, "    ek_dict_iter_begin(&it, v);\n");
+    lower_d_printf(d, "    while (ek_dict_iter_next(&it, &k, &x)) {\n");
     lower_d_printf(d, "        h += %s(k);\n", kh);
     lower_d_printf(d, "        h += %s(x);\n", vh);
     lower_d_printf(d, "    }\n");
+    lower_d_printf(d, "    ek_dict_iter_end(&it);\n");
     lower_d_printf(d, "    return h;\n");
 }
 

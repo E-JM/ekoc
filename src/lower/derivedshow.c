@@ -172,9 +172,10 @@ static void emit_dict_show(lower_ctx *c, lower_demit *d, const ek_type *t)
     }
     lower_d_printf(d, "    ek_obj *acc = %s;\n", lit_obj(c, "{"));
     lower_d_printf(d, "    ek_val k, x;\n");
-    lower_d_printf(d, "    size_t cur = 0;\n");
+    lower_d_printf(d, "    ek_dict_iter it;\n");
     lower_d_printf(d, "    int first = 1;\n\n");
-    lower_d_printf(d, "    while (ek_dict_next(v, &cur, &k, &x)) {\n");
+    lower_d_printf(d, "    ek_dict_iter_begin(&it, v);\n");
+    lower_d_printf(d, "    while (ek_dict_iter_next(&it, &k, &x)) {\n");
     lower_d_printf(d, "        ek_obj *kt;\n");
     lower_d_printf(d, "        ek_obj *pv;\n\n");
     lower_d_printf(d, "%sif (!first)\n", ind);
@@ -186,6 +187,7 @@ static void emit_dict_show(lower_ctx *c, lower_demit *d, const ek_type *t)
     lower_d_concat_obj(d, ind, "acc", "pv");
     lower_d_printf(d, "%sfirst = 0;\n", ind);
     lower_d_printf(d, "    }\n");
+    lower_d_printf(d, "    ek_dict_iter_end(&it);\n");
     lower_d_concat_lit(d, "    ", "acc", "}");
     lower_d_printf(d, "    return acc;\n");
 }

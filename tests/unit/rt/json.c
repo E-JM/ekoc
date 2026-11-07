@@ -201,16 +201,18 @@ static void arrays_build_the_list_spine(void)
    value and keeps its place. */
 static size_t walk_obj_keys(ek_val dict, char out[][8], size_t cap)
 {
-    size_t cursor = 0;
+    ek_dict_iter it;
     size_t n = 0;
     ek_val key;
     ek_val val;
 
-    while (ek_dict_next(dict, &cursor, &key, &val)) {
+    ek_dict_iter_begin(&it, dict);
+    while (ek_dict_iter_next(&it, &key, &val)) {
         if (n < cap)
             snprintf(out[n], 8, "%s", ek_str_cstr(key.as.ref));
         n++;
     }
+    ek_dict_iter_end(&it);
     return n;
 }
 

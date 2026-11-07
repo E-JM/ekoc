@@ -97,16 +97,19 @@ static void emit_dict_eq(lower_ctx *c, lower_demit *d, const ek_type *t)
         return;
     }
     lower_d_printf(d, "    ek_val k, x, y;\n");
-    lower_d_printf(d, "    size_t cur = 0;\n\n");
+    lower_d_printf(d, "    ek_dict_iter it;\n");
+    lower_d_printf(d, "    int ok = 1;\n\n");
     lower_d_printf(d, "    if (ek_dict_len(a) != ek_dict_len(b))\n");
     lower_d_printf(d, "        return 0;\n");
-    lower_d_printf(d, "    while (ek_dict_next(a, &cur, &k, &x)) {\n");
+    lower_d_printf(d, "    ek_dict_iter_begin(&it, a);\n");
+    lower_d_printf(d, "    while (ok && ek_dict_iter_next(&it, &k, &x)) {\n");
     lower_d_printf(d, "        if (!ek_dict_get(b, k, &y))\n");
-    lower_d_printf(d, "            return 0;\n");
-    lower_d_printf(d, "        if (!%s(x, y))\n", val);
-    lower_d_printf(d, "            return 0;\n");
+    lower_d_printf(d, "            ok = 0;\n");
+    lower_d_printf(d, "        else if (!%s(x, y))\n", val);
+    lower_d_printf(d, "            ok = 0;\n");
     lower_d_printf(d, "    }\n");
-    lower_d_printf(d, "    return 1;\n");
+    lower_d_printf(d, "    ek_dict_iter_end(&it);\n");
+    lower_d_printf(d, "    return ok;\n");
 }
 
 /* Field-wise equality over a record or tuple layout. */

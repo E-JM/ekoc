@@ -247,3 +247,44 @@ ek_val ek_vec_push(ek_val v, ek_val elem)
 
     return node_val(vec_insert(vec, vec->size, elem));
 }
+
+/* The in-order walk machine behind a dictionary's order vector. begin
+   retains the vector and stacks the root; each step pops a node, and
+   a branch spreads its children right over left so the left subtree
+   drains first, so the walk yields every position in order at one
+   step per element. */
+
+void ek_vec_iter_begin(ek_vec_iter *it, ek_val v)
+{
+    it->hold = v;
+    ek_retain(v);
+    it->top = 0;
+    it->index = 0;
+    if (((const ek_vec *)v.as.ref)->size) {
+        it->path[it->top++] = v.as.ref;
+    }
+}
+
+int ek_vec_iter_next(ek_vec_iter *it, size_t *index, ek_val *elem)
+{
+    const ek_vec *n;
+
+    while (it->top > 0) {
+        n = it->path[--it->top];
+        if (!n->l) {
+            *index = it->index++;
+            *elem = n->elem;
+            return 1;
+        }
+        it->path[it->top++] = n->r;
+        it->path[it->top++] = n->l;
+    }
+    return 0;
+}
+
+void ek_vec_iter_end(ek_vec_iter *it)
+{
+    ek_release(it->hold);
+    it->hold = ek_val_unit();
+    it->top = 0;
+}

@@ -224,13 +224,15 @@ static void emit_to_dict(lower_ctx *c, lower_demit *d, const ek_type *t)
     lower_d_printf(d, "    ek_val d = ek_dict_new(ek_key_eq, "
                       "ek_key_hash);\n");
     lower_d_printf(d, "    ek_val k, x;\n");
-    lower_d_printf(d, "    size_t cur = 0;\n");
+    lower_d_printf(d, "    ek_dict_iter it;\n");
     lower_d_printf(d, "    ek_val out;\n\n");
-    lower_d_printf(d, "    while (ek_dict_next(v, &cur, &k, &x)) {\n");
+    lower_d_printf(d, "    ek_dict_iter_begin(&it, v);\n");
+    lower_d_printf(d, "    while (ek_dict_iter_next(&it, &k, &x)) {\n");
     lower_d_printf(d, "        ek_val e = ek_dict_set(d, k, %s(x));\n", svc);
     lower_d_printf(d, "        ek_release(d);\n");
     lower_d_printf(d, "        d = e;\n");
     lower_d_printf(d, "    }\n");
+    lower_d_printf(d, "    ek_dict_iter_end(&it);\n");
     lower_d_printf(d, "    out = %s(d);\n", lower_json_ctor(c, "Obj"));
     lower_d_printf(d, "    ek_release(d);\n");
     lower_d_printf(d, "    return out;\n");

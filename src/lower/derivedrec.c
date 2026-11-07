@@ -92,8 +92,11 @@ static void emit_find_helper(lower_ctx *c, const char *fn)
     lower_d_printf(&d, "static int %s(ek_val d, const char *name, ek_val "
                        "*out)\n{\n", fn);
     lower_d_printf(&d, "    ek_val k, x;\n");
-    lower_d_printf(&d, "    size_t cur = 0;\n\n");
-    lower_d_printf(&d, "    while (ek_dict_next(d, &cur, &k, &x)) {\n");
+    lower_d_printf(&d, "    ek_dict_iter it;\n");
+    lower_d_printf(&d, "    int hit = 0;\n\n");
+    lower_d_printf(&d, "    ek_dict_iter_begin(&it, d);\n");
+    lower_d_printf(&d, "    while (!hit && ek_dict_iter_next(&it, &k, &x))"
+                       " {\n");
     lower_d_printf(&d, "        if (k.tag == EK_VAL_REF && k.as.ref != "
                        "(ek_obj *)0\n");
     lower_d_printf(&d, "            && k.as.ref->info->kind == EK_KIND_STR\n");
@@ -102,10 +105,11 @@ static void emit_find_helper(lower_ctx *c, const char *fn)
     lower_d_printf(&d, "            && memcmp(ek_str_cstr(k.as.ref), name, "
                        "strlen(name)) == 0) {\n");
     lower_d_printf(&d, "            *out = x;\n");
-    lower_d_printf(&d, "            return 1;\n");
+    lower_d_printf(&d, "            hit = 1;\n");
     lower_d_printf(&d, "        }\n");
     lower_d_printf(&d, "    }\n");
-    lower_d_printf(&d, "    return 0;\n");
+    lower_d_printf(&d, "    ek_dict_iter_end(&it);\n");
+    lower_d_printf(&d, "    return hit;\n");
     lower_d_printf(&d, "}\n\n");
     lower_d_end(c, &b);
 }
@@ -134,9 +138,12 @@ void lower_from_record_emit(lower_ctx *c, lower_demit *d, const char *name,
         rs[i] = lower_str(c, "r%zu", i);
         lower_d_printf(d, "        ek_val %s, f%zu;\n", rs[i], i);
     }
-    lower_d_printf(d, "        size_t cur = 0;\n");
-    lower_d_printf(d, "        int hit;\n\n");
-    lower_d_printf(d, "        while (ek_dict_next(d, &cur, &k, &x)) {\n");
+    lower_d_printf(d, "        ek_dict_iter it;\n");
+    lower_d_printf(d, "        int hit;\n");
+    lower_d_printf(d, "        int bad = 0;\n\n");
+    lower_d_printf(d, "        ek_dict_iter_begin(&it, d);\n");
+    lower_d_printf(d, "        while (!bad && ek_dict_iter_next(&it, &k, &x))"
+                       " {\n");
     for (i = 0; i < nf; i++) {
         lower_d_printf(d, "%s!",
                        i ? "                && " : "            if (");
@@ -147,12 +154,15 @@ void lower_from_record_emit(lower_ctx *c, lower_demit *d, const char *name,
         lower_d_printf(d, "            )\n");
     }
     if (nf) {
-        lower_json_err_obj(d, "                ", "ek_keep(k)");
+        lower_d_printf(d, "            bad = 1;\n");
     } else {
         lower_d_printf(d, "            if (ek_dict_len(d) != 0)\n");
-        lower_json_err_obj(d, "                ", "ek_keep(k)");
+        lower_d_printf(d, "                bad = 1;\n");
     }
     lower_d_printf(d, "        }\n");
+    lower_d_printf(d, "        ek_dict_iter_end(&it);\n");
+    lower_d_printf(d, "        if (bad)\n");
+    lower_json_err_obj(d, "            ", "ek_keep(k)");
     for (i = 0; i < nf; i++) {
         const char *lit = lower_d_cstr(c, fnames ? fnames[i] : "");
 

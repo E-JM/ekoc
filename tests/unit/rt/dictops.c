@@ -28,16 +28,18 @@ static ek_val int_dict(const int64_t *keys, size_t n)
    how many were seen. */
 static size_t walk_keys(ek_val d, int64_t *out, size_t cap)
 {
-    size_t cursor = 0;
+    ek_dict_iter it;
     size_t n = 0;
     ek_val key;
     ek_val val;
 
-    while (ek_dict_next(d, &cursor, &key, &val)) {
+    ek_dict_iter_begin(&it, d);
+    while (ek_dict_iter_next(&it, &key, &val)) {
         if (n < cap)
             out[n] = key.as.i;
         n++;
     }
+    ek_dict_iter_end(&it);
     return n;
 }
 
@@ -56,15 +58,13 @@ static void walk_visits_insertion_order(void)
     ek_release(d);
 }
 
-/* One hundred keys hash into several table sizes, so the chain has to
-   survive every rebuild. */
+/* One hundred keys spread over several trie shapes, so the order walk
+   has to survive every split. */
 static void walk_order_survives_growth(void)
 {
     ek_val d = ek_dict_new(ek_key_eq, ek_key_hash);
-    ek_val out;
     int64_t seen[100];
     int64_t want[100];
-    size_t cursor = 0;
     size_t n = 0;
     int i;
 
@@ -76,8 +76,15 @@ static void walk_order_survives_growth(void)
         want[i] = i;
     }
     EK_CHECK_U64(ek_dict_len(d), 100);
-    while (ek_dict_next(d, &cursor, &out, &out))
-        seen[n++] = out.as.i;
+    {
+        ek_dict_iter it;
+        ek_val k2, v2;
+
+        ek_dict_iter_begin(&it, d);
+        while (ek_dict_iter_next(&it, &k2, &v2))
+            seen[n++] = k2.as.i;
+        ek_dict_iter_end(&it);
+    }
     EK_CHECK_U64(n, 100);
     for (i = 0; i < 100; i++)
         EK_CHECK_U64(seen[i], want[i]);
@@ -103,14 +110,16 @@ static void walk_borrows_its_entries(void)
     ek_obj *v = ek_str_from_cstr("val");
     ek_val d0 = ek_dict_new(ek_key_eq, ek_key_hash);
     ek_val d1 = ek_dict_set(d0, ek_val_int(1), ek_val_ref(v));
-    size_t cursor = 0;
+    ek_dict_iter it;
     ek_val key;
     ek_val out;
 
-    EK_CHECK(ek_dict_next(d1, &cursor, &key, &out));
+    ek_dict_iter_begin(&it, d1);
+    EK_CHECK(ek_dict_iter_next(&it, &key, &out));
     EK_CHECK(out.as.ref == v);
     EK_CHECK_U64(v->rc, 2); /* the walk adds no reference */
-    EK_CHECK(!ek_dict_next(d1, &cursor, &key, &out));
+    EK_CHECK(!ek_dict_iter_next(&it, &key, &out));
+    ek_dict_iter_end(&it);
     ek_release(d1);
     ek_release(d0);
     ek_release(ek_val_ref(v));
