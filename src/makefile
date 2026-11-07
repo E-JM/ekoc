@@ -48,6 +48,7 @@ RESOLVE_SRC := \
 	src/resolve/chain.c \
 	src/resolve/modpath.c \
 	src/resolve/embedded.c \
+	src/resolve/import.c \
 	src/resolve/expr.c \
 	src/resolve/module.c \
 	src/resolve/opens.c \

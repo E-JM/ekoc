@@ -159,15 +159,25 @@ void r_opened_vs_tops(r_ctx *c, r_file *f);
 /* surface.c: the top-level surface of one module. */
 void r_surface_build(r_ctx *c, r_mod *m);
 
-/* module.c: file loading and the import closure. r_parse_source is the
-   normal lex/layout/parse chain over one source buffer; the std module
-   takes it with its embedded bytes. */
+/* module.c: the module table of the closure -- stems, registration,
+   and the companions booted from their embedded sources.
+   r_parse_source is the normal lex/layout/parse chain over one source
+   buffer; the std module takes it with its embedded bytes. */
 char *r_path_stem(r_ctx *c, const char *file);
 r_mod *r_module_find(r_ctx *c, const char *stem);
 r_mod *r_module_add(r_ctx *c, const char *stem, const char *file,
                     const ek_node *ast);
 r_mod *r_module_companion(r_ctx *c, const char *stem);
 int r_companion_stem(const char *stem);
+/* True for a module registered as a shipped companion: a real,
+   compiler-embedded source, spelled with the embedded file name. */
+int r_shipped_companion(const r_mod *m);
+/* Boots the shipped companion of `stem`: parses the embedded source
+   and registers the module like an imported file, so its surface and
+   bodies follow the ordinary machinery. Called from the import walk
+   and from the capability module's boot; idempotence is the caller's
+   stem check. */
+void r_load_companion(r_ctx *c, const char *stem);
 /* The stem rules one module name answers wherever it is spelled: the
    import walk and the root's file stem judge alike, at the position
    the caller names. The reserved names the caller judges beside it. */
@@ -175,6 +185,10 @@ int r_stem_legal(r_ctx *c, const char *file, int line, int col,
                  const char *stem);
 ek_node *r_parse_source(r_ctx *c, const char *src, size_t len,
                         const char *path);
+
+/* import.c: the import closure. r_closure_walk walks one module's
+   import lines depth first, first import first, and the graph must be
+   acyclic. */
 void r_closure_walk(r_ctx *c, r_mod *m);
 void r_closure(r_ctx *c, r_mod *root);
 
