@@ -198,6 +198,27 @@ static void paren_comma(p_ctx *c, size_t open, size_t close)
     }
 }
 
+/* An inline annotation is not a form. One diagnostic fires and the
+   group becomes an empty paren, so the enclosing list keeps its
+   argument count and parses on at its own separators. */
+static ek_node *reject_annotation(p_ctx *c, const ek_layout_token *open_tok,
+                                  size_t close)
+{
+    ek_node *n;
+
+    p_error_tok(c, "E-syntax", p_peek(c),
+                "an expression carries no annotation; bind the "
+                "value with an annotation and pass the binding "
+                "(Clause 6.3.2)");
+    c->pos = close;
+    p_take(c);
+    n = p_node(c, EK_N_PAREN, open_tok->line, open_tok->col);
+    if (n) {
+        n->u.wrap.inner = NULL;
+    }
+    return n;
+}
+
 /* '(' in primary position: a parenthesized expression, or a lambda
    when the matching ')' is followed by ':' and the position is not
    an operator operand (the colon of an enclosing header wins
@@ -224,22 +245,7 @@ ek_node *p_paren_primary(p_ctx *c)
             paren_comma(c, open, close);
         }
         if (p_at(c, EK_TOK_COLON) && !c->operand_pos) {
-            /* An inline annotation is not a form; the group becomes an
-               empty paren so the enclosing list keeps its argument
-               count and parses on at its own separators. */
-            ek_node *n;
-
-            p_error_tok(c, "E-syntax", p_peek(c),
-                        "an expression carries no annotation; bind the "
-                        "value with an annotation and pass the binding "
-                        "(Clause 6.3.2)");
-            c->pos = close;
-            p_take(c);
-            n = p_node(c, EK_N_PAREN, open_tok->line, open_tok->col);
-            if (n) {
-                n->u.wrap.inner = NULL;
-            }
-            return n;
+            return reject_annotation(c, open_tok, close);
         }
         if (!p_expect(c, EK_TOK_RPAREN, "')'")) {
             return NULL;
@@ -256,6 +262,23 @@ ek_node *p_paren_primary(p_ctx *c)
     }
 }
 
+/* Builds the memo table of bracket partners on first use. Returns 0
+   when the arena is exhausted. */
+static int match_table(p_ctx *c)
+{
+    size_t i;
+
+    c->match = p_alloc(c, c->count * sizeof *c->match);
+    c->match_stack = p_alloc(c, c->count * sizeof *c->match_stack);
+    if (!c->match || !c->match_stack) {
+        return 0;
+    }
+    for (i = 0; i < c->count; i++) {
+        c->match[i] = (size_t)-1;
+    }
+    return 1;
+}
+
 /* Index of the bracket matching the opener at from, counting all three
    bracket pairs; markers never carry brackets. */
 size_t p_match_bracket(p_ctx *c, size_t from)
@@ -267,15 +290,8 @@ size_t p_match_bracket(p_ctx *c, size_t from)
     if (from >= c->count) {
         return last;
     }
-    if (!c->match) {
-        c->match = p_alloc(c, c->count * sizeof *c->match);
-        c->match_stack = p_alloc(c, c->count * sizeof *c->match_stack);
-        if (!c->match || !c->match_stack) {
-            return last;
-        }
-        for (i = 0; i < c->count; i++) {
-            c->match[i] = (size_t)-1;
-        }
+    if (!c->match && !match_table(c)) {
+        return last;
     }
     if (c->match[from] != (size_t)-1) {
         return c->match[from];
