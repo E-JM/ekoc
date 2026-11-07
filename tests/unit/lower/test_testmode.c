@@ -1,8 +1,8 @@
 #include "common.h"
 
 /* The TESTS mode: the root module's test bindings are the roots and
-   the unit ends with the dispatching shim; `main` is not a root. The
-   ek_lower wrapper keeps the program shape. */
+   the unit ends with the dispatching shim; `main` is not a root, and
+   the PROGRAM mode keeps the program shape. */
 
 static const char *two_tests =
     "adds: test =\n"

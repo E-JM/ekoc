@@ -343,9 +343,3 @@ ek_lower_result ek_lower_with(ek_resolve_result resolved,
     ek_buf_destroy(&c.strdecls);
     return out;
 }
-
-ek_lower_result ek_lower(ek_resolve_result resolved, ek_check_result checked,
-                         ek_arena *arena, ek_diag *diag)
-{
-    return ek_lower_with(resolved, checked, EK_LOWER_PROGRAM, arena, diag);
-}

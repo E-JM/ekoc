@@ -32,10 +32,4 @@ ek_lower_result ek_lower_with(ek_resolve_result resolved,
                               ek_check_result checked, ek_lower_mode mode,
                               ek_arena *arena, ek_diag *diag);
 
-/* Lowers the checked root module as a program. Diagnostics go to
-   diag; a run with diagnostics still returns the best-effort text.
-   The result borrows the arena. */
-ek_lower_result ek_lower(ek_resolve_result resolved, ek_check_result checked,
-                         ek_arena *arena, ek_diag *diag);
-
 #endif

@@ -67,7 +67,7 @@ int cli_check(const char *file)
                          "(Clause 7.1.3)");
             cli_log_drain(&log, diag);
         }
-        ek_lower(res, chk, arena, diag);
+        ek_lower_with(res, chk, EK_LOWER_PROGRAM, arena, diag);
     }
     cli_log_drain(&log, diag);
     cli_log_print(&log);
