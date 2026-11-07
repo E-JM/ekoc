@@ -25,6 +25,7 @@ LEX_SRC := \
 	src/lex/lex.c \
 	src/lex/number.c \
 	src/lex/operator.c \
+	src/lex/rawstr.c \
 	src/lex/string.c
 
 LAYOUT_SRC := \

@@ -86,8 +86,14 @@ int lex_operator(lex_ctx *c, gbuf *out);
 /* charlit.c */
 int lex_char_literal(lex_ctx *c, gbuf *out);
 
-/* string.c */
+/* string.c: the interpolated string literal, and the emission shared
+   with the raw form. */
 int lex_string_literal(lex_ctx *c, gbuf *out);
+void str_unterminated(lex_ctx *c, int line, int col);
+int str_emit(lex_ctx *c, gbuf *out, gbuf *seg, gbuf *parts, int closed,
+             int sline, int scol);
+
+/* rawstr.c */
 int lex_raw_string(lex_ctx *c, gbuf *out);
 
 #endif
