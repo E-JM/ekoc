@@ -249,6 +249,36 @@ static ek_node *tuple_type(p_ctx *c, const ek_layout_token *open,
     }
 }
 
+/* One `name : type` field. Returns the field node, or NULL when the
+   arena is exhausted. */
+static ek_node *record_field(p_ctx *c, const ek_layout_token *name)
+{
+    ek_node *ty;
+    ek_node *field;
+
+    p_take(c); /* the field name */
+    p_take(c); /* ':' */
+    if (!p_is_snake(name->tok.text)) {
+        p_error_tok(c, "E-name-case", name,
+                    "record field `%s` is not snake_case "
+                    "(Clause 5.5.2)", name->tok.text);
+    }
+    field = p_node(c, EK_N_T_FIELD, name->line, name->col);
+    if (!field) {
+        return NULL;
+    }
+    field->u.t_field.name = name->tok.text;
+    ty = p_type(c);
+    if (!ty) {
+        return NULL;
+    }
+    field->u.t_field.type = p_adopt(c, field, ty);
+    if (!field->u.t_field.type) {
+        return NULL;
+    }
+    return field;
+}
+
 /* A record type: comma-separated `name : type` fields in brackets. */
 static ek_node *record_type(p_ctx *c, const ek_layout_token *open)
 {
@@ -260,7 +290,6 @@ static ek_node *record_type(p_ctx *c, const ek_layout_token *open)
     p_list_init(&n->u.kids);
     for (;;) {
         const ek_layout_token *name = p_peek(c);
-        ek_node *ty;
         ek_node *field;
 
         if (p_src_kind(name) != EK_TOK_IDENT
@@ -271,24 +300,8 @@ static ek_node *record_type(p_ctx *c, const ek_layout_token *open)
             p_got(c, EK_TOK_RBRACKET);
             return n;
         }
-        p_take(c); /* the field name */
-        p_take(c); /* ':' */
-        if (!p_is_snake(name->tok.text)) {
-            p_error_tok(c, "E-name-case", name,
-                        "record field `%s` is not snake_case "
-                        "(Clause 5.5.2)", name->tok.text);
-        }
-        field = p_node(c, EK_N_T_FIELD, name->line, name->col);
+        field = record_field(c, name);
         if (!field) {
-            return NULL;
-        }
-        field->u.t_field.name = name->tok.text;
-        ty = p_type(c);
-        if (!ty) {
-            return NULL;
-        }
-        field->u.t_field.type = p_adopt(c, field, ty);
-        if (!field->u.t_field.type) {
             return NULL;
         }
         p_list_add(c, n, &n->u.kids, field);
