@@ -3,8 +3,6 @@
 /* Literals, lambda bodies, composite literals, and string
    interpolation. */
 
-static ek_node *lambda(p_ctx *c);
-static ek_node *lambda_param(p_ctx *c);
 static ek_node *string_lit(p_ctx *c, const ek_layout_token *t);
 static ek_node *composite_item(p_ctx *c);
 
@@ -200,6 +198,27 @@ static void paren_comma(p_ctx *c, size_t open, size_t close)
     }
 }
 
+/* An inline annotation is not a form. One diagnostic fires and the
+   group becomes an empty paren, so the enclosing list keeps its
+   argument count and parses on at its own separators. */
+static ek_node *reject_annotation(p_ctx *c, const ek_layout_token *open_tok,
+                                  size_t close)
+{
+    ek_node *n;
+
+    p_error_tok(c, "E-syntax", p_peek(c),
+                "an expression carries no annotation; bind the "
+                "value with an annotation and pass the binding "
+                "(Clause 6.3.2)");
+    c->pos = close;
+    p_take(c);
+    n = p_node(c, EK_N_PAREN, open_tok->line, open_tok->col);
+    if (n) {
+        n->u.wrap.inner = NULL;
+    }
+    return n;
+}
+
 /* '(' in primary position: a parenthesized expression, or a lambda
    when the matching ')' is followed by ':' and the position is not
    an operator operand (the colon of an enclosing header wins
@@ -211,7 +230,7 @@ ek_node *p_paren_primary(p_ctx *c)
 
     if (!c->operand_pos && !c->head_colon && after->kind == EK_LTOK_SOURCE
         && after->tok.kind == EK_TOK_COLON) {
-        return lambda(c);
+        return p_lambda(c);
     }
     {
         size_t open = c->pos;
@@ -226,22 +245,7 @@ ek_node *p_paren_primary(p_ctx *c)
             paren_comma(c, open, close);
         }
         if (p_at(c, EK_TOK_COLON) && !c->operand_pos) {
-            /* An inline annotation is not a form; the group becomes an
-               empty paren so the enclosing list keeps its argument
-               count and parses on at its own separators. */
-            ek_node *n;
-
-            p_error_tok(c, "E-syntax", p_peek(c),
-                        "an expression carries no annotation; bind the "
-                        "value with an annotation and pass the binding "
-                        "(Clause 6.3.2)");
-            c->pos = close;
-            p_take(c);
-            n = p_node(c, EK_N_PAREN, open_tok->line, open_tok->col);
-            if (n) {
-                n->u.wrap.inner = NULL;
-            }
-            return n;
+            return reject_annotation(c, open_tok, close);
         }
         if (!p_expect(c, EK_TOK_RPAREN, "')'")) {
             return NULL;
@@ -258,6 +262,23 @@ ek_node *p_paren_primary(p_ctx *c)
     }
 }
 
+/* Builds the memo table of bracket partners on first use. Returns 0
+   when the arena is exhausted. */
+static int match_table(p_ctx *c)
+{
+    size_t i;
+
+    c->match = p_alloc(c, c->count * sizeof *c->match);
+    c->match_stack = p_alloc(c, c->count * sizeof *c->match_stack);
+    if (!c->match || !c->match_stack) {
+        return 0;
+    }
+    for (i = 0; i < c->count; i++) {
+        c->match[i] = (size_t)-1;
+    }
+    return 1;
+}
+
 /* Index of the bracket matching the opener at from, counting all three
    bracket pairs; markers never carry brackets. */
 size_t p_match_bracket(p_ctx *c, size_t from)
@@ -269,15 +290,8 @@ size_t p_match_bracket(p_ctx *c, size_t from)
     if (from >= c->count) {
         return last;
     }
-    if (!c->match) {
-        c->match = p_alloc(c, c->count * sizeof *c->match);
-        c->match_stack = p_alloc(c, c->count * sizeof *c->match_stack);
-        if (!c->match || !c->match_stack) {
-            return last;
-        }
-        for (i = 0; i < c->count; i++) {
-            c->match[i] = (size_t)-1;
-        }
+    if (!c->match && !match_table(c)) {
+        return last;
     }
     if (c->match[from] != (size_t)-1) {
         return c->match[from];
@@ -314,97 +328,3 @@ size_t p_match_bracket(p_ctx *c, size_t from)
     return last;
 }
 
-/* A lambda: '(' parameters ')' ':' body. */
-static ek_node *lambda(p_ctx *c)
-{
-    const ek_layout_token *open = p_take(c); /* '(' */
-    ek_node *params = p_node(c, EK_N_LAMBDA_PARAMS, open->line, open->col);
-    ek_node *body;
-    ek_node *n;
-
-    if (!params) {
-        return NULL;
-    }
-    p_list_init(&params->u.kids);
-    p_skip_newlines(c);
-    if (!p_at(c, EK_TOK_RPAREN)) {
-        for (;;) {
-            ek_node *p = lambda_param(c);
-
-            p_list_add(c, params, &params->u.kids, p);
-            p_skip_newlines(c);
-            if (!p_got(c, EK_TOK_COMMA)) {
-                break;
-            }
-            p_skip_newlines(c);
-        }
-    }
-    if (!p_expect(c, EK_TOK_RPAREN, "')'")) {
-        return NULL;
-    }
-    if (!p_got(c, EK_TOK_COLON)) {
-        p_error_tok(c, "E-syntax", p_peek(c),
-                    "expected `:` after the lambda parameters");
-        return NULL;
-    }
-    body = p_body_suite(c);
-    if (!body) {
-        return NULL;
-    }
-    n = p_node(c, EK_N_LAMBDA, open->line, open->col);
-    if (!n) {
-        return NULL;
-    }
-    n->u.pair.a = p_adopt(c, n, params);
-    n->u.pair.b = p_adopt(c, n, body);
-    if (!n->u.pair.a || !n->u.pair.b) {
-        return NULL;
-    }
-    return n;
-}
-
-/* A lambda parameter: a name, '_', or a nested parameter group. The
-   nested group is the recursion edge, so it carries the guard. */
-static ek_node *lambda_param(p_ctx *c)
-{
-    const ek_layout_token *t = p_peek(c);
-
-    if (p_src_kind(t) == EK_TOK_IDENT) {
-        ek_node *n = p_node(c, EK_N_NAME, t->line, t->col);
-
-        p_take(c);
-        if (n) {
-            p_path_init(&n->u.path);
-            p_path_add(c, &n->u.path, t->tok.text);
-        }
-        return n;
-    }
-    if (p_src_kind(t) == EK_TOK_LPAREN) {
-        ek_node *g = p_node(c, EK_N_LAMBDA_PARAMS, t->line, t->col);
-
-        p_take(c);
-        if (!g) {
-            return NULL;
-        }
-        if (!p_depth_enter(c)) {
-            return NULL;
-        }
-        p_list_init(&g->u.kids);
-        p_skip_newlines(c);
-        while (!p_at(c, EK_TOK_RPAREN) && !c->oom) {
-            ek_node *p = lambda_param(c);
-
-            p_list_add(c, g, &g->u.kids, p);
-            p_skip_newlines(c);
-            if (!p_got(c, EK_TOK_COMMA)) {
-                break;
-            }
-            p_skip_newlines(c);
-        }
-        p_depth_leave(c);
-        p_expect(c, EK_TOK_RPAREN, "')'");
-        return g;
-    }
-    p_error_tok(c, "E-syntax", t, "expected a lambda parameter");
-    return NULL;
-}

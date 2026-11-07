@@ -71,7 +71,15 @@ void lo_push_doc(layout_ctx *c, const ek_token *t);
 void lo_clear_docs(layout_ctx *c);
 void lo_flush_docs(layout_ctx *c);
 
-/* process.c: the layout state machine over the line table. */
+/* process.c: line inspection and the layout walk over the line table. */
+const ek_token *sig_first(const line_run *l);
+int deeper_licensed(const layout_ctx *c, const line_run *prev,
+                    const line_run *cur);
 void lo_process(layout_ctx *c, const line_run *lines, size_t count);
+
+/* blocks.c: line starts, the indentation stack, and callback blocks. */
+int top_col(const layout_ctx *c);
+void close_cb_depth(layout_ctx *c, int depth, int line, int at);
+void line_start(layout_ctx *c, const line_run *l);
 
 #endif

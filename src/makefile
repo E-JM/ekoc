@@ -18,15 +18,18 @@ SUPPORT_SRC := \
 	src/support/xid_tables.c
 
 LEX_SRC := \
+	src/lex/buf.c \
 	src/lex/charlit.c \
 	src/lex/escape.c \
 	src/lex/ident.c \
 	src/lex/lex.c \
 	src/lex/number.c \
 	src/lex/operator.c \
+	src/lex/rawstr.c \
 	src/lex/string.c
 
 LAYOUT_SRC := \
+	src/layout/blocks.c \
 	src/layout/layout.c \
 	src/layout/process.c
 
@@ -35,10 +38,14 @@ PARSE_SRC := \
 	src/parse/ctl.c \
 	src/parse/decl.c \
 	src/parse/expr.c \
+	src/parse/fntype.c \
+	src/parse/import.c \
+	src/parse/lambda.c \
 	src/parse/literal.c \
 	src/parse/parse.c \
 	src/parse/pattern.c \
 	src/parse/postfix.c \
+	src/parse/suite.c \
 	src/parse/type.c \
 	src/parse/util.c
 
