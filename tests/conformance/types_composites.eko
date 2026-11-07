@@ -93,3 +93,13 @@ shape_adaptation: test =
     assert_eq(_describe(h), "ada: 36")
     view: [name: String, age: Int] = h
     assert_eq(view.age, 36)
+
+// The module-path spelling of a constructor applies as a call, with
+// the payload the call's argument (Clause 7.4.4).
+qualified_ctor_calls: test =
+    j: Json = std.Int(5)
+    n: Json = std.Null()
+    b: Json = std.Bool(True)
+    assert_eq(j, Int 5)
+    assert_eq(n, Null)
+    assert_eq(b, Bool True)

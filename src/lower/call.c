@@ -105,6 +105,40 @@ static const ek_node *module_path_recv(lower_ctx *c, const ek_node *recv)
     return recv;
 }
 
+/* The qualified spelling of a constructor applied as a call: the
+   payload is the call's argument, the family the apply form builds.
+   A NULL result hands the decision back. */
+static lower_val ctor_call(lower_ctx *c, lower_scope *scope,
+                           const ek_node *e, const ek_ref *ref,
+                           const call_form *form)
+{
+    const ek_nlist *args = &e->u.call.args;
+    lower_gtype *g;
+    lower_val a;
+    const char *at, *r;
+
+    if (form->extra || form->has_recv || !ref->symbol) {
+        return (lower_val){ NULL, 0 };
+    }
+    g = lower_ctor_of_symbol(c, e, ref->symbol, 1);
+    if (!g) {
+        return lower_val_unit();
+    }
+    a = args->count ? lower_sub(c, scope, args->data[0]) : lower_val_unit();
+    at = lower_as_temp(c, scope, &a);
+    r = lower_temp(c, scope);
+    lower_pad(c);
+    if (g->nf) {
+        lower_emitf(c, "ek_val %s = %s(%s);\n", r, g->helper, at);
+    } else {
+        /* check diagnosed the arity; the argument still evaluates */
+        lower_emitf(c, "ek_val %s = %s();\n", r, g->helper);
+    }
+    lower_pad(c);
+    lower_emitf(c, "ek_release(%s);\n", at);
+    return (lower_val){ r, 1 };
+}
+
 /* One call: the callee's reading decides the form. */
 static lower_val emit_call(lower_ctx *c, lower_scope *scope,
                            const ek_node *e, const call_form *form)
@@ -143,6 +177,13 @@ static lower_val emit_call(lower_ctx *c, lower_scope *scope,
             return (lower_val){ NULL, 0 }; /* the tail jumped to retry */
         }
         return direct_call(c, scope, e, ref->symbol, form);
+    }
+    if (ref && ref->symbol && ref->kind == EK_SYM_CONSTRUCTOR) {
+        lower_val v = ctor_call(c, scope, e, ref, form);
+
+        if (v.text) {
+            return v;
+        }
     }
     if (callee && callee->kind == EK_N_FIELD) {
         lower_val v = c_ns_call(c, scope, e, callee, form);
