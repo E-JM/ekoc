@@ -125,6 +125,24 @@ static const char *signature(lower_ctx *c, const char *mangled,
     }
     return lower_take(c, &b);
 }
+/* The declaration of one test binding: it carries no written signature
+   and takes no parameters; the body's value is discarded by the shim.
+   A test root's derived constructors can build values over any
+   capability row -- no manifest bounds them -- so every family
+   registers and the test binary accepts the size. */
+static const char *declare_test(lower_ctx *c, const ek_symbol *sym,
+                                const char *name, lower_scope *ps,
+                                size_t *nparams)
+{
+    memset(ps, 0, sizeof *ps);
+    *nparams = 0;
+    if (c->mode == EK_LOWER_TESTS) {
+        record_test(c, sym, name);
+        lower_cap_families(c, sym->decl);
+    }
+    return signature(c, name, ps);
+}
+
 /* The declaration of one function: the signature check, the parameter
    scope, the entry bookkeeping, and the stored forward declaration.
    name is the emitted spelling, plain or instantiation-suffixed.
@@ -139,18 +157,7 @@ static const char *declare_function(lower_ctx *c, const ek_symbol *sym,
     const char **slot;
 
     if (decl && decl->kind == EK_N_TEST_DECL) {
-        /* a test binding carries no written signature and takes no
-           parameters; the body's value is discarded by the shim. A
-           test root's derived constructors can build values over any
-           capability row -- no manifest bounds them -- so every
-           family registers and the test binary accepts the size */
-        memset(ps, 0, sizeof *ps);
-        *nparams = 0;
-        if (c->mode == EK_LOWER_TESTS) {
-            record_test(c, sym, name);
-            lower_cap_families(c, decl);
-        }
-        return signature(c, name, ps);
+        return declare_test(c, sym, name, ps, nparams);
     }
     if (!decl || (decl->kind != EK_N_LET && decl->kind != EK_N_NAMESPACE)
         || !ann || ann->kind != EK_N_T_FN) {
