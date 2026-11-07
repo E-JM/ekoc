@@ -396,6 +396,10 @@ void lower_from_record_emit(lower_ctx *c, lower_demit *d, const char *name,
                             const char **fnames, const ek_type **ftypes,
                             size_t nf, lower_gtype *g);
 
+/* derivedadt.c: the externally tagged decode of an algebraic type. */
+void lower_from_adt_emit(lower_ctx *c, lower_demit *d, lower_variant *vs,
+                         size_t nv);
+
 /* derivedshow.c, derivedjson.c, derivedfrom.c: the walkers the
    container bodies build on -- the brace form over one cons spine,
    the recursive cell walk behind an Arr, and its decode. */

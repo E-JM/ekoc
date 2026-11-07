@@ -119,6 +119,7 @@ LOWER_SRC := \
 	src/lower/ctorfam.c \
 	src/lower/destructure.c \
 	src/lower/derived.c \
+	src/lower/derivedadt.c \
 	src/lower/derivedcall.c \
 	src/lower/derivedeq.c \
 	src/lower/derivedfrom.c \
