@@ -21,17 +21,14 @@ const char *lower_result_ctor(lower_ctx *c, const char *name)
     return lower_std_ctor(c, NULL, "Result", name);
 }
 
-/* return Err (Invalid "detail"); the detail bytes are interned like
-   any literal. The Invalid result is a named temp released once Err
-   stands, the way every nested constructor result is owned. */
-void lower_json_err_lit(lower_demit *d, const char *indent,
-                        const char *detail)
+/* return Err (Invalid payload); the Invalid result is a named temp
+   released once Err stands, the way every nested constructor result is
+   owned. */
+static void emit_json_err(lower_demit *d, const char *indent,
+                          const char *inv, const char *payload)
 {
-    const char *inv = lower_std_ctor(d->c, NULL, "ParseError", "Invalid");
-
     lower_d_printf(d, "%s{\n", indent);
-    lower_d_printf(d, "%s    ek_val p = ek_keep(%s);\n", indent,
-                   lower_str_cache(d->c, detail, strlen(detail)));
+    lower_d_printf(d, "%s    ek_val p = %s;\n", indent, payload);
     lower_d_printf(d, "%s    ek_val q = %s(p);\n", indent, inv);
     lower_d_printf(d, "%s    ek_val r = %s(q);\n", indent,
                    lower_result_ctor(d->c, "Err"));
@@ -41,22 +38,25 @@ void lower_json_err_lit(lower_demit *d, const char *indent,
     lower_d_printf(d, "%s}\n", indent);
 }
 
+/* return Err (Invalid "detail"); the detail bytes are interned like
+   any literal. */
+void lower_json_err_lit(lower_demit *d, const char *indent,
+                        const char *detail)
+{
+    const char *inv = lower_std_ctor(d->c, NULL, "ParseError", "Invalid");
+
+    emit_json_err(d, indent, inv,
+                  lower_str(d->c, "ek_keep(%s)",
+                            lower_str_cache(d->c, detail, strlen(detail))));
+}
+
 /* return Err (Invalid detail); the detail expression is an owned
-   ek_val whose one reference moves into the payload, and the Invalid
-   result is a named temp released once Err stands. */
+   ek_val whose one reference moves into the payload. */
 void lower_json_err_obj(lower_demit *d, const char *indent, const char *obj)
 {
     const char *inv = lower_std_ctor(d->c, NULL, "ParseError", "Invalid");
 
-    lower_d_printf(d, "%s{\n", indent);
-    lower_d_printf(d, "%s    ek_val p = %s;\n", indent, obj);
-    lower_d_printf(d, "%s    ek_val q = %s(p);\n", indent, inv);
-    lower_d_printf(d, "%s    ek_val r = %s(q);\n", indent,
-                   lower_result_ctor(d->c, "Err"));
-    lower_d_printf(d, "%s    ek_release(p);\n", indent);
-    lower_d_printf(d, "%s    ek_release(q);\n", indent);
-    lower_d_printf(d, "%s    return r;\n", indent);
-    lower_d_printf(d, "%s}\n", indent);
+    emit_json_err(d, indent, inv, obj);
 }
 
 /* A borrowed payload slot of the std Json family. */
@@ -335,16 +335,33 @@ static void emit_to_adt(lower_ctx *c, lower_demit *d, lower_variant *vs,
     lower_d_printf(d, "    return %s();\n", lower_json_ctor(c, "Null"));
 }
 
+/* The shaped receiver: the tuple or record form over the anonymous or
+   declared layout. 0 when the shape has no lowering. */
+static int emit_to_shape(lower_ctx *c, lower_demit *d, const ek_type *t)
+{
+    lower_gtype *g = NULL;
+    const char **fnames;
+    const ek_type **ftypes;
+    size_t nf;
+
+    if (!lower_shape_of(c, NULL, t, &fnames, &ftypes, &nf, &g) || !g) {
+        return 0;
+    }
+    if (g->shape == GT_TUP) {
+        emit_to_tuple(c, d, g->stem, ftypes, nf);
+    } else {
+        emit_to_record(c, d, g->stem, fnames, ftypes, nf);
+    }
+    return 1;
+}
+
 void lower_dsvc_json_emit(lower_ctx *c, const char *name, const ek_type *t,
                           int from)
 {
     lower_demit d;
     ek_buf b;
-    lower_gtype *g = NULL;
-    const char **fnames;
-    const ek_type **ftypes;
-    lower_variant *vs;
-    size_t nf, nv;
+    lower_variant *vs = NULL;
+    size_t nv = 0;
 
     if (from) {
         lower_dsvc_from_emit(c, name, t);
@@ -364,29 +381,17 @@ void lower_dsvc_json_emit(lower_ctx *c, const char *name, const ek_type *t,
         lower_vec_tojson_emit(c, &d, name, t);
     } else if (t->kind == EK_T_DICT) {
         emit_to_dict(c, &d, t);
-    } else if (t->kind == EK_T_TUPLE) {
-        if (lower_shape_of(c, NULL, t, &fnames, &ftypes, &nf, &g) && g) {
-            emit_to_tuple(c, &d, g->stem, ftypes, nf);
-        } else {
-            lower_json_err_lit(&d, "    ", "");
-        }
-    } else if (t->kind == EK_T_RECORD) {
-        if (lower_shape_of(c, NULL, t, &fnames, &ftypes, &nf, &g) && g) {
-            emit_to_record(c, &d, g->stem, fnames, ftypes, nf);
-        } else {
-            lower_json_err_lit(&d, "    ", "");
+    } else if (t->kind == EK_T_TUPLE || t->kind == EK_T_RECORD) {
+        if (!emit_to_shape(c, &d, t)) {
+            lower_json_err_lit(&d, "    ", ""); /* check gated the shape */
         }
     } else if (t->kind == EK_T_NOMINAL
-               && lower_shape_of(c, NULL, t, &fnames, &ftypes, &nf, &g)
-               && g) {
-        if (g->shape == GT_TUP) {
-            emit_to_tuple(c, &d, g->stem, ftypes, nf);
-        } else {
-            emit_to_record(c, &d, g->stem, fnames, ftypes, nf);
+               && (emit_to_shape(c, &d, t)
+                   || lower_variants_of(c, NULL, t, &vs, &nv, 0))) {
+        /* a shaped nominal rendered above; an algebraic one here */
+        if (vs) {
+            emit_to_adt(c, &d, vs, nv);
         }
-    } else if (t->kind == EK_T_NOMINAL
-               && lower_variants_of(c, NULL, t, &vs, &nv, 0)) {
-        emit_to_adt(c, &d, vs, nv);
     } else {
         lower_json_err_lit(&d, "    ", "");
     }
