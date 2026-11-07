@@ -3,25 +3,11 @@
 #include "resolve/internal.h"
 #include "support/buf.h"
 
-/* The top-level surface of one module. Types are collected first so
-   namespace ownership does not depend on source order. Duplicate names
-   are conflicts; a namespace binding is keyed by its full head, so
-   `Int.add` and `Float.add` coexist. */
-
-typedef struct {
-    const char *key;
-    int line, col;
-} r_key;
-
-typedef struct {
-    r_ctx *c;
-    r_mod *m;
-    ek_symbol *syms;
-    size_t n;
-    r_key *tkeys; size_t nt, ctk;
-    r_key *lkeys; size_t nl, clk;
-    r_key *nkeys; size_t nn, cnk;
-} r_surf;
+/* One module's surface: the collector state, the value and namespace
+   members, and the build that hands the rows over. Types are collected
+   first (types.c) so namespace ownership does not depend on source
+   order. Duplicate names are conflicts; a namespace binding is keyed
+   by its full head, so `Int.add` and `Float.add` coexist. */
 
 /* An upper bound: every top-level item yields at most one symbol per
    variant plus one. */
@@ -40,7 +26,7 @@ static size_t bound(const ek_node *mod)
     return total;
 }
 
-static void key_push(r_surf *s, r_key **keys, size_t *n, size_t *cap,
+void r_surf_key_push(r_surf *s, r_key **keys, size_t *n, size_t *cap,
                      const char *key, int line, int col)
 {
     if (s->c->oom) {
@@ -59,7 +45,7 @@ static void key_push(r_surf *s, r_key **keys, size_t *n, size_t *cap,
 }
 
 /* Returns the index of an earlier equal key, or -1. */
-static int key_seen(r_key *keys, size_t n, const char *key)
+int r_surf_key_seen(r_key *keys, size_t n, const char *key)
 {
     size_t i;
 
@@ -71,7 +57,7 @@ static int key_seen(r_key *keys, size_t n, const char *key)
     return -1;
 }
 
-static void emit(r_surf *s, ek_symbol *sym)
+void r_surf_emit(r_surf *s, ek_symbol *sym)
 {
     if (s->c->oom || !sym) {
         return;
@@ -79,90 +65,19 @@ static void emit(r_surf *s, ek_symbol *sym)
     s->syms[s->n++] = *sym;
 }
 
-/* A constructor of the name already emitted for the type declaration
-   whose first symbol sits at first. */
-static int variant_seen(const r_surf *s, size_t first, const char *name)
+static void leaf_push(r_surf *s, ek_symbol *sym)
 {
-    size_t i;
-
-    for (i = first; i < s->n; i++) {
-        if (s->syms[i].kind == EK_SYM_CONSTRUCTOR
-            && strcmp(s->syms[i].name, name) == 0) {
-            return 1;
-        }
-    }
-    return 0;
-}
-
-/* The constructor rows of a type declaration: one per variant, the
-   type's visibility beside a `_` spelling. */
-static void collect_variants(r_surf *s, const ek_node *d,
-                             const ek_symbol *type, size_t first)
-{
-    const char *name = d->u.type_decl.name;
-    size_t i;
-
-    for (i = 0; i < d->u.type_decl.variants.count; i++) {
-        const ek_node *v = d->u.type_decl.variants.data[i];
-        ek_symbol *cs;
-
-        if (variant_seen(s, first, v->u.variant.name)) {
-            r_error(s->c, s->m->file, v->line, v->col, "E-name-conflict",
-                    "the constructor `%s` is declared twice in the type "
-                    "`%s` (Clause 7.4.6)", v->u.variant.name, name);
-            continue;
-        }
-        cs = r_sym(s->c, v->u.variant.name, EK_SYM_CONSTRUCTOR,
-                   s->m->stem, v->line, v->col);
-
-        if (!cs) {
-            return;
-        }
-        cs->decl = d;
-        cs->owner = d->u.type_decl.name;
-        /* Visibility follows the type; a `_`-prefixed constructor
-           spelling is the one split, private to the declaring
-           module. */
-        cs->public = type->public && v->u.variant.name[0] != '_';
-        emit(s, cs);
-    }
-}
-
-/* A declared type or ctype: one symbol of the identity layer. */
-static void collect_type(r_surf *s, const ek_node *d)
-{
-    const char *name = d->kind == EK_N_TYPE_DECL
-                           ? d->u.type_decl.name : d->u.decl.name;
-    ek_symbol *sym = r_sym(s->c, name, EK_SYM_TYPE,
-                           s->m->stem, d->line, d->col);
-    size_t first = s->n;
-    int seen;
-
     if (!sym) {
         return;
     }
-    if (strcmp(name, "Never") == 0) {
-        /* The spelling belongs to the language's bottom type; no
-           module declares it. */
-        r_error(s->c, s->m->file, d->line, d->col, "E-name-conflict",
-                "`Never` is a type of the language and cannot be declared "
-                "(Clause 7.5.4)");
-    }
-    sym->decl = d;
-    sym->public = name[0] != '_';
-    seen = key_seen(s->tkeys, s->nt, name);
-    if (seen >= 0) {
-        r_error(s->c, s->m->file, d->line, d->col, "E-name-conflict",
+    if (r_surf_key_seen(s->lkeys, s->nl, sym->name) >= 0) {
+        r_error(s->c, s->m->file, sym->line, sym->col, "E-name-conflict",
                 "`%s` is declared twice in this module (Clause 7.4.6)",
-                name);
-    } else {
-        key_push(s, &s->tkeys, &s->nt, &s->ctk, name, d->line, d->col);
-    }
-    emit(s, sym);
-    if (d->kind != EK_N_TYPE_DECL) {
+                sym->name);
         return;
     }
-    collect_variants(s, d, sym, first);
+    r_surf_key_push(s, &s->lkeys, &s->nl, &s->clk, sym->name, sym->line,
+                    sym->col);
 }
 
 /* The full head of a namespace binding, segments joined with `.`:
@@ -231,20 +146,6 @@ static int type_owned(r_surf *s, const char *type)
     return 0;
 }
 
-static void leaf_push(r_surf *s, ek_symbol *sym)
-{
-    if (!sym) {
-        return;
-    }
-    if (key_seen(s->lkeys, s->nl, sym->name) >= 0) {
-        r_error(s->c, s->m->file, sym->line, sym->col, "E-name-conflict",
-                "`%s` is declared twice in this module (Clause 7.4.6)",
-                sym->name);
-        return;
-    }
-    key_push(s, &s->lkeys, &s->nl, &s->clk, sym->name, sym->line, sym->col);
-}
-
 /* A namespace binding: full-head key, ownership, member case. */
 static ek_symbol *collect_namespace(r_surf *s, const ek_node *item)
 {
@@ -295,7 +196,7 @@ static ek_symbol *collect_namespace(r_surf *s, const ek_node *item)
         sym->public = name[0] != '_';
     }
     key = ns_key(s, item);
-    if (key && key_seen(s->nkeys, s->nn, key) >= 0) {
+    if (key && r_surf_key_seen(s->nkeys, s->nn, key) >= 0) {
         r_error(s->c, s->m->file, item->line, item->col,
                 "E-name-conflict",
                 "namespace member `%s` is declared twice in this "
@@ -303,7 +204,8 @@ static ek_symbol *collect_namespace(r_surf *s, const ek_node *item)
         sym = NULL;
     }
     if (key) {
-        key_push(s, &s->nkeys, &s->nn, &s->cnk, key, item->line, item->col);
+        r_surf_key_push(s, &s->nkeys, &s->nn, &s->cnk, key, item->line,
+                        item->col);
     }
     return sym;
 }
@@ -366,138 +268,7 @@ static void collect_member(r_surf *s, const ek_node *item)
     if (!sym || sym->kind != EK_SYM_NAMESPACE) {
         leaf_push(s, sym);
     }
-    emit(s, sym);
-}
-
-/* A private type declared in this module, by name. */
-static int private_type_here(const r_surf *s, const char *name)
-{
-    size_t i;
-
-    for (i = 0; i < s->n; i++) {
-        if (s->syms[i].kind == EK_SYM_TYPE
-            && !s->syms[i].public && strcmp(s->syms[i].name, name) == 0) {
-            return 1;
-        }
-    }
-    return 0;
-}
-
-/* Every nominal spelling a type expression mentions must be public
-   where the expression is exported surface. */
-static void private_in_type(r_surf *s, const ek_node *t, const char *what);
-
-/* The type forms whose children are lists: the function's parameters
-   and result, the tuple and record members, the apply head and args. */
-static void private_in_type_kids(r_surf *s, const ek_node *t,
-                                 const char *what)
-{
-    size_t i;
-
-    switch (t->kind) {
-    case EK_N_T_FN:
-        for (i = 0; i < t->u.t_fn.params.count; i++) {
-            private_in_type(s, t->u.t_fn.params.data[i], what);
-        }
-        private_in_type(s, t->u.t_fn.result, what);
-        return;
-    case EK_N_T_TUPLE:
-    case EK_N_T_RECORD:
-        for (i = 0; i < t->u.kids.count; i++) {
-            private_in_type(s, t->u.kids.data[i], what);
-        }
-        return;
-    case EK_N_T_APPLY:
-        private_in_type(s, t->u.t_apply.head, what);
-        for (i = 0; i < t->u.t_apply.args.count; i++) {
-            private_in_type(s, t->u.t_apply.args.data[i], what);
-        }
-        return;
-    default:
-        return;
-    }
-}
-
-/* Every nominal spelling a type expression mentions must be public
-   where the expression is exported surface. */
-static void private_in_type(r_surf *s, const ek_node *t, const char *what)
-{
-    if (!t || s->c->oom) {
-        return;
-    }
-    switch (t->kind) {
-    case EK_N_T_NAME: {
-        const char *n = t->u.path.data[t->u.path.count - 1];
-
-        if (private_type_here(s, n)) {
-            r_error(s->c, s->m->file, t->line, t->col, "E-private-name",
-                    "the %s names the private type `%s` (Clause 7.3.3)",
-                    what, n);
-        }
-        return;
-    }
-    case EK_N_T_FIELD:
-    case EK_N_T_PARAM:
-        private_in_type(s, t->u.t_field.type, what);
-        return;
-    case EK_N_T_LIST:
-    case EK_N_T_PAREN:
-        private_in_type(s, t->u.wrap.inner, what);
-        return;
-    case EK_N_T_DICT:
-        private_in_type(s, t->u.pair.a, what);
-        private_in_type(s, t->u.pair.b, what);
-        return;
-    default:
-        private_in_type_kids(s, t, what);
-        return;
-    }
-}
-
-/* The exported surface spells only public types: a public binding's
-   annotation, and the payload and field types of a public type or
-   ctype. A value of a public type flows to importers, so every name
-   its surface mentions must be spellable there. */
-static void signature_visibility(r_surf *s)
-{
-    const ek_node *mod = s->m->ast;
-    size_t i, k;
-
-    for (i = 0; i < mod->u.kids.count; i++) {
-        const ek_node *d = mod->u.kids.data[i];
-
-        if (d->kind == EK_N_TYPE_DECL) {
-            if (d->u.type_decl.name[0] == '_') {
-                continue;
-            }
-            for (k = 0; k < d->u.type_decl.variants.count; k++) {
-                private_in_type(s, d->u.type_decl.variants.data[k]
-                                   ->u.variant.payload,
-                                "surface of a public type");
-            }
-            private_in_type(s, d->u.type_decl.type,
-                            "surface of a public type");
-        } else if (d->kind == EK_N_CTYPE_DECL) {
-            if (d->u.decl.name[0] == '_') {
-                continue;
-            }
-            private_in_type(s, d->u.decl.body, "surface of a public ctype");
-        } else if (d->kind == EK_N_LET && d->u.bind.type
-                   && d->u.bind.pattern
-                   && d->u.bind.pattern->kind == EK_N_P_VAR
-                   && d->u.bind.pattern->u.path.count == 1
-                   && d->u.bind.pattern->u.path.data[0][0] != '_') {
-            private_in_type(s, d->u.bind.type, "public binding signature");
-        } else if (d->kind == EK_N_EXTERN_DECL
-                   && d->u.extern_decl.name[0] != '_') {
-            private_in_type(s, d->u.extern_decl.type,
-                            "public extern signature");
-        } else if (d->kind == EK_N_NAMESPACE
-                   && d->u.namespace.name[0] != '_') {
-            private_in_type(s, d->u.namespace.type,
-                            "public member signature");
-        }
-    }
+    r_surf_emit(s, sym);
 }
 
 /* N12: an import and a file top-level binding share a name; the
@@ -561,7 +332,7 @@ void r_surface_build(r_ctx *c, r_mod *m)
         const ek_node *d = mod->u.kids.data[i];
 
         if (d->kind == EK_N_TYPE_DECL || d->kind == EK_N_CTYPE_DECL) {
-            collect_type(&s, d);
+            r_surf_type(&s, d);
         }
     }
     for (i = 0; i < mod->u.kids.count; i++) {
@@ -571,7 +342,7 @@ void r_surface_build(r_ctx *c, r_mod *m)
             collect_member(&s, d);
         }
     }
-    signature_visibility(&s);
+    r_surf_visibility(&s);
     import_conflicts(&s);
     m->surf->syms = s.syms;
     m->surf->count = s.n;

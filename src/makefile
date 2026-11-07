@@ -62,6 +62,7 @@ RESOLVE_SRC := \
 	src/resolve/sys_source.c \
 	src/resolve/time_source.c \
 	src/resolve/type.c \
+	src/resolve/types.c \
 	src/resolve/warn.c
 
 CHECK_SRC := \

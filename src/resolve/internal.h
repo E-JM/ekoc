@@ -156,7 +156,47 @@ void r_opened_import(r_ctx *c, r_file *f, const r_mod *target,
                      const ek_node *imp);
 void r_opened_vs_tops(r_ctx *c, r_file *f);
 
-/* surface.c: the top-level surface of one module. */
+/* surface.c: the top-level surface of one module. The collector state
+   below is shared with types.c, which gathers the type rows and walks
+   the exported spellings for private ones. */
+
+/* One duplicate-key slot: the key as spelled, at its declaration. */
+typedef struct {
+    const char *key;
+    int line, col;
+} r_key;
+
+/* The collector of one module's surface: the symbols in surface order,
+   and the key tables each layer judges duplicates by -- types, leaf
+   bindings, and namespace heads. */
+typedef struct {
+    r_ctx *c;
+    r_mod *m;
+    ek_symbol *syms;
+    size_t n;
+    r_key *tkeys; size_t nt, ctk;
+    r_key *lkeys; size_t nl, clk;
+    r_key *nkeys; size_t nn, cnk;
+} r_surf;
+
+/* Appends a key slot, grown in the arena; the caller judges an earlier
+   equal key with r_surf_key_seen. */
+void r_surf_key_push(r_surf *s, r_key **keys, size_t *n, size_t *cap,
+                     const char *key, int line, int col);
+/* Returns the index of an earlier equal key, or -1. */
+int r_surf_key_seen(r_key *keys, size_t n, const char *key);
+/* Records one symbol in the surface, skipping arena failures. */
+void r_surf_emit(r_surf *s, ek_symbol *sym);
+
+/* types.c: the type rows of a surface and the spellings it exports. */
+/* A declared type or ctype: one symbol of the identity layer. */
+void r_surf_type(r_surf *s, const ek_node *d);
+/* The exported surface spells only public types: a public binding's
+   annotation, and the payload and field types of a public type or
+   ctype. A value of a public type flows to importers, so every name
+   its surface mentions must be spellable there. */
+void r_surf_visibility(r_surf *s);
+
 void r_surface_build(r_ctx *c, r_mod *m);
 
 /* module.c: the module table of the closure -- stems, registration,
