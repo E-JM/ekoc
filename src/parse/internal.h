@@ -164,4 +164,7 @@ ek_node *p_pattern(p_ctx *c);
 ek_node *p_type(p_ctx *c);
 ek_node *p_type_atom(p_ctx *c);
 
+/* fntype.c */
+ek_node *p_fn_type(p_ctx *c, const ek_layout_token *open); /* cursor at '(' */
+
 #endif

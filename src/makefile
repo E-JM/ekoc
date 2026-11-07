@@ -38,6 +38,7 @@ PARSE_SRC := \
 	src/parse/ctl.c \
 	src/parse/decl.c \
 	src/parse/expr.c \
+	src/parse/fntype.c \
 	src/parse/import.c \
 	src/parse/lambda.c \
 	src/parse/literal.c \
