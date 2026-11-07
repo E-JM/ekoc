@@ -261,17 +261,36 @@ static void inst_overflow(ck_ctx *c, const ck_inst_edge *e)
     c->cur = saved;
 }
 
-void ck_inst_depth(ck_ctx *c)
+/* Appends one new instance state to the work list. Returns 1 when the
+   pass must stop: the bound is exceeded (diagnosed) or the arena ran
+   out. */
+static int inst_admit(ck_ctx *c, inst_state **states, size_t *n, size_t *cap,
+                      const ck_inst_edge *e, const ek_type **args)
 {
-    inst_state *states = NULL;
-    size_t n = 0, cap = 0, i, k;
-
-    if (c->oom || !c->ninst) {
-        return;
+    if (*n == CK_INST_LIMIT) {
+        inst_overflow(c, e);
+        return 1;
     }
-    /* Seeds: uses in bodies whose declaration has no type variables.
-       The actuals are ground once the module pass has settled the
-       inference variables. */
+    if (*n == *cap) {
+        *states = ck_grow(c, *states, *n + 1, cap, sizeof **states);
+        if (c->oom) {
+            return 1;
+        }
+    }
+    (*states)[*n].decl = e->callee;
+    (*states)[*n].args = args;
+    (*states)[*n].nargs = e->nargs;
+    (*n)++;
+    return 0;
+}
+
+/* Seeds: uses in bodies whose declaration has no type variables. The
+   actuals are ground once the module pass has settled the inference
+   variables. Returns 1 when the pass must stop. */
+static int inst_seeds(ck_ctx *c, inst_state **states, size_t *n, size_t *cap)
+{
+    size_t i;
+
     for (i = 0; i < c->ninst && !c->oom; i++) {
         const ck_inst_edge *e = &c->inst_edges[i];
         const ek_type **args;
@@ -285,7 +304,7 @@ void ck_inst_depth(ck_ctx *c)
         args = ek_arena_alloc(c->arena, e->nargs * sizeof *args);
         if (!args) {
             c->oom = 1;
-            return;
+            return 1;
         }
         for (q = 0; q < e->nargs; q++) {
             args[q] = norm_type(c, e->args[q]);
@@ -293,48 +312,45 @@ void ck_inst_depth(ck_ctx *c)
                 ok = 0;
             }
         }
-        if (!ok || state_seen(states, n, e->callee, args)) {
+        if (!ok || state_seen(*states, *n, e->callee, args)) {
             continue;
         }
-        if (n == CK_INST_LIMIT) {
-            inst_overflow(c, e);
-            return;
+        if (inst_admit(c, states, n, cap, e, args)) {
+            return 1;
         }
-        if (n == cap) {
-            states = ck_grow(c, states, n + 1, &cap, sizeof *states);
-            if (c->oom) {
-                return;
-            }
-        }
-        states[n].decl = e->callee;
-        states[n].args = args;
-        states[n].nargs = e->nargs;
-        n++;
     }
-    /* Expansion: a state supplies the actuals of its declaration's
-       variables to every edge leaving it. */
-    for (k = 0; k < n && !c->oom; k++) {
+    return 0;
+}
+
+/* Expansion: a state supplies the actuals of its declaration's
+   variables to every edge leaving it. Returns 1 when the pass must
+   stop. */
+static int inst_expand(ck_ctx *c, inst_state **states, size_t *n, size_t *cap)
+{
+    size_t k, i;
+
+    for (k = 0; k < *n && !c->oom; k++) {
         for (i = 0; i < c->ninst && !c->oom; i++) {
             const ck_inst_edge *e = &c->inst_edges[i];
             const ek_type **args;
             size_t q;
             int ok = 1;
 
-            if (e->caller != states[k].decl || !e->callee
+            if (e->caller != (*states)[k].decl || !e->callee
                 || !e->callee->nvars || !e->nargs) {
                 continue;
             }
-            if (e->ncaller_vars != states[k].nargs) {
+            if (e->ncaller_vars != (*states)[k].nargs) {
                 continue;
             }
             args = ek_arena_alloc(c->arena, e->nargs * sizeof *args);
             if (!args) {
                 c->oom = 1;
-                return;
+                return 1;
             }
             for (q = 0; q < e->nargs; q++) {
                 const ek_type *t = ck_apply_binders(
-                    c, e->args[q], e->caller_vars, states[k].args,
+                    c, e->args[q], e->caller_vars, (*states)[k].args,
                     e->ncaller_vars);
 
                 args[q] = norm_type(c, t);
@@ -342,23 +358,27 @@ void ck_inst_depth(ck_ctx *c)
                     ok = 0;
                 }
             }
-            if (!ok || state_seen(states, n, e->callee, args)) {
+            if (!ok || state_seen(*states, *n, e->callee, args)) {
                 continue;
             }
-            if (n == CK_INST_LIMIT) {
-                inst_overflow(c, e);
-                return;
+            if (inst_admit(c, states, n, cap, e, args)) {
+                return 1;
             }
-            if (n == cap) {
-                states = ck_grow(c, states, n + 1, &cap, sizeof *states);
-                if (c->oom) {
-                    return;
-                }
-            }
-            states[n].decl = e->callee;
-            states[n].args = args;
-            states[n].nargs = e->nargs;
-            n++;
         }
     }
+    return 0;
+}
+
+void ck_inst_depth(ck_ctx *c)
+{
+    inst_state *states = NULL;
+    size_t n = 0, cap = 0;
+
+    if (c->oom || !c->ninst) {
+        return;
+    }
+    if (inst_seeds(c, &states, &n, &cap)) {
+        return;
+    }
+    inst_expand(c, &states, &n, &cap);
 }
