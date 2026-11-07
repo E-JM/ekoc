@@ -233,6 +233,63 @@ static ek_node *word_decl(p_ctx *c, const char *word, int clause,
 static ek_node *annotated_let(p_ctx *c, const ek_slist *path,
                               const ek_layout_token *head, ek_node *ann);
 
+/* Whether the extern tail, `extern "name"`, begins off tokens ahead. */
+static int extern_ahead(p_ctx *c, size_t off)
+{
+    const ek_layout_token *w = p_peek_at(c, off);
+
+    return w->kind == EK_LTOK_SOURCE && w->tok.kind == EK_TOK_IDENT
+           && strcmp(w->tok.text, "extern") == 0
+           && p_peek_at(c, off + 1)->kind == EK_LTOK_SOURCE
+           && p_peek_at(c, off + 1)->tok.kind == EK_TOK_STRING;
+}
+
+/* The extern form is a compilation-unit item. */
+static void extern_top_level(p_ctx *c, int top_level,
+                             const ek_layout_token *head)
+{
+    if (!top_level) {
+        p_error(c, "E-syntax", head->line, head->col,
+                "an extern declaration is top-level (Clause 6.3.8)");
+    }
+}
+
+/* The extern tail after `=`: `extern "name"` on the binding's own
+   line, or on a line of its own under the binding. Returns 1 when the
+   binding continues as the extern declaration and *out carries the
+   node, NULL after a diagnostic. */
+static int extern_slot(p_ctx *c, int top_level, const ek_slist *path,
+                       const ek_layout_token *head, ek_node *ann,
+                       ek_node **out)
+{
+    size_t off;
+
+    if (extern_ahead(c, 0)) {
+        extern_top_level(c, top_level, head);
+        *out = p_extern_tail(c, path->data[path->count - 1], head, ann);
+        return 1;
+    }
+    if (!p_at_layout(c, EK_LTOK_NEWLINE)) {
+        return 0;
+    }
+    /* The tail may sit on its own line, under an opened indent pair. */
+    off = p_peek_at(c, 1)->kind == EK_LTOK_INDENT ? 2 : 1;
+    if (!extern_ahead(c, off)) {
+        return 0;
+    }
+    extern_top_level(c, top_level, head);
+    p_take(c);
+    if (off == 2) {
+        p_take(c);
+    }
+    *out = p_extern_tail(c, path->data[path->count - 1], head, ann);
+    /* the tail's line end and the indent's closing dedent stay with
+       the opened pair */
+    p_got_layout(c, EK_LTOK_NEWLINE);
+    p_got_layout(c, EK_LTOK_DEDENT);
+    return 1;
+}
+
 /* Everything after `Name ':'`: the contextual words type, ctype, and
    test, or a type annotation followed by `=`. */
 ek_node *p_after_colon(p_ctx *c, int top_level, const ek_slist *path,
@@ -259,40 +316,8 @@ ek_node *p_after_colon(p_ctx *c, int top_level, const ek_slist *path,
         p_sync(c);
         return NULL;
     }
-    if (p_at(c, EK_TOK_IDENT) && strcmp(p_peek(c)->tok.text, "extern") == 0
-        && p_peek_at(c, 1)->kind == EK_LTOK_SOURCE
-        && p_peek_at(c, 1)->tok.kind == EK_TOK_STRING) {
-        if (!top_level) {
-            p_error(c, "E-syntax", head->line, head->col,
-                    "an extern declaration is top-level (Clause 6.3.8)");
-        }
-        return p_extern_tail(c, path->data[path->count - 1], head, ann);
-    }
-    if (p_at_layout(c, EK_LTOK_NEWLINE)) {
-        /* The extern tail may sit on a line of its own under the
-           binding: the declaration is the member either way. */
-        size_t off = p_peek_at(c, 1)->kind == EK_LTOK_INDENT ? 2 : 1;
-        const ek_layout_token *w = p_peek_at(c, off);
-
-        if (w->kind == EK_LTOK_SOURCE && w->tok.kind == EK_TOK_IDENT
-            && strcmp(w->tok.text, "extern") == 0
-            && p_peek_at(c, off + 1)->kind == EK_LTOK_SOURCE
-            && p_peek_at(c, off + 1)->tok.kind == EK_TOK_STRING) {
-            if (!top_level) {
-                p_error(c, "E-syntax", head->line, head->col,
-                        "an extern declaration is top-level (Clause 6.3.8)");
-            }
-            p_take(c);
-            if (off == 2) {
-                p_take(c);
-            }
-            n = p_extern_tail(c, path->data[path->count - 1], head, ann);
-            /* the tail's line end and the indent's closing dedent stay
-               with the opened pair */
-            p_got_layout(c, EK_LTOK_NEWLINE);
-            p_got_layout(c, EK_LTOK_DEDENT);
-            return n;
-        }
+    if (extern_slot(c, top_level, path, head, ann, &n)) {
+        return n;
     }
     if (path->count >= 2) {
         return p_namespace_tail(c, path, head, ann);
