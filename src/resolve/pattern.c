@@ -87,6 +87,35 @@ static void cons_ref_qualified(r_ctx *c, r_file *f, const ek_node *pat,
     r_add_ref(c, pat, EK_SYM_CONSTRUCTOR, EK_ST_QUALIFIED, cs);
 }
 
+/* The unqualified constructor miss: `Never` is the language's bottom
+   type and names no constructor, a private std spelling diagnoses as
+   private, and everything else is an unbound name. */
+static void cons_miss(r_ctx *c, r_file *f, const ek_node *pat)
+{
+    const char *name = pat->u.cons.name.data[0];
+    const ek_symbol *priv = r_std_find(f->std, EK_SYM_CONSTRUCTOR, name);
+
+    if (strcmp(name, "Never") == 0) {
+        /* The language's bottom type has no constructor; the
+           pattern miss is not the bridge. */
+        r_error(c, f->mod->file, pat->line, pat->col, "E-unbound-name",
+                "`Never` is a type of the language; it names no "
+                "constructor (Clause 7.5.4)");
+        r_add_ref(c, pat, EK_SYM_EXTERNAL, EK_ST_EXTERNAL, NULL);
+        return;
+    }
+    if (priv && !priv->public) {
+        r_error(c, f->mod->file, pat->line, pat->col, "E-private-name",
+                "the constructor `%s` is private in module `%s` "
+                "(Clause 7.3.3)", name, priv->module);
+    }
+    /* Unknown to the file, std, and cap: an unbound name, not the
+       unresolved-external bridge (resolve.h). */
+    r_error(c, f->mod->file, pat->line, pat->col, "E-unbound-name",
+            "`%s` names no visible constructor (Clause 7.4.2)", name);
+    r_add_ref(c, pat, EK_SYM_EXTERNAL, EK_ST_EXTERNAL, NULL);
+}
+
 /* A pattern constructor head is a constructor reference, unqualified
    or module-qualified. An unqualified head hands every visible
    same-named constructor to check; a qualified head names one. */
@@ -112,31 +141,7 @@ static void cons_ref(r_ctx *c, r_file *f, const ek_node *pat)
     k = r_lookup_ctor(c, f, path->count == 1 ? path->data[0] : "",
                       &cands);
     if (k == 0) {
-        const ek_symbol *priv = r_std_find(f->std, EK_SYM_CONSTRUCTOR,
-                                           path->data[0]);
-
-        if (path->count == 1 && strcmp(path->data[0], "Never") == 0) {
-            /* The language's bottom type has no constructor; the
-               pattern miss is not the bridge. */
-            r_error(c, f->mod->file, pat->line, pat->col,
-                    "E-unbound-name",
-                    "`Never` is a type of the language; it names no "
-                    "constructor (Clause 7.5.4)");
-            r_add_ref(c, pat, EK_SYM_EXTERNAL, EK_ST_EXTERNAL, NULL);
-            return;
-        }
-        if (priv && !priv->public) {
-            r_error(c, f->mod->file, pat->line, pat->col,
-                    "E-private-name",
-                    "the constructor `%s` is private in module `%s` "
-                    "(Clause 7.3.3)", path->data[0], priv->module);
-        }
-        /* Unknown to the file, std, and cap: an unbound name, not the
-           unresolved-external bridge (resolve.h). */
-        r_error(c, f->mod->file, pat->line, pat->col, "E-unbound-name",
-                "`%s` names no visible constructor (Clause 7.4.2)",
-                path->data[0]);
-        r_add_ref(c, pat, EK_SYM_EXTERNAL, EK_ST_EXTERNAL, NULL);
+        cons_miss(c, f, pat);
         return;
     }
     r_add_ctor_ref(c, pat, EK_SYM_CONSTRUCTOR, EK_ST_CONS, cands[0],

@@ -156,18 +156,68 @@ void r_opened_import(r_ctx *c, r_file *f, const r_mod *target,
                      const ek_node *imp);
 void r_opened_vs_tops(r_ctx *c, r_file *f);
 
-/* surface.c: the top-level surface of one module. */
+/* surface.c: the top-level surface of one module. The collector state
+   below is shared with types.c, which gathers the type rows and walks
+   the exported spellings for private ones. */
+
+/* One duplicate-key slot: the key as spelled, at its declaration. */
+typedef struct {
+    const char *key;
+    int line, col;
+} r_key;
+
+/* The collector of one module's surface: the symbols in surface order,
+   and the key tables each layer judges duplicates by -- types, leaf
+   bindings, and namespace heads. */
+typedef struct {
+    r_ctx *c;
+    r_mod *m;
+    ek_symbol *syms;
+    size_t n;
+    r_key *tkeys; size_t nt, ctk;
+    r_key *lkeys; size_t nl, clk;
+    r_key *nkeys; size_t nn, cnk;
+} r_surf;
+
+/* Appends a key slot, grown in the arena; the caller judges an earlier
+   equal key with r_surf_key_seen. */
+void r_surf_key_push(r_surf *s, r_key **keys, size_t *n, size_t *cap,
+                     const char *key, int line, int col);
+/* Returns the index of an earlier equal key, or -1. */
+int r_surf_key_seen(r_key *keys, size_t n, const char *key);
+/* Records one symbol in the surface, skipping arena failures. */
+void r_surf_emit(r_surf *s, ek_symbol *sym);
+
+/* types.c: the type rows of a surface and the spellings it exports. */
+/* A declared type or ctype: one symbol of the identity layer. */
+void r_surf_type(r_surf *s, const ek_node *d);
+/* The exported surface spells only public types: a public binding's
+   annotation, and the payload and field types of a public type or
+   ctype. A value of a public type flows to importers, so every name
+   its surface mentions must be spellable there. */
+void r_surf_visibility(r_surf *s);
+
 void r_surface_build(r_ctx *c, r_mod *m);
 
-/* module.c: file loading and the import closure. r_parse_source is the
-   normal lex/layout/parse chain over one source buffer; the std module
-   takes it with its embedded bytes. */
+/* module.c: the module table of the closure -- stems, registration,
+   and the companions booted from their embedded sources.
+   r_parse_source is the normal lex/layout/parse chain over one source
+   buffer; the std module takes it with its embedded bytes. */
 char *r_path_stem(r_ctx *c, const char *file);
 r_mod *r_module_find(r_ctx *c, const char *stem);
 r_mod *r_module_add(r_ctx *c, const char *stem, const char *file,
                     const ek_node *ast);
 r_mod *r_module_companion(r_ctx *c, const char *stem);
 int r_companion_stem(const char *stem);
+/* True for a module registered as a shipped companion: a real,
+   compiler-embedded source, spelled with the embedded file name. */
+int r_shipped_companion(const r_mod *m);
+/* Boots the shipped companion of `stem`: parses the embedded source
+   and registers the module like an imported file, so its surface and
+   bodies follow the ordinary machinery. Called from the import walk
+   and from the capability module's boot; idempotence is the caller's
+   stem check. */
+void r_load_companion(r_ctx *c, const char *stem);
 /* The stem rules one module name answers wherever it is spelled: the
    import walk and the root's file stem judge alike, at the position
    the caller names. The reserved names the caller judges beside it. */
@@ -175,6 +225,10 @@ int r_stem_legal(r_ctx *c, const char *file, int line, int col,
                  const char *stem);
 ek_node *r_parse_source(r_ctx *c, const char *src, size_t len,
                         const char *path);
+
+/* import.c: the import closure. r_closure_walk walks one module's
+   import lines depth first, first import first, and the graph must be
+   acyclic. */
 void r_closure_walk(r_ctx *c, r_mod *m);
 void r_closure(r_ctx *c, r_mod *root);
 
@@ -194,9 +248,9 @@ void r_tops(r_ctx *c, r_file *f, const ek_node *mod);
 /* expr.c: expressions, chains, calls. */
 void r_expr(r_ctx *c, r_file *f, const ek_node *e);
 
-/* The layer lookups, shared with chain.c and type.c. A free name
-   answers from the file's own bindings or the opened table; the std
-   surface still supplies the opened types and constructors.
+/* lookup.c: the layer lookups, shared with chain.c and type.c. A free
+   name answers from the file's own bindings or the opened table; the
+   std surface still supplies the opened types and constructors.
    r_lookup_type counts visible same-named entries: ambiguity is an
    error at the use site. r_lookup_ctor returns every visible
    same-named constructor, user candidates first and the std

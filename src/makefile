@@ -55,8 +55,10 @@ RESOLVE_SRC := \
 	src/resolve/chain.c \
 	src/resolve/modpath.c \
 	src/resolve/embedded.c \
+	src/resolve/import.c \
 	src/resolve/expr.c \
 	src/resolve/module.c \
+	src/resolve/lookup.c \
 	src/resolve/opens.c \
 	src/resolve/pattern.c \
 	src/resolve/regex_source.c \
@@ -68,6 +70,7 @@ RESOLVE_SRC := \
 	src/resolve/sys_source.c \
 	src/resolve/time_source.c \
 	src/resolve/type.c \
+	src/resolve/types.c \
 	src/resolve/warn.c
 
 CHECK_SRC := \
