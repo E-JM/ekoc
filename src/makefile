@@ -133,6 +133,7 @@ LOWER_SRC := \
 	src/lower/derivedwith.c \
 	src/lower/demit.c \
 	src/lower/dsvcreg.c \
+	src/lower/dsvcspell.c \
 	src/lower/dsvcstamp.c \
 	src/lower/extcback.c \
 	src/lower/extern.c \

@@ -451,8 +451,9 @@ typedef enum {
     CF_MEMBER, CF_FREE, CF_QUALIFIED
 } lower_cmp_form;
 
-/* dsvcreg.c: the applied-type spelling the service names and the
+/* dsvcspell.c: the applied-type spelling the service names and the
    specialized function names share. */
+void spell_into(lower_ctx *c, ek_buf *b, const ek_type *t);
 const char *lower_spell_apply(lower_ctx *c, const ek_type *const *args,
                               size_t n);
 

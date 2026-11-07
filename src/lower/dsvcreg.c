@@ -11,7 +11,6 @@
    its own name. */
 
 static void key_into(lower_ctx *c, ek_buf *b, const ek_type *t);
-static void spell_into(lower_ctx *c, ek_buf *b, const ek_type *t);
 
 /* The key of a tuple or record shape: one slot per component. */
 static void key_fields(lower_ctx *c, ek_buf *b, const ek_type *t)
@@ -106,142 +105,6 @@ static void key_into(lower_ctx *c, ek_buf *b, const ek_type *t)
     }
 }
 
-/* The spelling of one applied type: a closed alphabet of head words
-   -- scalars bare, every compound tagged with a letter -- and `$`
-   between components, which no written identifier supplies, so two
-   distinct types never spell alike whatever their modules, fields, and
-   arguments are named. */
-
-/* The bare word of a root scalar, or NULL for any other type: the
-   scalar names are a closed set no other spelling can imitate, every
-   other piece carrying its `$` tag. */
-static const char *scalar_word(const ek_type *t)
-{
-    if (t->kind != EK_T_NOMINAL || !t->u.nominal.sym
-        || t->u.nominal.argc != 0
-        || lower_scalar_kind(t) == EKSC_OTHER) {
-        return NULL;
-    }
-    return t->u.nominal.sym->name;
-}
-
-/* The spelling of a tuple or record shape: the arity head, then each
-   component. */
-static void spell_fields(lower_ctx *c, ek_buf *b, const ek_type *t)
-{
-    size_t n = t->kind == EK_T_TUPLE ? t->u.tuple.count
-                                     : t->u.record.count;
-
-    ek_buf_printf(b, "%s%zu$", t->kind == EK_T_TUPLE ? "T" : "R", n);
-    for (size_t i = 0; i < n; i++) {
-        if (i) {
-            ek_buf_append_char(b, '$');
-        }
-        if (t->kind == EK_T_RECORD) {
-            ek_buf_append_str(b, t->u.record.fields[i].name);
-            ek_buf_append_char(b, '$');
-            spell_into(c, b, t->u.record.fields[i].type);
-        } else {
-            spell_into(c, b, t->u.tuple.items[i]);
-        }
-    }
-}
-
-/* The spelling of a nominal and its applied arguments. */
-static void spell_nominal(lower_ctx *c, ek_buf *b, const ek_type *t)
-{
-    if (!t->u.nominal.sym) {
-        ek_buf_append_str(b, "N$x");
-        return;
-    }
-    ek_buf_printf(b, "N$%s$%s", t->u.nominal.sym->module,
-                  t->u.nominal.sym->name);
-    for (size_t i = 0; i < t->u.nominal.argc; i++) {
-        ek_buf_append_char(b, '$');
-        spell_into(c, b, t->u.nominal.args[i]);
-    }
-}
-
-/* The spelling pieces of the compound shapes. */
-static void spell_shape(lower_ctx *c, ek_buf *b, const ek_type *t)
-{
-    switch (t->kind) {
-    case EK_T_LIST:
-        ek_buf_append_str(b, "L$");
-        spell_into(c, b, t->u.list.elem);
-        break;
-    case EK_T_DICT:
-        ek_buf_append_str(b, "D$");
-        spell_into(c, b, t->u.dict.key);
-        ek_buf_append_char(b, '$');
-        spell_into(c, b, t->u.dict.val);
-        break;
-    case EK_T_TUPLE:
-    case EK_T_RECORD:
-        spell_fields(c, b, t);
-        break;
-    case EK_T_NOMINAL:
-        spell_nominal(c, b, t);
-        break;
-    default:
-        break;
-    }
-}
-
-/* The identifier piece of an applied type: the applied arguments join
-   the family spelling, following the struct registry's keying. */
-static void spell_into(lower_ctx *c, ek_buf *b, const ek_type *t)
-{
-    const char *word;
-
-    if (!t) {
-        ek_buf_append_str(b, "Opaque");
-        return;
-    }
-    switch (t->kind) {
-    case EK_T_UNIT:
-        ek_buf_append_str(b, "Unit");
-        break;
-    case EK_T_NEVER:
-        ek_buf_append_str(b, "Never");
-        break;
-    case EK_T_FN:
-        ek_buf_append_str(b, "Fn");
-        break;
-    case EK_T_TVAR:
-    case EK_T_IVAR:
-        ek_buf_append_str(b, "Opaque");
-        break;
-    default:
-        word = scalar_word(t);
-        if (word) {
-            ek_buf_append_str(b, word);
-        } else {
-            spell_shape(c, b, t);
-        }
-        break;
-    }
-}
-
-/* The identifier pieces of one instantiation's applied arguments:
-   the suffix a specialized function's name carries after the
-   separator. */
-const char *lower_spell_apply(lower_ctx *c, const ek_type *const *args,
-                              size_t n)
-{
-    ek_buf b;
-    size_t i;
-
-    ek_buf_init(&b);
-    for (i = 0; i < n; i++) {
-        if (i && !ek_buf_append_char(&b, '$')) {
-            c->oom = 1;
-        }
-        spell_into(c, &b, args[i]);
-    }
-    return lower_take(c, &b);
-}
-
 /* The capability channel's nine types: std placeholder nominals with
    no declaration behind them, whose values the entry shim and the
    runtime's bundle closures build. */
@@ -260,11 +123,54 @@ static int is_cap_type(const ek_type *t)
     return ek_is_capability_name(sym->name);
 }
 
+/* The nominal rows: the scalars order only as text, the range carries
+   the operator services, the capabilities and handles render only, the
+   runtime containers walk their elements, and a declared type derives
+   everything but the ordering. */
+static int supported_nominal(lower_dsvc_kind kind, const ek_type *t)
+{
+    lower_scalar sk = lower_scalar_kind(t);
+
+    if (sk != EKSC_OTHER) {
+        return kind != DSV_ORD || sk == EKSC_STRING || sk == EKSC_BYTES;
+    }
+    if (lower_is_range(t)) {
+        /* The compiler supplies the display, comparison, and keying
+           services over the range's struct: the operator form, the
+           endpoint order, and the keying walk. */
+        return kind == DSV_SHOW || kind == DSV_INSPECT
+            || kind == DSV_EQ || kind == DSV_ORD || kind == DSV_HASH;
+    }
+    if (is_cap_type(t)) {
+        /* The capability value reads through no structure: the two
+           display channels render the <cap> form, every other family
+           stays unsupported. */
+        return kind == DSV_SHOW || kind == DSV_INSPECT;
+    }
+    if (lower_is_handle(t)) {
+        /* A handle renders its own form on the display channels;
+           equality, ordering, keying, and JSON stay derived-free the
+           way the checker's halt rules read them. */
+        return kind == DSV_SHOW || kind == DSV_INSPECT;
+    }
+    if (lower_is_set(t)) {
+        /* The set's services walk its elements in insertion order
+           through the runtime's list; the order of the walk is not
+           the equality, which is set equality. */
+        return kind != DSV_ORD;
+    }
+    if (lower_is_vector(t)) {
+        /* The vector's services walk its elements in index order
+           through the runtime's list; the order of the walk is the
+           equality, which compares index for index. */
+        return kind != DSV_ORD;
+    }
+    return t->u.nominal.sym && t->u.nominal.sym->decl != NULL;
+}
+
 /* Which families a service renders at all. */
 static int supported(lower_dsvc_kind kind, const ek_type *t)
 {
-    lower_scalar sk;
-
     if (!t) {
         return 0;
     }
@@ -282,43 +188,7 @@ static int supported(lower_dsvc_kind kind, const ek_type *t)
         }
         return 1;
     case EK_T_NOMINAL:
-        sk = lower_scalar_kind(t);
-        if (sk != EKSC_OTHER) {
-            return kind != DSV_ORD || sk == EKSC_STRING
-                || sk == EKSC_BYTES;
-        }
-        if (lower_is_range(t)) {
-            /* The compiler supplies the display, comparison, and
-               keying services over the range's struct: the operator
-               form, the endpoint order, and the keying walk. */
-            return kind == DSV_SHOW || kind == DSV_INSPECT
-                || kind == DSV_EQ || kind == DSV_ORD || kind == DSV_HASH;
-        }
-        if (is_cap_type(t)) {
-            /* The capability value reads through no structure: the
-               two display channels render the <cap> form, every other
-               family stays unsupported. */
-            return kind == DSV_SHOW || kind == DSV_INSPECT;
-        }
-        if (lower_is_handle(t)) {
-            /* A handle renders its own form on the display channels;
-               equality, ordering, keying, and JSON stay derived-free
-               the way the checker's halt rules read them. */
-            return kind == DSV_SHOW || kind == DSV_INSPECT;
-        }
-        if (lower_is_set(t)) {
-            /* The set's services walk its elements in insertion order
-               through the runtime's list; the order of the walk is not
-               the equality, which is set equality. */
-            return kind != DSV_ORD;
-        }
-        if (lower_is_vector(t)) {
-            /* The vector's services walk its elements in index order
-               through the runtime's list; the order of the walk is
-               the equality, which compares index for index. */
-            return kind != DSV_ORD;
-        }
-        return t->u.nominal.sym && t->u.nominal.sym->decl != NULL;
+        return supported_nominal(kind, t);
     default:
         return kind != DSV_ORD;
     }
