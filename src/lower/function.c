@@ -279,6 +279,26 @@ static void finish_function(lower_ctx *c, lower_scope *params,
     lower_emitf(c, "return %s;\n", ret);
 }
 
+/* The definition text between the braces: the owned-parameter
+   prologue, the body value, and the return discipline, at the body's
+   depth. */
+static void emit_body(lower_ctx *c, const ek_symbol *sym,
+                      lower_scope *params, lower_scope *top)
+{
+    unsigned d = c->depth;
+    int saved;
+    lower_val v;
+
+    c->depth = 1;
+    emit_prologue(c, params, sym);
+    saved = c->in_tail;
+    c->in_tail = 1;
+    v = lower_block_value(c, top, fn_body(sym));
+    c->in_tail = saved;
+    finish_function(c, params, top, v);
+    c->depth = d;
+}
+
 /* One emitted function: signature, the owned-parameter prologue, the
    optional retry label, the body, and the return discipline. A
    specialized item builds its binder substitution first, so every
@@ -293,9 +313,6 @@ void lower_function(lower_ctx *c, const lower_item *item)
     size_t saved_n = c->nenv, saved_cap = c->cenv_cap;
     const char *sig;
     size_t nparams;
-    lower_val v;
-    unsigned d;
-    int saved;
 
     c->temp = 0;
     c->file = surface_file(c, sym->module);
@@ -317,15 +334,7 @@ void lower_function(lower_ctx *c, const lower_item *item)
     memset(&top, 0, sizeof top);
     top.parent = &params;
     lower_emitf(c, "%s\n{\n", sig);
-    d = c->depth;
-    c->depth = 1;
-    emit_prologue(c, &params, sym);
-    saved = c->in_tail;
-    c->in_tail = 1;
-    v = lower_block_value(c, &top, fn_body(sym));
-    c->in_tail = saved;
-    finish_function(c, &params, &top, v);
-    c->depth = d;
+    emit_body(c, sym, &params, &top);
     lower_emitf(c, "}\n\n");
     c->fn_count++;
     c->tce_self = NULL;
