@@ -43,7 +43,7 @@ inspect(m)     // {cents: 12500, cur: "USD"}
 |---|---|
 | scalars | `3`, `0.5`, `NaN`, `True`, `'a'` |
 | `String`, `Bytes` | `"wd"`, `Bytes.from_hex("4142")` |
-| list, tuple, dictionary, record | `{1, 2, 3}`, `{"1": 1}`, `{name: "wd"}` |
+| list, tuple, dictionary, record, `Set`, `Vector` | `{1, 2, 3}`, `{"1": 1}`, `{name: "wd"}` |
 | ADT | constructor application: `Man`, `Some 3`, `Err "x"` |
 | `Range` | the operator forms: `0..9`, `0..=9` |
 | `_`, capability, function | `_`, `<cap>`, `<fn>` |
@@ -62,7 +62,8 @@ time types are specified in Clause 9.7.4.
 the machine words, `Bool`, `Char`, `String`, and `Bytes`. On this domain `a ==
 b` is identical to `a.eq(b)`, and the `eq` and `ne` names are compiler-owned.
 For every other type, equality is the member `T.eq`: records, tuples, ADTs,
-`Option`, `Result`, the time types, `Range`, `Set`, `Dict`, `List`, and
+`Option`, `Result`, the time types, `Range`, `Set`, `Vector`, `Dict`, `List`,
+and
 `Json`. `T.ne` is the negation of `T.eq`. Both operands MUST have the same
 type; a comparison between different types is a compile error. `T.eq` is
 derived structurally and materialized on demand, except where the compiler

@@ -78,7 +78,8 @@ element type. `Set.empty: ()
 
 The key domain is the set of data types that have `eq`. Structural equality is
 key equality. Lists, records, tuples, ADTs, `Bytes`, `Set`, `Vector`, and dictionaries
-themselves are admissible keys; the type `[[]String]Int` is well formed.
+themselves are admissible keys; the type `[[]String]Int` is well
+formed.
 Capabilities and functions are excluded; their equality derivation halts
 (Clause 9.8.4). A `Float` key follows IEEE equality. Since `NaN != NaN`, a
 `NaN` key always misses. `0.0` and `-0.0` compare equal and are the same key.
@@ -129,7 +130,9 @@ as `Some`; an index that names no position yields `None`, and the original
 is unchanged. `Vector.length` counts elements. `Vector.to_list` yields the
 elements as a fresh list in index order. `Vector.eq` is structural equality
 over the elements in index order: two vectors are equal when they have the
-same length and equal elements at every index. `Vector` has no `<`, by the
+same length and equal elements at every index. `show` and `inspect` render
+the brace form over the elements in index order (Clause 9.8.1). `Vector`
+has no `<`, by the
 same rule as for `Set`. The default JSON mapping is the array of the
 elements' JSON in index order (Clause 9.9.3). `Vector.get`, `Vector.set`,
 and `Vector.push` are O(log n): a vector shares every subtree an update

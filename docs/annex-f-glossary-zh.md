@@ -136,6 +136,10 @@
 | structural channel | 结构通道 | Clause 9.8.1 |
 | value layer | 值层 | Clause 9.8.4 |
 | key domain | 键域 | Clause 9.10.4 |
+| carried pair | 携带对 | Clause 9.10.4 |
+| Set | 集合 | Clause 9.10.3 |
+| Vector | 向量 | Clause 9.10.6 |
+| Range | 范围 | Clause 9.10.5 |
 | test | 测试 | Clause 9.14.1 |
 | test root | 测试根 | Clause 9.14.6 |
 | extern declaration | extern 声明 | Clause 10.2.1 |
