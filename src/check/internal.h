@@ -488,8 +488,9 @@ void ck_exhaust(ck_ctx *c, const ek_node *cs, const ek_type **scrut,
                 size_t nscrut, const ek_node *const *arms, const int *contrib,
                 size_t narms);
 
-/* member.c: receiver-station selection. call.c: calls, lambdas,
-   constructor application. */
+/* member.c: receiver-station selection and the link entries. link.c:
+   the reading of one member link at its receiver's type. call.c:
+   calls, lambdas, constructor application. */
 /* call.c: the shared call machinery. callee_expr types the callee of
    an unknown-head call; call_fn checks one call against a function
    type, receiver first. */
@@ -524,6 +525,12 @@ const ek_type *ck_link_mod(ck_ctx *c, const ek_node *link,
                            const ek_type *recv, const char *name,
                            const ek_symbol *mod, ek_reading *rd);
 const ek_type *ck_field_of(ck_ctx *c, const ek_type *r, const char *name);
+/* link.c: the reading of one member link, dispatched by the receiver's
+   kind, and the record-field lookup its arms and ck_field_of share. */
+const ek_type *link_type(ck_ctx *c, const ek_node *at, const ek_type *recv,
+                         const char *name, const ek_symbol *mod,
+                         ek_reading *rd);
+const ek_type *field_of(const ek_type *r, const char *name);
 const ek_type *ck_lambda(ck_ctx *c, const ek_node *e, const ek_type *expected);
 const ek_type *ck_apply(ck_ctx *c, const ek_node *e, const ek_type *expected);
 const ek_type *ctor_apply(ck_ctx *c, const ek_node *e, const ck_ctor *ct,

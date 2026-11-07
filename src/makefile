@@ -84,6 +84,7 @@ CHECK_SRC := \
 	src/check/halt.c \
 	src/check/instdepth.c \
 	src/check/invert.c \
+	src/check/link.c \
 	src/check/literal.c \
 	src/check/member.c \
 	src/check/membersvc.c \
