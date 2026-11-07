@@ -6,8 +6,7 @@
 
 /* The vector family: the list bridges keep order, get and set stay
    inside the domain, push appends, every update leaves the source
-   version intact, and the tree stays balanced enough that a long
-   build's depth stays near the logarithm of its length. */
+   version intact, and a long build keeps its positions readable. */
 
 /* The list of the first n integers starting at base, ascending. */
 static ek_val int_list(size_t n, int64_t base)
@@ -113,16 +112,16 @@ static void push_appends_and_shares(void)
     ek_release(v);
 }
 
-/* The tree stays balanced: the depth of a sequential build of a
-   thousand elements stays within the AVL bound of the logarithm. */
-static void the_tree_stays_balanced(void)
+/* A long sequential build keeps its last position readable. The
+   tree's depth has no probe through the public surface, so this pins
+   the read alone -- a degenerate spine would pass it too -- and no
+   balance bound. */
+static void a_long_build_reads_its_end(void)
 {
     ek_val list = int_list(1000, 0);
     ek_val v = ek_vec_of(list);
     ek_val out;
 
-    /* a balanced tree reaches any position in a short walk: reading
-       the last element of a thousand answers from a shallow tree */
     EK_CHECK(ek_vec_get(v, ek_val_int(999), &out));
     EK_CHECK_U64(out.as.i, 999);
     EK_CHECK_U64(ek_vec_len(v), 1000);
@@ -167,7 +166,7 @@ int main(void)
     get_reads_the_positions();
     set_replaces_and_shares();
     push_appends_and_shares();
-    the_tree_stays_balanced();
+    a_long_build_reads_its_end();
     versions_keep_their_elements();
     return ek_test_report("rt/vector");
 }

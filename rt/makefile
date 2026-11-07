@@ -6,7 +6,8 @@ $(error run make at the repository root; rt/makefile is an include fragment)
 endif
 
 RT_SRC := rt/value.c rt/rc.c rt/num.c rt/numbits.c rt/nummath.c rt/panic.c \
-	rt/frames.c rt/string.c rt/bytes.c rt/list.c rt/key.c rt/dict.c rt/closure.c \
+	rt/frames.c rt/string.c rt/bytes.c rt/list.c rt/key.c rt/dict.c rt/hamt.c \
+	rt/closure.c \
 	rt/fmt.c rt/parse.c rt/convert.c rt/strops.c rt/charops.c \
 	rt/chartype.c rt/xid_tables.c rt/bytesops.c \
 	rt/cap.c rt/bundle.c rt/env.c rt/args.c rt/genval.c rt/genio.c \
