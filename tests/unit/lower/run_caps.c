@@ -134,52 +134,38 @@ static int run_gate(const char *path, const char *fixture,
     return status;
 }
 
-/* Runs a binary whose standard input is a pipe, writing one line into
-   it after the delay and waiting up to timeout_ms. A program that
-   outlives the timeout is killed and -1 is returned; otherwise the
-   streams are captured and the wait status returned. */
-static int run_gate_feeding(const char *path, const char *feed, int delay_ms,
-                            int timeout_ms, char *out, size_t outcap,
-                            char *err, size_t errcap)
+/* The child half of a feeding gate: wire the three pipes and exec;
+   never returns. */
+static void gate_child_feeding(int inf[2], int fds[2], int efs[2],
+                               const char *path)
 {
-    int inf[2], fds[2], efs[2];
-    pid_t pid;
-    int status = -1, waited = 0;
-
-    out[0] = '\0';
-    err[0] = '\0';
-    if (pipe(inf) != 0 || pipe(fds) != 0 || pipe(efs) != 0) {
-        return -1;
-    }
-    pid = fork();
-    if (pid < 0) {
-        return -1;
-    }
-    if (pid == 0) {
-        close(inf[1]);
-        close(fds[0]);
-        close(efs[0]);
-        if (dup2(inf[0], STDIN_FILENO) < 0
-            || dup2(fds[1], STDOUT_FILENO) < 0
-            || dup2(efs[1], STDERR_FILENO) < 0) {
-            _exit(127);
-        }
-        close(inf[0]);
-        close(fds[1]);
-        close(efs[1]);
-        execl(path, path, (char *)NULL);
+    close(inf[1]);
+    close(fds[0]);
+    close(efs[0]);
+    if (dup2(inf[0], STDIN_FILENO) < 0
+        || dup2(fds[1], STDOUT_FILENO) < 0
+        || dup2(efs[1], STDERR_FILENO) < 0) {
         _exit(127);
     }
     close(inf[0]);
     close(fds[1]);
     close(efs[1]);
-    {
-        struct timespec ts;
+    execl(path, path, (char *)NULL);
+    _exit(127);
+}
 
-        ts.tv_sec = delay_ms / 1000;
-        ts.tv_nsec = (long)(delay_ms % 1000) * 1000000L;
-        nanosleep(&ts, NULL);
-    }
+/* The parent half: feed one line after the delay and wait up to
+   timeout_ms; a program that outlives the timeout is killed and -1 is
+   returned. */
+static int gate_wait_feeding(pid_t pid, int inf[2], const char *feed,
+                             int delay_ms, int timeout_ms)
+{
+    int status = -1, waited = 0;
+    struct timespec ts;
+
+    ts.tv_sec = delay_ms / 1000;
+    ts.tv_nsec = (long)(delay_ms % 1000) * 1000000L;
+    nanosleep(&ts, NULL);
     if (feed && feed[0]) {
         ssize_t n = write(inf[1], feed, strlen(feed));
 
@@ -191,9 +177,9 @@ static int run_gate_feeding(const char *path, const char *feed, int delay_ms,
             break;
         }
         {
-            struct timespec ts = { 0, 10 * 1000 * 1000L };
+            struct timespec tick = { 0, 10 * 1000 * 1000L };
 
-            nanosleep(&ts, NULL);
+            nanosleep(&tick, NULL);
         }
         waited += 10;
     }
@@ -202,6 +188,37 @@ static int run_gate_feeding(const char *path, const char *feed, int delay_ms,
         waitpid(pid, &status, 0);
         status = -1;
     }
+    return status;
+}
+
+/* Runs a binary whose standard input is a pipe, writing one line into
+   it after the delay and waiting up to timeout_ms. A program that
+   outlives the timeout is killed and -1 is returned; otherwise the
+   streams are captured and the wait status returned. */
+static int run_gate_feeding(const char *path, const char *feed, int delay_ms,
+                            int timeout_ms, char *out, size_t outcap,
+                            char *err, size_t errcap)
+{
+    int inf[2], fds[2], efs[2];
+    pid_t pid;
+    int status;
+
+    out[0] = '\0';
+    err[0] = '\0';
+    if (pipe(inf) != 0 || pipe(fds) != 0 || pipe(efs) != 0) {
+        return -1;
+    }
+    pid = fork();
+    if (pid < 0) {
+        return -1;
+    }
+    if (pid == 0) {
+        gate_child_feeding(inf, fds, efs, path);
+    }
+    close(inf[0]);
+    close(fds[1]);
+    close(efs[1]);
+    status = gate_wait_feeding(pid, inf, feed, delay_ms, timeout_ms);
     read_fd(fds[0], out, outcap);
     close(fds[0]);
     read_fd(efs[0], err, errcap);
