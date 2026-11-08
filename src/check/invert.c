@@ -168,21 +168,62 @@ const ek_type *ck_invert_binding(ck_ctx *c, const ek_node *m,
     return vt;
 }
 
+/* The remaining members are the callback body, checked at the
+   callback's result type; when the dispatcher is opaque the block's own
+   expectation is the last member's expectation, and the call carries
+   the body's bit. */
+static void invert_body(ck_ctx *c, const ek_node *m, const ek_node *block,
+                        size_t start, const ek_type *expected,
+                        const ek_type *vt, const ek_type *fn,
+                        const ek_type *cb, const ek_type *res)
+{
+    const ek_node *call = m->u.bind.value;
+    const ek_node *last;
+    const ek_type *body;
+    ek_bit b;
+
+    if (!block || start >= block->u.kids.count) {
+        return;
+    }
+    last = block->u.kids.data[block->u.kids.count - 1];
+    if (expected && vt && vt != expected) {
+        /* The block's expectation belongs to the call's result, and
+           the call's open slots take it here, before the continuation
+           needs them: a tail literal that cannot stand alone places at
+           the type the chain carries. */
+        ck_conforms(c, expected, vt, 1);
+    }
+    body = ck_members(c, block, start, res ? res : expected);
+    b = rest_bit(c, block, start);
+    if (res) {
+        ck_conform k = ck_conforms(c, body, res, 1);
+
+        if (k != CK_OK) {
+            ck_error(c, last, ck_conform_code(k),
+                     "the callback body is %s, the callback result is "
+                     "%s (Clause 6.3.4)", ck_type_name(c, body),
+                     ck_type_name(c, res));
+        }
+    }
+    if (cb && ck_prune(cb)->kind == EK_T_FN
+        && ck_prune(cb)->u.fn.arrow == EK_ARROW_PURE
+        && b == EK_BIT_WORLD) {
+        ck_error(c, last, "E-world-bit",
+                 "the callback body is world-touching, the callback "
+                 "parameter is pure (Clause 7.9.5)");
+    }
+    invert_call_bit(c, call, fn, b);
+}
+
 /* The inverted form inside a block: the remaining members are the
-   callback body, checked at the callback's result type. When the
-   dispatcher is opaque the callback carries no result type and the
-   block's own expectation is the last member's expectation. */
+   callback body, checked at the callback's result type. */
 const ek_type *ck_invert_block(ck_ctx *c, const ek_node *m,
                                const ek_node *block, size_t start,
                                const ek_type *expected)
 {
     const ek_node *pat = m->u.bind.pattern;
-    const ek_node *call = m->u.bind.value;
-    const ek_type *fn, *cb, *vt, *res, *body;
-    const ek_node *last = NULL;
-    ek_bit b = EK_BIT_PURE;
-    size_t idx = 0, n = block ? block->u.kids.count : 0;
-    int has_body = block && start < n;
+    const ek_type *fn, *cb, *vt, *res;
+    size_t idx = 0;
 
     vt = invert_call(c, m, &fn, &cb);
     if (!ck_invert_pattern(pat)) {
@@ -196,36 +237,7 @@ const ek_type *ck_invert_block(ck_ctx *c, const ek_node *m,
     if (cb) {
         bind_invert(c, pat, cb, &idx);
     }
-    if (has_body) {
-        last = block->u.kids.data[n - 1];
-        if (expected && vt && vt != expected) {
-            /* The block's expectation belongs to the call's result,
-               and the call's open slots take it here, before the
-               continuation needs them: a tail literal that cannot
-               stand alone places at the type the chain carries. */
-            ck_conforms(c, expected, vt, 1);
-        }
-        body = ck_members(c, block, start, res ? res : expected);
-        b = rest_bit(c, block, start);
-        if (res) {
-            ck_conform k = ck_conforms(c, body, res, 1);
-
-            if (k != CK_OK) {
-                ck_error(c, last, ck_conform_code(k),
-                         "the callback body is %s, the callback result is "
-                         "%s (Clause 6.3.4)", ck_type_name(c, body),
-                         ck_type_name(c, res));
-            }
-        }
-        if (cb && ck_prune(cb)->kind == EK_T_FN
-            && ck_prune(cb)->u.fn.arrow == EK_ARROW_PURE
-            && b == EK_BIT_WORLD) {
-            ck_error(c, last, "E-world-bit",
-                     "the callback body is world-touching, the callback "
-                     "parameter is pure (Clause 7.9.5)");
-        }
-        invert_call_bit(c, call, fn, b);
-    }
+    invert_body(c, m, block, start, expected, vt, fn, cb, res);
     ck_scope_pop(c);
     ck_row(c, m, vt, EK_RD_NONE);
     return vt;
