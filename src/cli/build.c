@@ -61,6 +61,33 @@ static int early_failure(ek_arena *arena, ek_diag *diag, const char *file,
     return 2;
 }
 
+/* The entry module's program through resolve and the lowerer. An entry
+   module owes a `main` before anything compiles; a missing one
+   otherwise surfaces only as the linker's undefined reference
+   (Clause 7.1.3). */
+static ek_lower_result lower_program(cli_diag_log *log, ek_arena *arena,
+                                     ek_diag *diag, const char *file,
+                                     const ek_buf *source)
+{
+    ek_resolve_result res;
+    ek_check_result chk;
+    ek_lower_result low;
+
+    memset(&res, 0, sizeof res);
+    memset(&chk, 0, sizeof chk);
+    cli_resolve(log, arena, diag, file, cli_dir_of(arena, file),
+                source->data != NULL ? source->data : "", source->len,
+                &res, &chk);
+    if (!cli_has_main(&res)) {
+        ek_diag_emit(diag, EK_SEV_ERROR, "E-entry-point", file, 0, 0,
+                     "the entry module declares no `main` (Clause 7.1.3)");
+        cli_log_drain(log, diag);
+    }
+    low = ek_lower_with(res, chk, EK_LOWER_PROGRAM, arena, diag);
+    cli_log_drain(log, diag);
+    return low;
+}
+
 int cli_build(const char *file, const char *out, const char *tree_root,
                const char *extra)
 {
@@ -68,15 +95,10 @@ int cli_build(const char *file, const char *out, const char *tree_root,
     ek_diag *diag = ek_diag_create();
     cli_diag_log log;
     ek_buf source;
-    ek_resolve_result res;
-    ek_check_result chk;
     ek_lower_result low;
-    const char *bytes;
     int status;
 
     memset(&log, 0, sizeof log);
-    memset(&res, 0, sizeof res);
-    memset(&chk, 0, sizeof chk);
     ek_buf_init(&source);
     if (arena == NULL || diag == NULL) {
         fprintf(stderr, "ekoc: out of memory\n");
@@ -98,23 +120,10 @@ int cli_build(const char *file, const char *out, const char *tree_root,
         finish(&source, diag, arena);
         return early_failure(arena, diag, file, "out of memory");
     }
-    bytes = source.data != NULL ? source.data : "";
-    cli_resolve(&log, arena, diag, file, cli_dir_of(arena, file),
-                bytes, source.len, &res, &chk);
-    if (!cli_has_main(&res)) {
-        /* the entry module owes a `main` before anything compiles; a
-           missing one otherwise surfaces only as the linker's undefined
-           reference (Clause 7.1.3) */
-        ek_diag_emit(diag, EK_SEV_ERROR, "E-entry-point", file, 0, 0,
-                     "the entry module declares no `main` (Clause 7.1.3)");
-        cli_log_drain(&log, diag);
-    }
-    low = ek_lower_with(res, chk, EK_LOWER_PROGRAM, arena, diag);
-    cli_log_drain(&log, diag);
+    low = lower_program(&log, arena, diag, file, &source);
     /* The log's report reads the diag buffer's own storage, so nothing
        is freed before it is printed. */
-    status = finish_build(&log, arena, diag, &low, out, tree_root,
-                    extra);
+    status = finish_build(&log, arena, diag, &low, out, tree_root, extra);
     finish(&source, diag, arena);
     return status;
 }
