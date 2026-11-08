@@ -135,6 +135,25 @@ const ek_type *ck_type_of(ck_ctx *c, const ek_symbol *sym)
     return ck_instantiate_use(c, sym->name, s);
 }
 
+/* An external reference: a type symbol stands for its nominal, a
+   constructor candidate takes the constructor's type, and a bare head
+   is the composite it names. */
+static const ek_type *external_type(ck_ctx *c, const ek_node *n,
+                                    const ek_ref *ref,
+                                    const ek_type *expected)
+{
+    const ek_type *head;
+
+    if (ref->symbol && ref->symbol->kind == EK_SYM_TYPE) {
+        return ck_nominal(c, ref->symbol, NULL, 0);
+    }
+    if (ref->ncands) {
+        return ck_ctor_type(c, n, ref, expected);
+    }
+    head = ck_ctor_head(c, n);
+    return head ? head : ck_opaque(c);
+}
+
 /* A name in value position: its kind comes from the resolver, its
    type from the checked environment. */
 static const ek_type *name_type(ck_ctx *c, const ek_node *n,
@@ -169,17 +188,7 @@ static const ek_type *name_type(ck_ctx *c, const ek_node *n,
             return ref->symbol ? ck_nominal(c, ref->symbol, NULL, 0)
                                : ck_opaque(c);
         case EK_SYM_EXTERNAL:
-            if (ref->symbol && ref->symbol->kind == EK_SYM_TYPE) {
-                return ck_nominal(c, ref->symbol, NULL, 0);
-            }
-            if (ref->ncands) {
-                return ck_ctor_type(c, n, ref, expected);
-            }
-            {
-                const ek_type *head = ck_ctor_head(c, n);
-
-                return head ? head : ck_opaque(c);
-            }
+            return external_type(c, n, ref, expected);
         case EK_SYM_CONSTRUCTOR:
             return ck_ctor_type(c, n, ref, expected);
         default:
@@ -267,6 +276,45 @@ static const ek_type *literal_expr(ck_ctx *c, const ek_node *e,
     }
 }
 
+/* The final sweep re-runs a placement with every table built: an
+   expression answers the type its row already carries. */
+static const ek_type *sweep_type(ck_ctx *c, const ek_node *e)
+{
+    const ek_ck_row *row = ck_row_of(c, e);
+
+    return row ? row->type : ck_opaque(c);
+}
+
+/* The forms that delegate whole -- calls, lambdas, the control forms:
+   each owns its row and its reading. Returns 1 when the kind is one of
+   them, with the type in *out. */
+static int delegate_expr(ck_ctx *c, const ek_node *e,
+                         const ek_type *expected, const ek_type **out)
+{
+    switch (e->kind) {
+    case EK_N_CALL:
+        *out = ck_call(c, e, expected);
+        return 1;
+    case EK_N_APPLY:
+        *out = ck_apply(c, e, expected);
+        return 1;
+    case EK_N_LAMBDA:
+        *out = ck_lambda(c, e, expected);
+        return 1;
+    case EK_N_IF:
+        *out = ck_if(c, e, expected);
+        return 1;
+    case EK_N_CASE:
+        *out = ck_case(c, e, expected);
+        return 1;
+    case EK_N_BLOCK:
+        *out = ck_block(c, e, expected);
+        return 1;
+    default:
+        return 0;
+    }
+}
+
 const ek_type *ck_expr(ck_ctx *c, const ek_node *e, const ek_type *expected)
 {
     const ek_type *t;
@@ -275,11 +323,10 @@ const ek_type *ck_expr(ck_ctx *c, const ek_node *e, const ek_type *expected)
         return expected;
     }
     if (c->sweep_recheck) {
-        /* The final sweep re-runs a placement with every table built:
-           an expression answers the type its row already carries. */
-        const ek_ck_row *row = ck_row_of(c, e);
-
-        return row ? row->type : ck_opaque(c);
+        return sweep_type(c, e);
+    }
+    if (delegate_expr(c, e, expected, &t)) {
+        return t;
     }
     switch (e->kind) {
     case EK_N_INT_LIT:
@@ -294,10 +341,6 @@ const ek_type *ck_expr(ck_ctx *c, const ek_node *e, const ek_type *expected)
     case EK_N_FIELD:
         t = ck_field(c, e);
         break;
-    case EK_N_CALL:
-        return ck_call(c, e, expected);
-    case EK_N_APPLY:
-        return ck_apply(c, e, expected);
     case EK_N_PAREN:
         t = ck_expr(c, e->u.wrap.inner, expected);
         break;
@@ -307,14 +350,6 @@ const ek_type *ck_expr(ck_ctx *c, const ek_node *e, const ek_type *expected)
     case EK_N_BINARY:
         t = ck_binary(c, e, expected);
         break;
-    case EK_N_LAMBDA:
-        return ck_lambda(c, e, expected);
-    case EK_N_IF:
-        return ck_if(c, e, expected);
-    case EK_N_CASE:
-        return ck_case(c, e, expected);
-    case EK_N_BLOCK:
-        return ck_block(c, e, expected);
     case EK_N_COMPOSITE:
         t = ck_composite(c, e, expected, 0);
         break;
