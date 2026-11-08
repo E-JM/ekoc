@@ -68,6 +68,36 @@ static int unterminated(lex_ctx *c, int sline, int scol, int have_bound,
     return 1;
 }
 
+/* One body byte other than an end of line or the closing quote: a CR,
+   an escape, or a raw scalar. Returns 1 to continue, 0 when the literal
+   ends here with its span already handled, -1 when the literal ends
+   here unconsumed and the caller owes the unterminated diagnostic. */
+static int char_body(lex_ctx *c, uint32_t *value, int *count)
+{
+    int b = ctx_byte(c, 0);
+
+    if (b == '\r') {
+        return lex_consume_cr(c) ? -1 : 1;
+    }
+    if (b == '\\') {
+        uint32_t cp;
+        esc_result r = scan_escape(c, 1, &cp);
+
+        if (r == ESC_END) {
+            return -1;
+        }
+        if (r == ESC_STOP) {
+            return 0; /* the escape already diagnosed the span */
+        }
+        if (r == ESC_OK) {
+            *value = cp;
+            (*count)++;
+        }
+        return 1;
+    }
+    return char_scalar(c, value, count) ? 1 : 0;
+}
+
 int lex_char_literal(lex_ctx *c, gbuf *out)
 {
     int sline = c->line, scol = c->col;
@@ -80,6 +110,7 @@ int lex_char_literal(lex_ctx *c, gbuf *out)
     c->col++;
     for (;;) {
         int b = ctx_byte(c, 0);
+        int r;
 
         if (b < 0 || b == '\n') {
             return unterminated(c, sline, scol, have_bound, bound_pos,
@@ -90,36 +121,17 @@ int lex_char_literal(lex_ctx *c, gbuf *out)
             bound_pos = c->pos;
             bound_col = c->col;
         }
-        if (b == '\r') {
-            if (lex_consume_cr(c)) {
-                return unterminated(c, sline, scol, have_bound, bound_pos,
-                                    bound_col);
-            }
-            continue;
-        }
         if (b == '\'') {
             c->pos++;
             c->col++;
             return emit_char(c, out, value, count, sline, scol);
         }
-        if (b == '\\') {
-            uint32_t cp;
-            esc_result r = scan_escape(c, 1, &cp);
-
-            if (r == ESC_END) {
-                return unterminated(c, sline, scol, have_bound, bound_pos,
-                                    bound_col);
-            }
-            if (r == ESC_STOP) {
-                return 1; /* the escape already diagnosed the span */
-            }
-            if (r == ESC_OK) {
-                value = cp;
-                count++;
-            }
-            continue;
+        r = char_body(c, &value, &count);
+        if (r < 0) {
+            return unterminated(c, sline, scol, have_bound, bound_pos,
+                                bound_col);
         }
-        if (!char_scalar(c, &value, &count)) {
+        if (r == 0) {
             return 1;
         }
     }
