@@ -89,7 +89,8 @@ ek_node *p_import(p_ctx *c)
     }
     if (!p_at_layout(c, EK_LTOK_NEWLINE) && !p_at_layout(c, EK_LTOK_EOF)) {
         p_error_tok(c, "E-syntax", p_peek(c),
-                    "expected end of line after the import path");
+                    "expected `/` or the line's end after the import path; "
+                    "a path segment is an identifier (Clause 7.2.2)");
         p_sync(c);
     }
     p_got_layout(c, EK_LTOK_NEWLINE);

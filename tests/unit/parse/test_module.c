@@ -36,6 +36,15 @@ static void imports(void)
     pfx_collect(&f);
     EK_CHECK(pfx_has_code(&f, "E-import-order"));
     pfx_end(&f);
+
+    /* A hyphen splits the path: the diagnostic names the rule a segment
+       breaks. */
+    pfx_begin(&f, "import my-mod\n");
+    EK_CHECK(pfx_errors(&f) > 0);
+    pfx_collect(&f);
+    EK_CHECK(pfx_has_code(&f, "E-syntax"));
+    EK_CHECK(pfx_msg_has(&f, "7.2.2"));
+    pfx_end(&f);
 }
 
 /* Selective import lists: the path and the listed free names come back
