@@ -105,7 +105,9 @@ static void test_tabs(void)
     fx_end(&f);
 }
 
-static void test_comments(void)
+/* Line and doc comments tokenize, and a trailing comment leaves no
+   NEWLINE. */
+static void comments_line_and_doc(void)
 {
     lex_fixture f;
 
@@ -130,9 +132,15 @@ static void test_comments(void)
     EK_CHECK_U64(fx_count(&f), 2); /* IDENT EOF, no trailing NEWLINE */
     EK_CHECK_U64(fx_errors(&f), 0);
     fx_end(&f);
+}
 
-    /* a block-comment spelling is one consumed span: the body never
-       reaches the token stream */
+/* A block-comment spelling is one consumed span: the body never
+   reaches the token stream, and without the marker the span runs to
+   the line terminator. */
+static void comments_block_rejects(void)
+{
+    lex_fixture f;
+
     fx_begin(&f, "/* c */\nx");
     EK_CHECK_U64(fx_errors(&f), 1);
     EK_CHECK(fx_has_error(&f, "E-block-comment"));
@@ -157,9 +165,20 @@ static void test_comments(void)
     EK_CHECK(fx_has_error(&f, "E-block-comment"));
     EK_CHECK_U64(fx_count(&f), 4); /* a NEWLINE b EOF */
     fx_end(&f);
+}
 
+/* A lone slash is a division token, never a comment start. */
+static void comments_slash_tokens(void)
+{
     FX_KINDS("a/b", EK_TOK_IDENT, EK_TOK_SLASH, EK_TOK_IDENT, EK_TOK_EOF);
     FX_KINDS("x / y", EK_TOK_IDENT, EK_TOK_SLASH, EK_TOK_IDENT, EK_TOK_EOF);
+}
+
+static void test_comments(void)
+{
+    comments_line_and_doc();
+    comments_block_rejects();
+    comments_slash_tokens();
 }
 
 static void test_eof_shapes(void)
