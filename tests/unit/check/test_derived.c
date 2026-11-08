@@ -266,9 +266,9 @@ static void json_core_and_composites(void)
     cfx_end(&f);
 }
 
-/* The JSON mapping halts with E-json-shape at a capability, a function,
-   and a non-string-keyed dictionary, directly and through a field. */
-static void json_halts(void)
+/* The JSON mapping halts with E-json-shape at a capability receiver
+   and at a non-string-keyed dictionary. */
+static void json_halts_direct(void)
 {
     cfx f;
 
@@ -287,6 +287,13 @@ static void json_halts(void)
     EK_CHECK_U64(cfx_errors(&f), 1);
     EK_CHECK(cfx_code_at_line(&f, "E-json-shape", 3));
     cfx_end(&f);
+}
+
+/* The halt reaches a field's type too, while the display services
+   never halt: a capability field shows. */
+static void json_halts_fields(void)
+{
+    cfx f;
 
     cfx_begin(&f,
               "Cap: type = [cb: Out]\n"
@@ -316,9 +323,14 @@ static void json_halts(void)
     EK_CHECK_U64(cfx_errors(&f), 0);
     EK_CHECK(cfx_reading_at(&f, 4, EK_RD_DERIVED));
     cfx_end(&f);
+}
 
-    /* A range is an iteration form with no mapping row: the pair halts
-       at the head and through a containing record. */
+/* A range is an iteration form with no mapping row: the pair halts
+   at the head and through a containing record. */
+static void json_halts_ranges(void)
+{
+    cfx f;
+
     cfx_begin(&f,
               "f: () -> Json =\n"
               "    r := 1..5\n"
@@ -336,6 +348,58 @@ static void json_halts(void)
     cfx_end(&f);
 }
 
+/* The JSON mapping halts with E-json-shape at a capability, a function,
+   and a non-string-keyed dictionary, directly and through a field. */
+static void json_halts(void)
+{
+    json_halts_direct();
+    json_halts_fields();
+    json_halts_ranges();
+}
+
+/* The eq and to_json rows take the composite as a real parameter:
+   List.eq over two lists, Dict.to_json over a string-keyed dict. */
+static void head_container_params(const cfx *f)
+{
+    const ek_ck_row *row;
+
+    row = row_of_kind(f, 5, EK_N_FIELD);
+    EK_CHECK(row != NULL && row->type && row->type->kind == EK_T_FN
+             && row->type->u.fn.count == 2
+             && row->type->u.fn.params[0]->kind == EK_T_LIST
+             && row->type->u.fn.params[1]->kind == EK_T_LIST);
+    row = row_of_kind(f, 9, EK_N_FIELD);
+    EK_CHECK(row != NULL && row->type && row->type->kind == EK_T_FN
+             && row->type->u.fn.count == 1
+             && row->type->u.fn.params[0]->kind == EK_T_DICT
+             && row->type->u.fn.params[0]->u.dict.key->kind == EK_T_NOMINAL
+             && row->type->u.fn.params[0]->u.dict.key->u.nominal.sym
+             && strcmp(row->type->u.fn.params[0]->u.dict.key->u.nominal.sym
+                           ->name,
+                       "String")
+                 == 0);
+}
+
+/* The from_json rows return Result over the composite the arguments
+   determine. */
+static void head_container_results(const cfx *f)
+{
+    const ek_ck_row *row;
+
+    row = row_of_kind(f, 10, EK_N_FIELD);
+    EK_CHECK(row != NULL && row->type && row->type->kind == EK_T_FN
+             && row->type->u.fn.result->kind == EK_T_NOMINAL
+             && row->type->u.fn.result->u.nominal.argc == 2
+             && row->type->u.fn.result->u.nominal.args[0]->kind
+                 == EK_T_LIST);
+    row = row_of_kind(f, 11, EK_N_FIELD);
+    EK_CHECK(row != NULL && row->type && row->type->kind == EK_T_FN
+             && row->type->u.fn.result->kind == EK_T_NOMINAL
+             && row->type->u.fn.result->u.nominal.argc == 2
+             && row->type->u.fn.result->u.nominal.args[0]->kind
+                 == EK_T_DICT);
+}
+
 /* The List and Dict type heads are the unapplied spellings of the
    structural composites: a service written at the head derives over
    the structural shape the arguments determine, with the link type
@@ -343,7 +407,6 @@ static void json_halts(void)
 static void head_over_containers(void)
 {
     cfx f;
-    const ek_ck_row *row;
 
     cfx_begin(&f,
               "xs: []Int = {1, 2}\n"
@@ -365,33 +428,8 @@ static void head_over_containers(void)
     EK_CHECK(cfx_reading_at(&f, 9, EK_RD_DERIVED));
     EK_CHECK(cfx_reading_at(&f, 10, EK_RD_DERIVED));
     EK_CHECK(cfx_reading_at(&f, 11, EK_RD_DERIVED));
-    row = row_of_kind(&f, 5, EK_N_FIELD);
-    EK_CHECK(row != NULL && row->type && row->type->kind == EK_T_FN
-             && row->type->u.fn.count == 2
-             && row->type->u.fn.params[0]->kind == EK_T_LIST
-             && row->type->u.fn.params[1]->kind == EK_T_LIST);
-    row = row_of_kind(&f, 9, EK_N_FIELD);
-    EK_CHECK(row != NULL && row->type && row->type->kind == EK_T_FN
-             && row->type->u.fn.count == 1
-             && row->type->u.fn.params[0]->kind == EK_T_DICT
-             && row->type->u.fn.params[0]->u.dict.key->kind == EK_T_NOMINAL
-             && row->type->u.fn.params[0]->u.dict.key->u.nominal.sym
-             && strcmp(row->type->u.fn.params[0]->u.dict.key->u.nominal.sym
-                           ->name,
-                       "String")
-                 == 0);
-    row = row_of_kind(&f, 10, EK_N_FIELD);
-    EK_CHECK(row != NULL && row->type && row->type->kind == EK_T_FN
-             && row->type->u.fn.result->kind == EK_T_NOMINAL
-             && row->type->u.fn.result->u.nominal.argc == 2
-             && row->type->u.fn.result->u.nominal.args[0]->kind
-                 == EK_T_LIST);
-    row = row_of_kind(&f, 11, EK_N_FIELD);
-    EK_CHECK(row != NULL && row->type && row->type->kind == EK_T_FN
-             && row->type->u.fn.result->kind == EK_T_NOMINAL
-             && row->type->u.fn.result->u.nominal.argc == 2
-             && row->type->u.fn.result->u.nominal.args[0]->kind
-                 == EK_T_DICT);
+    head_container_params(&f);
+    head_container_results(&f);
     cfx_end(&f);
 }
 
@@ -461,9 +499,9 @@ static void key_domain_constructions(void)
     cfx_end(&f);
 }
 
-/* The equality pair and the ordering family derive over the value layer
-   and declared ADTs; capabilities and functions carry neither. */
-static void equality_and_order_families(void)
+/* The ordering family derives over the value layer and a declared
+   ADT. */
+static void order_family_values(void)
 {
     cfx f;
 
@@ -490,6 +528,13 @@ static void equality_and_order_families(void)
     EK_CHECK_U64(cfx_errors(&f), 0);
     EK_CHECK(cfx_reading_at(&f, 4, EK_RD_DERIVED));
     cfx_end(&f);
+}
+
+/* A capability and a function have no equality and no ordering,
+   whichever member names them. */
+static void order_family_refusals(void)
+{
+    cfx f;
 
     /* A capability has no equality and no ordering. */
     cfx_begin(&f, "f: (a: Out, b: Out) -> Bool = a.ne(b)\n");
@@ -510,14 +555,28 @@ static void equality_and_order_families(void)
     EK_CHECK_U64(cfx_errors(&f), 1);
     EK_CHECK(cfx_code_at_line(&f, "E-no-eq", 3));
     cfx_end(&f);
+}
 
-    /* Display over a capability is pure, so a pure arrow admits it. */
+/* Display over a capability is pure, so a pure arrow admits it. */
+static void order_family_display(void)
+{
+    cfx f;
+
     cfx_begin(&f,
               "s: (cap: Out) -> String = show(cap)\n"
               "t: (cap: Out) -> String = cap.inspect()\n");
     EK_CHECK_U64(cfx_errors(&f), 0);
     EK_CHECK(cfx_reading_at(&f, 1, EK_RD_DERIVED));
     cfx_end(&f);
+}
+
+/* The equality pair and the ordering family derive over the value layer
+   and declared ADTs; capabilities and functions carry neither. */
+static void equality_and_order_families(void)
+{
+    order_family_values();
+    order_family_refusals();
+    order_family_display();
 }
 
 int main(void)

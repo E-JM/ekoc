@@ -103,9 +103,9 @@ static void field_service(void)
     cfx_end(&f);
 }
 
-/* A declared service carries its fixed signature over the owner: the
-   receiver, the result, the arity, and the pure arrow. */
-static void service_signatures(void)
+/* A declared service's receiver and parameters are fixed over the
+   owner: each deviation reports E-service-signature once. */
+static void signature_params(void)
 {
     cfx f;
 
@@ -137,8 +137,14 @@ static void service_signatures(void)
     EK_CHECK_U64(cfx_errors(&f), 1);
     EK_CHECK(cfx_code_at_line(&f, "E-service-signature", 2));
     cfx_end(&f);
+}
 
-    /* The world arrow breaks the signature and costs the bit too. */
+/* The world arrow breaks the signature and costs the bit too, while
+   the pure show and derived ne stay legal. */
+static void signature_arrows(void)
+{
+    cfx f;
+
     cfx_begin(&f,
               "Money: type = [cents: Int, cur: String]\n"
               "Money.show: (m: Money) !-> String = \"x\"\n");
@@ -158,6 +164,14 @@ static void service_signatures(void)
               "Money.ne: (a: Money, b: Money) -> Bool = a.eq(b)\n");
     EK_CHECK_U64(cfx_errors(&f), 0);
     cfx_end(&f);
+}
+
+/* A declared service carries its fixed signature over the owner: the
+   receiver, the result, the arity, and the pure arrow. */
+static void service_signatures(void)
+{
+    signature_params();
+    signature_arrows();
 }
 
 /* The handle types are opaque like the capabilities: equality and

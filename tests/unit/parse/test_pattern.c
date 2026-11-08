@@ -101,7 +101,9 @@ static void constructor_patterns(void)
     pfx_end(&f);
 }
 
-static void brace_patterns(void)
+/* Brace list shapes: empty, fixed length, suffix and anonymous rest,
+   and prefix rest. */
+static void brace_list_shapes(void)
 {
     parse_fixture f;
     const ek_node *ce;
@@ -148,6 +150,15 @@ static void brace_patterns(void)
     EK_CHECK_U64(p->u.p_brace.items.count, 1);
     EK_CHECK_U64(p->u.p_brace.items.data[0]->kind, EK_N_P_LIT);
     pfx_end(&f);
+}
+
+/* Record field forms, mixed, and a constructor payload that is a
+   record pattern. */
+static void brace_record_fields(void)
+{
+    parse_fixture f;
+    const ek_node *ce;
+    const ek_node *p;
 
     /* Record field forms, mixed. */
     ce = arm_pattern(&f, "{name, age: a} -> a");
@@ -167,6 +178,12 @@ static void brace_patterns(void)
     EK_CHECK_U64(p->kind, EK_N_P_CONS);
     EK_CHECK_U64(p->u.cons.payload->kind, EK_N_P_BRACE);
     pfx_end(&f);
+}
+
+static void brace_patterns(void)
+{
+    brace_list_shapes();
+    brace_record_fields();
 }
 
 static void or_patterns(void)

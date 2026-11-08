@@ -116,6 +116,58 @@ static void truncations(const char *path)
     printf("%s: %llu prefixes\n", path, (unsigned long long)(len + 1));
 }
 
+/* Applies one token mutation in place: delete, duplicate, or swap two
+   tokens; returns the resulting count. */
+static size_t mutate_tokens(ek_token *work, size_t count, size_t source_len)
+{
+    size_t kind = (size_t)(rng_next() % 3);
+
+    if (kind == 0) {
+        size_t i = (size_t)(rng_next() % source_len);
+
+        memmove(&work[i], &work[i + 1], (count - 1 - i) * sizeof(ek_token));
+        return count - 1;
+    } else if (kind == 1) {
+        size_t i = (size_t)(rng_next() % source_len);
+        ek_token copy = work[i];
+
+        work[count] = work[count - 1];
+        work[count - 1] = copy;
+        return count + 1;
+    } else {
+        size_t i = (size_t)(rng_next() % source_len);
+        size_t j = (size_t)(rng_next() % source_len);
+        ek_token tmp = work[i];
+
+        work[i] = work[j];
+        work[j] = tmp;
+        return count;
+    }
+}
+
+/* One mutation: copy the token stream, apply one edit, and run the
+   layout and parse halves to the root and budget checks. */
+static void mutate_once(const ek_lex_result *lex, ek_token *work,
+                        size_t source_len, size_t len, const char *path)
+{
+    parse_fixture f;
+    ek_layout_result lay;
+    size_t count;
+
+    memcpy(work, lex->tokens, lex->count * sizeof(ek_token));
+    count = mutate_tokens(work, lex->count, source_len);
+    memset(&f, 0, sizeof f);
+    f.arena = ek_arena_create();
+    f.diag = ek_diag_create();
+    lay = ek_layout(work, count, path, f.arena, f.diag);
+    EK_CHECK(lay.tokens != NULL);
+    if (lay.tokens) {
+        f.ast = ek_parse(lay.tokens, lay.count, path, f.arena, f.diag);
+        check_root(&f, lay.count, len);
+    }
+    pfx_end(&f);
+}
+
 /* One seed per module keeps a failure reproducible from the report. */
 static void mutations(const char *path, size_t seed)
 {
@@ -146,44 +198,7 @@ static void mutations(const char *path, size_t seed)
     rng = 0x9E3779B97F4A7C15ull ^ (seed + 1) * 2685821657736338717ull;
     source_len = lex.count > 0 ? lex.count - 1 : 0;
     for (m = 0; m < MUTATIONS_PER_MODULE && source_len > 0; m++) {
-        parse_fixture f;
-        ek_layout_result lay;
-        size_t kind = (size_t)(rng_next() % 3);
-        size_t count;
-
-        memcpy(work, lex.tokens, lex.count * sizeof(ek_token));
-        if (kind == 0) {
-            size_t i = (size_t)(rng_next() % source_len);
-
-            memmove(&work[i], &work[i + 1],
-                    (lex.count - 1 - i) * sizeof(ek_token));
-            count = lex.count - 1;
-        } else if (kind == 1) {
-            size_t i = (size_t)(rng_next() % source_len);
-            ek_token copy = work[i];
-
-            work[lex.count] = work[lex.count - 1];
-            work[lex.count - 1] = copy;
-            count = lex.count + 1;
-        } else {
-            size_t i = (size_t)(rng_next() % source_len);
-            size_t j = (size_t)(rng_next() % source_len);
-            ek_token tmp = work[i];
-
-            work[i] = work[j];
-            work[j] = tmp;
-            count = lex.count;
-        }
-        memset(&f, 0, sizeof f);
-        f.arena = ek_arena_create();
-        f.diag = ek_diag_create();
-        lay = ek_layout(work, count, path, f.arena, f.diag);
-        EK_CHECK(lay.tokens != NULL);
-        if (lay.tokens) {
-            f.ast = ek_parse(lay.tokens, lay.count, path, f.arena, f.diag);
-            check_root(&f, lay.count, len);
-        }
-        pfx_end(&f);
+        mutate_once(&lex, work, source_len, len, path);
     }
     free(work);
     ek_diag_destroy(lex_diag);

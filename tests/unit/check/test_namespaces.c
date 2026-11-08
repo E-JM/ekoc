@@ -155,7 +155,9 @@ static void bool_rows(void)
     cfx_end(&f);
 }
 
-static void ints_rows(void)
+/* Both spellings, a mixed operand type, and the row's result and
+   parameter types. */
+static void ints_rows_calls(void)
 {
     cfx f;
 
@@ -179,19 +181,30 @@ static void ints_rows(void)
     EK_CHECK_U64(cfx_errors(&f), 1);
     EK_CHECK(cfx_code_at_line(&f, "E-nominal-mismatch", 1));
     cfx_end(&f);
+}
 
-    /* The scalar namespaces are complete, so a name no row carries is
-       absent. */
+/* The scalar namespaces are complete, so a name no row carries is
+   absent, and a constant member is a value, not a function. */
+static void ints_rows_members(void)
+{
+    cfx f;
+
     cfx_begin(&f, "v: Int = Int.bogus(1)\n");
     EK_CHECK_U64(cfx_errors(&f), 1);
     EK_CHECK(cfx_code_at_line(&f, "E-unbound-member", 1));
     cfx_end(&f);
 
-    /* A constant member is a value, not a function. */
     cfx_begin(&f, "v: Int = Int.min()\n");
     EK_CHECK_U64(cfx_errors(&f), 1);
     EK_CHECK(cfx_code_at_line(&f, "E-not-callable", 1));
     cfx_end(&f);
+}
+
+/* Unsigned values have no negation, and a from_ conversion exists
+   only where the machine domain fits. */
+static void ints_rows_widenings(void)
+{
+    cfx f;
 
     /* Unsigned values have no negation and the namespace is closed. */
     cfx_begin(&f, "v: UInt = UInt.neg(1)\n");
@@ -217,6 +230,13 @@ static void ints_rows(void)
               "n: Int = Int.from_u32(w)\n");
     EK_CHECK_U64(cfx_errors(&f), 0);
     cfx_end(&f);
+}
+
+static void ints_rows(void)
+{
+    ints_rows_calls();
+    ints_rows_members();
+    ints_rows_widenings();
 }
 
 static void scalar_completion(void)
@@ -254,12 +274,13 @@ static void scalar_completion(void)
     cfx_end(&f);
 }
 
-static void derivation_rows(void)
+/* The advancing derivations land on the std placeholders, so the
+   annotated bindings conform, while a foreign anchor is the mismatch,
+   not a silent variable. */
+static void derivation_anchors(void)
 {
     cfx f;
 
-    /* The advancing derivations land on the std placeholders, so the
-       annotated bindings conform. */
     cfx_begin(&f,
               "i: In = In.from_lines({\"one\"})\n"
               "r: Rand = Rand.with_seed(7)\n");
@@ -277,6 +298,14 @@ static void derivation_rows(void)
     EK_CHECK_U64(cfx_errors(&f), 1);
     EK_CHECK(cfx_code_at_line(&f, "E-nominal-mismatch", 1));
     cfx_end(&f);
+}
+
+/* The namespace rides the chain unannotated: in a pure binding the
+   world arrow demands the bit, in a world arrow the chain simply
+   types, and a closed head names the absent member. */
+static void derivation_chains(void)
+{
+    cfx f;
 
     /* The namespace rides the chain unannotated: read_line checks, its
        world arrow demands the bit in a pure binding, and its result
@@ -305,6 +334,12 @@ static void derivation_rows(void)
     EK_CHECK(cfx_code_at_line(&f, "E-unbound-member", 1));
     EK_CHECK(cfx_code_at_line(&f, "E-world-bit", 1));
     cfx_end(&f);
+}
+
+static void derivation_rows(void)
+{
+    derivation_anchors();
+    derivation_chains();
 }
 
 static void out_rows(void)

@@ -130,13 +130,15 @@ static void if_forms(void)
     pfx_end(&f);
 }
 
-static void else_reattachment(void)
+/* An else line at its if's column reattaches across the DEDENTs the
+   layout emitted, and a column-matching else reattaches to the OUTER
+   if: the inner if's suite closed, and the inner header's column
+   differs. */
+static void else_reattaches(void)
 {
     parse_fixture f;
     const ek_node *ie;
 
-    /* An else line at its if's column reattaches across the DEDENTs
-       the layout emitted. */
     pfx_begin(&f,
         "f: (c: Bool) -> Int =\n"
         "    if c:\n"
@@ -149,8 +151,6 @@ static void else_reattachment(void)
     EK_CHECK(ie->u.ifexpr.els != NULL);
     pfx_end(&f);
 
-    /* A column-matching else reattaches to the OUTER if: the inner
-       if's suite closed, and the inner header's column differs. */
     pfx_begin(&f,
         "f: (c: Bool, d: Bool) -> Int =\n"
         "    if c:\n"
@@ -167,6 +167,13 @@ static void else_reattachment(void)
     EK_CHECK(ie->u.ifexpr.then->kind == EK_N_BLOCK
              || ie->u.ifexpr.then->kind == EK_N_IF);
     pfx_end(&f);
+}
+
+/* An else line left of every open if header belongs to nothing, and an
+   if inside a case arm body keeps both forms. */
+static void else_orphan_and_arms(void)
+{
+    parse_fixture f;
 
     /* An else line left of every open if header belongs to nothing. */
     pfx_begin(&f,
@@ -190,6 +197,12 @@ static void else_reattachment(void)
     EK_CHECK(pfx_find(f.ast.module, EK_N_IF) != NULL);
     EK_CHECK_U64(pfx_count_kind(f.ast.module, EK_N_ARM), 2);
     pfx_end(&f);
+}
+
+static void else_reattachment(void)
+{
+    else_reattaches();
+    else_orphan_and_arms();
 }
 
 static void case_as_value(void)

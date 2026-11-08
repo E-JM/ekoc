@@ -53,8 +53,9 @@ static void literals_and_names(void)
     pfx_end(&f);
 }
 
-/* The precedence ladder, tightest to loosest. */
-static void precedence(void)
+/* mul over add, left associativity, and the unary and postfix
+   bindings. */
+static void precedence_arithmetic(void)
 {
     parse_fixture f;
     const ek_node *e;
@@ -88,6 +89,13 @@ static void precedence(void)
     EK_CHECK_U64(e->kind, EK_N_UNARY);
     EK_CHECK_U64(e->u.wrap.inner->kind, EK_N_CALL);
     pfx_end(&f);
+}
+
+/* Range sits below add and above comparison. */
+static void precedence_range_compare(void)
+{
+    parse_fixture f;
+    const ek_node *e;
 
     /* range below add, above comparison */
     e = expr_of(&f, "1 + 2..3 * 4");
@@ -106,6 +114,13 @@ static void precedence(void)
     EK_CHECK_U64(e->u.binary.op, EK_BIN_EQ);
     EK_CHECK_U64(e->u.binary.lhs->u.binary.op, EK_BIN_RANGE_EXC);
     pfx_end(&f);
+}
+
+/* Logic, concat, and grouping. */
+static void precedence_logic_concat(void)
+{
+    parse_fixture f;
+    const ek_node *e;
 
     /* && over || */
     e = expr_of(&f, "a || b && c");
@@ -128,7 +143,17 @@ static void precedence(void)
     pfx_end(&f);
 }
 
-static void calls_and_chains(void)
+/* The precedence ladder, tightest to loosest. */
+static void precedence(void)
+{
+    precedence_arithmetic();
+    precedence_range_compare();
+    precedence_logic_concat();
+}
+
+/* Prefix calls, receiver calls, and member chains that attach a
+   module. */
+static void calls_and_members(void)
 {
     parse_fixture f;
     const ek_node *e;
@@ -158,8 +183,14 @@ static void calls_and_chains(void)
     EK_CHECK_STR(e->u.call.callee->u.field.name, "coord_sum");
     EK_CHECK_STR(e->u.call.callee->u.field.recv->u.field.name, "geolib");
     pfx_end(&f);
+}
 
-    /* constructor juxtaposition binds tighter than every operator */
+/* Constructor juxtaposition binds tighter than every operator. */
+static void constructor_juxtaposition(void)
+{
+    parse_fixture f;
+    const ek_node *e;
+
     e = expr_of(&f, "Ok 1 + 2");
     EK_CHECK_U64(pfx_errors(&f), 0);
     EK_CHECK_U64(e->u.binary.op, EK_BIN_ADD);
@@ -179,6 +210,14 @@ static void calls_and_chains(void)
     EK_CHECK_U64(e->kind, EK_N_APPLY);
     EK_CHECK_U64(e->u.pair.a->kind, EK_N_FIELD);
     pfx_end(&f);
+}
+
+/* A composite literal argument, several payload components on one
+   brace literal, and postfix on a literal. */
+static void apply_composite_args(void)
+{
+    parse_fixture f;
+    const ek_node *e;
 
     /* a composite literal argument */
     e = expr_of(&f, "Node {1, 2}");
@@ -204,6 +243,13 @@ static void calls_and_chains(void)
     EK_CHECK_U64(e->u.call.callee->kind, EK_N_FIELD);
     EK_CHECK_U64(e->u.call.callee->u.field.recv->kind, EK_N_INT_LIT);
     pfx_end(&f);
+}
+
+static void calls_and_chains(void)
+{
+    calls_and_members();
+    constructor_juxtaposition();
+    apply_composite_args();
 }
 
 static void composite_literals(void)
@@ -297,7 +343,9 @@ static void operand_blocks(void)
     pfx_end(&f);
 }
 
-static void precedence_corners(void)
+/* Unary minus never chains, a binary minus feeds a unary operand, and
+   range chains are diagnosed while a comparison over a range folds. */
+static void corner_unary_ranges(void)
 {
     parse_fixture f;
     const ek_node *e;
@@ -327,9 +375,16 @@ static void precedence_corners(void)
     EK_CHECK_U64(e->u.binary.op, EK_BIN_LT);
     EK_CHECK_U64(e->u.binary.rhs->u.binary.op, EK_BIN_RANGE_EXC);
     pfx_end(&f);
+}
 
-    /* The juxtaposition argument is one postfix expression, so the
-       chain under it binds first. */
+/* The juxtaposition argument is one postfix expression, so the chain
+   under it binds first, and it is an operand position: a `case` or
+   `if` there must be parenthesized. */
+static void corner_juxtaposition(void)
+{
+    parse_fixture f;
+    const ek_node *e;
+
     e = expr_of(&f, "Ok x.f()");
     EK_CHECK_U64(pfx_errors(&f), 0);
     EK_CHECK_U64(e->kind, EK_N_APPLY);
@@ -358,6 +413,12 @@ static void precedence_corners(void)
     EK_CHECK_U64(e->kind, EK_N_APPLY);
     EK_CHECK_U64(e->u.pair.b->kind, EK_N_PAREN);
     pfx_end(&f);
+}
+
+static void precedence_corners(void)
+{
+    corner_unary_ranges();
+    corner_juxtaposition();
 }
 
 static void lambda_shapes(void)
@@ -390,11 +451,9 @@ static void lambda_shapes(void)
     pfx_end(&f);
 }
 
-/* The record-update form: a postfix member call whose one argument is
-   a composite literal (annex A.3.5 Postfix; Clauses 6.6.3, 9.8.6).
-   There is no `with` operator in the ladder; the form sits at level 1
-   with every other postfix link. */
-static void with_updates(void)
+/* The update reads as a postfix member call whose one argument is a
+   composite literal. */
+static void with_update_shape(void)
 {
     parse_fixture f;
     const ek_node *e;
@@ -409,6 +468,15 @@ static void with_updates(void)
     EK_CHECK_U64(e->u.call.args.data[0]->kind, EK_N_COMPOSITE);
     EK_CHECK_U64(e->u.call.args.data[0]->u.kids.count, 1);
     pfx_end(&f);
+}
+
+/* The update is one postfix link: field access composes on it, the
+   operators bind around the whole chain, and a field value may be a
+   literal itself. */
+static void with_update_links(void)
+{
+    parse_fixture f;
+    const ek_node *e;
 
     /* The update is one postfix link: field access composes on it, and
        the operators bind around the whole chain. */
@@ -439,8 +507,14 @@ static void with_updates(void)
     EK_CHECK_U64(e->u.call.args.data[0]->u.kids.data[0]->u.pair.b->kind,
                  EK_N_COMPOSITE);
     pfx_end(&f);
+}
 
-    /* breaks inside the argument list are free formatting */
+/* Breaks inside the argument list are free formatting. */
+static void with_update_formatting(void)
+{
+    parse_fixture f;
+    const ek_node *e;
+
     e = expr_of(&f, "p.with(\n        {age: 37})");
     EK_CHECK_U64(pfx_errors(&f), 0);
     EK_CHECK_U64(e->kind, EK_N_CALL);
@@ -452,10 +526,16 @@ static void with_updates(void)
     EK_CHECK_U64(e->kind, EK_N_CALL);
     EK_CHECK_U64(e->u.call.args.data[0]->u.kids.count, 1);
     pfx_end(&f);
+}
 
-    /* The argument grammar is CompositeItem, so a rest element is no
-       expression and the braces are rejected here; a shorthand item is
-       an element, which only check can reject against the record. */
+/* The argument grammar is CompositeItem, so a rest element is no
+   expression and the braces are rejected here; a shorthand item is
+   an element, which only check can reject against the record. */
+static void with_update_items(void)
+{
+    parse_fixture f;
+    const ek_node *e;
+
     (void)expr_of(&f, "p.with({..})");
     EK_CHECK(pfx_errors(&f) > 0);
     pfx_end(&f);
@@ -464,6 +544,18 @@ static void with_updates(void)
     EK_CHECK_U64(pfx_errors(&f), 0);
     EK_CHECK_U64(e->u.call.args.data[0]->u.kids.data[0]->u.pair.a, NULL);
     pfx_end(&f);
+}
+
+/* The record-update form: a postfix member call whose one argument is
+   a composite literal (annex A.3.5 Postfix; Clauses 6.6.3, 9.8.6).
+   There is no `with` operator in the ladder; the form sits at level 1
+   with every other postfix link. */
+static void with_updates(void)
+{
+    with_update_shape();
+    with_update_links();
+    with_update_formatting();
+    with_update_items();
 }
 
 /* The operand-position lambda rule: `( parameters ) :` in operand
@@ -542,11 +634,11 @@ static void header_paren_conditions(void)
     pfx_end(&f);
 }
 
-/* A comma inside a parenthesized group: the group holds one expression
-   and the tuple literal is a brace form. Each comma is one rejection;
+/* A comma inside a parenthesized group: one rejection naming braces,
    the recovery keeps the group around the expression before the
-   comma. */
-static void paren_comma_groups(void)
+   comma, and a deeper line after the comma is the spliced
+   continuation of the group. */
+static void paren_comma_group(void)
 {
     parse_fixture f;
     const ek_node *e;
@@ -569,8 +661,14 @@ static void paren_comma_groups(void)
     EK_CHECK(e != NULL);
     EK_CHECK_U64(pfx_errors(&f), 1);
     pfx_end(&f);
+}
 
-    /* Each comma is one rejection; the groups nest independently. */
+/* Each comma is one rejection; the groups nest independently. */
+static void paren_comma_nested(void)
+{
+    parse_fixture f;
+    const ek_node *e;
+
     e = expr_of(&f, "((1, 2), 3)");
     EK_CHECK(e != NULL);
     EK_CHECK_U64(pfx_errors(&f), 2);
@@ -579,9 +677,15 @@ static void paren_comma_groups(void)
         EK_CHECK_U64(e->u.wrap.inner->kind, EK_N_PAREN);
     }
     pfx_end(&f);
+}
 
-    /* Constructor payload and call argument positions reject the same
-       way and keep their application. */
+/* Constructor payload and call argument positions reject the same
+   way and keep their application. */
+static void paren_comma_positions(void)
+{
+    parse_fixture f;
+    const ek_node *e;
+
     e = expr_of(&f, "Node (Leaf, 2, Leaf)");
     EK_CHECK(e != NULL);
     EK_CHECK_U64(pfx_errors(&f), 1);
@@ -602,6 +706,17 @@ static void paren_comma_groups(void)
         EK_CHECK_U64(e->u.call.args.data[0]->kind, EK_N_PAREN);
     }
     pfx_end(&f);
+}
+
+/* A comma inside a parenthesized group: the group holds one expression
+   and the tuple literal is a brace form. Each comma is one rejection;
+   the recovery keeps the group around the expression before the
+   comma. */
+static void paren_comma_groups(void)
+{
+    paren_comma_group();
+    paren_comma_nested();
+    paren_comma_positions();
 }
 
 int main(void)

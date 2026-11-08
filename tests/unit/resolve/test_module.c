@@ -7,13 +7,10 @@
 
 #define MOD_DIR "build/tmp-resolve/mod"
 
-static void put_fixtures(void)
+/* The library module: a sum type with a private variant, a record, a
+   constant, a public function, and a private one. */
+static void put_lib_fixture(void)
 {
-    mkdir("build/tmp-resolve", 0755);
-    mkdir(MOD_DIR, 0755);
-    mkdir(MOD_DIR "/x", 0755);
-    mkdir(MOD_DIR "/y", 0755);
-    mkdir(MOD_DIR "/sub", 0755);
     EK_CHECK(rfx_put(MOD_DIR, "geolib.eko",
         "Shape: type = Circle Float | Rect [Float, Float]\n"
         "Point: type = [x: Float, y: Float]\n"
@@ -24,6 +21,11 @@ static void put_fixtures(void)
         "        Circle r -> r\n"
         "        Rect {w, h} -> w\n"
         "_secret: (s: Shape) -> Float = 0.0\n"));
+}
+
+/* The mutual-import pair the cycle rules read. */
+static void put_cycle_fixtures(void)
+{
     EK_CHECK(rfx_put(MOD_DIR, "a.eko",
         "import b\n"
         "\n"
@@ -32,6 +34,12 @@ static void put_fixtures(void)
         "import a\n"
         "\n"
         "w: Int = 1\n"));
+}
+
+/* The stem-collision pairs: same stem in sibling and nested
+   directories, and a stem shadowed by a subdirectory module. */
+static void put_stem_fixtures(void)
+{
     EK_CHECK(rfx_put(MOD_DIR, "x/a.eko", "u: Int = 1\n"));
     EK_CHECK(rfx_put(MOD_DIR, "y/a.eko", "d: Int = 2\n"));
     EK_CHECK(rfx_put(MOD_DIR, "s.eko", "v: Int = 1\n"));
@@ -39,11 +47,21 @@ static void put_fixtures(void)
         "import s\n"
         "\n"
         "w: Int = 1\n"));
+}
+
+/* The self-import and a plain single-binding module. */
+static void put_self_math_fixtures(void)
+{
     EK_CHECK(rfx_put(MOD_DIR, "self.eko",
         "import self\n"
         "\n"
         "v: Int = 1\n"));
     EK_CHECK(rfx_put(MOD_DIR, "math.eko", "n: Int = 1\n"));
+}
+
+/* The five-module import ring the cycle walk follows. */
+static void put_chain_fixtures(void)
+{
     EK_CHECK(rfx_put(MOD_DIR, "chain1.eko",
         "import chain2\n"
         "\n"
@@ -64,10 +82,30 @@ static void put_fixtures(void)
         "import chain1\n"
         "\n"
         "v: Int = 5\n"));
+}
+
+/* The remaining single-purpose modules. */
+static void put_misc_fixtures(void)
+{
     EK_CHECK(rfx_put(MOD_DIR, "ages.eko",
         "Age: type = Age UInt\n"
         "label: (a: Age) -> UInt = 0\n"));
     EK_CHECK(rfx_put(MOD_DIR, "sub/std.eko", "zz: Int = 7\n"));
+}
+
+static void put_fixtures(void)
+{
+    mkdir("build/tmp-resolve", 0755);
+    mkdir(MOD_DIR, 0755);
+    mkdir(MOD_DIR "/x", 0755);
+    mkdir(MOD_DIR "/y", 0755);
+    mkdir(MOD_DIR "/sub", 0755);
+    put_lib_fixture();
+    put_cycle_fixtures();
+    put_stem_fixtures();
+    put_self_math_fixtures();
+    put_chain_fixtures();
+    put_misc_fixtures();
 }
 
 static void run_in(rfx *f, const char *src, const char *name)

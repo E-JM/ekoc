@@ -154,10 +154,9 @@ static void opaque_members(void)
     cfx_end(&f);
 }
 
-/* A declared module's namespace is complete: a name the type does not
-   carry is reported, in a call and in a bare field read alike. A std
-   or container namespace is closed once its row set is complete. */
-static void declared_namespace_is_complete(void)
+/* A declared type's namespace is closed: a name the type does not
+   carry is reported, in a call and in a bare field read alike. */
+static void declared_ns_nominal(void)
 {
     cfx f;
 
@@ -176,8 +175,13 @@ static void declared_namespace_is_complete(void)
     EK_CHECK_U64(cfx_errors(&f), 1);
     EK_CHECK(cfx_code_at_line(&f, "E-unbound-member", 3));
     cfx_end(&f);
+}
 
-    /* A tuple has no namespace, and a record has no order. */
+/* A tuple has no namespace, and a record has no order. */
+static void declared_ns_structural(void)
+{
+    cfx f;
+
     cfx_begin(&f,
               "t: [Int, Bool] = {1, True}\n"
               "v: Int = t.bogus()\n");
@@ -200,8 +204,13 @@ static void declared_namespace_is_complete(void)
     EK_CHECK_U64(cfx_errors(&f), 1);
     EK_CHECK(cfx_code_at_line(&f, "E-unbound-member", 3));
     cfx_end(&f);
+}
 
-    /* The std namespace rows answer alongside the closed namespaces. */
+/* The std namespace rows answer alongside the closed namespaces. */
+static void declared_ns_std_rows(void)
+{
+    cfx f;
+
     cfx_begin(&f,
               "j: Json = Json.parse(\"null\").unwrap()\n"
               "d: Duration = Time.sub(Time 5, Time 2)\n"
@@ -212,6 +221,16 @@ static void declared_namespace_is_complete(void)
               "got: Option Int = ds.get(\"a\")\n");
     EK_CHECK_U64(cfx_errors(&f), 0);
     cfx_end(&f);
+}
+
+/* A declared module's namespace is complete: a name the type does not
+   carry is reported, in a call and in a bare field read alike. A std
+   or container namespace is closed once its row set is complete. */
+static void declared_namespace_is_complete(void)
+{
+    declared_ns_nominal();
+    declared_ns_structural();
+    declared_ns_std_rows();
 }
 
 /* A member link on a known function-typed receiver is rejected: a
@@ -278,15 +297,12 @@ static int nominal_at_line(const cfx *f, int line, const char *name)
     return 0;
 }
 
-/* The derived with service: the receiver's record type comes back, the
-   argument is a partial record literal checked field by field, layer
-   by layer, and the service is pure (Clauses 6.6.3, 9.8.6, 9.8.7). */
-static void derived_with(void)
+/* A nominal record receiver: the update reads as the derived service
+   and types at the receiver's own type. */
+static void with_nominal_reads(void)
 {
     cfx f;
 
-    /* A nominal record receiver: the update reads as the derived
-       service and types at the receiver's own type. */
     cfx_begin(&f,
               "Human: type = [name: String, age: Int]\n"
               "p: Human = {name: \"ada\", age: 36}\n"
@@ -317,8 +333,13 @@ static void derived_with(void)
     EK_CHECK(cfx_reading_at(&f, 4, EK_RD_DERIVED));
     EK_CHECK(nominal_at_line(&f, 4, "Person"));
     cfx_end(&f);
+}
 
-    /* An unknown field is named once, at its layer. */
+/* An unknown field is named once, at its layer. */
+static void with_unknown_fields(void)
+{
+    cfx f;
+
     cfx_begin(&f,
               "Human: type = [name: String, age: Int]\n"
               "p: Human = {name: \"ada\", age: 36}\n"
@@ -334,8 +355,14 @@ static void derived_with(void)
               "m := p.with({address: {cityy: \"y\"}})\n");
     EK_CHECK(cfx_has_code(&f, "E-field-missing"));
     cfx_end(&f);
+}
 
-    /* A field value keeps its own type. */
+/* A field value keeps its own type, shorthand braces are the comma
+   family, and a value in hand is not a partial literal. */
+static void with_field_type_errors(void)
+{
+    cfx f;
+
     cfx_begin(&f,
               "Human: type = [name: String, age: Int]\n"
               "p: Human = {name: \"ada\", age: 36}\n"
@@ -343,7 +370,6 @@ static void derived_with(void)
     EK_CHECK(cfx_has_code(&f, "E-type-mismatch"));
     cfx_end(&f);
 
-    /* Shorthand braces are the comma family, not a record reading. */
     cfx_begin(&f,
               "Human: type = [name: String, age: Int]\n"
               "p: Human = {name: \"ada\", age: 36}\n"
@@ -351,16 +377,20 @@ static void derived_with(void)
     EK_CHECK(cfx_has_code(&f, "E-type-mismatch"));
     cfx_end(&f);
 
-    /* The literal argument alone: a value in hand is not a partial
-       literal. */
     cfx_begin(&f,
               "Human: type = [name: String, age: Int]\n"
               "p: Human = {name: \"ada\", age: 36}\n"
               "q := p.with(37)\n");
     EK_CHECK(cfx_has_code(&f, "E-type-mismatch"));
     cfx_end(&f);
+}
 
-    /* One argument: the partial literal. */
+/* The partial literal is the one argument, and a receiver whose known
+   type is not a record is rejected. */
+static void with_arity_and_receiver(void)
+{
+    cfx f;
+
     cfx_begin(&f,
               "Human: type = [name: String, age: Int]\n"
               "p: Human = {name: \"ada\", age: 36}\n"
@@ -375,7 +405,6 @@ static void derived_with(void)
     EK_CHECK(cfx_has_code(&f, "E-call-arity"));
     cfx_end(&f);
 
-    /* A receiver whose known type is not a record is rejected. */
     cfx_begin(&f,
               "Sex: type = Man | Woman\n"
               "s: Sex = Man\n"
@@ -388,14 +417,31 @@ static void derived_with(void)
     cfx_begin(&f, "g: (r: t) -> t = r.with({})\n");
     EK_CHECK(cfx_has_code(&f, "E-no-member"));
     cfx_end(&f);
+}
 
-    /* A duplicate field inside the update literal. */
+/* A duplicate field inside the update literal. */
+static void with_duplicate_field(void)
+{
+    cfx f;
+
     cfx_begin(&f,
               "Human: type = [name: String, age: Int]\n"
               "p: Human = {name: \"ada\", age: 36}\n"
               "q := p.with({age: 37, age: 38})\n");
     EK_CHECK(cfx_has_code(&f, "E-field-duplicate"));
     cfx_end(&f);
+}
+
+/* The derived with service: the receiver's record type comes back, the
+   argument is a partial record literal checked field by field, layer
+   by layer, and the service is pure (Clauses 6.6.3, 9.8.6, 9.8.7). */
+static void derived_with(void)
+{
+    with_nominal_reads();
+    with_unknown_fields();
+    with_field_type_errors();
+    with_arity_and_receiver();
+    with_duplicate_field();
 }
 
 

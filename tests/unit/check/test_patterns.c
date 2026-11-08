@@ -5,7 +5,9 @@
    for one arm's patterns — plus the irrefutability rule for value
    bindings. */
 
-static void variants(void)
+/* Every constructor named, a missing one named by the exhaust report,
+   and a final `_` arm covers the rest. */
+static void variant_arms(void)
 {
     cfx f;
 
@@ -26,7 +28,6 @@ static void variants(void)
     EK_CHECK(cfx_code_at_line(&f, "E-exhaust", 3));
     cfx_end(&f);
 
-    /* A final `_` arm covers the rest. */
     cfx_begin(&f,
               "Sex: type = Man | Woman\n"
               "label: (s: Sex) -> String =\n"
@@ -35,8 +36,13 @@ static void variants(void)
               "        _ -> \"w\"\n");
     EK_CHECK_U64(cfx_errors(&f), 0);
     cfx_end(&f);
+}
 
-    /* Or-patterns cover what their alternatives cover. */
+/* Or-patterns cover what their alternatives cover. */
+static void variant_or_patterns(void)
+{
+    cfx f;
+
     cfx_begin(&f,
               "Key: type = Up | Down | Left | Right\n"
               "axis: (k: Key) -> String =\n"
@@ -54,9 +60,14 @@ static void variants(void)
               "        Left -> \"h\"\n");
     EK_CHECK(cfx_code_at_line(&f, "E-exhaust", 3));
     cfx_end(&f);
+}
 
-    /* Payload coverage is recursive: a constructor payload must
-       cover its payload type. */
+/* Payload coverage is recursive: a constructor payload must
+   cover its payload type. */
+static void variant_payload(void)
+{
+    cfx f;
+
     cfx_begin(&f,
               "Wrap: type = One Int | Two Int\n"
               "f: (w: Wrap) -> Int =\n"
@@ -64,6 +75,13 @@ static void variants(void)
               "        One 0 -> 0\n");
     EK_CHECK(cfx_code_at_line(&f, "E-exhaust", 3));
     cfx_end(&f);
+}
+
+static void variants(void)
+{
+    variant_arms();
+    variant_or_patterns();
+    variant_payload();
 }
 
 static void records_tuples(void)
@@ -155,12 +173,13 @@ static void lists(void)
     cfx_end(&f);
 }
 
-static void guards_and_scrutinees(void)
+/* A guarded arm contributes no coverage, but a final unguarded
+   arm completes the case; a guarded case must end with an unguarded
+   arm. */
+static void guard_arms(void)
 {
     cfx f;
 
-    /* A guarded arm contributes no coverage, but a final unguarded
-       arm completes the case. */
     cfx_begin(&f,
               "sign: (n: Int) -> String =\n"
               "    case n:\n"
@@ -169,7 +188,6 @@ static void guards_and_scrutinees(void)
     EK_CHECK_U64(cfx_errors(&f), 0);
     cfx_end(&f);
 
-    /* A guarded case must end with an unguarded arm. */
     cfx_begin(&f,
               "sign: (n: Int) -> String =\n"
               "    case n:\n"
@@ -177,8 +195,16 @@ static void guards_and_scrutinees(void)
               "        n if n == 0 -> \"zero\"\n");
     EK_CHECK(cfx_code_at_line(&f, "E-exhaust", 2));
     cfx_end(&f);
+}
 
-    /* Several scrutinees: the product must be covered. */
+/* Several scrutinees: the product must be covered, and brace patterns
+   in a multi-scrutinee arm split at the top-level commas: the braces'
+   own commas join one pattern's fields, so a brace pattern never
+   merges with its neighbor. */
+static void scrutinee_products(void)
+{
+    cfx f;
+
     cfx_begin(&f,
               "Sex: type = Man | Woman\n"
               "f: (a: Sex, b: Sex) -> String =\n"
@@ -199,9 +225,6 @@ static void guards_and_scrutinees(void)
     EK_CHECK(cfx_code_at_line(&f, "E-exhaust", 3));
     cfx_end(&f);
 
-    /* Brace patterns in a multi-scrutinee arm split at the top-level
-       commas: the braces' own commas join one pattern's fields, so a
-       brace pattern never merges with its neighbor. */
     cfx_begin(&f,
               "f: (a: [x: Int, y: Int], b: [x: Int, y: Int], c: []Int)"
               " -> Int =\n"
@@ -210,8 +233,13 @@ static void guards_and_scrutinees(void)
               "        _, _, _ -> 0\n");
     EK_CHECK_U64(cfx_errors(&f), 0);
     cfx_end(&f);
+}
 
-    /* Every arm has the same type. */
+/* Every arm has the same type. */
+static void arm_type_uniform(void)
+{
+    cfx f;
+
     cfx_begin(&f,
               "f: (n: Int) -> String =\n"
               "    case n:\n"
@@ -221,10 +249,17 @@ static void guards_and_scrutinees(void)
     cfx_end(&f);
 }
 
+static void guards_and_scrutinees(void)
+{
+    guard_arms();
+    scrutinee_products();
+    arm_type_uniform();
+}
+
 /* A case arm body may be a block: its bindings scope over the rest of
    the block, the last member carries the arm's value and the expected
-   type, and coverage counts the arm the same way either shape does. */
-static void arm_body_blocks(void)
+   type. */
+static void arm_block_values(void)
 {
     cfx f;
 
@@ -265,9 +300,14 @@ static void arm_body_blocks(void)
               "        _ -> 1\n");
     EK_CHECK(cfx_code_at_line(&f, "E-type-mismatch", 2));
     cfx_end(&f);
+}
 
-    /* A block arm covers its patterns like an inline one: the two
-       constructors complete the case. */
+/* A block arm covers its patterns like an inline one: the two
+   constructors complete the case. */
+static void arm_block_coverage(void)
+{
+    cfx f;
+
     cfx_begin(&f,
               "Sex: type = Man | Woman\n"
               "label: (s: Sex) -> String =\n"
@@ -286,9 +326,14 @@ static void arm_body_blocks(void)
               "            \"m\"\n");
     EK_CHECK(cfx_code_at_line(&f, "E-exhaust", 3));
     cfx_end(&f);
+}
 
-    /* A block arm body is its own scope: a binding made there is not
-       visible to the next arm. */
+/* A block arm body is its own scope: a binding made there is not
+   visible to the next arm. */
+static void arm_block_scope(void)
+{
+    cfx f;
+
     cfx_begin(&f,
               "f: (n: Int) -> Int =\n"
               "    case n:\n"
@@ -302,15 +347,22 @@ static void arm_body_blocks(void)
     cfx_end(&f);
 }
 
+/* A case arm body may be a block: its bindings scope over the rest of
+   the block, the last member carries the arm's value and the expected
+   type, and coverage counts the arm the same way either shape does. */
+static void arm_body_blocks(void)
+{
+    arm_block_values();
+    arm_block_coverage();
+    arm_block_scope();
+}
+
 /* One arm of a multi-scrutinee case binds together: a name that two of
-   the arm's patterns bind is a conflict at the later occurrence, an
-   or-pattern's set counts whole, distinct names pass, different arms
-   reuse freely, and twice inside one pattern stays the resolver's. */
-static void cross_pattern(void)
+   the arm's patterns bind is a conflict at the later occurrence,
+   distinct names pass, and different arms reuse freely. */
+static void cross_arm_names(void)
 {
     cfx f;
-    size_t i;
-    int hit;
 
     cfx_begin(&f,
               "pair: (p: [Int, Int], q: [Int, Int]) -> Int =\n"
@@ -335,9 +387,14 @@ static void cross_pattern(void)
               "        {x, _}, {y, _} -> x * y\n");
     EK_CHECK_U64(cfx_errors(&f), 0);
     cfx_end(&f);
+}
 
-    /* The or-pattern's set is whole: its `x` meets `n` as distinct,
-       another `x` as a conflict. */
+/* The or-pattern's set is whole: its `x` meets `n` as distinct,
+   another `x` as a conflict. */
+static void cross_or_patterns(void)
+{
+    cfx f;
+
     cfx_begin(&f,
               "B: type = Box Int | Mark Int\n"
               "unbox: (b: B, n: Int) -> Int =\n"
@@ -353,9 +410,16 @@ static void cross_pattern(void)
               "        Box x | Mark x, x -> x\n");
     EK_CHECK(cfx_code_at_line(&f, "E-name-conflict", 4));
     cfx_end(&f);
+}
 
-    /* Twice inside one pattern is the resolver's rejection, and the
-       single-pattern arm draws no check-side conflict. */
+/* Twice inside one pattern is the resolver's rejection, and the
+   single-pattern arm draws no check-side conflict. */
+static void cross_pattern_twice(void)
+{
+    cfx f;
+    size_t i;
+    int hit;
+
     cfx_begin(&f,
               "pair: (p: [Int, Int]) -> Int =\n"
               "    case p:\n"
@@ -372,12 +436,23 @@ static void cross_pattern(void)
     cfx_end(&f);
 }
 
-static void bindings(void)
+/* One arm of a multi-scrutinee case binds together: a name that two of
+   the arm's patterns bind is a conflict at the later occurrence, an
+   or-pattern's set counts whole, distinct names pass, different arms
+   reuse freely, and twice inside one pattern stays the resolver's. */
+static void cross_pattern(void)
+{
+    cross_arm_names();
+    cross_or_patterns();
+    cross_pattern_twice();
+}
+
+/* Irrefutable bindings: `_`, variables, tuple groups, record
+   subsets. */
+static void binding_irrefutable(void)
 {
     cfx f;
 
-    /* Irrefutable bindings: `_`, variables, tuple groups, record
-       subsets. */
     cfx_begin(&f,
               "Human: type = [name: String, age: Int]\n"
               "p: Human = {name: \"ada\", age: 36}\n"
@@ -390,6 +465,14 @@ static void bindings(void)
               "(a, b) = pair\n");
     EK_CHECK_U64(cfx_errors(&f), 0);
     cfx_end(&f);
+}
+
+/* Refutable pattern kinds at a value binding: a list pattern, an
+   or-pattern outside a case arm, and a `<-` outside parameter
+   position. */
+static void binding_refutable_kinds(void)
+{
+    cfx f;
 
     /* A list pattern in a value binding is refutable. */
     cfx_begin(&f, "xs: []Int = {1}\n"
@@ -409,8 +492,14 @@ static void bindings(void)
               "{h, ..t} <- disp((n): n)\n");
     EK_CHECK(cfx_code_at_line(&f, "E-refutable-binding", 2));
     cfx_end(&f);
+}
 
-    /* A literal pattern parses and is rejected at the binding. */
+/* A literal or constructor pattern parses and is rejected at the
+   binding. */
+static void binding_refutable_literals(void)
+{
+    cfx f;
+
     cfx_begin(&f, "s: String = \"go\"\n"
                   "\"go\" = s\n");
     EK_CHECK(cfx_code_at_line(&f, "E-refutable-binding", 2));
@@ -428,14 +517,27 @@ static void bindings(void)
               "Ok v = r\n");
     EK_CHECK(cfx_code_at_line(&f, "E-refutable-binding", 2));
     cfx_end(&f);
+}
 
-    /* The annotated group binding keeps its check-stage route. */
+/* The annotated group binding keeps its check-stage route. */
+static void binding_annotated_group(void)
+{
+    cfx f;
+
     cfx_begin(&f,
               "row: [Int, Int] = {1, 2}\n"
               "(a, b): [Int, Int] = row\n"
               "s: Int = a + b\n");
     EK_CHECK_U64(cfx_errors(&f), 0);
     cfx_end(&f);
+}
+
+static void bindings(void)
+{
+    binding_irrefutable();
+    binding_refutable_kinds();
+    binding_refutable_literals();
+    binding_annotated_group();
 }
 
 /* One wide multi-scrutinee case over a two-constructor ADT: mode 0 is
@@ -586,15 +688,12 @@ static void nested_payloads(void)
     cfx_end(&f);
 }
 
-/* Coverage at depth: guards contribute nothing, constructor payloads
-   are judged inside the product, and a scrutinee without case
-   structure is covered only by a catch-all. */
-static void depth_and_scalar_coverage(void)
+/* A guarded arm covers nothing: Man rides only on its unguarded
+   arm. */
+static void depth_guards(void)
 {
     cfx f;
 
-    /* A guarded arm covers nothing: Man rides only on its unguarded
-       arm. */
     cfx_begin(&f,
               "Sex: type = Man | Woman\n"
               "f: (s: Sex) -> Int =\n"
@@ -613,9 +712,14 @@ static void depth_and_scalar_coverage(void)
               "        Woman -> 3\n");
     EK_CHECK_U64(cfx_errors(&f), 0);
     cfx_end(&f);
+}
 
-    /* The payload of a constructor column is judged per split: the
-       True rows answer `Some None` only. */
+/* The payload of a constructor column is judged per split: the
+   True rows answer `Some None` only. */
+static void depth_payload_split(void)
+{
+    cfx f;
+
     cfx_begin(&f,
               "f: (o: Option (Option Int), b: Bool) -> Int =\n"
               "    case o, b:\n"
@@ -634,8 +738,13 @@ static void depth_and_scalar_coverage(void)
               "        None, _ -> 3\n");
     EK_CHECK_U64(cfx_errors(&f), 0);
     cfx_end(&f);
+}
 
-    /* A scalar scrutinee is covered only by a variable or `_`. */
+/* A scalar scrutinee is covered only by a variable or `_`. */
+static void depth_scalar_scrutinee(void)
+{
+    cfx f;
+
     cfx_begin(&f,
               "f: (n: Int) -> String =\n"
               "    case n:\n"
@@ -650,9 +759,14 @@ static void depth_and_scalar_coverage(void)
               "        _ -> \"many\"\n");
     EK_CHECK_U64(cfx_errors(&f), 0);
     cfx_end(&f);
+}
 
-    /* Scalar columns split over their literals; everything else wants
-       a catch-all row. */
+/* Scalar columns split over their literals; everything else wants
+   a catch-all row. */
+static void depth_scalar_columns(void)
+{
+    cfx f;
+
     cfx_begin(&f,
               "f: (n: Int, b: Bool) -> Int =\n"
               "    case n, b:\n"
@@ -669,6 +783,17 @@ static void depth_and_scalar_coverage(void)
               "        _, False -> 3\n");
     EK_CHECK_U64(cfx_errors(&f), 0);
     cfx_end(&f);
+}
+
+/* Coverage at depth: guards contribute nothing, constructor payloads
+   are judged inside the product, and a scrutinee without case
+   structure is covered only by a catch-all. */
+static void depth_and_scalar_coverage(void)
+{
+    depth_guards();
+    depth_payload_split();
+    depth_scalar_scrutinee();
+    depth_scalar_columns();
 }
 
 /* A string or character literal pattern sits at the scrutinee type:

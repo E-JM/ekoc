@@ -202,7 +202,7 @@ static void user_scrutinee(void)
 /* A case over std Bool is judged against Bool's real constructor set,
    while a user MyBool with the same names is visible; a missing arm is
    E-exhaust. */
-static void std_scrutinee(void)
+static void std_bool_scrutinee(void)
 {
     cfx f;
 
@@ -234,9 +234,14 @@ static void std_scrutinee(void)
     EK_CHECK_U64(cfx_errors(&f), 1);
     EK_CHECK(cfx_code_at_line(&f, "E-exhaust", 3));
     cfx_end(&f);
+}
 
-    /* Option and Result scrutinees carry their real constructor sets,
-       and the two arms of each cover them. */
+/* Option and Result scrutinees carry their real constructor sets,
+   and the two arms of each cover them. */
+static void std_option_result_scrutinee(void)
+{
+    cfx f;
+
     cfx_begin(&f,
               "f: (o: Option Int) -> Int =\n"
               "    case o:\n"
@@ -266,8 +271,13 @@ static void std_scrutinee(void)
               "        Ok n -> n\n");
     EK_CHECK(cfx_code_at_line(&f, "E-exhaust", 2));
     cfx_end(&f);
+}
 
-    /* A never arm's pattern still covers its constructor. */
+/* A never arm's pattern still covers its constructor. */
+static void std_never_arm(void)
+{
+    cfx f;
+
     cfx_begin(&f,
               "die: (m: String) -> Never = panic(m)\n"
               "f: (b: Bool) -> Int =\n"
@@ -276,6 +286,16 @@ static void std_scrutinee(void)
               "        False -> 1\n");
     EK_CHECK_U64(cfx_errors(&f), 0);
     cfx_end(&f);
+}
+
+/* A case over std Bool is judged against Bool's real constructor set,
+   while a user MyBool with the same names is visible; a missing arm is
+   E-exhaust. */
+static void std_scrutinee(void)
+{
+    std_bool_scrutinee();
+    std_option_result_scrutinee();
+    std_never_arm();
 }
 
 /* An anchored reference whose candidates do not include the expected
@@ -378,20 +398,13 @@ static void std_payload_conforms(void)
     cfx_end(&f);
 }
 
-/* A qualified constructor application is typed by the constructor,
-   not by the opaque member reading. */
-static void qualified_application(void)
+/* A zero-payload constructor takes no argument; the empty call is
+   the qualified spelling. */
+static void qualified_zero_payload(void)
 {
     static const char *const mpath[2] = {CONF_DIR, CTOR_DIR};
     cfx f;
 
-    EK_CHECK(put_module("qliba.eko",
-                        "ABool: type = True | False\n"));
-    EK_CHECK(put_module("qwrap.eko",
-                        "Wrap: type a = Wrap a\n"));
-
-    /* A zero-payload constructor takes no argument; the empty call is
-       the qualified spelling. */
     cfx_run(&f,
             "import qliba\n"
             "a: ABool = qliba.True()\n"
@@ -408,9 +421,15 @@ static void qualified_application(void)
     EK_CHECK_U64(cfx_errors(&f), 1);
     EK_CHECK(cfx_code_at_line(&f, "E-call-arity", 2));
     cfx_end(&f);
+}
 
-    /* A payload constructor takes one argument, conformed at the
-       payload type. */
+/* A payload constructor takes one argument, conformed at the
+   payload type. */
+static void qualified_payload(void)
+{
+    static const char *const mpath[2] = {CONF_DIR, CTOR_DIR};
+    cfx f;
+
     cfx_run(&f,
             "import geolib\n"
             "a: Shape = geolib.Circle(2.0)\n"
@@ -429,9 +448,15 @@ static void qualified_application(void)
     EK_CHECK_U64(cfx_errors(&f), 1);
     EK_CHECK(cfx_code_at_line(&f, "E-call-arity", 2));
     cfx_end(&f);
+}
 
-    /* A generic constructor takes its instantiation from the anchor;
-       the qualified type spelling names the imported type. */
+/* A generic constructor takes its instantiation from the anchor;
+   the qualified type spelling names the imported type. */
+static void qualified_generic(void)
+{
+    static const char *const mpath[2] = {CONF_DIR, CTOR_DIR};
+    cfx f;
+
     cfx_run(&f,
             "import qwrap\n"
             "a: qwrap.Wrap String = qwrap.Wrap(\"s\")\n"
@@ -450,9 +475,15 @@ static void qualified_application(void)
     EK_CHECK_U64(cfx_errors(&f), 1);
     EK_CHECK(cfx_code_at_line(&f, "E-undetermined", 2));
     cfx_end(&f);
+}
 
-    /* A core-type constructor applied by call is typed by the
-       constructor, so its payload conforms for real. */
+/* A core-type constructor applied by call is typed by the
+   constructor, so its payload conforms for real. */
+static void qualified_core_ctor(void)
+{
+    static const char *const mpath[2] = {CONF_DIR, CTOR_DIR};
+    cfx f;
+
     cfx_run(&f, "a: Option Int = std.Some(3)\n", mpath, 2,
             "qapp7.eko");
     EK_CHECK_U64(cfx_stage_errors(f.ds, f.dn), 0);
@@ -465,6 +496,21 @@ static void qualified_application(void)
     EK_CHECK_U64(cfx_errors(&f), 1);
     EK_CHECK(cfx_code_at_line(&f, "E-nominal-mismatch", 1));
     cfx_end(&f);
+}
+
+/* A qualified constructor application is typed by the constructor,
+   not by the opaque member reading. */
+static void qualified_application(void)
+{
+    EK_CHECK(put_module("qliba.eko",
+                        "ABool: type = True | False\n"));
+    EK_CHECK(put_module("qwrap.eko",
+                        "Wrap: type a = Wrap a\n"));
+
+    qualified_zero_payload();
+    qualified_payload();
+    qualified_generic();
+    qualified_core_ctor();
 }
 
 /* A variant declared twice is rejected once by resolve, and the
