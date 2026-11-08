@@ -159,11 +159,43 @@ int ck_shared_name(ck_ctx *c, const char *name)
     return shared_has(c, name);
 }
 
-static int name_append(ck_ctx *c, ek_buf *b, const ek_type *t, int depth)
+/* A nominal type: a name more than one module declares carries its
+   module, then the space separated application arguments. */
+static int nominal_append(ck_ctx *c, ek_buf *b, const ek_type *t, int depth)
 {
+    const ek_symbol *sym = t->u.nominal.sym;
     size_t i;
     int ok;
 
+    if (sym && sym->module && ck_shared_name(c, sym->name)) {
+        ok = ek_buf_append_str(b, sym->module)
+            && ek_buf_append_char(b, '.')
+            && ek_buf_append_str(b, sym->name);
+    } else {
+        ok = ek_buf_append_str(b, sym ? sym->name : "?");
+    }
+    for (i = 0; ok && i < t->u.nominal.argc; i++) {
+        ok = ek_buf_append_char(b, ' ')
+            && arg_append(c, b, t->u.nominal.args[i], depth - 1);
+    }
+    return ok;
+}
+
+/* An arrow type: the parenthesized parameters, the arrow's spelling,
+   the result. */
+static int fn_append(ck_ctx *c, ek_buf *b, const ek_type *t, int depth)
+{
+    return ek_buf_append_char(b, '(')
+        && list_append(c, b, t->u.fn.params, t->u.fn.count, depth - 1)
+        && ek_buf_append_char(b, ')')
+        && ek_buf_append_char(b, ' ')
+        && ek_buf_append_str(b, arrow_text(t->u.fn.arrow))
+        && ek_buf_append_char(b, ' ')
+        && name_append(c, b, t->u.fn.result, depth - 1);
+}
+
+static int name_append(ck_ctx *c, ek_buf *b, const ek_type *t, int depth)
+{
     if (!t || depth <= 0) {
         return 1;
     }
@@ -176,22 +208,8 @@ static int name_append(ck_ctx *c, ek_buf *b, const ek_type *t, int depth)
         return ek_buf_append_str(b, "_");
     case EK_T_NEVER:
         return ek_buf_append_str(b, "Never");
-    case EK_T_NOMINAL: {
-        const ek_symbol *sym = t->u.nominal.sym;
-
-        if (sym && sym->module && ck_shared_name(c, sym->name)) {
-            ok = ek_buf_append_str(b, sym->module)
-                && ek_buf_append_char(b, '.')
-                && ek_buf_append_str(b, sym->name);
-        } else {
-            ok = ek_buf_append_str(b, sym ? sym->name : "?");
-        }
-        for (i = 0; ok && i < t->u.nominal.argc; i++) {
-            ok = ek_buf_append_char(b, ' ')
-                && arg_append(c, b, t->u.nominal.args[i], depth - 1);
-        }
-        return ok;
-    }
+    case EK_T_NOMINAL:
+        return nominal_append(c, b, t, depth);
     case EK_T_LIST:
         return ek_buf_append_str(b, "[]")
             && name_append(c, b, t->u.list.elem, depth - 1);
@@ -211,14 +229,7 @@ static int name_append(ck_ctx *c, ek_buf *b, const ek_type *t, int depth)
                              depth - 1)
             && ek_buf_append_char(b, ']');
     case EK_T_FN:
-        ok = ek_buf_append_char(b, '(')
-            && list_append(c, b, t->u.fn.params, t->u.fn.count, depth - 1)
-            && ek_buf_append_char(b, ')')
-            && ek_buf_append_char(b, ' ')
-            && ek_buf_append_str(b, arrow_text(t->u.fn.arrow))
-            && ek_buf_append_char(b, ' ')
-            && name_append(c, b, t->u.fn.result, depth - 1);
-        return ok;
+        return fn_append(c, b, t, depth);
     case EK_T_TVAR:
         return ek_buf_append_str(b, t->u.tvar.name ? t->u.tvar.name : "t");
     default:
