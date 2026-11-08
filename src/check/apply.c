@@ -50,6 +50,84 @@ static void lambda_params(ck_ctx *c, const ek_node *params,
     }
 }
 
+/* The expected function type a lambda checks against: anything but a
+   function type or an open inference variable refuses, since a lambda
+   is check-only and `:=` does not generalize. */
+static const ek_type *lambda_expected(ck_ctx *c, const ek_node *e,
+                                      const ek_type *pe)
+{
+    if (pe && pe->kind == EK_T_FN) {
+        return pe;
+    }
+    if (!pe || pe->kind != EK_T_IVAR) {
+        ck_error(c, e, "E-lambda-check-only",
+                 "a lambda is check-only and `:=` does not generalize: "
+                 "no expected type supplies the parameter types "
+                 "(Clause 7.6.3)");
+    }
+    return NULL;
+}
+
+/* The lambda's parameter and name arrays, allocated and filled from
+   the surface and the expected arrow. Returns 0 when an allocation
+   failed. */
+static int lambda_tables(ck_ctx *c, const ek_node *params,
+                         const ek_type *pe, const ek_type ***ps,
+                         const char ***names, size_t n)
+{
+    if (!n) {
+        return 1;
+    }
+    *ps = ek_arena_alloc(c->arena, n * sizeof **ps);
+    *names = ek_arena_alloc(c->arena, n * sizeof **names);
+    if (!*ps || !*names) {
+        c->oom = 1;
+        return 0;
+    }
+    lambda_params(c, params, pe, *ps, *names, n);
+    return 1;
+}
+
+/* The parameters bound in their own scope around the body. */
+static const ek_type *lambda_body(ck_ctx *c, const ek_node *body,
+                                  const ek_type *pe, const char **names,
+                                  const ek_type **ps, size_t n)
+{
+    const ek_type *ret;
+    size_t i;
+
+    ck_scope_push(c);
+    for (i = 0; i < n; i++) {
+        if (names[i]) {
+            ck_scope_bind(c, names[i], ps[i]);
+        }
+    }
+    ret = ck_expr(c, body, pe ? pe->u.fn.result : NULL);
+    ck_scope_pop(c);
+    return ret;
+}
+
+/* The body flows into the result at a value position: it conforms, so
+   an unbound result slot of the expectation binds from the body and a
+   mismatched body is reported at the lambda, not far away at the
+   use. */
+static void lambda_result(ck_ctx *c, const ek_node *body, const ek_type *pe,
+                          const ek_type *ret)
+{
+    ck_conform k;
+
+    if (!pe || !ret) {
+        return;
+    }
+    k = ck_conforms(c, ret, pe->u.fn.result, 1);
+    if (k != CK_OK) {
+        ck_error(c, body, ck_conform_code(k),
+                 "the lambda body is %s, the result is %s "
+                 "(Clause 7.8.1)", ck_type_name(c, ret),
+                 ck_type_name(c, pe->u.fn.result));
+    }
+}
+
 /* Lambda checking: check-only against an expected function type; the
    parameters come from it. */
 const ek_type *ck_lambda(ck_ctx *c, const ek_node *e, const ek_type *expected)
@@ -62,55 +140,17 @@ const ek_type *ck_lambda(ck_ctx *c, const ek_node *e, const ek_type *expected)
     const ek_type *ret;
     size_t n = params ? params->u.kids.count : 0;
 
-    if (!pe || pe->kind != EK_T_FN) {
-        if (!pe || pe->kind != EK_T_IVAR) {
-            ck_error(c, e, "E-lambda-check-only",
-                     "a lambda is check-only and `:=` does not generalize: "
-                     "no expected type supplies the parameter types "
-                     "(Clause 7.6.3)");
-        }
-        pe = NULL;
-    }
-    if (n) {
-        ps = ek_arena_alloc(c->arena, n * sizeof *ps);
-        names = ek_arena_alloc(c->arena, n * sizeof *names);
-        if (!ps || !names) {
-            c->oom = 1;
-            return expected;
-        }
-        lambda_params(c, params, pe, ps, names, n);
+    pe = lambda_expected(c, e, pe);
+    if (!lambda_tables(c, params, pe, &ps, &names, n)) {
+        return expected;
     }
     if (pe && pe->u.fn.count != n) {
         ck_error(c, e, "E-call-arity",
                  "the lambda takes %zu parameters, the expected function "
                  "type has %zu (Clause 7.8.1)", n, pe->u.fn.count);
     }
-    ck_scope_push(c);
-    {
-        size_t i;
-
-        for (i = 0; i < n; i++) {
-            if (names[i]) {
-                ck_scope_bind(c, names[i], ps[i]);
-            }
-        }
-    }
-    ret = ck_expr(c, body, pe ? pe->u.fn.result : NULL);
-    ck_scope_pop(c);
-    if (pe && ret) {
-        /* The body flows into the result at a value position: it
-           conforms, so an unbound result slot of the expectation
-           binds from the body and a mismatched body is reported at
-           the lambda, not far away at the use. */
-        ck_conform k = ck_conforms(c, ret, pe->u.fn.result, 1);
-
-        if (k != CK_OK) {
-            ck_error(c, body, ck_conform_code(k),
-                     "the lambda body is %s, the result is %s "
-                     "(Clause 7.8.1)", ck_type_name(c, ret),
-                     ck_type_name(c, pe->u.fn.result));
-        }
-    }
+    ret = lambda_body(c, body, pe, names, ps, n);
+    lambda_result(c, body, pe, ret);
     pe = lambda_arrow(c, e, expected, pe, ps, n, ret, ck_body_bit(c, body));
     ck_row(c, e, pe, EK_RD_NONE);
     return pe;
@@ -135,6 +175,47 @@ static const ek_type *apply_opaque(ck_ctx *c, const ek_node *e,
     return iv;
 }
 
+/* The constructed type and its payload at the anchor: a zero-binder
+   owner self-anchors, an undetermined expectation takes fresh
+   variables, and a matching nominal anchor is the instance. NULL when
+   no anchor determines the instantiation. */
+static const ek_type *apply_inst(ck_ctx *c, const ek_node *e,
+                                 const ck_ctor *ct, const ck_decl *d,
+                                 const ek_type *exp, size_t nb,
+                                 const ek_type **payload)
+{
+    if (nb == 0) {
+        *payload = ct->payload;
+        return ck_nominal(c, ct->owner, NULL, 0);
+    }
+    if (exp && exp->kind == EK_T_IVAR) {
+        /* An undetermined expectation: the application supplies fresh
+           variables and the expectation takes the instance. */
+        const ek_type *out = ck_nominal_fresh(c, ct->owner);
+
+        *payload = ct->payload
+                       ? ck_apply_binders(c, ct->payload, d->binders,
+                                          out->u.nominal.args, nb)
+                       : NULL;
+        ck_conforms(c, out, exp, 1);
+        return out;
+    }
+    if (exp && exp->kind == EK_T_NOMINAL
+        && exp->u.nominal.sym == ct->owner
+        && exp->u.nominal.argc == nb) {
+        *payload = ct->payload
+                       ? ck_apply_binders(c, ct->payload, d->binders,
+                                          exp->u.nominal.args, nb)
+                       : NULL;
+        return exp;
+    }
+    ck_error(c, e, "E-undetermined",
+             "the constructor `%s` has no unique instantiation; an "
+             "expected type determines it (Clause 7.6.4)",
+             ct->sym ? ct->sym->name : "?");
+    return NULL;
+}
+
 /* Typing one constructor application over its argument nodes: the
    anchor fixes a generic instantiation, a payload constructor takes
    exactly one argument, placed and conformed at the instantiated
@@ -149,31 +230,8 @@ const ek_type *ctor_apply(ck_ctx *c, const ek_node *e,
     const ek_type *out;
     size_t i, nb = d ? d->nbinders : 0, want = ct->payload ? 1 : 0;
 
-    if (nb == 0) {
-        out = ck_nominal(c, ct->owner, NULL, 0);
-        payload = ct->payload;
-    } else if (exp && exp->kind == EK_T_IVAR) {
-        /* An undetermined expectation: the application supplies fresh
-           variables and the expectation takes the instance. */
-        out = ck_nominal_fresh(c, ct->owner);
-        payload = ct->payload
-                      ? ck_apply_binders(c, ct->payload, d->binders,
-                                         out->u.nominal.args, nb)
-                      : NULL;
-        ck_conforms(c, out, exp, 1);
-    } else if (exp && exp->kind == EK_T_NOMINAL
-               && exp->u.nominal.sym == ct->owner
-               && exp->u.nominal.argc == nb) {
-        out = exp;
-        payload = ct->payload
-                      ? ck_apply_binders(c, ct->payload, d->binders,
-                                         exp->u.nominal.args, nb)
-                      : NULL;
-    } else {
-        ck_error(c, e, "E-undetermined",
-                 "the constructor `%s` has no unique instantiation; an "
-                 "expected type determines it (Clause 7.6.4)",
-                 ct->sym ? ct->sym->name : "?");
+    out = apply_inst(c, e, ct, d, exp, nb, &payload);
+    if (!out) {
         for (i = 0; i < nargs; i++) {
             ck_expr(c, args[i], NULL);
         }
