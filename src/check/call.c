@@ -146,6 +146,48 @@ static int args_broken(const ek_nlist *args)
     return 0;
 }
 
+/* The call's slot arrays: argument nodes and their observed types,
+   with the receiver in the first slot when the call carries one.
+   Returns 0 when an allocation failed. */
+static int call_slots(ck_ctx *c, size_t nargs, const ek_type *recv,
+                      const ek_node ***nodes, const ek_type ***types)
+{
+    if (!nargs) {
+        return 1;
+    }
+    *types = ek_arena_alloc(c->arena, nargs * sizeof **types);
+    *nodes = ek_arena_alloc(c->arena, nargs * sizeof **nodes);
+    if (!*types || !*nodes) {
+        c->oom = 1;
+        return 0;
+    }
+    if (recv) {
+        (*nodes)[0] = NULL;
+        (*types)[0] = recv;
+    }
+    return 1;
+}
+
+/* The receiver conforms before the arguments: an argument checked
+   under a parameter that shares the receiver's variables sees them
+   determined. */
+static void recv_conform(ck_ctx *c, const ek_node *e, const ek_type *f,
+                         const ek_type *recv)
+{
+    ck_conform k;
+
+    if (!recv || f->u.fn.count < 1) {
+        return;
+    }
+    k = ck_conforms(c, recv, f->u.fn.params[0], 1);
+    if (k != CK_OK) {
+        ck_error(c, e, ck_conform_code(k),
+                 "the receiver is %s, the first parameter is %s "
+                 "(Clauses 7.4.3, 7.8.2)", ck_type_name(c, recv),
+                 ck_type_name(c, f->u.fn.params[0]));
+    }
+}
+
 const ek_type *call_fn(ck_ctx *c, const ek_node *e,
                               const ek_type *fntype, const char *member,
                               const ek_type *recv, const ek_type *bit_recv,
@@ -159,17 +201,8 @@ const ek_type *call_fn(ck_ctx *c, const ek_node *e,
     size_t off = recv ? 1 : 0;
     const ek_type *ret;
 
-    if (nargs) {
-        types = ek_arena_alloc(c->arena, nargs * sizeof *types);
-        nodes = ek_arena_alloc(c->arena, nargs * sizeof *nodes);
-        if (!types || !nodes) {
-            c->oom = 1;
-            return ck_ivar(c);
-        }
-        if (recv) {
-            nodes[0] = NULL;
-            types[0] = recv;
-        }
+    if (!call_slots(c, nargs, recv, &nodes, &types)) {
+        return ck_ivar(c);
     }
     if (!f || f->kind != EK_T_FN) {
         return call_opaque(c, e, f, member, recv, bit_recv, args, nodes,
@@ -193,19 +226,7 @@ const ek_type *call_fn(ck_ctx *c, const ek_node *e,
                  "the call supplies %zu arguments, the function takes %zu "
                  "(Clause 7.8.1)", nargs, f->u.fn.count);
     }
-    if (recv && f->u.fn.count >= 1) {
-        /* The receiver conforms before the arguments: an argument
-           checked under a parameter that shares the receiver's
-           variables sees them determined. */
-        ck_conform k = ck_conforms(c, recv, f->u.fn.params[0], 1);
-
-        if (k != CK_OK) {
-            ck_error(c, e, ck_conform_code(k),
-                     "the receiver is %s, the first parameter is %s "
-                     "(Clauses 7.4.3, 7.8.2)", ck_type_name(c, recv),
-                     ck_type_name(c, f->u.fn.params[0]));
-        }
-    }
+    recv_conform(c, e, f, recv);
     call_args(c, f, args, nodes, types, off);
     ret = f->u.fn.result;
     ck_call_bit(c, e, ck_call_bit_of(c, f, member,
