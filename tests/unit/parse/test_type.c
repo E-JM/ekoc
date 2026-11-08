@@ -58,7 +58,8 @@ static void atoms(void)
     pfx_end(&f);
 }
 
-static void brackets(void)
+/* Lists, dictionaries, tuples, and records, keyed and fielded. */
+static void bracket_composites(void)
 {
     parse_fixture f;
     const ek_node *t;
@@ -100,32 +101,46 @@ static void brackets(void)
     EK_CHECK_U64(t->u.kids.count, 2);
     EK_CHECK_STR(t->u.kids.data[0]->u.t_field.name, "name");
     pfx_end(&f);
+}
+
+/* A field name is snake_case, a one-element bracket is not a valid
+   type, and junk after a comma recovers at `]` without being eaten as
+   a field name. */
+static void bracket_rejects(void)
+{
+    parse_fixture f;
 
     /* A field name is snake_case. */
-    t = ann_of(&f, "[Name: String]");
+    (void)ann_of(&f, "[Name: String]");
     EK_CHECK(pfx_errors(&f) > 0);
     pfx_collect(&f);
     EK_CHECK(pfx_has_code(&f, "E-name-case"));
     pfx_end(&f);
 
     /* A one-element bracket is not a valid type. */
-    t = ann_of(&f, "[Int]");
+    (void)ann_of(&f, "[Int]");
     EK_CHECK(pfx_errors(&f) > 0);
     pfx_end(&f);
 
     /* A field is `name :`; junk after a comma recovers at `]` without
        being eaten as a field name. */
-    t = ann_of(&f, "[a: Int, 5]");
+    (void)ann_of(&f, "[a: Int, 5]");
     EK_CHECK(pfx_errors(&f) > 0);
     pfx_collect(&f);
     EK_CHECK(pfx_msg_has(&f, "expected a field in the record type"));
     pfx_end(&f);
 
-    t = ann_of(&f, "[a: Int, ]");
+    (void)ann_of(&f, "[a: Int, ]");
     EK_CHECK(pfx_errors(&f) > 0);
     pfx_end(&f);
+}
 
-    /* A dictionary value may be an arrow. */
+/* A dictionary value may be an arrow. */
+static void bracket_dict_arrow(void)
+{
+    parse_fixture f;
+    const ek_node *t;
+
     t = ann_of(&f, "[String](Int) -> Int");
     EK_CHECK_U64(pfx_errors(&f), 0);
     EK_CHECK_U64(t->kind, EK_N_T_DICT);
@@ -133,7 +148,15 @@ static void brackets(void)
     pfx_end(&f);
 }
 
-static void arrows(void)
+static void brackets(void)
+{
+    bracket_composites();
+    bracket_rejects();
+    bracket_dict_arrow();
+}
+
+/* Function parameters, labeled and unlabeled, and the pure arrow. */
+static void arrow_params(void)
 {
     parse_fixture f;
     const ek_node *t;
@@ -157,6 +180,13 @@ static void arrows(void)
     EK_CHECK_U64(pfx_errors(&f), 0);
     EK_CHECK_U64(t->u.t_fn.params.data[0]->u.t_field.name, NULL);
     pfx_end(&f);
+}
+
+/* The zero-parameter group and the world and open arrows. */
+static void arrow_kinds(void)
+{
+    parse_fixture f;
+    const ek_node *t;
 
     /* The zero-parameter group. */
     t = ann_of(&f, "() -> Int");
@@ -173,8 +203,14 @@ static void arrows(void)
     EK_CHECK_U64(pfx_errors(&f), 0);
     EK_CHECK_U64(t->u.t_fn.arrow, EK_ARROW_OPEN);
     pfx_end(&f);
+}
 
-    /* The elided forms. */
+/* The elided forms. */
+static void arrow_elided(void)
+{
+    parse_fixture f;
+    const ek_node *t;
+
     t = ann_of(&f, "(Int)");
     EK_CHECK_U64(pfx_errors(&f), 0);
     EK_CHECK_U64(t->kind, EK_N_T_FN);
@@ -192,8 +228,14 @@ static void arrows(void)
     EK_CHECK_U64(pfx_errors(&f), 0);
     EK_CHECK_U64(t->u.t_fn.arrow, EK_ARROW_OPEN);
     pfx_end(&f);
+}
 
-    /* Arrows nest without parentheses. */
+/* Arrows nest without parentheses. */
+static void arrow_nested(void)
+{
+    parse_fixture f;
+    const ek_node *t;
+
     t = ann_of(&f, "(Out) -> (String) !-> String");
     EK_CHECK_U64(pfx_errors(&f), 0);
     EK_CHECK_U64(t->u.t_fn.result->kind, EK_N_T_FN);
@@ -207,7 +249,17 @@ static void arrows(void)
     pfx_end(&f);
 }
 
-static void generic_application(void)
+static void arrows(void)
+{
+    arrow_params();
+    arrow_kinds();
+    arrow_elided();
+    arrow_nested();
+}
+
+/* Applications in operand, tuple-element, and list-element
+   positions. */
+static void apply_positions(void)
 {
     parse_fixture f;
     const ek_node *t;
@@ -239,6 +291,15 @@ static void generic_application(void)
     EK_CHECK_U64(t->kind, EK_N_T_LIST);
     EK_CHECK_U64(t->u.wrap.inner->kind, EK_N_T_APPLY);
     pfx_end(&f);
+}
+
+/* Heads and arguments: a type variable must not head an application, a
+   qualified head names the type in its last segment, and a composite
+   argument without parentheses is rejected. */
+static void apply_heads(void)
+{
+    parse_fixture f;
+    const ek_node *t;
 
     /* A type variable must not head an application. */
     t = ann_of(&f, "t Int");
@@ -260,14 +321,27 @@ static void generic_application(void)
     t = ann_of(&f, "Option [Value Int Float]");
     EK_CHECK(pfx_errors(&f) > 0);
     pfx_end(&f);
+}
 
-    /* Application depth: parenthesized composite arguments nest. */
+/* Application depth: parenthesized composite arguments nest. */
+static void apply_depth(void)
+{
+    parse_fixture f;
+    const ek_node *t;
+
     t = ann_of(&f, "Value (Option Int) (Pair Int Bool)");
     EK_CHECK_U64(pfx_errors(&f), 0);
     EK_CHECK_U64(t->u.t_apply.args.count, 2);
     EK_CHECK_U64(t->u.t_apply.args.data[0]->kind, EK_N_T_PAREN);
     EK_CHECK_U64(t->u.t_apply.args.data[1]->u.wrap.inner->kind, EK_N_T_APPLY);
     pfx_end(&f);
+}
+
+static void generic_application(void)
+{
+    apply_positions();
+    apply_heads();
+    apply_depth();
 }
 
 static void nested_signatures(void)
