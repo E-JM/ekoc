@@ -214,54 +214,49 @@ static void bad_usage(void)
     EK_CHECK(exited(status, 2));
 }
 
-/* Building from a directory outside the tree: the runtime root is the
-   compiler's own location, never the caller's working directory. */
-static void builds_from_foreign_cwd(void)
+/* The compiler's own root, four directory levels above the suite
+   binary; 0 when the path cannot be resolved. */
+static int compiler_root(char *root, size_t cap)
 {
     char self[512];
-    char root[512];
-    char cmd[1024];
-    char buf[64];
     ssize_t n;
     char *slash;
     int len;
-    int status;
+    int i;
 
     n = readlink("/proc/self/exe", self, sizeof self - 1);
     if (n <= 0) {
         EK_CHECK(0);
-        return;
+        return 0;
     }
     self[n] = '\0';
-    slash = strrchr(self, '/');
-    if (slash == NULL) {
-        EK_CHECK(0);
-        return;
+    for (i = 0; i < 4; i++) {
+        slash = strrchr(self, '/');
+        if (slash == NULL) {
+            EK_CHECK(0);
+            return 0;
+        }
+        *slash = '\0';
     }
-    *slash = '\0';
-    slash = strrchr(self, '/');
-    if (slash == NULL) {
+    len = snprintf(root, cap, "%s", self);
+    if (len < 0 || (size_t)len >= cap) {
         EK_CHECK(0);
-        return;
+        return 0;
     }
-    *slash = '\0';
-    slash = strrchr(self, '/');
-    if (slash == NULL) {
-        EK_CHECK(0);
-        return;
-    }
-    *slash = '\0';
-    slash = strrchr(self, '/');
-    if (slash == NULL) {
-        EK_CHECK(0);
-        return;
-    }
-    *slash = '\0';
-    len = snprintf(root, sizeof root, "%s", self);
-    if (len < 0 || (size_t)len >= sizeof root) {
-        EK_CHECK(0);
-        return;
-    }
+    return 1;
+}
+
+/* The foreign-cwd build: compile a module under / through the
+   compiler's absolute path, run the binary, and expect an empty error
+   file. */
+static void run_foreign_build(const char *root)
+{
+    char cmd[1024];
+    char path[512];
+    char buf[64];
+    int len;
+    int status;
+
     len = snprintf(cmd, sizeof cmd,
                    "cd / && %s/build/ekoc build %s/build/cli_foreign.eko"
                    " -o /tmp/ekoc_cli_foreign > %s/build/cli_foreign.out"
@@ -271,24 +266,36 @@ static void builds_from_foreign_cwd(void)
         EK_CHECK(0);
         return;
     }
-    len = snprintf(self, sizeof self, "%s/build/cli_foreign.eko", root);
-    if (len < 0 || (size_t)len >= sizeof self) {
+    len = snprintf(path, sizeof path, "%s/build/cli_foreign.eko", root);
+    if (len < 0 || (size_t)len >= sizeof path) {
         EK_CHECK(0);
         return;
     }
-    write_file(self, "main: () -> _ =\n    _\n");
+    write_file(path, "main: () -> _ =\n    _\n");
     status = system(cmd);
     EK_CHECK(exited(status, 0));
     status = system("/tmp/ekoc_cli_foreign");
     EK_CHECK(exited(status, 0));
-    len = snprintf(self, sizeof self, "%s/build/cli_foreign.err", root);
-    if (len < 0 || (size_t)len >= sizeof self) {
+    len = snprintf(path, sizeof path, "%s/build/cli_foreign.err", root);
+    if (len < 0 || (size_t)len >= sizeof path) {
         EK_CHECK(0);
         return;
     }
-    EK_CHECK(read_file(self, buf, sizeof buf) == 0);
+    EK_CHECK(read_file(path, buf, sizeof buf) == 0);
     remove("/tmp/ekoc_cli_foreign");
     remove("/tmp/ekoc_cli_foreign.c");
+}
+
+/* Building from a directory outside the tree: the runtime root is the
+   compiler's own location, never the caller's working directory. */
+static void builds_from_foreign_cwd(void)
+{
+    char root[512];
+
+    if (!compiler_root(root, sizeof root)) {
+        return;
+    }
+    run_foreign_build(root);
 }
 
 int main(void)
