@@ -74,7 +74,10 @@ static void lambdas(void)
     cfx_end(&f);
 }
 
-static void generic_decls(void)
+/* A recursive generic tree with every reference fully applied, and
+   mutual recursion that may call the other side before its
+   declaration line. */
+static void generic_recursion(void)
 {
     cfx f;
 
@@ -97,6 +100,14 @@ static void generic_decls(void)
               "odd: (n: Int) -> Bool = case n: 0 -> False; _ -> even(n)\n");
     EK_CHECK_U64(cfx_errors(&f), 0);
     cfx_end(&f);
+}
+
+/* A bare generic constructor has no self-anchoring type; a known
+   expected type determines the instance, and an undetermined
+   expectation unifies with the sole candidate. */
+static void generic_determination(void)
+{
+    cfx f;
 
     /* A bare generic constructor has no self-anchoring type. */
     cfx_begin(&f,
@@ -121,12 +132,24 @@ static void generic_decls(void)
               "x: Pair Int = first(One 1, Two {2, 3})\n");
     EK_CHECK_U64(cfx_errors(&f), 0);
     cfx_end(&f);
+}
 
-    /* A generic reference must be fully applied, inside its own
-       right-hand side too. */
+/* A generic reference must be fully applied, inside its own
+   right-hand side too. */
+static void generic_reference_arity(void)
+{
+    cfx f;
+
     cfx_begin(&f, "Tree: type t = Leaf t | Node [Tree, Tree, t]\n");
     EK_CHECK(cfx_has_code(&f, "E-type-arity"));
     cfx_end(&f);
+}
+
+static void generic_decls(void)
+{
+    generic_recursion();
+    generic_determination();
+    generic_reference_arity();
 }
 
 /* Generalization and instantiation at a width past any fixed buffer:
