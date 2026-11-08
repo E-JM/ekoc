@@ -212,6 +212,31 @@ const ek_type *ck_ctor_head(ck_ctx *c, const ek_node *n)
     return ck_nominal(c, ct->owner, NULL, 0);
 }
 
+/* A qualified constructor names one declaration: the owner's nominal,
+   anchored by the expected type when the declaration is generic. */
+static const ek_type *qualified_ctor(ck_ctx *c, const ek_node *n,
+                                     const ek_ref *ref, const ek_type *exp)
+{
+    const ck_ctor *ct = ref->symbol ? ck_ctor_of(c, ref->symbol) : NULL;
+
+    if (ct && ct->owner) {
+        const ck_decl *d = ck_decl_of(c, ct->owner);
+
+        if (!d || d->nbinders == 0) {
+            return ck_nominal(c, ct->owner, NULL, 0);
+        }
+        if (exp && exp->kind == EK_T_NOMINAL
+            && exp->u.nominal.sym == ct->owner) {
+            return exp; /* the expected type anchors it */
+        }
+        ck_error(c, n, "E-undetermined",
+                 "the constructor `%s` has no unique "
+                 "instantiation; an expected type determines it "
+                 "(Clause 7.6.4)", ref->symbol->name);
+    }
+    return ck_opaque(c);
+}
+
 /* A constructor in value position: the expected nominal type selects
    among the candidates, a sole non-generic constructor self-anchors,
    and a std placeholder stays the opaque bridge. */
@@ -223,24 +248,7 @@ const ek_type *ck_ctor_type(ck_ctx *c, const ek_node *n,
     const ek_type *exp = ck_prune(expected);
 
     if (!ref->ncands) {
-        /* A qualified constructor names one declaration. */
-        ct = ref->symbol ? ck_ctor_of(c, ref->symbol) : NULL;
-        if (ct && ct->owner) {
-            const ck_decl *d = ck_decl_of(c, ct->owner);
-
-            if (!d || d->nbinders == 0) {
-                return ck_nominal(c, ct->owner, NULL, 0);
-            }
-            if (exp && exp->kind == EK_T_NOMINAL
-                && exp->u.nominal.sym == ct->owner) {
-                return exp; /* the expected type anchors it */
-            }
-            ck_error(c, n, "E-undetermined",
-                     "the constructor `%s` has no unique "
-                     "instantiation; an expected type determines it "
-                     "(Clause 7.6.4)", ref->symbol->name);
-        }
-        return ck_opaque(c);
+        return qualified_ctor(c, n, ref, exp);
     }
     sel = ck_ctor_select(c, n, ref, expected);
     if (!sel.sym) {
