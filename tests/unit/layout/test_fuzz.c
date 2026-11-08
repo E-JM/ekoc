@@ -21,26 +21,47 @@ static unsigned long long fuzz_failures;
 static unsigned long long fuzz_reported;
 static unsigned long long fuzz_truncations;
 
-/* Bitmask of violated invariants; bit meanings as in the checks
-   below. Reports the first ten failures with their case ids. */
-static void check_stream(const ek_layout_result *r, size_t errors,
-                         unsigned long long id, const char *what)
+/* The stream-end invariants: nonempty, exactly one EOF closing the
+   stream, and a source token first when there is content. */
+static unsigned stream_ends(const ek_layout_result *r)
 {
     unsigned mask = 0;
-    size_t i, eofs = 0, indents = 0, dedents = 0;
-    long long open = 0;
-    int prefix_ok = 1;
+    size_t i, eofs = 0;
 
-    fuzz_cases++;
     if (r->count < 1) {
         mask |= 1u;
     }
     for (i = 0; i < r->count; i++) {
+        if (r->tokens[i].kind == EK_LTOK_EOF) {
+            eofs++;
+        }
+    }
+    if (eofs != 1 || (r->count > 0
+                      && r->tokens[r->count - 1].kind != EK_LTOK_EOF)) {
+        mask |= 2u;
+    }
+    /* A stream with any content starts with a source token; only an
+       input with no significant line at all is the lone EOF. */
+    if (r->count > 1 && r->tokens[0].kind != EK_LTOK_SOURCE) {
+        mask |= 4u;
+    }
+    return mask;
+}
+
+/* The indent invariants: every INDENT directly follows a NEWLINE, and
+   with no error diagnostic INDENT and DEDENT balance with no DEDENT
+   before its INDENT. */
+static unsigned stream_indent(const ek_layout_result *r, int errors)
+{
+    unsigned mask = 0;
+    size_t i, indents = 0, dedents = 0;
+    long long open = 0;
+    int prefix_ok = 1;
+
+    for (i = 0; i < r->count; i++) {
         ek_layout_kind k = r->tokens[i].kind;
 
-        if (k == EK_LTOK_EOF) {
-            eofs++;
-        } else if (k == EK_LTOK_INDENT) {
+        if (k == EK_LTOK_INDENT) {
             if (i == 0 || r->tokens[i - 1].kind != EK_LTOK_NEWLINE) {
                 mask |= 8u;
             }
@@ -54,19 +75,21 @@ static void check_stream(const ek_layout_result *r, size_t errors,
             }
         }
     }
-    if (eofs != 1 || (r->count > 0
-                      && r->tokens[r->count - 1].kind != EK_LTOK_EOF)) {
-        mask |= 2u;
-    }
-    /* A stream with any content starts with a source token; only an
-       input with no significant line at all is the lone EOF. */
-    if (r->count > 1 && r->tokens[0].kind != EK_LTOK_SOURCE) {
-        mask |= 4u;
-    }
     if (errors == 0
         && (indents != dedents || !prefix_ok)) {
         mask |= 32u;
     }
+    return mask;
+}
+
+/* Bitmask of violated invariants; bit meanings as in the checks
+   above. Reports the first ten failures with their case ids. */
+static void check_stream(const ek_layout_result *r, size_t errors,
+                         unsigned long long id, const char *what)
+{
+    unsigned mask = stream_ends(r) | stream_indent(r, errors);
+
+    fuzz_cases++;
     if (mask != 0) {
         char *kinds = fx_kinds(r);
 
