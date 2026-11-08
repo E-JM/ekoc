@@ -43,6 +43,7 @@ otherwise it names the rejection and the normative clause.
 | N35 | raw string content containing the delimiter | compile error: a raw string's content may not contain its delimiter |
 | N36 | raw string opener without a line break | compile error: the opening delimiter is followed by a line break |
 | N37 | equality over a compiled pattern | `E-no-eq` |
+| N38 | non-ASCII module stem | `E-name-case` |
 
 ## N01 — nominal mismatch
 
@@ -498,3 +499,16 @@ same: (a: Regex, b: Regex) -> Bool = a == b
 
 Expected: `E-no-eq`. The companion's own match member stays the only
 observation of a compiled pattern.
+
+## N38 — non-ASCII module stem
+
+A stem reaches the native identifier of every symbol the emitted unit
+names, so it is ASCII (Clause 7.2.1). Name the root file `variaï.eko`;
+the stem is a Unicode identifier the lexer itself would admit.
+
+```eko
+v: Int = 1
+```
+
+Expected: `E-name-case`. The same stem rule answers an import before
+the import's file lookup.

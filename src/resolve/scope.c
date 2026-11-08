@@ -50,7 +50,8 @@ int r_is_snake(const char *s)
 /* The identifier shape the lexer admits: `_` or XID_Start first, then
    XID_Continue. Names reach resolution through the lexer carry it by
    construction; file stems arrive spelled by the host and are judged
-   here against the same rule. */
+   here against the same rule, then narrowed to ASCII at r_stem_legal,
+   where the native identifier a stem spells is emitted. */
 int r_is_ident(const char *s)
 {
     ek_utf8_decoded d;

@@ -258,12 +258,19 @@ static void explicit_std(void)
     rfx_end(&f);
 }
 
-/* Module names are snake_case and never begin with `_`. */
+/* Module names are snake_case, ASCII, and never begin with `_`. */
 static void bad_names(void)
 {
     rfx f;
 
     run_in(&f, "import Geolib\n\nv: Int = 1\n", "case1.eko");
+    EK_CHECK_U64(rfx_errors(&f), 1);
+    EK_CHECK(rfx_code_at_line(&f, "E-name-case", 1));
+    rfx_end(&f);
+
+    /* a non-ASCII stem is judged before the file lookup, so the stem
+       rule answers, not the missing file */
+    run_in(&f, "import variaï\n\nv: Int = 1\n", "case3.eko");
     EK_CHECK_U64(rfx_errors(&f), 1);
     EK_CHECK(rfx_code_at_line(&f, "E-name-case", 1));
     rfx_end(&f);
@@ -431,8 +438,9 @@ static void root_name_rules(void)
     rfx_end(&f);
 }
 
-/* A stem is an identifier before it is snake_case: a file name with a
-   non-identifier character is rejected, whatever its case class. */
+/* A stem is an identifier before it is snake_case or ASCII: a file name
+   with a non-identifier or non-ASCII character is rejected, whatever its
+   case class. */
 static void root_stem_identifier(void)
 {
     rfx f;
@@ -443,6 +451,13 @@ static void root_stem_identifier(void)
     rfx_end(&f);
 
     rfx_run(&f, "v: Int = 1\n", NULL, 0, "9foo.eko");
+    EK_CHECK_U64(rfx_errors(&f), 1);
+    EK_CHECK(rfx_code_at_line(&f, "E-name-case", 1));
+    rfx_end(&f);
+
+    /* the stem names the emitted unit's native identifiers, so a stem
+       the lexer would admit is still rejected outside ASCII */
+    rfx_run(&f, "v: Int = 1\n", NULL, 0, "variaï.eko");
     EK_CHECK_U64(rfx_errors(&f), 1);
     EK_CHECK(rfx_code_at_line(&f, "E-name-case", 1));
     rfx_end(&f);

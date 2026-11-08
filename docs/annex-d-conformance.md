@@ -21,7 +21,7 @@ every test (Clause 2.7).
 | Component | Location | Form | Required outcome |
 |---|---|---|---|
 | Positive modules | `tests/conformance/` | 30 Eko modules: 29 test roots and one fixture | compile; every test binding executes without panic |
-| Negative entries | `tests/negative/manifest.md` | 37 minimal programs | compile-time rejection with the stated outcome |
+| Negative entries | `tests/negative/manifest.md` | 38 minimal programs | compile-time rejection with the stated outcome |
 | Runner | toolchain | test runner over both classes | per-test report (Clause D.6) |
 
 ## D.2 Positive Tests

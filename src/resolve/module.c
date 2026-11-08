@@ -190,9 +190,25 @@ ek_node *r_parse_source(r_ctx *c, const char *src, size_t len,
     return mod;
 }
 
-/* A stem is snake_case, never begins with `_`, and is never `std`; the
-   reserved names the callers judge beside it, so the std/ paths return
-   before this call and the root check names the embedded modules. */
+/* A stem spells the native identifier of every symbol its module emits,
+   so its bytes stay in the portable set the clause names: the ASCII
+   letters, digits, and underscore the identifier rule already admits. */
+static int stem_ascii(const char *stem)
+{
+    const unsigned char *p;
+
+    for (p = (const unsigned char *)stem; *p; p++) {
+        if (*p > 0x7f) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+/* A stem is an ASCII identifier, snake_case, never begins with `_`, and
+   is never `std`; the reserved names the callers judge beside it, so the
+   std/ paths return before this call and the root check names the
+   embedded modules. */
 int r_stem_legal(r_ctx *c, const char *file, int line, int col,
                  const char *stem)
 {
@@ -200,6 +216,11 @@ int r_stem_legal(r_ctx *c, const char *file, int line, int col,
         r_error(c, file, line, col, "E-name-case",
                 "module name `%s` is not an identifier (Clauses 5.5.1, "
                 "7.2.1)", stem);
+        return 0;
+    }
+    if (!stem_ascii(stem)) {
+        r_error(c, file, line, col, "E-name-case",
+                "module name `%s` is not ASCII (Clause 7.2.1)", stem);
         return 0;
     }
     if (!r_is_snake(stem)) {

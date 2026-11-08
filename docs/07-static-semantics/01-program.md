@@ -75,7 +75,8 @@ has no state, no initialization semantics, and no runtime footprint.
 
 One source file is one module. The file has extension `.eko` and a stem that
 is a snake_case identifier containing no dot (Clause 5.5.2). The stem is the
-module's name in code.
+module's name in code and reaches the native identifier of every emitted
+symbol, so it is ASCII: letters, digits, and underscore only.
 
 Directories are not modules and are never named in code. They organize files;
 the hierarchy creates no namespace nesting, and modules under one directory
