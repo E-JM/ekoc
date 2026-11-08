@@ -66,9 +66,13 @@ static ek_val list_dir_call(ek_val env, ek_val *args, size_t argc)
     qsort(names, n, sizeof *names, cmp_names);
     for (i = n; i-- > 0;) {
         ek_val s = ek_val_ref(ek_str_from_cstr(names[i]));
+        ek_val next = ek_cons(s, list);
 
-        list = ek_cons(s, list);
+        /* the new cell takes the previous head as its tail, so the
+           birth count the builder held moves with it */
         ek_release(s);
+        ek_release(list);
+        list = next;
         free(names[i]);
     }
     free(names);
