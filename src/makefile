@@ -153,6 +153,7 @@ LOWER_SRC := \
 	src/lower/dsvcreg.c \
 	src/lower/dsvcspell.c \
 	src/lower/dsvcstamp.c \
+	src/lower/entryshim.c \
 	src/lower/extcback.c \
 	src/lower/extproto.c \
 	src/lower/extern.c \
@@ -173,6 +174,7 @@ LOWER_SRC := \
 	src/lower/tce.c \
 	src/lower/type.c \
 	src/lower/typeemit.c \
+	src/lower/typevar.c \
 	src/lower/typewalk.c \
 	src/lower/unit.c \
 	src/lower/unwrap.c \

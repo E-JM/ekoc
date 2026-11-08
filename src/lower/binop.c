@@ -197,6 +197,97 @@ static void emit_concat_call(lower_ctx *c, const char *t, const char *fn,
     lower_emitf(c, "ek_val %s = %s(%s, %s);\n", t, fn, lt, rt);
 }
 
+/* The runtime entry one direct operator row lowers to: the comparison
+   family reads the derived service over the value layer's object
+   slots first, every other row keeping the runtime comparisons, and
+   the concatenation family routes by its domains. *derived marks a
+   derived compare that answers an ordering word. */
+static const char *row_fn(lower_ctx *c, const ek_node *e, ek_binop op,
+                          int *derived, int *by_obj)
+{
+    const char *fn = NULL;
+
+    *derived = 0;
+    *by_obj = 0;
+    if (op == EK_BIN_EQ || op == EK_BIN_NE || op == EK_BIN_LT
+        || op == EK_BIN_LE || op == EK_BIN_GT || op == EK_BIN_GE) {
+        fn = lower_derived_cmp(c, e, op);
+        *derived = fn != NULL;
+        if (!fn) {
+            fn = num_op(op);
+        }
+    } else if (op == EK_BIN_CONCAT) {
+        fn = concat_fn(c, e, by_obj);
+    } else {
+        fn = num_op(op);
+    }
+    return fn;
+}
+
+/* The Bool spelling of one derived compare: the structural comparison
+   over the object slots answers an ordering word or a Bool word. */
+static void emit_derived_cmp(lower_ctx *c, const char *t, ek_binop op,
+                             const char *fn, const char *lt, const char *rt)
+{
+    if (op == EK_BIN_EQ) {
+        lower_emitf(c, "ek_val %s = ek_bool(%s(%s, %s));\n", t, fn, lt, rt);
+    } else if (op == EK_BIN_NE) {
+        lower_emitf(c, "ek_val %s = ek_bool(!%s(%s, %s));\n", t, fn, lt, rt);
+    } else if (op == EK_BIN_LT) {
+        lower_emitf(c, "ek_val %s = ek_bool(%s(%s, %s) < 0);\n", t, fn,
+                    lt, rt);
+    } else if (op == EK_BIN_LE) {
+        lower_emitf(c, "ek_val %s = ek_bool(%s(%s, %s) <= 0);\n", t, fn,
+                    lt, rt);
+    } else if (op == EK_BIN_GT) {
+        lower_emitf(c, "ek_val %s = ek_bool(%s(%s, %s) > 0);\n", t, fn,
+                    lt, rt);
+    } else {
+        lower_emitf(c, "ek_val %s = ek_bool(%s(%s, %s) >= 0);\n", t, fn,
+                    lt, rt);
+    }
+}
+
+/* The direct form of one operator row: the operands evaluate in source
+   order and release once the call is emitted. */
+static lower_val row_binop(lower_ctx *c, lower_scope *scope,
+                           const ek_node *e)
+{
+    ek_binop op = e->u.binary.op;
+    int derived = 0;
+    int by_obj = 0;
+    const char *fn = row_fn(c, e, op, &derived, &by_obj);
+    lower_val l = lower_sub(c, scope, e->u.binary.lhs);
+    lower_val r = lower_sub(c, scope, e->u.binary.rhs);
+    const char *lt = lower_as_temp(c, scope, &l);
+    const char *rt = lower_as_temp(c, scope, &r);
+    const char *t;
+
+    if (!fn) {
+        lower_error(c, e, "the %s operator is not supported by this "
+                          "lowerer", op_spelling(op));
+        lower_pad(c);
+        lower_emitf(c, "ek_release(%s);\n", rt);
+        lower_pad(c);
+        lower_emitf(c, "ek_release(%s);\n", lt);
+        return lower_val_unit();
+    }
+    t = lower_temp(c, scope);
+    lower_pad(c);
+    if (derived) {
+        emit_derived_cmp(c, t, op, fn, lt, rt);
+    } else if (op == EK_BIN_CONCAT) {
+        emit_concat_call(c, t, fn, by_obj, lt, rt);
+    } else {
+        lower_emitf(c, "ek_val %s = %s(%s, %s);\n", t, fn, lt, rt);
+    }
+    lower_pad(c);
+    lower_emitf(c, "ek_release(%s);\n", rt);
+    lower_pad(c);
+    lower_emitf(c, "ek_release(%s);\n", lt);
+    return (lower_val){ t, 1 };
+}
+
 lower_val lower_binary_expr(lower_ctx *c, lower_scope *scope,
                              const ek_node *e)
 {
@@ -212,77 +303,7 @@ lower_val lower_binary_expr(lower_ctx *c, lower_scope *scope,
     if (e->u.binary.op == EK_BIN_RANGE_INC) {
         return range_expr(c, scope, e, 1);
     }
-    {
-        ek_binop op = e->u.binary.op;
-        const char *fn = NULL;
-        int derived = 0;
-        int by_obj = 0;
-
-        /* the comparison family reads the derived service over the
-           value layer's object slots first, every other row keeping
-           the runtime comparisons */
-        if (op == EK_BIN_EQ || op == EK_BIN_NE || op == EK_BIN_LT
-            || op == EK_BIN_LE || op == EK_BIN_GT || op == EK_BIN_GE) {
-            fn = lower_derived_cmp(c, e, op);
-            derived = fn != NULL;
-            if (!fn) {
-                fn = num_op(op);
-            }
-        } else if (op == EK_BIN_CONCAT) {
-            fn = concat_fn(c, e, &by_obj);
-        } else {
-            fn = num_op(op);
-        }
-        lower_val l = lower_sub(c, scope, e->u.binary.lhs);
-        lower_val r = lower_sub(c, scope, e->u.binary.rhs);
-        const char *lt = lower_as_temp(c, scope, &l);
-        const char *rt = lower_as_temp(c, scope, &r);
-        const char *t;
-
-        if (!fn) {
-            lower_error(c, e, "the %s operator is not supported by this "
-                              "lowerer", op_spelling(e->u.binary.op));
-            lower_pad(c);
-            lower_emitf(c, "ek_release(%s);\n", rt);
-            lower_pad(c);
-            lower_emitf(c, "ek_release(%s);\n", lt);
-            return lower_val_unit();
-        }
-        t = lower_temp(c, scope);
-        lower_pad(c);
-        if (derived) {
-            /* the structural comparison over the object slots answers
-               an ordering word or a Bool word */
-            if (e->u.binary.op == EK_BIN_EQ) {
-                lower_emitf(c, "ek_val %s = ek_bool(%s(%s, %s));\n", t, fn,
-                            lt, rt);
-            } else if (e->u.binary.op == EK_BIN_NE) {
-                lower_emitf(c, "ek_val %s = ek_bool(!%s(%s, %s));\n", t, fn,
-                            lt, rt);
-            } else if (e->u.binary.op == EK_BIN_LT) {
-                lower_emitf(c, "ek_val %s = ek_bool(%s(%s, %s) < 0);\n", t,
-                            fn, lt, rt);
-            } else if (e->u.binary.op == EK_BIN_LE) {
-                lower_emitf(c, "ek_val %s = ek_bool(%s(%s, %s) <= 0);\n", t,
-                            fn, lt, rt);
-            } else if (e->u.binary.op == EK_BIN_GT) {
-                lower_emitf(c, "ek_val %s = ek_bool(%s(%s, %s) > 0);\n", t,
-                            fn, lt, rt);
-            } else {
-                lower_emitf(c, "ek_val %s = ek_bool(%s(%s, %s) >= 0);\n", t,
-                            fn, lt, rt);
-            }
-        } else if (e->u.binary.op == EK_BIN_CONCAT) {
-            emit_concat_call(c, t, fn, by_obj, lt, rt);
-        } else {
-            lower_emitf(c, "ek_val %s = %s(%s, %s);\n", t, fn, lt, rt);
-        }
-        lower_pad(c);
-        lower_emitf(c, "ek_release(%s);\n", rt);
-        lower_pad(c);
-        lower_emitf(c, "ek_release(%s);\n", lt);
-        return (lower_val){ t, 1 };
-    }
+    return row_binop(c, scope, e);
 }
 
 lower_val lower_unary_expr(lower_ctx *c, lower_scope *scope,

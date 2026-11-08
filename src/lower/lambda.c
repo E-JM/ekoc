@@ -62,6 +62,39 @@ static const char *closure_return(lower_ctx *c, lower_scope *top,
     return ret;
 }
 
+/* The head of one closure body: the context the body reads, the scope
+   chain over the captured and parameter slots, and the signature with
+   the unused slots voided. */
+static void open_closure_body(lower_ctx *c, const lower_pending *p,
+                              lower_scope *caps, lower_scope *ps,
+                              lower_scope *top)
+{
+    c->file = p->file;
+    c->temp = 0;
+    c->tce_self = NULL;
+    c->tce_params = NULL;
+    c->tce_label = NULL;
+    c->env_names = p->nenv ? p->env_names : NULL;
+    c->env_args = p->nenv ? p->env_args : NULL;
+    c->nenv = p->nenv;
+    c->cenv_cap = 0;
+    memset(caps, 0, sizeof *caps);
+    memset(ps, 0, sizeof *ps);
+    memset(top, 0, sizeof *top);
+    ps->parent = caps;
+    top->parent = ps;
+    lower_emitf(c, "static ek_val %s(ek_val env, ek_val *args, "
+                   "size_t argc)\n{\n", p->name);
+    c->depth = 1;
+    lower_emitf(c, "    (void)argc;\n");
+    if (p->ncap == 0) {
+        lower_emitf(c, "    (void)env;\n");
+    }
+    if (p->nparams == 0) {
+        lower_emitf(c, "    (void)args;\n");
+    }
+}
+
 /* One closure body: the environment reads are borrowed bindings, the
    parameters are owned keeps of the argument slots, and the return
    path releases the owned locals. The body emits under the
@@ -79,30 +112,7 @@ static void emit_closure_body(lower_ctx *c, lower_pending *p)
     lower_val v;
     const char *ret;
 
-    c->file = p->file;
-    c->temp = 0;
-    c->tce_self = NULL;
-    c->tce_params = NULL;
-    c->tce_label = NULL;
-    c->env_names = p->nenv ? p->env_names : NULL;
-    c->env_args = p->nenv ? p->env_args : NULL;
-    c->nenv = p->nenv;
-    c->cenv_cap = 0;
-    memset(&caps, 0, sizeof caps);
-    memset(&ps, 0, sizeof ps);
-    memset(&top, 0, sizeof top);
-    ps.parent = &caps;
-    top.parent = &ps;
-    lower_emitf(c, "static ek_val %s(ek_val env, ek_val *args, "
-                   "size_t argc)\n{\n", p->name);
-    c->depth = 1;
-    lower_emitf(c, "    (void)argc;\n");
-    if (p->ncap == 0) {
-        lower_emitf(c, "    (void)env;\n");
-    }
-    if (p->nparams == 0) {
-        lower_emitf(c, "    (void)args;\n");
-    }
+    open_closure_body(c, p, &caps, &ps, &top);
     emit_closure_scope(c, p, &caps, &ps);
     c->in_tail = 1;
     v = lower_members(c, &top, p->members, p->nmembers);

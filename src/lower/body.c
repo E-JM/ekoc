@@ -167,6 +167,16 @@ static void emit_value_stmt(lower_ctx *c, lower_scope *scope, const ek_node *m)
     }
 }
 
+/* The discard form of a binding: the value dies, nothing binds. */
+static void discard_let(lower_ctx *c, lower_scope *scope, const ek_node *m)
+{
+    lower_val v = lower_expr(c, scope, m->u.bind.value);
+    const char *t = lower_as_temp(c, scope, &v);
+
+    lower_pad(c);
+    lower_emitf(c, "ek_release(%s);\n", t);
+}
+
 /* An initial binding: the right-hand side transfers into the local. A
    right-hand side that reads the name being bound goes through a temp,
    because the C declarator would otherwise capture the new variable.
@@ -179,22 +189,13 @@ static void emit_let(lower_ctx *c, lower_scope *scope, const ek_node *m)
     lower_val v;
 
     if (pat && pat->kind == EK_N_P_WILDCARD) {
-        v = lower_expr(c, scope, m->u.bind.value);
-        cname = lower_as_temp(c, scope, &v);
-        lower_pad(c);
-        lower_emitf(c, "ek_release(%s);\n", cname);
+        discard_let(c, scope, m);
         return;
     }
-    if (pat && (pat->kind != EK_N_P_VAR || pat->u.path.count != 1)) {
-        if (lower_binding_destructure(c, scope, m, pat)) {
+    if (!pat || pat->kind != EK_N_P_VAR || pat->u.path.count != 1) {
+        if (pat && lower_binding_destructure(c, scope, m, pat)) {
             return;
         }
-        lower_error(c, m, "the destructuring pattern is not supported by "
-                          "this lowerer");
-        emit_value_stmt(c, scope, m->u.bind.value);
-        return;
-    }
-    if (!pat) {
         lower_error(c, m, "the destructuring pattern is not supported by "
                           "this lowerer");
         emit_value_stmt(c, scope, m->u.bind.value);

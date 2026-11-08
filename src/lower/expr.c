@@ -79,10 +79,47 @@ static const ek_symbol *bridged_ctor(lower_ctx *c, const ek_node *e)
     return cand;
 }
 
+/* The read of a local or parameter: an owned keep of the visible
+   binding's C name. */
+static lower_val local_read(lower_ctx *c, lower_scope *scope,
+                            const ek_node *e, const ek_ref *ref)
+{
+    const lower_local *loc;
+
+    if (!ref->symbol) {
+        return lower_val_unit();
+    }
+    loc = scope_find_local(scope, ref->symbol->name);
+    if (!loc) {
+        lower_error(c, e, "the binding of `%s` has no lowering",
+                    ref->symbol->name);
+        return lower_val_unit();
+    }
+    return (lower_val){ lower_str(c, "ek_keep(%s)", loc->cname), 0 };
+}
+
+/* A function referenced as a value: a value binding reads through its
+   getter, anything else is a fresh closure over the static
+   trampoline. */
+static lower_val func_read(lower_ctx *c, const ek_ref *ref)
+{
+    if (lower_is_value(ref->symbol)) {
+        lower_enqueue(c, ref->symbol);
+        return (lower_val){ lower_str(c, "%s()",
+                                      lower_value_getter(c, ref->symbol)),
+                            0 };
+    }
+    {
+        const char *ekt = lower_trampoline(c, ref->symbol);
+
+        return (lower_val){ lower_str(c, "ek_closure_new(%s, "
+                                         "ek_val_unit())", ekt), 0 };
+    }
+}
+
 static lower_val name_expr(lower_ctx *c, lower_scope *scope, const ek_node *e)
 {
     const ek_ref *ref;
-    const lower_local *loc;
 
     if (e->u.path.count == 1 && strcmp(e->u.path.data[0], "_") == 0) {
         return lower_val_unit(); /* the unit value at value position */
@@ -92,34 +129,13 @@ static lower_val name_expr(lower_ctx *c, lower_scope *scope, const ek_node *e)
         return lower_val_unit(); /* resolve diagnosed the reference */
     }
     if (ref->kind == EK_SYM_LOCAL || ref->kind == EK_SYM_PARAM) {
-        if (!ref->symbol) {
-            return lower_val_unit();
-        }
-        loc = scope_find_local(scope, ref->symbol->name);
-        if (!loc) {
-            lower_error(c, e, "the binding of `%s` has no lowering",
-                        ref->symbol->name);
-            return lower_val_unit();
-        }
-        return (lower_val){ lower_str(c, "ek_keep(%s)", loc->cname), 0 };
+        return local_read(c, scope, e, ref);
     }
     if (ref->kind == EK_SYM_CONSTRUCTOR) {
         return ctor_expr(c, e, ref);
     }
     if (ref->kind == EK_SYM_FUNC && ref->symbol) {
-        if (lower_is_value(ref->symbol)) {
-            lower_enqueue(c, ref->symbol);
-            return (lower_val){ lower_str(c, "%s()",
-                                            lower_value_getter(c,
-                                                               ref->symbol)),
-                                0 };
-        }
-        {
-            const char *ekt = lower_trampoline(c, ref->symbol);
-
-            return (lower_val){ lower_str(c, "ek_closure_new(%s, "
-                                             "ek_val_unit())", ekt), 0 };
-        }
+        return func_read(c, ref);
     }
     if (ref->kind == EK_SYM_EXTERNAL && !ref->ncands) {
         /* a receiver-form head the resolver bridged: check anchored a

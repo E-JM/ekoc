@@ -521,14 +521,18 @@ int lower_is_value(const ek_symbol *sym);
 const char *lower_value_getter(lower_ctx *c, const ek_symbol *sym);
 void lower_value_binding(lower_ctx *c, const lower_item *item);
 
-/* subst.c: the instantiation substitution. lower_type_has_var is true
-   when a tvar or an inference variable occurs anywhere; env build
-   pairs the annotation's rigid variables with the applied function
-   type of the call that keyed the emission, and every row-type read
-   the emitter makes goes through lower_row_type so a specialized body
-   sees its instantiation's types. */
+/* typevar.c: the variable-occurrence queries over a type.
+   lower_type_has_var is true when a tvar or an inference variable
+   occurs anywhere; lower_type_has_ivar is the inference-variable-only
+   form. */
 int lower_type_has_var(const ek_type *t);
 int lower_type_has_ivar(const ek_type *t);
+
+/* subst.c: the instantiation substitution. Env build pairs the
+   annotation's rigid variables with the applied function type of the
+   call that keyed the emission, and every row-type read the emitter
+   makes goes through lower_row_type so a specialized body sees its
+   instantiation's types. */
 int lower_env_build(lower_ctx *c, const ek_symbol *sym, const ek_type *fn);
 size_t lower_inst_args(lower_ctx *c, const ek_symbol *sym,
                        const ek_type *fn, const ek_type ***out);
@@ -541,6 +545,13 @@ int lower_has_self_tail(lower_ctx *c, const ek_symbol *self,
                         const ek_node *body);
 void lower_emit_self_tail(lower_ctx *c, lower_scope *scope,
                           const ek_node *e, const ek_ref *ref);
+
+/* entryshim.c: the entry shim's bookkeeping. entry_manifest registers
+   the capabilities a main's parameters declare and rejects the ones
+   the shim cannot build; record_test registers one test binding for
+   the dispatching shim, unless its name was recorded already. */
+int entry_manifest(lower_ctx *c, const ek_node *decl, const ek_node *ann);
+void record_test(lower_ctx *c, const ek_symbol *sym, const char *name);
 
 /* name.c: the mangled function symbol, C spellings, string escapes. */
 const char *lower_mangled(lower_ctx *c, const ek_symbol *sym);

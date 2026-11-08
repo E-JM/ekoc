@@ -165,6 +165,22 @@ lower_val lower_wrap_option_obj(lower_ctx *c, lower_scope *scope,
     return (lower_val){ t, 1 };
 }
 
+/* One miss payload: the bare error value the std source builds,
+   wrapped into the result and released. */
+static void emit_miss_payload(lower_ctx *c, lower_scope *scope,
+                              const char *t, const char *err,
+                              const char *ctor)
+{
+    const char *p = lower_temp(c, scope);
+
+    lower_pad(c);
+    lower_emitf(c, "ek_val %s = %s();\n", p, ctor);
+    lower_pad(c);
+    lower_emitf(c, "%s = %s(%s);\n", t, err, p);
+    lower_pad(c);
+    lower_emitf(c, "ek_release(%s);\n", p);
+}
+
 /* The miss arms of the parse wrap: each kind becomes the ParseError
    the std source closes over, with the detail the runtime surface
    leaves empty. */
@@ -176,16 +192,7 @@ static void emit_parse_miss(lower_ctx *c, lower_scope *scope, unsigned d,
     lower_pad(c);
     lower_emitf(c, "} else if (%s == EK_PARSE_EMPTY) {\n", s);
     c->depth = d + 1;
-    {
-        const char *p = lower_temp(c, scope);
-
-        lower_pad(c);
-        lower_emitf(c, "ek_val %s = %s();\n", p, empty);
-        lower_pad(c);
-        lower_emitf(c, "%s = %s(%s);\n", t, err, p);
-        lower_pad(c);
-        lower_emitf(c, "ek_release(%s);\n", p);
-    }
+    emit_miss_payload(c, scope, t, err, empty);
     c->depth = d;
     lower_pad(c);
     lower_emitf(c, "} else if (%s == EK_PARSE_INVALID) {\n", s);
@@ -210,16 +217,7 @@ static void emit_parse_miss(lower_ctx *c, lower_scope *scope, unsigned d,
     lower_pad(c);
     lower_emitf(c, "} else {\n");
     c->depth = d + 1;
-    {
-        const char *p = lower_temp(c, scope);
-
-        lower_pad(c);
-        lower_emitf(c, "ek_val %s = %s();\n", p, range);
-        lower_pad(c);
-        lower_emitf(c, "%s = %s(%s);\n", t, err, p);
-        lower_pad(c);
-        lower_emitf(c, "ek_release(%s);\n", p);
-    }
+    emit_miss_payload(c, scope, t, err, range);
     c->depth = d;
     lower_pad(c);
     lower_emitf(c, "}\n");

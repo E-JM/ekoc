@@ -35,6 +35,46 @@ static lower_gtype *std_ctor_family(lower_ctx *c, const ek_node *at,
     return NULL;
 }
 
+/* The variant family the call reads: the Option or Result constructor
+   std's surface carries, diagnosed when it has no lowering. */
+static lower_gtype *resolve_variant(lower_ctx *c, const ek_node *e,
+                                    int is_opt)
+{
+    lower_gtype *g = std_ctor_family(c, e, is_opt ? "Option" : "Result",
+                                     is_opt ? "Some" : "Ok");
+
+    if (!g) {
+        lower_error(c, e, "the variant `%s.%s` has no lowering",
+                    is_opt ? "Option" : "Result", is_opt ? "Some" : "Ok");
+    }
+    return g;
+}
+
+/* The branch the absent variant panics from: expect releases the
+   message too and reports it verbatim, unwrap reports its fixed
+   message. */
+static void emit_absent_panic(lower_ctx *c, const char *r,
+                              const char *msg, int is_opt, int is_expect)
+{
+    if (is_expect) {
+        lower_pad(c);
+        lower_emitf(c, "const char *msgc = ek_str_cstr(%s.as.ref);\n", msg);
+        lower_pad(c);
+        lower_emitf(c, "ek_release(%s);\n", r);
+        lower_pad(c);
+        lower_emitf(c, "ek_release(%s);\n", msg);
+        lower_pad(c);
+        lower_emitf(c, "ek_panic(\"P-expect\", msgc);\n");
+    } else {
+        lower_pad(c);
+        lower_emitf(c, "ek_release(%s);\n", r);
+        lower_pad(c);
+        lower_emitf(c, "ek_panic(\"P-unwrap\", \"%s on %s\");\n",
+                    is_opt ? "Option.unwrap" : "Result.unwrap",
+                    is_opt ? "None" : "Err");
+    }
+}
+
 lower_val lower_unwrap_call(lower_ctx *c, lower_scope *scope,
                             const ek_node *e, const ek_node *callee,
                             const char *family, const char *member,
@@ -57,11 +97,8 @@ lower_val lower_unwrap_call(lower_ctx *c, lower_scope *scope,
                     member);
         return lower_val_unit();
     }
-    g = std_ctor_family(c, e, is_opt ? "Option" : "Result",
-                        is_opt ? "Some" : "Ok");
+    g = resolve_variant(c, e, is_opt);
     if (!g) {
-        lower_error(c, e, "the variant `%s.%s` has no lowering",
-                    is_opt ? "Option" : "Result", is_opt ? "Some" : "Ok");
         return lower_val_unit();
     }
     g->shared = 1; /* the typeinfo the dispatch tests joins the unit */
@@ -78,23 +115,7 @@ lower_val lower_unwrap_call(lower_ctx *c, lower_scope *scope,
     lower_pad(c);
     lower_emitf(c, "if (%s.as.ref->info != &ekT_%s) {\n", r, g->stem);
     c->depth = d + 1;
-    if (is_expect) {
-        lower_pad(c);
-        lower_emitf(c, "const char *msgc = ek_str_cstr(%s.as.ref);\n", msg);
-        lower_pad(c);
-        lower_emitf(c, "ek_release(%s);\n", r);
-        lower_pad(c);
-        lower_emitf(c, "ek_release(%s);\n", msg);
-        lower_pad(c);
-        lower_emitf(c, "ek_panic(\"P-expect\", msgc);\n");
-    } else {
-        lower_pad(c);
-        lower_emitf(c, "ek_release(%s);\n", r);
-        lower_pad(c);
-        lower_emitf(c, "ek_panic(\"P-unwrap\", \"%s on %s\");\n",
-                    is_opt ? "Option.unwrap" : "Result.unwrap",
-                    is_opt ? "None" : "Err");
-    }
+    emit_absent_panic(c, r, msg, is_opt, is_expect);
     c->depth = d;
     lower_pad(c);
     lower_emitf(c, "}\n");

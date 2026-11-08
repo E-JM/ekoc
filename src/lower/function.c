@@ -125,100 +125,22 @@ static const char *signature(lower_ctx *c, const char *mangled,
     }
     return lower_take(c, &b);
 }
-/* The capability name of one parameter's written type: the final name
-   of the type node, parens unwrapped. */
-static const char *param_cap_name(const ek_node *p)
+/* The declaration of one test binding: it carries no written signature
+   and takes no parameters; the body's value is discarded by the shim.
+   A test root's derived constructors can build values over any
+   capability row -- no manifest bounds them -- so every family
+   registers and the test binary accepts the size. */
+static const char *declare_test(lower_ctx *c, const ek_symbol *sym,
+                                const char *name, lower_scope *ps,
+                                size_t *nparams)
 {
-    const ek_node *t;
-
-    if (!p || p->kind != EK_N_T_PARAM) {
-        return NULL;
+    memset(ps, 0, sizeof *ps);
+    *nparams = 0;
+    if (c->mode == EK_LOWER_TESTS) {
+        record_test(c, sym, name);
+        lower_cap_families(c, sym->decl);
     }
-    t = p->u.t_field.type;
-    while (t && t->kind == EK_N_T_PAREN) {
-        t = t->u.wrap.inner;
-    }
-    if (!t || t->kind != EK_N_T_NAME || t->u.path.count == 0) {
-        return NULL;
-    }
-    return t->u.path.data[t->u.path.count - 1];
-}
-
-/* The bundle constructor the entry shim builds for one capability of
-   the manifest, or NULL when the lowerer cannot supply it. */
-static const char *shim_ctor_of(const char *cap)
-{
-    static const struct {
-        const char *cap;
-        const char *ctor;
-    } ctors[] = {
-        {"Out",   "ek_cap_out_stdout"},
-        {"In",    "ek_cap_in_stdin"},
-        {"Fs",    "ek_cap_fs_cwd"},
-        {"Env",   "ek_cap_env_os"},
-        {"Args",  "ek_cap_args"},
-        {"Clock", "ek_cap_clock_wall"},
-        {"Rand",  "ek_cap_rand_os"},
-        {"Proc",  "ek_cap_proc"},
-        {"Conc",  "ek_cap_conc_os"},
-    };
-    size_t i;
-
-    for (i = 0; i < sizeof ctors / sizeof *ctors; i++) {
-        if (strcmp(ctors[i].cap, cap) == 0) {
-            return ctors[i].ctor;
-        }
-    }
-    return NULL;
-}
-
-/* The authorization manifest: every parameter is a capability the shim
-   supplies by position, and each capability registers the shared
-   families its bundle pull names. A parameter outside the table keeps
-   the no-shim balance. */
-static int entry_manifest(lower_ctx *c, const ek_node *decl,
-                          const ek_node *ann)
-{
-    const ek_nlist *params = &ann->u.t_fn.params;
-    size_t i;
-
-    for (i = 0; i < params->count; i++) {
-        const char *cap = param_cap_name(params->data[i]);
-        const char *ctor = cap ? shim_ctor_of(cap) : NULL;
-
-        if (!ctor) {
-            lower_error(c, decl, "a `main` parameter of `%s` is not "
-                                 "supported by this lowerer",
-                        cap ? cap : "?");
-            c->nshim = 0;
-            return 0;
-        }
-        c->shim[c->nshim++] = ctor;
-        lower_cap_families_of(c, decl, cap);
-    }
-    return 1;
-}
-
-/* Records one test binding for the dispatching shim, unless its name
-   was recorded already. */
-static void record_test(lower_ctx *c, const ek_symbol *sym, const char *name)
-{
-    lower_test *slots;
-    size_t i;
-
-    for (i = 0; i < c->ntests; i++) {
-        if (strcmp(c->tests[i].name, sym->name) == 0) {
-            return;
-        }
-    }
-    slots = lower_grow(c, c->tests, &c->ctests, c->ntests + 1,
-                       sizeof *slots);
-    if (slots) {
-        slots[c->ntests].name = sym->name;
-        slots[c->ntests].cname = name;
-        c->tests = slots;
-        c->ntests++;
-    }
+    return signature(c, name, ps);
 }
 
 /* The declaration of one function: the signature check, the parameter
@@ -235,18 +157,7 @@ static const char *declare_function(lower_ctx *c, const ek_symbol *sym,
     const char **slot;
 
     if (decl && decl->kind == EK_N_TEST_DECL) {
-        /* a test binding carries no written signature and takes no
-           parameters; the body's value is discarded by the shim. A
-           test root's derived constructors can build values over any
-           capability row -- no manifest bounds them -- so every
-           family registers and the test binary accepts the size */
-        memset(ps, 0, sizeof *ps);
-        *nparams = 0;
-        if (c->mode == EK_LOWER_TESTS) {
-            record_test(c, sym, name);
-            lower_cap_families(c, decl);
-        }
-        return signature(c, name, ps);
+        return declare_test(c, sym, name, ps, nparams);
     }
     if (!decl || (decl->kind != EK_N_LET && decl->kind != EK_N_NAMESPACE)
         || !ann || ann->kind != EK_N_T_FN) {
@@ -368,6 +279,26 @@ static void finish_function(lower_ctx *c, lower_scope *params,
     lower_emitf(c, "return %s;\n", ret);
 }
 
+/* The definition text between the braces: the owned-parameter
+   prologue, the body value, and the return discipline, at the body's
+   depth. */
+static void emit_body(lower_ctx *c, const ek_symbol *sym,
+                      lower_scope *params, lower_scope *top)
+{
+    unsigned d = c->depth;
+    int saved;
+    lower_val v;
+
+    c->depth = 1;
+    emit_prologue(c, params, sym);
+    saved = c->in_tail;
+    c->in_tail = 1;
+    v = lower_block_value(c, top, fn_body(sym));
+    c->in_tail = saved;
+    finish_function(c, params, top, v);
+    c->depth = d;
+}
+
 /* One emitted function: signature, the owned-parameter prologue, the
    optional retry label, the body, and the return discipline. A
    specialized item builds its binder substitution first, so every
@@ -382,9 +313,6 @@ void lower_function(lower_ctx *c, const lower_item *item)
     size_t saved_n = c->nenv, saved_cap = c->cenv_cap;
     const char *sig;
     size_t nparams;
-    lower_val v;
-    unsigned d;
-    int saved;
 
     c->temp = 0;
     c->file = surface_file(c, sym->module);
@@ -406,15 +334,7 @@ void lower_function(lower_ctx *c, const lower_item *item)
     memset(&top, 0, sizeof top);
     top.parent = &params;
     lower_emitf(c, "%s\n{\n", sig);
-    d = c->depth;
-    c->depth = 1;
-    emit_prologue(c, &params, sym);
-    saved = c->in_tail;
-    c->in_tail = 1;
-    v = lower_block_value(c, &top, fn_body(sym));
-    c->in_tail = saved;
-    finish_function(c, &params, &top, v);
-    c->depth = d;
+    emit_body(c, sym, &params, &top);
     lower_emitf(c, "}\n\n");
     c->fn_count++;
     c->tce_self = NULL;
