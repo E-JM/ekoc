@@ -300,6 +300,46 @@ static void finish(ek_buf *source, ek_diag *diag, ek_arena *arena)
     ek_arena_destroy(arena);
 }
 
+/* Reads the entry file and resolves the unit. Returns 0 after the
+   failure's report printed. */
+static int test_resolve(cli_diag_log *log, ek_arena *arena, ek_diag *diag,
+                        const char *file, ek_buf *source,
+                        ek_resolve_result *res, ek_check_result *chk)
+{
+    if (!cli_read_source(source, file)) {
+        ek_diag_emit(diag, EK_SEV_ERROR, "E-io", file, 0, 0,
+                     "cannot read file: %s", strerror(errno));
+        cli_log_drain(log, diag);
+        cli_log_print(log);
+        return 0;
+    }
+    cli_resolve(log, arena, diag, file, cli_dir_of(arena, file),
+                source->data != NULL ? source->data : "", source->len,
+                res, chk);
+    if (cli_log_errors(log) != 0) {
+        cli_log_print(log);
+        return 0;
+    }
+    return 1;
+}
+
+/* The unit's roots and their test count. Returns 0 after the refusal
+   of a unit with no test binding anywhere printed. */
+static int test_roots(cli_diag_log *log, ek_arena *arena, const char *file,
+                      const ek_resolve_result *res, test_root **roots,
+                      size_t *nroots, size_t *ntests)
+{
+    if (!collect_roots(arena, res, roots, nroots, ntests)) {
+        return 0;
+    }
+    if (*ntests == 0) {
+        cli_log_print(log);
+        fprintf(stderr, "ekoc: %s declares no test bindings\n", file);
+        return 0;
+    }
+    return 1;
+}
+
 int cli_test(const char *file, const char *tree_root)
 {
     ek_arena *arena = ek_arena_create();
@@ -322,29 +362,11 @@ int cli_test(const char *file, const char *tree_root)
         return 2;
     }
     log.arena = arena;
-    if (!cli_read_source(&source, file)) {
-        ek_diag_emit(diag, EK_SEV_ERROR, "E-io", file, 0, 0,
-                     "cannot read file: %s", strerror(errno));
-        cli_log_drain(&log, diag);
-        cli_log_print(&log);
+    if (!test_resolve(&log, arena, diag, file, &source, &res, &chk)) {
         finish(&source, diag, arena);
         return 2;
     }
-    cli_resolve(&log, arena, diag, file, cli_dir_of(arena, file),
-                source.data != NULL ? source.data : "", source.len,
-                &res, &chk);
-    if (cli_log_errors(&log) != 0) {
-        cli_log_print(&log);
-        finish(&source, diag, arena);
-        return 2;
-    }
-    if (!collect_roots(arena, &res, &roots, &nroots, &ntests)) {
-        finish(&source, diag, arena);
-        return 2;
-    }
-    if (ntests == 0) {
-        cli_log_print(&log);
-        fprintf(stderr, "ekoc: %s declares no test bindings\n", file);
+    if (!test_roots(&log, arena, file, &res, &roots, &nroots, &ntests)) {
         finish(&source, diag, arena);
         return 2;
     }

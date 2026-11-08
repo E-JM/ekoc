@@ -11,22 +11,15 @@
    the service over a type that does not have it, and the emitter has
    no answer to give. */
 
-/* Whether the pruned type contains a variable anywhere. rigid selects
-   the scheme's own variables; otherwise either kind counts. */
-static int type_has_var(const ek_type *t, int rigid)
+static int type_has_var(const ek_type *t, int rigid);
+
+/* Whether a variable sits anywhere in a composite type's components:
+   the nominal arguments, a list's or dict's halves, a tuple's items, a
+   record's field types, a function's parameters and result. */
+static int comp_has_var(const ek_type *t, int rigid)
 {
     size_t i;
 
-    t = ck_prune(t);
-    if (!t) {
-        return 0;
-    }
-    if (t->kind == EK_T_TVAR) {
-        return 1;
-    }
-    if (t->kind == EK_T_IVAR) {
-        return !rigid;
-    }
     switch (t->kind) {
     case EK_T_NOMINAL:
         for (i = 0; i < t->u.nominal.argc; i++) {
@@ -64,6 +57,23 @@ static int type_has_var(const ek_type *t, int rigid)
     default:
         return 0;
     }
+}
+
+/* Whether the pruned type contains a variable anywhere. rigid selects
+   the scheme's own variables; otherwise either kind counts. */
+static int type_has_var(const ek_type *t, int rigid)
+{
+    t = ck_prune(t);
+    if (!t) {
+        return 0;
+    }
+    if (t->kind == EK_T_TVAR) {
+        return 1;
+    }
+    if (t->kind == EK_T_IVAR) {
+        return !rigid;
+    }
+    return comp_has_var(t, rigid);
 }
 
 /* Appends one obligation to a scheme's list, once; a repeated
@@ -213,18 +223,13 @@ static void decide(ck_ctx *c, const ek_type *t, const char *service,
     (void)ck_derive_lt(c, at, t, service, &rd, ck_std_type(c, "Bool"));
 }
 
-void ck_reqs_check(ck_ctx *c)
+/* The obligations recorded in a body with no rigid variable: the
+   module pass has settled the inference variables, so each is decided
+   at its own use site now. */
+static void decide_open(ck_ctx *c)
 {
-    const ek_surface *saved = c->cur;
     size_t i;
-    unsigned round;
 
-    if (c->oom) {
-        return;
-    }
-    /* The module pass has settled the inference variables: an
-       obligation recorded in a body with no rigid variable is decided
-       at its own use site now. */
     for (i = 0; i < c->nreqs && !c->oom; i++) {
         const ck_req *q = &c->reqs[i];
         const ek_type *t = ck_prune(q->type);
@@ -235,51 +240,74 @@ void ck_reqs_check(ck_ctx *c)
         c->cur = q->mod;
         decide(c, t, q->service, q->at);
     }
-    /* The schemes: substitute each requirement with the actuals of the
-       use, propagate the ones that stay open to the caller's scheme,
-       and decide the ground ones at the use site. The recorded count
-       per use keeps a repeat round from diagnosing the same edge
-       twice. */
+}
+
+/* One substitution edge: the callee's recorded requirements ride the
+   actuals of the use. A requirement that stays open propagates to the
+   caller's scheme; a ground one is decided at the use site. */
+static void propagate_edge(ck_ctx *c, ck_inst_edge *e, int *added)
+{
+    const ck_scheme *callee = e->callee;
+    ck_reqs *rs;
+
+    if (!callee || !callee->reqs) {
+        return;
+    }
+    rs = callee->reqs;
+    c->cur = e->mod;
+    while (e->done < rs->n && !c->oom) {
+        const ck_req *q = &rs->items[e->done++];
+        const ek_type *t = ck_apply_binders(c, q->type, callee->vars,
+                                            e->args, e->nargs);
+
+        t = ck_prune(t);
+        if (t && type_has_var(t, 0)) {
+            if (e->caller && type_has_var(t, 1)) {
+                ck_req next = *q;
+
+                next.type = t;
+                next.at = e->at;
+                next.mod = e->mod;
+                if (req_add(c, (ck_scheme *)e->caller, &next, 64)) {
+                    *added = 1;
+                }
+            }
+            continue;
+        }
+        if (t) {
+            decide(c, t, q->service, e->at);
+        }
+    }
+}
+
+/* The schemes, to a fixpoint: each round substitutes every edge's open
+   requirements with the actuals of the use. The recorded count per use
+   keeps a repeat round from diagnosing the same edge twice. */
+static void decide_schemes(ck_ctx *c)
+{
+    size_t i;
+    unsigned round;
+
     for (round = 0; round < 32 && !c->oom; round++) {
         int added = 0;
 
         for (i = 0; i < c->ninst && !c->oom; i++) {
-            ck_inst_edge *e = &c->inst_edges[i];
-            const ck_scheme *callee = e->callee;
-            ck_reqs *rs;
-
-            if (!callee || !callee->reqs) {
-                continue;
-            }
-            rs = callee->reqs;
-            c->cur = e->mod;
-            while (e->done < rs->n && !c->oom) {
-                const ck_req *q = &rs->items[e->done++];
-                const ek_type *t = ck_apply_binders(c, q->type, callee->vars,
-                                                    e->args, e->nargs);
-
-                t = ck_prune(t);
-                if (t && type_has_var(t, 0)) {
-                    if (e->caller && type_has_var(t, 1)) {
-                        ck_req next = *q;
-
-                        next.type = t;
-                        next.at = e->at;
-                        next.mod = e->mod;
-                        if (req_add(c, (ck_scheme *)e->caller, &next, 64)) {
-                            added = 1;
-                        }
-                    }
-                    continue;
-                }
-                if (t) {
-                    decide(c, t, q->service, e->at);
-                }
-            }
+            propagate_edge(c, &c->inst_edges[i], &added);
         }
         if (!added) {
             break;
         }
     }
+}
+
+void ck_reqs_check(ck_ctx *c)
+{
+    const ek_surface *saved = c->cur;
+
+    if (c->oom) {
+        return;
+    }
+    decide_open(c);
+    decide_schemes(c);
     c->cur = saved;
 }
