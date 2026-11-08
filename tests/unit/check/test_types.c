@@ -174,30 +174,34 @@ static void literal_placement(void)
     cfx_end(&f);
 }
 
-static void never_adaptation(void)
+/* A declared result of `Never` adapts at an expected-type
+   position; the adaptation applies at value positions, so the
+   `else` arm types as `Int`, while it does not enter a function
+   type: `(a) -> Never` does not adapt to `(a) -> Int`. */
+static void never_adapts_value(void)
 {
     cfx f;
 
-    /* A declared result of `Never` adapts at an expected-type
-       position; the adaptation applies at value positions, so the
-       `else` arm types as `Int`. */
     cfx_begin(&f,
               "die: (msg: String) -> Never = panic(msg)\n"
               "v: Int = if True: 1 else: die(\"no\")\n");
     EK_CHECK_U64(cfx_errors(&f), 0);
     cfx_end(&f);
 
-    /* The adaptation does not enter a function type: `(a) -> Never`
-       does not adapt to `(a) -> Int`. */
     cfx_begin(&f,
               "f: () -> Never = panic(\"x\")\n"
               "g: () -> Int = f\n");
     EK_CHECK_U64(cfx_errors(&f), 1);
     EK_CHECK(cfx_code_at_line(&f, "E-type-mismatch", 2));
     cfx_end(&f);
+}
 
-    /* The unit value is `_` itself: it is not a hole, and it adapts
-       to nothing but the unit type. */
+/* The unit value is `_` itself: it is not a hole, and it adapts
+   to nothing but the unit type. */
+static void never_unit_value(void)
+{
+    cfx f;
+
     cfx_begin(&f,
               "a: _ = _\n"
               "b: String = _\n"
@@ -208,25 +212,36 @@ static void never_adaptation(void)
     EK_CHECK(cfx_code_at_line(&f, "E-type-mismatch", 3));
     EK_CHECK(cfx_code_at_line(&f, "E-type-mismatch", 4));
     cfx_end(&f);
+}
 
-    /* A member of a bottom receiver never evaluates: the access
-       types as `Never`, which adapts to the declared result. */
+/* A member of a bottom receiver never evaluates: the access
+   types as `Never`, which adapts to the declared result, and a call
+   of a bottom callee does not return: it types as `Never` without a
+   not-callable diagnostic, and adapts. */
+static void never_bottom_positions(void)
+{
+    cfx f;
+
     cfx_begin(&f,
               "lt: (a: Never, b: Never) -> Bool = a.lt(b)\n");
     EK_CHECK_U64(cfx_errors(&f), 0);
     EK_CHECK(cfx_reading_at(&f, 1, EK_RD_NONE));
     cfx_end(&f);
 
-    /* A call of a bottom callee does not return: it types as
-       `Never` without a not-callable diagnostic, and adapts. */
     cfx_begin(&f,
               "die: (m: String) -> Never = panic(m)\n"
               "v: Int = die(\"x\")(1)\n");
     EK_CHECK_U64(cfx_errors(&f), 0);
     cfx_end(&f);
+}
 
-    /* Coverage belongs to patterns: a diverging arm's pattern still
-       covers its constructor. */
+/* Coverage belongs to patterns: a diverging arm's pattern still
+   covers its constructor, and every arm diverging is still
+   exhaustive; the case is `Never`. */
+static void never_diverging_arms(void)
+{
+    cfx f;
+
     cfx_begin(&f,
               "die: (m: String) -> Never = panic(m)\n"
               "f: (r: Result Int String) -> Int =\n"
@@ -236,7 +251,6 @@ static void never_adaptation(void)
     EK_CHECK_U64(cfx_errors(&f), 0);
     cfx_end(&f);
 
-    /* Every arm diverging is still exhaustive; the case is `Never`. */
     cfx_begin(&f,
               "die: (m: String) -> Never = panic(m)\n"
               "f: (b: Bool) -> Never =\n"
@@ -245,6 +259,14 @@ static void never_adaptation(void)
               "        False -> die(\"b\")\n");
     EK_CHECK_U64(cfx_errors(&f), 0);
     cfx_end(&f);
+}
+
+static void never_adaptation(void)
+{
+    never_adapts_value();
+    never_unit_value();
+    never_bottom_positions();
+    never_diverging_arms();
 }
 
 /* A declared type whose width passes any fixed buffer: every binder
