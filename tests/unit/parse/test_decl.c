@@ -34,9 +34,8 @@ static void value_bindings(void)
     pfx_end(&f);
 }
 
-/* The binding grammar admits every pattern on the left; the refutable
-   families parse and the check stage owns their rejection. */
-static void pattern_bindings(void)
+/* Literal patterns at a binding. */
+static void pattern_binding_literals(void)
 {
     parse_fixture f;
     const ek_node *let;
@@ -53,6 +52,13 @@ static void pattern_bindings(void)
     EK_CHECK_U64(pfx_errors(&f), 0);
     EK_CHECK_U64(pfx_item(&f, 0)->u.bind.pattern->kind, EK_N_P_LIT);
     pfx_end(&f);
+}
+
+/* Constructor patterns, with and without a payload. */
+static void pattern_binding_constructors(void)
+{
+    parse_fixture f;
+    const ek_node *let;
 
     pfx_begin(&f, "Ok x = r\n");
     EK_CHECK_U64(pfx_errors(&f), 0);
@@ -70,6 +76,13 @@ static void pattern_bindings(void)
     EK_CHECK_U64(let->u.bind.pattern->u.cons.name.count, 2);
     EK_CHECK_U64(let->u.bind.pattern->u.cons.payload, NULL);
     pfx_end(&f);
+}
+
+/* The annotated group and brace bindings keep their types. */
+static void pattern_binding_annotated(void)
+{
+    parse_fixture f;
+    const ek_node *let;
 
     pfx_begin(&f, "(a, b): [Int, Int] = row\n");
     EK_CHECK_U64(pfx_errors(&f), 0);
@@ -86,6 +99,13 @@ static void pattern_bindings(void)
     EK_CHECK_U64(let->u.bind.pattern->kind, EK_N_P_BRACE);
     EK_CHECK_U64(let->u.bind.type->kind, EK_N_T_NAME);
     pfx_end(&f);
+}
+
+/* A qualified pattern ends in its constructor, and a snake head
+   admits no payload. */
+static void pattern_binding_rejects(void)
+{
+    parse_fixture f;
 
     /* A qualified pattern ends in its constructor. */
     pfx_begin(&f, "mod.thing = e\n");
@@ -98,6 +118,16 @@ static void pattern_bindings(void)
     pfx_begin(&f, "f x = e\n");
     EK_CHECK(pfx_errors(&f) > 0);
     pfx_end(&f);
+}
+
+/* The binding grammar admits every pattern on the left; the refutable
+   families parse and the check stage owns their rejection. */
+static void pattern_bindings(void)
+{
+    pattern_binding_literals();
+    pattern_binding_constructors();
+    pattern_binding_annotated();
+    pattern_binding_rejects();
 }
 
 static void rebind_and_discard(void)
@@ -193,7 +223,9 @@ static void namespace_binding(void)
     pfx_end(&f);
 }
 
-static void type_decls(void)
+/* Variant declarations: bare, leading bar, generic binders with typed
+   payloads, and the vertical form. */
+static void type_decl_variants(void)
 {
     parse_fixture f;
     const ek_node *n;
@@ -231,8 +263,14 @@ static void type_decls(void)
     EK_CHECK_U64(n->u.type_decl.rhs, EK_TYPE_RHS_VARIANTS);
     EK_CHECK_U64(n->u.type_decl.variants.count, 2);
     pfx_end(&f);
+}
 
-    /* Record and tuple right-hand sides. */
+/* Record and tuple right-hand sides. */
+static void type_decl_rhs(void)
+{
+    parse_fixture f;
+    const ek_node *n;
+
     pfx_begin(&f, "Person: type = [name: String, age: UInt]\n");
     EK_CHECK_U64(pfx_errors(&f), 0);
     n = pfx_item(&f, 0);
@@ -244,6 +282,13 @@ static void type_decls(void)
     EK_CHECK_U64(pfx_errors(&f), 0);
     EK_CHECK_U64(pfx_item(&f, 0)->u.type_decl.rhs, EK_TYPE_RHS_TUPLE);
     pfx_end(&f);
+}
+
+/* An empty right-hand side and a composite expression are not
+   declaration forms. */
+static void type_decl_rejects(void)
+{
+    parse_fixture f;
 
     /* An empty right-hand side is not a declaration form; the
        zero-variant type does not exist. */
@@ -259,6 +304,14 @@ static void type_decls(void)
     pfx_collect(&f);
     EK_CHECK(pfx_has_code(&f, "E-type-decl-form"));
     pfx_end(&f);
+}
+
+/* A misplaced line inside a vertical block is rejected, and recovery
+   consumes at least one token per rejected line. */
+static void type_decl_recovery(void)
+{
+    parse_fixture f;
+    const ek_node *n;
 
     /* A bracket line inside a vertical block is the misplaced record
        form; the variant lines around it still parse. */
@@ -280,6 +333,14 @@ static void type_decls(void)
     EK_CHECK_U64(n->u.type_decl.variants.count, 1);
     EK_CHECK(f.ast.module != NULL);
     pfx_end(&f);
+}
+
+static void type_decls(void)
+{
+    type_decl_variants();
+    type_decl_rhs();
+    type_decl_rejects();
+    type_decl_recovery();
 }
 
 static void ctype_decl(void)
