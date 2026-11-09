@@ -86,3 +86,8 @@ int cli_check(const char *file);
 int cli_test(const char *file, const char *tree_root);
 
 #endif
+
+/* tools.c: the Clause 11.3 tooling commands over the embedded
+   sources. */
+int cli_where(const char *root, const char *stem, const char *sub);
+int cli_doc(const char *root, int src, const char *name);

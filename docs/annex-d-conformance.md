@@ -257,3 +257,21 @@ The suite is not part of a program build. Test bindings do not enter
 interfaces, and a test root compiles independently of other roots (Clause
 9.14.6).
 | `vector.eko` | yes | 16 | 9.10.6, 9.8.1, 9.8.4 | the vector member face and derived services: of and to_list, push growth, persistence, domain rules, equality, display |
+
+## D.7 Toolchain Delivery
+
+Clause 11 is verified by inspection, not by this suite (Clause D.1). This
+section records the delivery status of each requirement; a row here is a
+statement about the implementation, and the clause text remains the
+requirement.
+
+| Requirement | Clause | Status |
+|---|---|---|
+| `where std` and `where std <stem>` | 11.3 | delivered as `ekoc where` subcommands over the embedded sources |
+| `doc <name>`: signature, world bit, documentation comment, origin | 11.3 | delivered for the shipped sources and the compiler rows; a source member prints its signature, its `///` comment, and its file and line; a compiler-supplied row reports its compiler origin |
+| `doc -src <member>` | 11.3 | delivered for the shipped sources and the compiler rows, with the Clause 11.3 origin rule |
+| test-runner entry point over the positive roots and the negative manifest | 11.3 | delivered as `ekoc test`; the negative manifest of Clause D.3 is a specification of rejection, not an automated run |
+| the compiler built as one library | 11.3 | delivered: one lex, layout, parse, resolve, and check implementation behind the command line |
+| semantic query API: occurrence to definition; references of a definition; members of a namespace with origin | 11.3 | delivered through the resolver's reference table and the module surfaces the library exposes |
+| semantic query API: signature and world bit at a position; go-to-definition spanning | 11.3 | not delivered |
+| documentation comments carried in the semantic index | 11.3 | not delivered; `doc` reads them from the embedded sources |

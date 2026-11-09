@@ -93,8 +93,9 @@ The toolchain MUST provide the following commands:
 
 The compiler MUST be built as a library. Parsing, resolution, and checking MUST
 be one implementation, shared by the command line and by language tooling. A
-second parser MUST NOT exist. Where this chapter states a MUST, the
-conformance suite of Annex D tracks the delivery status of each requirement.
+second parser MUST NOT exist. Where this chapter states a MUST, Annex D
+records the delivery status of each requirement (Clause D.7); the suite does
+not exercise them (Clause D.1).
 The lower stage's implicit protocols — the borrowed-argument ABI, the
 parameter-borrow analysis, the pending-closure queue, the self tail-call
 transform, the clean-stack walk — are recorded as the design record

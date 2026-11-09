@@ -189,7 +189,8 @@ CLI_SRC := \
 	src/cli/build.c \
 	src/cli/check.c \
 	src/cli/front.c \
-	src/cli/test.c
+	src/cli/test.c \
+	src/cli/tools.c
 
 LIB_SUPPORT := $(BUILD)/libek_support.a
 SUPPORT_OBJ := $(SUPPORT_SRC:src/%.c=$(BUILD)/%.o)

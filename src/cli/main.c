@@ -14,6 +14,8 @@ static void usage(void)
                     "[--shim <file.c>]... [-o <out>]\n");
     fprintf(stderr, "       ekoc check <file.eko>\n");
     fprintf(stderr, "       ekoc test <file.eko>\n");
+    fprintf(stderr, "       ekoc where std [<stem>]\n");
+    fprintf(stderr, "       ekoc doc [-src] <name>\n");
 }
 
 /* Resolves the directory holding the compiler's own tree: the running
@@ -160,6 +162,19 @@ int main(int argc, char **argv)
     }
     if (strcmp(argv[1], "test") == 0) {
         return run_test(argc, argv, root);
+    }
+    if (strcmp(argv[1], "where") == 0) {
+        return cli_where(root, argc > 2 ? argv[2] : NULL,
+                         argc > 3 ? argv[3] : NULL);
+    }
+    if (strcmp(argv[1], "doc") == 0) {
+        int src = argc > 2 && strcmp(argv[2], "-src") == 0;
+
+        if (argc < 2 + (src ? 2 : 1)) {
+            usage();
+            return 2;
+        }
+        return cli_doc(root, src, argv[2 + (src ? 1 : 0)]);
     }
     usage();
     return 2;
