@@ -186,6 +186,18 @@ static int is_word_name(const char *n)
     return 0;
 }
 
+/* The read-borrow spelling C.In T: parameter-only (Clause 10.3.4). */
+static int is_cin(const ek_node *tn, int result)
+{
+    return !result && tn && tn->kind == EK_N_T_APPLY
+        && tn->u.t_apply.head
+        && tn->u.t_apply.head->kind == EK_N_T_NAME
+        && tn->u.t_apply.head->u.path.count == 2
+        && strcmp(tn->u.t_apply.head->u.path.data[0], "C") == 0
+        && strcmp(tn->u.t_apply.head->u.path.data[1], "In") == 0
+        && tn->u.t_apply.args.count == 1;
+}
+
 /* The element-array row of the whitelist: C.In []T with T a machine
    word, parameter-only (Clause 10.3.5). */
 static int is_cin_list(const ek_node *tn, int result)
@@ -237,6 +249,21 @@ static void check_type(ck_ctx *c, const ek_node *t, int result)
     case EK_N_T_NAME:
     case EK_N_T_APPLY:
         if (is_cin_list(t, result)) {
+            return;
+        }
+        if (is_cin(t, result)) {
+            /* The read-borrow row: the payload must be a ctype record
+               (Clause 10.3.4). */
+            const ek_node *arg = t->u.t_apply.args.data[0];
+
+            arg = arg && arg->kind == EK_N_T_PAREN ? arg->u.wrap.inner
+                                                   : arg;
+            et = ck_elaborate(c, arg, NULL);
+            if (!is_ctype(et)) {
+                ck_error(c, t, "E-extern-type",
+                         "`C.In` takes a ctype record (Clauses 10.2.3, "
+                         "10.3.4)");
+            }
             return;
         }
         et = ck_elaborate(c, t, NULL);

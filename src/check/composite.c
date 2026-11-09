@@ -67,6 +67,36 @@ static const ek_type *composite_opaque(ck_ctx *c, const ek_node *e,
 static const ek_type *comma_tuple(ck_ctx *c, const ek_node *e,
                                   const ek_type *exp);
 
+/* A dictionary key that is a bare name no binding carries: the
+   spelling is the record-field escape hatch, but at a dictionary the
+   key is an expression, and an unbound name is the 7.4.2 miss, not a
+   silent opacity the lowerer would refuse. */
+void ck_dict_key_name(ck_ctx *c, const ek_node *key)
+{
+    const ek_ref *ref = NULL;
+
+    if (!key || key->kind != EK_N_NAME || key->u.path.count != 1) {
+        return;
+    }
+    /* A Pascal spelling at a key is the constructor reading, which the
+       item check anchors; the miss is the snake field-and-value
+       ambiguity's snake side. */
+    if (key->u.path.data[0][0] >= 'A' && key->u.path.data[0][0] <= 'Z') {
+        return;
+    }
+    if (ck_scope_get(c, key->u.path.data[0])) {
+        return;
+    }
+    if (!ck_ref_at(c, key, 0, &ref)
+        || ref->kind != EK_SYM_EXTERNAL
+        || ref->symbol != NULL) {
+        return;
+    }
+    ck_error(c, key, "E-unbound-name",
+             "`%s` is not bound in any enclosing scope (Clause 7.4.2)",
+             key->u.path.data[0]);
+}
+
 /* A nominal with no representation to read: a bridged name that
    carries no symbol, or a declaration error recovery left without
    variants. Its literals and patterns stay opaque. */
@@ -153,6 +183,7 @@ static const ek_type *composite_colons(ck_ctx *c, const ek_node *e,
             const ek_node *item = e->u.kids.data[i];
 
             if (item->kind == EK_N_COMPOSITE_ITEM) {
+                ck_dict_key_name(c, item->u.pair.a);
                 ck_item_value(c, item->u.pair.a, exp->u.dict.key, 0);
                 ck_item_value(c, item->u.pair.b, exp->u.dict.val, 0);
             }
