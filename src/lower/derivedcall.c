@@ -258,6 +258,19 @@ static const ek_type *spec_type(lower_ctx *c, const ek_node *e,
     const ek_ck_row *row;
     const ek_type *f;
 
+    /* from_json specializes over its TARGET, not its receiver: the
+       decode of a Json value into t keys on t, and every form's link
+       carries the target as the Result payload -- the variable the
+       instantiation substitutes (Clause 9.9.3). */
+    f = frow ? lower_type_in(c, frow->type) : NULL;
+    if (f && f->kind == EK_T_FN && strcmp(name, "from_json") == 0) {
+        const ek_type *res = f->u.fn.result;
+
+        if (res && res->kind == EK_T_NOMINAL && res->u.nominal.argc == 2) {
+            return res->u.nominal.args[0];
+        }
+        return NULL;
+    }
     if (form == CF_MEMBER) {
         row = callee->u.field.recv ? lower_row(c, callee->u.field.recv)
                                    : NULL;
@@ -268,15 +281,7 @@ static const ek_type *spec_type(lower_ctx *c, const ek_node *e,
                                    : NULL;
         return row ? lower_type_in(c, row->type) : NULL;
     }
-    f = frow ? lower_type_in(c, frow->type) : NULL;
     if (!f || f->kind != EK_T_FN || f->u.fn.count < 1) {
-        return NULL;
-    }
-    if (strcmp(name, "from_json") == 0) {
-        const ek_type *res = f->u.fn.result;
-        if (res && res->kind == EK_T_NOMINAL && res->u.nominal.argc == 2) {
-            return res->u.nominal.args[0];
-        }
         return NULL;
     }
     return f->u.fn.params[0];
