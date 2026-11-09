@@ -301,6 +301,19 @@ static const ek_type *c_head_call(ck_ctx *c, const ek_node *e,
 
     if (recv->kind == EK_N_NAME && strcmp(name, "get_errno") == 0) {
         ret = ck_std_type(c, "I32");
+    } else if (recv->kind == EK_N_FIELD && strcmp(name, "of") == 0) {
+        /* The ferry's entry direction: a UInt rides into C.Size by
+           value (Clause 10.3.5); the type has no checked reading, so
+           the result stays opaque and the written annotation carries
+           it (Clause 10.3). */
+        const ek_type *uint_t = ck_std_type(c, "UInt");
+
+        if (!uint_t) {
+            return call_fn(c, e, NULL, name, NULL, NULL, &e->u.call.args,
+                           1, implicit);
+        }
+        param = uint_t;
+        ret = ck_opaque(c);
     } else if (recv->kind == EK_N_FIELD && strcmp(name, "to_uint") == 0) {
         /* C.Size has no checked type: the written annotation carries
            it to the marshalling layer. The conversion reads the
@@ -322,7 +335,19 @@ static const ek_type *c_head_call(ck_ctx *c, const ek_node *e,
         return call_fn(c, e, NULL, name, NULL, NULL, &e->u.call.args, 1,
                        implicit);
     }
-    t = ck_fn(c, param ? &param : NULL, param ? 1 : 0, ret, EK_ARROW_PURE);
+    {
+        const ek_type **ps = NULL;
+
+        if (param) {
+            ps = ek_arena_alloc(c->arena, sizeof *ps);
+            if (!ps) {
+                return call_fn(c, e, NULL, name, NULL, NULL,
+                               &e->u.call.args, 1, implicit);
+            }
+            ps[0] = param;
+        }
+        t = ck_fn(c, ps, param ? 1 : 0, ret, EK_ARROW_PURE);
+    }
     ck_row(c, callee, t, EK_RD_NAMESPACE);
     return call_fn(c, e, t, name, NULL, NULL, &e->u.call.args, 0, implicit);
 }

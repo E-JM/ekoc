@@ -93,6 +93,20 @@ lower_val c_ns_call(lower_ctx *c, lower_scope *scope,
         lower_error(c, e, "the member `C.%s` has no lowering", name);
         return lower_discard_call(c, scope, e, form);
     }
+    /* `C.Size.of(v)`: the ferry in; the value rides as the unsigned
+       payload a size_t marshals from (Clause 10.3.5). */
+    if (strcmp(name, "of") == 0
+        && strcmp(recv->u.field.name, "Size") == 0
+        && e->u.call.args.count == 1 && !form->extra && !form->has_recv) {
+        lower_val a = lower_sub(c, scope, e->u.call.args.data[0]);
+        const char *at = lower_as_temp(c, scope, &a);
+        const char *r = lower_temp(c, scope);
+
+        lower_pad(c);
+        lower_emitf(c, "ek_val %s = ek_val_uint((uint64_t)%s.as.i);\n",
+                    r, at);
+        return (lower_val){ r, 1 };
+    }
     /* `C.Size.to_uint(v)`: the head form of the receiver reading; the
        written argument is the size. */
     if (strcmp(name, "to_uint") == 0

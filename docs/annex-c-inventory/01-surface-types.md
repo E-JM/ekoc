@@ -105,5 +105,6 @@ functions carry no `eq`, no `lt`, and no JSON pair; use of such a member is
 `E-no-eq` or `E-json-shape` (Annex B.3). `show` on a capability produces
 `<cap>` and on a function `<fn>` (Clause 9.8.3). `Bool` has one non-derived
 member, `Bool.not: (Bool) -> Bool` (Clause 9.3). The `C` namespace contributes
-`C.get_errno: () -> I32` and `C.Size.to_uint: (C.Size) -> UInt`
+`C.get_errno: () -> I32`, `C.Size.of: (UInt) -> C.Size`, and
+`C.Size.to_uint: (C.Size) -> UInt`
 (Clause 10.3.2).

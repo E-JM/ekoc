@@ -41,7 +41,7 @@ no Eko-side counterpart. Its members are specified in the following table.
 | Member | Shape | Semantics |
 |---|---|---|
 | `C.Ptr.Void` | opaque pointer | no dereference and no arithmetic; typed wrapping is an ordinary record, as in `SqLite: type = [raw: C.Ptr.Void]` |
-| `C.Size` | `size_t` ferry | compare and convert to `UInt` (`to_uint`, total); no arithmetic |
+| `C.Size` | `size_t` ferry | construct from `UInt` (`of`), compare, and convert to `UInt` (`to_uint`, total); no arithmetic |
 | `C.get_errno` | `() -> I32` | reads the C thread-local `errno`, which is program-internal state and therefore pure (Clause 4.5); a standard-library `Pure` extern to a host symbol |
 | `C.In T` | read borrow | Clause 10.3.4 |
 
@@ -51,9 +51,11 @@ crosses the boundary unchanged, and a crossing transfers no ownership: a
 release call is an ordinary extern against the mirrored library's own
 protocol, never a duty the boundary owes.
 
-`C.Size` is a distinct type. It compares with `==` and `<` and converts to
-`UInt`; it has no arithmetic. A value of type `C.Size` is permitted only in the
-positions recorded in Clause 10.3.5.
+`C.Size` is a distinct type. `C.Size.of` is the ferry's entry: it constructs a
+`C.Size` from a `UInt`, total, the value riding as the `size_t` it marshals as
+(Clause 10.3.5). It compares with `==` and `<` and converts to `UInt`; it has
+no arithmetic. A value of type `C.Size` is permitted only in the positions
+recorded in Clause 10.3.5.
 
 `C.get_errno` is pure: the C `errno` is thread-local program state, not the
 world. The standard library declares it as a `Pure` extern to a host symbol.
