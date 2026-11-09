@@ -120,6 +120,7 @@ esc_result scan_escape(lex_ctx *c, int in_char, uint32_t *out)
                   "escape \\' is not valid in a string literal");
         return ESC_ERROR;
     case '{': *out = 0x7B; return ESC_OK;
+    case '}': *out = 0x7D; return ESC_OK;
     case 'u': return scan_unicode(c, line, col, out);
     default:
         ctx_error(c, "E-escape", line, col, "unknown escape sequence");

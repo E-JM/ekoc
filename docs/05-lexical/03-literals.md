@@ -128,6 +128,7 @@ The escapes are:
 | Escape | Value |
 |---|---|
 | `\{` | a literal `{`, with no interpolation |
+| `\}` | a literal `}`, with no slot meaning |
 | `\n` | U+000A |
 | `\t` | U+0009 |
 | `\r` | U+000D |
