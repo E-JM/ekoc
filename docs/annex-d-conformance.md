@@ -20,8 +20,8 @@ every test (Clause 2.7).
 
 | Component | Location | Form | Required outcome |
 |---|---|---|---|
-| Positive modules | `tests/conformance/` | 30 Eko modules: 29 test roots and one fixture | compile; every test binding executes without panic |
-| Negative entries | `tests/negative/manifest.md` | 38 minimal programs | compile-time rejection with the stated outcome |
+| Positive modules | `tests/conformance/` | 33 Eko modules: 32 test roots and one fixture | compile; every test binding executes without panic |
+| Negative entries | `tests/negative/manifest.md` | 40 minimal programs | compile-time rejection with the stated outcome |
 | Runner | toolchain | test runner over both classes | per-test report (Clause D.6) |
 
 ## D.2 Positive Tests
@@ -39,7 +39,7 @@ block. It has no arrow and does not enter the module interface (Clauses
 9.14.1, 9.14.6). A module without a test binding is an ordinary
 dependency under a test root; `geolib.eko` is the only such module.
 
-The suite contains 151 test bindings. Each test is a block of ordinary
+The suite contains 192 test bindings. Each test is a block of ordinary
 expressions; its value is discarded. Assertions are the standard library
 functions `assert`, `assert_eq`, and `assert_ne` (Clause 9.14.3). `assert_eq`
 locks both arguments to one type and reports failure through `inspect`
@@ -182,10 +182,11 @@ number of test bindings. `geolib.eko` is a fixture and has none.
 | `cap_surface.eko` | yes | 8 | 9.1.1, 9.12, 9.14.5, 10.8 | capability handle types; derivations construct and forward; compiler-provided declarations; `File` family at a handle parameter |
 | `case_patterns.eko` | yes | 8 | 6.7.1, 6.7.2, 6.7.3, 6.7.5, 6.8.2, 6.8.3, 6.8.4, 6.8.5, 7.7.2, 7.7.3, 8.3.1, 8.3.3, 8.3.4, 9.8.1 | guards; or-patterns; list and record patterns; literals; multiple scrutinees; single-line form |
 | `char_class.eko` | yes | 5 | 9.4.2, 9.4.4, 9.11.1 | ASCII letter and digit predicates; the White_Space and XID properties; trim follows the space property |
-| `container_keys.eko` | yes | 4 | 9.10.3, 9.10.4 | a list as a dictionary key; equal sets deduplicating as elements; a dictionary as a key; a nested list key |
+| `collection_heads.eko` | yes | 10 | 9.8.1, 9.8.2, 9.8.3, 9.8.4, 9.9.3; Annex C.3, C.4 | head-qualified derived members over List and Dict: equality, ordering, show, hash, JSON over the structural shape the arguments determine |
+| `container_keys.eko` | yes | 8 | 9.10.3, 9.10.4 | a list as a dictionary key; equal sets deduplicating as elements; a dictionary as a key; a nested list key |
 | `ctor_anchor.eko` | yes | 2 | 7.4.6, 7.5.2 | same-named constructors of different types; the expected type selects one |
 | `ctor_anchor_std.eko` | yes | 1 | 7.4.6, 7.6 | self-anchoring through the single visible constructor |
-| `data_services.eko` | yes | 11 | 6.5.4, 7.8.6, 9.5.1, 9.5.2, 9.5.3, 9.6.1, 9.6.2, 9.6.3, 9.6.4, 9.7.1, 9.7.3, 9.8.1, 9.9.2, 9.9.3, 9.9.4, 9.9.5, 9.13.1 | `Bytes` round trips, append, and the word bridge; JSON derivation and external tagging; numeric and parse round trips; frozen time; formatting |
+| `data_services.eko` | yes | 12 | 6.5.4, 7.8.6, 9.5.1, 9.5.2, 9.5.3, 9.6.1, 9.6.2, 9.6.3, 9.6.4, 9.7.1, 9.7.3, 9.8.1, 9.9.2, 9.9.3, 9.9.4, 9.9.5, 9.13.1 | `Bytes` round trips, append, and the word bridge; JSON derivation and external tagging; numeric and parse round trips; frozen time; formatting |
 | `derived_services.eko` | yes | 11 | 5.9.3, 7.5.6, 7.7.2, 8.5.3, 9.4.2, 9.8.1, 9.8.2, 9.8.3, 9.8.4, 9.8.5, 9.8.6, 9.8.7, 9.10.1, 9.10.4 | `show` and `inspect`; override through interpolation; deep equality; declaration order; immutable `with`; stable `sort_by`; capability display; the `<fn>` form forwarded through a composite; non-`String` dictionary keys; a fold over an unanchored accumulator; `String.codepoints` |
 | `dict_order.eko` | yes | 4 | 9.10.2 | insertion order; reinserting keeps the place; removing then inserting; an empty dictionary |
 | `generics.eko` | yes | 6 | 6.3.5, 6.9.4, 7.5.6, 7.6.1, 7.6.2, 7.6.3, 7.6.4, 7.7.2, 8.7.1, 8.8.2, 8.8.3, 9.2.2, 9.10.1 | implicit type variables; mutual recursion; recursive generic tree; self tail recursion; explicit comparator; instantiation by unification |
@@ -196,9 +197,10 @@ number of test bindings. `geolib.eko` is a fixture and has none.
 | `lambdas_capture.eko` | yes | 4 | 6.4.1, 6.4.2, 7.9.2, 7.9.4, 7.9.5, 7.9.6, 8.2.1, 8.2.3, 9.10.1, 9.14.5 | lambdas without annotations; snapshot capture; pure factory returning a `!` closure; dispatcher bit |
 | `list_combinators.eko` | yes | 4 | 9.10.1, 9.11.1 | `fold_until` stops at its own answer; `find_map` yields the first hit; `set` is domain-checked; `rep` repeats |
 | `local_bindings.eko` | yes | 2 | 6.3.2, 7.6.3 | a local binding at a function type takes a lambda or a named function read as a value |
-| `namespaces.eko` | yes | 7 | 7.4.3, 7.9, 9.6, 9.10 | namespace rows in both spellings; arithmetic rows; a capability whose world bit flows from the row |
+| `namespaces.eko` | yes | 9 | 7.4.3, 7.9, 9.6, 9.10 | namespace rows in both spellings; arithmetic rows; a capability whose world bit flows from the row |
 | `ranges.eko` | yes | 3 | 6.5.6, 9.8, 9.10.5 | both range operators over each endpoint type; compiler-supplied services over `Range`; wildcard arm |
 | `raw_strings.eko` | yes | 4 | 5.2.2, 5.9.4 | no escape or interpolation; the common indent stripped; blank lines; no closing newline |
+| `receiver_literals.eko` | yes | 7 | 7.5.3, 7.8.1, 7.8.2, 7.9.2 | a bare literal receiver anchors at the member: list, dictionary, chains, the direct form; effectful bodies at value bindings under the enclosing arrow |
 | `regex_companion.eko` | yes | 10 | 9.1.3, 9.11.3 | the pattern subset; the ASCII-only fold; the empty pattern; the rejected forms; the long-line bound |
 | `result_chains.eko` | yes | 4 | 6.3.4, 6.8.1, 7.5.4, 8.2.4, 9.2.1, 9.2.2, 9.6.3, 9.10.1, 9.11.1, 9.14.4 | `<-` unwrapping; `to_result` and `map_err`; wildcard links over `Result _ e`; table-driven test |
 | `selective_import.eko` | yes | 2 | 6.5.2, 7.2.3, 9.1.2 | selective import opens one free name; free-call forms of `show` and `panic` |
@@ -206,7 +208,7 @@ number of test bindings. `geolib.eko` is a fixture and has none.
 | `slice_domain.eko` | yes | 3 | 9.10.1, 9.11.1 | a start and a length inside the sequence; a request whose counts would overflow yields `None` |
 | `std_show.eko` | yes | 6 | 9.1.3, 9.7.4, 9.9.2 | `std/time` import; `Duration` decimal seconds and parse; `Time` ISO 8601 UTC and parse; `Json` minimal text |
 | `string_split.eko` | yes | 6 | 9.4.2, 9.11.1 | `split` keeps empty fields; `lines` drops the one trailing empty; empty text has no lines; a large input holds the walk linear |
-| `types_composites.eko` | yes | 9 | 6.3.5, 6.6.1, 6.6.2, 6.6.3, 6.8.1, 6.9.2, 6.9.5, 7.5.2, 7.5.3, 7.5.5, 9.8.6, 9.10.2 | variants; records with nested partial update; newtype; tuples; dictionaries; shape adaptation |
+| `types_composites.eko` | yes | 10 | 6.3.5, 6.6.1, 6.6.2, 6.6.3, 6.8.1, 6.9.2, 6.9.5, 7.5.2, 7.5.3, 7.5.5, 9.8.6, 9.10.2 | variants; records with nested partial update; newtype; tuples; dictionaries; shape adaptation |
 
 The mapping is not exhaustive in the other direction: a clause may have no
 dedicated module. The absence of a module is not permission to violate the
@@ -254,3 +256,4 @@ test, not the clause.
 The suite is not part of a program build. Test bindings do not enter
 interfaces, and a test root compiles independently of other roots (Clause
 9.14.6).
+| `vector.eko` | yes | 16 | 9.10.6, 9.8.1, 9.8.4 | the vector member face and derived services: of and to_list, push growth, persistence, domain rules, equality, display |

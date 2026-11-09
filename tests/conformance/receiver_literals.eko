@@ -1,0 +1,38 @@
+// Receiver-position literals (Clauses 7.8.2, 7.5.3): a bare composite
+// literal anchors at its member's first parameter. The value-binding
+// world rule of 7.9.2 rides the same suite: an effectful body types
+// under the enclosing arrow, annotated or not.
+
+inc: (n: Int) -> Int = n + 1
+is_odd: (n: Int) -> Bool = n % 2 == 1
+double: (n: Int) -> Int = n * 2
+
+_pair: (k: String, v: Int) -> String = "{k}={v}"
+
+literal_list_map: test =
+    r: []Int = {1, 2, 3}.map(inc)
+    assert_eq(r, {2, 3, 4})
+
+literal_list_filter: test =
+    r: []Int = {1, 2, 3, 4}.filter(is_odd)
+    assert_eq(r, {1, 3})
+
+literal_chain: test =
+    r: []Int = {1, 2, 3, 4}.filter(is_odd).map(double)
+    assert_eq(r, {2, 6})
+
+literal_dict_insert: test =
+    d: [String]Int = {"a": 1}.insert("b", 2)
+    assert_eq(d.get("b"), Some 2)
+
+literal_dict_merge: test =
+    d: [String]Int = {}.merge({"a": 1})
+    assert_eq(d, {"a": 1})
+
+literal_list_append: test =
+    r: []Int = {1, 2}.append({3})
+    assert_eq(r, {1, 2, 3})
+
+literal_in_direct_form: test =
+    r: []Int = List.map({1, 2}, inc)
+    assert_eq(r, {2, 3})

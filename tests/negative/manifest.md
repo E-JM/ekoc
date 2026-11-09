@@ -44,6 +44,8 @@ otherwise it names the rejection and the normative clause.
 | N36 | raw string opener without a line break | compile error: the opening delimiter is followed by a line break |
 | N37 | equality over a compiled pattern | `E-no-eq` |
 | N38 | non-ASCII module stem | `E-name-case` |
+| N39 | empty literal receiver with an ambiguous member | `E-literal-expected` |
+| N40 | world call in a top-level initializer | `E-world-bit` |
 
 ## N01 — nominal mismatch
 
@@ -512,3 +514,32 @@ v: Int = 1
 
 Expected: `E-name-case`. The same stem rule answers an import before
 the import's file lookup.
+
+## N39 — the empty literal receiver with an ambiguous member
+
+The empty literal admits both structural families, and `map` is a member of
+both type namespaces, so its family is undecidable (Clauses 7.5.3, 7.8.2).
+
+```eko
+inc: (n: Int) -> Int = n + 1
+
+main: (out: Out) ! =
+    v: []Int = {}.map(inc)
+```
+
+Expected: `E-literal-expected`. An annotated receiver or the direct form
+resolves the choice.
+
+## N40 — a world call in a top-level initializer
+
+Top-level initialization is pure in every binding form; an extern call needs
+no capability, so the rule is checked, not left to scope (Clauses 7.1.2,
+7.9.2).
+
+```eko
+rand_next: () !-> U32 = extern "my_rand_next"
+
+x: U32 = rand_next()
+```
+
+Expected: `E-world-bit`.
