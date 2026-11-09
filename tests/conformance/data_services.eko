@@ -57,6 +57,15 @@ json_adt_decode: test =
     assert_eq(Token.from_json(n.to_json()), Ok n)
     assert(Token.from_json(Json.parse("\{\"Sep\":1}").unwrap()).is_err())
 
+json_identity: test =
+    // The Json type decodes from its own value: the round trip is the
+    // identity for every Json shape (Clauses 9.9.3, 9.9.5).
+    a: Json = Int 5
+    assert_eq(Json.from_json(a), Ok a)
+    b: Json = Obj({"k": Arr({Null, Bool True, Str "s"})})
+    assert_eq(Json.from_json(b), Ok b)
+    assert_eq(b.to_json().from_json(), Ok b)
+
 json_errors: test =
     assert(Json.parse("not json").is_err())
 

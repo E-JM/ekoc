@@ -279,6 +279,15 @@ static void emit_from_shape(lower_ctx *c, lower_demit *d, const char *name,
         }
         return;
     }
+    if (t->kind == EK_T_NOMINAL && t->u.nominal.sym && t->u.nominal.sym->module
+        && strcmp(t->u.nominal.sym->module, "std") == 0
+        && strcmp(t->u.nominal.sym->name, "Json") == 0) {
+        /* The Json type decodes from its own value: the round trip is
+           the identity, and an identity decode never fails (Clause
+           9.9.3, 9.9.5). */
+        lower_json_ok_emit(d, "    ", "ek_keep(v)");
+        return;
+    }
     if (t->kind == EK_T_NOMINAL
         && lower_variants_of(c, NULL, t, &vs, &nv, 1)) {
         /* The decode body constructs each variant it answers, so the

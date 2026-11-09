@@ -385,6 +385,14 @@ void lower_dsvc_json_emit(lower_ctx *c, const char *name, const ek_type *t,
         if (!emit_to_shape(c, &d, t)) {
             lower_json_err_lit(&d, "    ", ""); /* check gated the shape */
         }
+    } else if (t->kind == EK_T_NOMINAL && t->u.nominal.sym
+               && t->u.nominal.sym->module
+               && strcmp(t->u.nominal.sym->module, "std") == 0
+               && strcmp(t->u.nominal.sym->name, "Json") == 0) {
+        /* The Json type encodes as its own value: the pair is the
+           identity on both sides, so the involution holds (Clause
+           9.9.5). */
+        lower_d_printf(&d, "    return ek_keep(v);\n");
     } else if (t->kind == EK_T_NOMINAL
                && (emit_to_shape(c, &d, t)
                    || lower_variants_of(c, NULL, t, &vs, &nv, 0))) {
