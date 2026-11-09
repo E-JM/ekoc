@@ -546,6 +546,9 @@ const ek_type *ck_call(ck_ctx *c, const ek_node *e, const ek_type *expected);
 const ek_type *ck_field(ck_ctx *c, const ek_node *e);
 const ek_type *ck_link(ck_ctx *c, const ek_node *link, const ek_type *recv,
                        const char *name, ek_reading *rd);
+const ek_symbol *ns_scan(ck_ctx *c, const char *want, const char *owner,
+                         const char *name); /* a declared namespace member
+   in a module's surface, by owner and spelling */
 const ek_type *ck_link_mod(ck_ctx *c, const ek_node *link,
                            const ek_type *recv, const char *name,
                            const ek_symbol *mod, ek_reading *rd);

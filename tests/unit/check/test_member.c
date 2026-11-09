@@ -527,6 +527,54 @@ static void receiver_binds_first(void)
     cfx_end(&f);
 }
 
+/* A bare composite literal in receiver position (Clause 7.8.2): the
+   shape admits the structural families, the member's spelling selects
+   one, and the member's first parameter types the literal. */
+static void literal_receivers(void)
+{
+    cfx f;
+
+    /* A comma literal is a list: List.map types it, and the argument
+       fixes the element. */
+    cfx_begin(&f,
+              "inc: (n: Int) -> Int = n + 1\n"
+              "v: []Int = {1, 2}.map(inc)\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+
+    /* A colon literal is a dictionary: Dict.insert, a compiler row,
+       types it the same way. */
+    cfx_begin(&f,
+              "v: [String]Int = {\"a\": 1}.insert(\"b\", 2)\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+
+    /* The empty literal rides the member's family: insert is Dict's
+       alone, so the empty brace anchors as a dictionary. */
+    cfx_begin(&f,
+              "v: [String]Int = {}.insert(\"a\", 1)\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+
+    /* A spelling both structural namespaces declare leaves the empty
+       literal's family undecidable: one diagnostic, with the way
+       out. */
+    cfx_begin(&f,
+              "inc: (n: Int) -> Int = n + 1\n"
+              "v: []Int = {}.map(inc)\n");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-literal-expected", 2));
+    cfx_end(&f);
+
+    /* No structural namespace carries the spelling: the walk's own
+       report stands. */
+    cfx_begin(&f,
+              "v: Int = {1, 2}.bogus()\n");
+    EK_CHECK_U64(cfx_errors(&f), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-literal-expected", 1));
+    cfx_end(&f);
+}
+
 int main(void)
 {
     station_field();
@@ -542,5 +590,6 @@ int main(void)
     type_qualified_calls();
     receiver_station_on_composites();
     receiver_binds_first();
+    literal_receivers();
     return ek_test_report("check/member");
 }

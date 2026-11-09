@@ -95,6 +95,91 @@ static void chain_receiver(ck_ctx *c, const ek_node *recv, chain_recv *w)
     chain_link(c, recv, w);
 }
 
+/* The member a structural family's namespace carries, by source
+   declaration first and the compiler's surface rows second (the
+   composite_link order); NULL when neither carries it. */
+static const ek_type *family_member(ck_ctx *c, const ek_node *e, int list,
+                                    const char *name)
+{
+    const ek_symbol *m = ns_scan(c, "std", list ? "List" : "Dict", name);
+    int owned;
+
+    if (m) {
+        const ek_node *saved = c->inst_call;
+        const ek_type *t;
+
+        c->inst_call = e;
+        t = ck_type_of(c, m);
+        c->inst_call = saved;
+        return t;
+    }
+    return ck_ns_row(c, list ? ck_list(c, ck_ivar(c))
+                             : ck_dict(c, ck_ivar(c), ck_ivar(c)),
+                     name, &owned);
+}
+
+/* A bare composite literal in receiver position (Clause 7.8.2). The
+   literal's shape admits the structural families: comma items a list,
+   colon pairs a dictionary, the empty brace both. The member's
+   spelling selects among the families' namespaces: exactly one
+   carrying it anchors the literal at that member's first parameter,
+   two carrying it leave the family undecidable, and none carrying it
+   falls to the walk's own report. A record literal names no nominal
+   here, and a tuple carries no members, so neither anchors. Returns
+   the member's type when anchored, NULL otherwise; *handled is set
+   when the receiver is typed or recovered here and the walk must not
+   run. */
+static const ek_type *literal_receiver_anchor(ck_ctx *c, const ek_node *e,
+                                              const ek_node *callee,
+                                              chain_recv *w, int *handled)
+{
+    const ek_node *lit = callee->u.field.recv;
+    const char *name = callee->u.field.name;
+    const ek_type *lt = NULL;
+    const ek_type *dt = NULL;
+    const ek_type *t;
+    const ek_type *f;
+    size_t i;
+    int colons = 0;
+
+    for (i = 0; i < lit->u.kids.count; i++) {
+        const ek_node *item = lit->u.kids.data[i];
+
+        if (item->kind == EK_N_COMPOSITE_ITEM && item->u.pair.a) {
+            colons = 1;
+        }
+    }
+    if (!colons) {
+        lt = family_member(c, e, 1, name);
+    }
+    if (colons || !lit->u.kids.count) {
+        dt = family_member(c, e, 0, name);
+    }
+    if (lt && dt) {
+        ck_error(c, lit, "E-literal-expected",
+                 "the empty literal's family is undecidable: List and Dict "
+                 "both declare `%s`; annotate the receiver or use the "
+                 "direct form (Clauses 7.5.3, 7.8.2)", name);
+        w->recv = ck_opaque(c);
+        *handled = 1;
+        return NULL;
+    }
+    t = lt ? lt : dt;
+    if (!t) {
+        return NULL; /* no structural candidate: the walk reports */
+    }
+    f = ck_prune(t);
+    if (!f || f->kind != EK_T_FN || f->u.fn.count < 1) {
+        return NULL;
+    }
+    /* The receiver occupies the first argument position: the member's
+       first parameter is the literal's expected type, and the call's
+       unification anchors it (Clauses 7.5.3, 7.8.1). */
+    w->recv = ck_expr(c, lit, f->u.fn.params[0]);
+    *handled = 1;
+    return t;
+}
+
 /* The derived `with` service (Clause 9.8.6): the receiver's record
    rebuilt from the partial field literal, the receiver's own type
    coming back. The service's second parameter has no type-syntax name,
@@ -185,16 +270,38 @@ static const ek_type *call_member_walk(ck_ctx *c, const ek_node *e,
     chain_recv w;
     const ek_type *t;
     const ek_type *pt;
+    int handled = 0;
 
-    walk_of(c, callee, qualified, pre, &w);
-    {
-        const ek_node *saved = c->inst_call;
+    if (!qualified && !pre && callee->u.field.recv
+        && callee->u.field.recv->kind == EK_N_COMPOSITE) {
+        /* The receiver is a bare literal: the walk cannot type it
+           before the family is known, so the member anchors it. */
+        memset(&w, 0, sizeof w);
+        t = literal_receiver_anchor(c, e, callee, &w, &handled);
+        if (handled && !t) {
+            /* The family was undecidable and is reported here; the
+               call makes no further claim. */
+            return call_fn(c, e, NULL, callee->u.field.name, NULL, NULL,
+                           &e->u.call.args, 1, implicit);
+        }
+        if (t) {
+            rd = EK_RD_NAMESPACE;
+            /* The link's row, as ck_link_mod would record it: the
+               lowerer reads the reading to dispatch the intrinsic. */
+            ck_row(c, callee, t, rd);
+        }
+    }
+    if (!handled) {
+        walk_of(c, callee, qualified, pre, &w);
+        {
+            const ek_node *saved = c->inst_call;
 
-        c->inst_call = e;
-        t = ck_link_mod(c, callee, qualified ? head : w.recv,
-                        callee->u.field.name,
-                        qualified ? NULL : w.module, &rd);
-        c->inst_call = saved;
+            c->inst_call = e;
+            t = ck_link_mod(c, callee, qualified ? head : w.recv,
+                            callee->u.field.name,
+                            qualified ? NULL : w.module, &rd);
+            c->inst_call = saved;
+        }
     }
     pt = rd == EK_RD_FIELD ? ck_prune(t) : NULL;
     if (rd == EK_RD_DERIVED && !qualified

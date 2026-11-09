@@ -26,8 +26,8 @@ const ek_type *field_of(const ek_type *r, const char *name)
 /* The namespace symbol `owner` declares as `name` in module `want`'s
    surface: std declares the structural list and dictionary members in
    its source, and a type's namespace lives in its declaring module. */
-static const ek_symbol *ns_scan(ck_ctx *c, const char *want,
-                                const char *owner, const char *name)
+const ek_symbol *ns_scan(ck_ctx *c, const char *want,
+                         const char *owner, const char *name)
 {
     size_t k, i;
 
