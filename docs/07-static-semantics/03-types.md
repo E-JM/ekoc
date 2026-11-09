@@ -100,11 +100,12 @@ A composite literal is resolved by its expected type:
 
 A composite literal never stands alone. Where no expected type exists, the
 literal requires an annotation (Clause 6.6.2); an empty literal follows the
-same rule. A partial record literal is legal only in the argument position of
-`with` (Clause 9.8.6); anywhere else it is rejected (Clause 6.6.3). A full
-record literal MUST name every field exactly once and no field outside the
-record type; list elements, dictionary keys and values, and tuple components
-MUST have the expected types.
+same rule. In receiver position the expected type is the anchored member's
+first parameter (Clause 7.8.2). A partial record literal is legal only in the
+argument position of `with` (Clause 9.8.6); anywhere else it is rejected
+(Clause 6.6.3). A full record literal MUST name every field exactly once and
+no field outside the record type; list elements, dictionary keys and values,
+and tuple components MUST have the expected types.
 
 A composite type is invariant in its component types. Shape adaptation does
 not enter a component (Clause 7.5.5). The exceptions at a collection-element

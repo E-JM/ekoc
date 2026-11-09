@@ -57,8 +57,20 @@ the first argument, and the remaining arguments map left to right. The call is
 then typed exactly as the direct call.
 
 The receiver and the direct first argument occupy the same argument position;
-shape, `Never`, and bit adaptation apply to the receiver as to any argument. A
-qualified receiver call `a.Mod.f(b)` is identical to `Mod.f(a, b)`; module
+shape, `Never`, and bit adaptation apply to the receiver as to any argument.
+A composite literal in receiver position occupies that position before its
+family is known, so the member anchors it: the literal's shape admits the
+structural families of Clause 7.5.3 (comma items a list, colon pairs a
+dictionary, the empty brace both), and resolution asks the families' type
+namespaces for the member's spelling. Exactly one family carrying it resolves
+the link, and the literal is checked against that member's first parameter
+type as at any argument position, its variables instantiated by the call's
+unification (Clause 7.8.1). Two families carrying the spelling leave the
+empty literal's family undecidable; the form is `E-literal-expected`, and an
+annotated receiver or the direct form resolves the choice. A record literal
+names no nominal and a tuple carries no members, so neither anchors; the
+report stands for them as for a spelling no family carries.
+A qualified receiver call `a.Mod.f(b)` is identical to `Mod.f(a, b)`; module
 qualification affects resolution only. An operator is the same call: `a + b`
 is `Int.add(a, b)`, hence `a.add(b)` (Clause 7.8.3).
 
