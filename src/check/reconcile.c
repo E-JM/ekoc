@@ -151,11 +151,6 @@ void ck_reconcile(ck_ctx *c, const ek_node *at, const ek_type *bound,
     if (!val || c->oom) {
         return;
     }
-    if (ck_body_silent(c, val)) {
-        /* The body holds a reported site that claims no bit: the OR
-           folds a phantom, and a second diagnostic would cascade. */
-        return;
-    }
     if (val->kind == EK_N_LAMBDA) {
         body = ck_bit_of(c, val);
         if (own == EK_BIT_PURE && body == EK_BIT_WORLD) {
@@ -163,6 +158,12 @@ void ck_reconcile(ck_ctx *c, const ek_node *at, const ek_type *bound,
         }
     } else {
         body = ck_body_bit(c, val);
+    }
+    if (body == EK_BIT_PURE && ck_body_silent(c, val)) {
+        /* A reported site claims no bit, so a pure fold may hide its
+           real one: this direction stays silent. A world-touching
+           fold is a genuine call's own claim and always answers. */
+        return;
     }
     if (body != own) {
         if (bound && bound->kind == EK_T_FN) {
