@@ -103,8 +103,13 @@ static ck_conform conform_fn(ck_ctx *c, const ek_type *a, const ek_type *e)
     size_t i;
 
     if (a->u.fn.arrow != e->u.fn.arrow
-        && !(a->u.fn.arrow == EK_ARROW_PURE && e->u.fn.arrow != EK_ARROW_PURE)) {
-        return CK_MISMATCH; /* bit adaptation is one step */
+        && a->u.fn.arrow != EK_ARROW_PURE
+        && e->u.fn.arrow != EK_ARROW_OPEN) {
+        /* Bit adaptation is one step, and a `?` in the expected arrow
+           is the argument's to instantiate: `->` and `!->` both feed
+           it (Clause 7.9.6). What stays forbidden is a world-touching
+           argument at a pure expected arrow. */
+        return CK_MISMATCH;
     }
     if (a->u.fn.count != e->u.fn.count) {
         return CK_MISMATCH;
