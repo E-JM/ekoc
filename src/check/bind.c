@@ -110,6 +110,17 @@ static const ek_type *ck_binding(ck_ctx *c, const ek_node *m, int top)
                      "parameter types (Clauses 6.3.3, 7.6.3)");
         }
         bound = ck_expr(c, val, NULL);
+        /* Top-level initialization is pure whatever the binding form;
+           an extern call needs no capability, so the rebind is checked,
+           not ruled out by scope (Clauses 7.1.2, 7.9.2). A body with a
+           reported site claims no bit and owes no judgment here. */
+        if (top && val && !ck_body_silent(c, val)
+            && ck_body_bit(c, val) != EK_BIT_PURE) {
+            ck_error(c, m, "E-world-bit",
+                     "top-level initialization is pure; a bit-setting "
+                     "call belongs inside a world-touching function "
+                     "(Clauses 7.1.2, 7.9.2)");
+        }
     }
     if (!ck_irrefutable(c, pat, bound)) {
         ck_error(c, pat, "E-refutable-binding",

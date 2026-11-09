@@ -206,10 +206,13 @@ static const ek_type *call_member_walk(ck_ctx *c, const ek_node *e,
     if (rd != EK_RD_FIELD) {
         /* Namespace, module, derived, and opaque readings all take
            the receiver first; a type head supplies namespace context,
-           not an argument. */
+           not an argument. A link reported absent is a recovery site:
+           the call makes no claim beyond the reported error. */
         const ek_type *out = call_fn(c, e, t, callee->u.field.name, w.recv,
                                      qualified ? head : NULL,
-                                     &e->u.call.args, 0, implicit);
+                                     &e->u.call.args,
+                                     ck_map_get(&c->absent, callee) != NULL,
+                                     implicit);
 
         set_of_key_domain(c, e, callee, head, out);
         return out;
@@ -270,7 +273,8 @@ const ek_type *call_service(ck_ctx *c, const ek_node *e,
                  "(Clause 7.4.3)", name);
         return call_fn(c, e, NULL, name, NULL, NULL, &rest, 1, implicit);
     }
-    return call_fn(c, e, t, name, recv, NULL, &rest, 0, implicit);
+    return call_fn(c, e, t, name, recv, NULL, &rest,
+                   ck_map_get(&c->absent, callee) != NULL, implicit);
 }
 
 /* A qualified constructor applied as a call on its dotted head:

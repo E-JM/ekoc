@@ -90,8 +90,16 @@ static const ek_type *call_opaque(ck_ctx *c, const ek_node *e,
                  "a value of type %s is not called (Clause 7.8.1)",
                  ck_type_name(c, f));
     }
-    ck_call_bit(c, e, ck_call_bit_of(c, f, member, bit_recv ? bit_recv : recv,
-                                     nodes, types, nargs, off));
+    /* A recovery site (synthesize) is already reported: it makes no
+       bit claim, so one defect stays one diagnostic. */
+    if (synthesize) {
+        ck_map_put(c, &c->absent, e, (const void *)1);
+        ck_call_bit(c, e, EK_BIT_PURE);
+    } else {
+        ck_call_bit(c, e,
+                    ck_call_bit_of(c, f, member, bit_recv ? bit_recv : recv,
+                                   nodes, types, nargs, off));
+    }
     ck_row(c, e, ret, EK_RD_NONE);
     return ret;
 }

@@ -327,12 +327,13 @@ static void derivation_chains(void)
     cfx_end(&f);
 
     /* The chain head's namespace is closed, so an absent member is the
-       miss, not the bridge. */
+       miss, not the bridge. The reported call claims no bit, so the
+       binding's purity judgment stays silent: one defect, one
+       diagnostic. */
     cfx_begin(&f,
               "v: Int = In.from_lines({\"one\"}).bogus()\n");
-    EK_CHECK_U64(cfx_errors(&f), 2);
+    EK_CHECK_U64(cfx_errors(&f), 1);
     EK_CHECK(cfx_code_at_line(&f, "E-unbound-member", 1));
-    EK_CHECK(cfx_code_at_line(&f, "E-world-bit", 1));
     cfx_end(&f);
 }
 
@@ -381,15 +382,15 @@ static void out_rows(void)
     EK_CHECK_U64(cfx_errors(&f), 0);
     cfx_end(&f);
 
-    /* The namespace is closed; the absent
-       member leaves the body pure, so the surplus `!` is the second
-       diagnostic. */
+    /* The namespace is closed; the absent member is the one defect.
+       The reported call claims no bit, so neither the nested binding
+       (which carries no bit at all) nor the declaration's reconcile
+       adds a second diagnostic. */
     cfx_begin(&f,
               "log: (out: Out) !-> Int =\n"
               "    v: Int = out.bogus()\n");
-    EK_CHECK_U64(cfx_errors(&f), 2);
+    EK_CHECK_U64(cfx_errors(&f), 1);
     EK_CHECK(cfx_code_at_line(&f, "E-unbound-member", 2));
-    EK_CHECK(cfx_code_at_line(&f, "E-world-bit", 2));
     cfx_end(&f);
 }
 

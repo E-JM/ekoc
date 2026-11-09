@@ -44,6 +44,8 @@ static void absent(ck_ctx *c, const ek_node *at, const ek_type *r,
     ck_error(c, at, "E-unbound-member",
              "the receiver type %s has no member `%s` (Clause 7.4.3)",
              ck_type_name(c, r), name);
+    /* The link is reported: the call over it makes no bit claim. */
+    ck_map_put(c, &c->absent, at, (const void *)1);
 }
 
 /* The derived equality pair: E-no-eq where the derivation halts, the
@@ -376,6 +378,7 @@ const ek_type *ck_no_member(ck_ctx *c, const ek_node *at,
                  "module `%s` declares no member `%s` for the receiver %s "
                  "(Clauses 7.4.3, 7.4.4)", mod->name, name,
                  ck_type_name(c, r));
+        ck_map_put(c, &c->absent, at, (const void *)1);
         return ck_opaque(c);
     }
     /* A namespace the compiler rows complete has no opaque names

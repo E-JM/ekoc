@@ -232,6 +232,80 @@ static ek_bit body_children(ck_ctx *c, const ek_node *e)
     }
 }
 
+/* True when the subtree holds a node that claims no bit: a link or a
+   call whose site was already reported. A bit judgment over such a
+   body folds a phantom, so it stays silent and one defect keeps one
+   diagnostic (Clause B.1). The walk mirrors body_children. */
+static int silent_kids(ck_ctx *c, ek_node *const *kids, size_t n)
+{
+    size_t i;
+
+    for (i = 0; i < n; i++) {
+        if (kids[i] && ck_body_silent(c, kids[i])) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+int ck_body_silent(ck_ctx *c, const ek_node *e)
+{
+    if (!e) {
+        return 0;
+    }
+    if (ck_map_get(&c->absent, e)) {
+        return 1;
+    }
+    switch (e->kind) {
+    case EK_N_MODULE:
+    case EK_N_BLOCK:
+    case EK_N_COMPOSITE:
+    case EK_N_LAMBDA_PARAMS:
+        return silent_kids(c, e->u.kids.data, e->u.kids.count);
+    case EK_N_LET:
+    case EK_N_REBIND:
+    case EK_N_INVERT:
+        return ck_body_silent(c, e->u.bind.value);
+    case EK_N_NAMESPACE:
+        return ck_body_silent(c, e->u.namespace.value);
+    case EK_N_TEST_DECL:
+    case EK_N_EXTERN_DECL:
+    case EK_N_CTYPE_DECL:
+        return ck_body_silent(c, e->u.decl.body);
+    case EK_N_STRING_LIT:
+        return 0;
+    case EK_N_FIELD:
+        return ck_body_silent(c, e->u.field.recv);
+    case EK_N_CALL:
+        return silent_kids(c, e->u.call.args.data, e->u.call.args.count)
+               || ck_body_silent(c, e->u.call.callee);
+    case EK_N_APPLY:
+    case EK_N_COMPOSITE_ITEM:
+        return ck_body_silent(c, e->u.pair.a)
+               || ck_body_silent(c, e->u.pair.b);
+    case EK_N_PAREN:
+    case EK_N_UNARY:
+        return ck_body_silent(c, e->u.wrap.inner);
+    case EK_N_BINARY:
+        return ck_body_silent(c, e->u.binary.lhs)
+               || ck_body_silent(c, e->u.binary.rhs);
+    case EK_N_IF:
+        return ck_body_silent(c, e->u.ifexpr.cond)
+               || ck_body_silent(c, e->u.ifexpr.then)
+               || ck_body_silent(c, e->u.ifexpr.els);
+    case EK_N_CASE:
+        return silent_kids(c, e->u.caseexpr.scrutinees.data,
+                           e->u.caseexpr.scrutinees.count)
+               || silent_kids(c, e->u.caseexpr.arms.data,
+                              e->u.caseexpr.arms.count);
+    case EK_N_ARM:
+        return ck_body_silent(c, e->u.arm.guard)
+               || ck_body_silent(c, e->u.arm.body);
+    default:
+        return 0;
+    }
+}
+
 ek_bit ck_body_bit(ck_ctx *c, const ek_node *e)
 {
     const void *memo;

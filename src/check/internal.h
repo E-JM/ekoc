@@ -127,6 +127,7 @@ typedef struct {
     } *synth;
     size_t nsynth, csynth;
     ck_map subst;    /* final substitution memo */
+    ck_map absent;   /* link node -> reported member absence */
     ck_map bits;     /* node -> own bit: a call's bit, a lambda's body
                         bit, a binding's declared bit (worlds.c) */
     ck_map contrib;  /* node -> OR of call bits in its subtree, lambda
@@ -453,6 +454,8 @@ void ck_lambda_bit(ck_ctx *c, const ek_node *lam, ek_bit b);
 void ck_declare_bit(ck_ctx *c, const ek_node *decl, ek_bit b);
 ek_bit ck_bit_of(ck_ctx *c, const ek_node *n); /* recorded own bit */
 ek_bit ck_body_bit(ck_ctx *c, const ek_node *e); /* subtree OR */
+int ck_body_silent(ck_ctx *c, const ek_node *e); /* subtree holds a
+                                   reported site that claims no bit */
 ek_bit ck_call_bit_of(ck_ctx *c, const ek_type *f, const char *member,
                       const ek_type *recv, const ek_node *const *args,
                       const ek_type *const *types, size_t n, size_t off);

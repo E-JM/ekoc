@@ -195,7 +195,11 @@ const ek_type *annotated_binding(ck_ctx *c, const ek_node *m,
     inst_restore(c, &saved);
     if (val) {
         ck_declare_bit(c, m, ck_own_bit(bound));
-        if (!unfed) {
+        /* A nested value binding carries no bit: its body's call bits
+           answer to the enclosing function, as at a `:=` binding. A
+           function annotation and the top level keep the own-bit rule
+           (Clauses 7.9.2, 7.1.2). */
+        if (!unfed && (top || bound->kind == EK_T_FN)) {
             ck_reconcile(c, m, bound, val);
         }
     }

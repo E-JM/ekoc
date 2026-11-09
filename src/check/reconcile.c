@@ -151,6 +151,11 @@ void ck_reconcile(ck_ctx *c, const ek_node *at, const ek_type *bound,
     if (!val || c->oom) {
         return;
     }
+    if (ck_body_silent(c, val)) {
+        /* The body holds a reported site that claims no bit: the OR
+           folds a phantom, and a second diagnostic would cascade. */
+        return;
+    }
     if (val->kind == EK_N_LAMBDA) {
         body = ck_bit_of(c, val);
         if (own == EK_BIT_PURE && body == EK_BIT_WORLD) {
@@ -166,11 +171,12 @@ void ck_reconcile(ck_ctx *c, const ek_node *at, const ek_type *bound,
                      "7.9.2)", bit_name(own), bit_name(body));
         } else {
             ck_error(c, at, "E-world-bit",
-                     "the declared bit is %s, the body bit is %s; a value "
-                     "binding carries no bit — bind the call's result "
-                     "inside a world-touching function, or declare a "
-                     "function and write the call in its body (Clause "
-                     "7.9.2)", bit_name(own), bit_name(body));
+                     "the declared bit is %s, the body bit is %s; "
+                     "top-level initialization is pure, so a value "
+                     "binding at top level takes no bit-setting call — "
+                     "write the call inside a world-touching function "
+                     "(Clauses 7.1.2, 7.9.2)", bit_name(own),
+                     bit_name(body));
         }
     }
 }
