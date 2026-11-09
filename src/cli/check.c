@@ -55,6 +55,9 @@ int cli_check(const char *file)
     bytes = source.data != NULL ? source.data : "";
     cli_resolve(&log, arena, diag, file, cli_dir_of(arena, file),
                 bytes, source.len, &res, &chk);
+    /* A front stage that reported errors stops here: the lowerer
+       would read a broken intermediate and only cascade. */
+    if (cli_log_errors(&log) == 0) {
     /* the entry module alone decides the check's root kind: its own
        test bindings lift the `main` requirement */
     if (res.module_count != 0
@@ -68,6 +71,7 @@ int cli_check(const char *file)
             cli_log_drain(&log, diag);
         }
         ek_lower_with(res, chk, EK_LOWER_PROGRAM, arena, diag);
+    }
     }
     cli_log_drain(&log, diag);
     cli_log_print(&log);

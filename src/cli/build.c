@@ -78,6 +78,10 @@ static ek_lower_result lower_program(cli_diag_log *log, ek_arena *arena,
     cli_resolve(log, arena, diag, file, cli_dir_of(arena, file),
                 source->data != NULL ? source->data : "", source->len,
                 &res, &chk);
+    if (cli_log_errors(log) != 0) {
+        memset(&low, 0, sizeof low);
+        return low; /* the front already reported; lower would cascade */
+    }
     if (!cli_has_main(&res)) {
         ek_diag_emit(diag, EK_SEV_ERROR, "E-entry-point", file, 0, 0,
                      "the entry module declares no `main` (Clause 7.1.3)");

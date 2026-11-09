@@ -190,10 +190,22 @@ int cli_resolve(cli_diag_log *log, ek_arena *arena, ek_diag *diag,
     path[0] = dir != NULL ? dir : ".";
     lexed = ek_lex(bytes, len, file, arena, diag);
     cli_log_drain(log, diag);
+    /* One defect, one diagnosis: a stage that reported errors stops
+       the front there. The later stages read a corrupted
+       intermediate, and their diagnostics would only cascade. */
+    if (cli_log_errors(log) != 0) {
+        return 1;
+    }
     laid = ek_layout(lexed.tokens, lexed.count, file, arena, diag);
     cli_log_drain(log, diag);
+    if (cli_log_errors(log) != 0) {
+        return 1;
+    }
     ast = ek_parse(laid.tokens, laid.count, file, arena, diag);
     cli_log_drain(log, diag);
+    if (cli_log_errors(log) != 0) {
+        return 1;
+    }
     if (lexed.tokens == NULL || laid.tokens == NULL || ast.module == NULL) {
         ek_diag_emit(diag, EK_SEV_ERROR, "E-io", file, 0, 0,
                      "out of memory");
@@ -202,6 +214,9 @@ int cli_resolve(cli_diag_log *log, ek_arena *arena, ek_diag *diag,
     }
     *res = ek_resolve(ast.module, file, path, 1, arena, diag);
     cli_log_drain(log, diag);
+    if (cli_log_errors(log) != 0) {
+        return 1;
+    }
     *chk = ek_check(*res, arena, diag);
     cli_log_drain(log, diag);
     return 1;
