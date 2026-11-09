@@ -76,3 +76,14 @@ ctor_split_generic: test =
 
 mono_sub: test =
     assert_eq(show(_mono_sub(_Mono 9, _Mono 4)), "_Duration 5")
+
+local_block_body: test =
+    // A nested annotated binding at a function type reads the value as
+    // the declaration body: the annotation's parameter names bind over
+    // it (Clause 6.4.2), as at a module member.
+    twice: (n: Int) -> Int =
+        n * 2
+    assert_eq(twice(21), 42)
+    add3: (a: Int, b: Int, c: Int) -> Int =
+        a + b + c
+    assert_eq(add3(1, 2, 3), 6)

@@ -109,7 +109,7 @@ ek_node *p_import(p_ctx *c);
 /* binding.c: binding forms. */
 ek_node *p_binding_line(p_ctx *c, int top_level);
 ek_node *p_invert_bare(p_ctx *c); /* `<-` without a pattern */
-ek_node *p_binding_after_pattern(p_ctx *c, ek_node *pat);
+ek_node *p_binding_after_pattern(p_ctx *c, ek_node *pat, int top_level);
 ek_node *p_binding_name_head(p_ctx *c, int top_level);
 ek_node *p_after_colon(p_ctx *c, int top_level, const ek_slist *path,
                        const ek_layout_token *head);
