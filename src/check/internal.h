@@ -425,6 +425,7 @@ const ek_type *ck_ctor_head(ck_ctx *c, const ek_node *n);
 /* literal.c: literal placement and composite literals. */
 int ck_is_numeric(const ek_type *t);      /* Int, UInt, Float */
 int ck_is_machine_word(const ek_type *t); /* U8..I64 */
+int ck_is_word_name(const char *n);       /* the machine-word spellings */
 int ck_is_std(const ek_type *t, const char *name);
 const ek_type *ck_std_type(ck_ctx *c, const char *name);
 const ek_symbol *ck_std_symbol(ck_ctx *c, const char *name);

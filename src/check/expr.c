@@ -150,6 +150,17 @@ static const ek_type *external_type(ck_ctx *c, const ek_node *n,
     if (ref->ncands) {
         return ck_ctor_type(c, n, ref, expected);
     }
+    /* A machine-word spelling bridges with no symbol: check owns the
+       word identities, and a real nominal lets the member stations
+       answer (Clause 10.3.1). */
+    if (!ref->symbol && n->kind == EK_N_NAME && n->u.path.count == 1
+        && ck_is_word_name(n->u.path.data[0])) {
+        const ek_type *w = ck_std_type(c, n->u.path.data[0]);
+
+        if (w) {
+            return w;
+        }
+    }
     head = ck_ctor_head(c, n);
     return head ? head : ck_opaque(c);
 }

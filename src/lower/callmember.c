@@ -162,6 +162,24 @@ static lower_val intrinsic_member(lower_ctx *c, lower_scope *scope,
                    || strcmp(head->symbol->module, "cap") == 0
                    || strcmp(head->symbol->module, "time") == 0)) {
         family = head->symbol->name;
+    } else if (head && !head->symbol && head->node
+               && head->node->kind == EK_N_NAME
+               && head->node->u.path.count == 1
+               && (strcmp(head->node->u.path.data[0], "I8") == 0
+                   || strcmp(head->node->u.path.data[0], "I16") == 0
+                   || strcmp(head->node->u.path.data[0], "I32") == 0
+                   || strcmp(head->node->u.path.data[0], "I64") == 0
+                   || strcmp(head->node->u.path.data[0], "U8") == 0
+                   || strcmp(head->node->u.path.data[0], "U16") == 0
+                   || strcmp(head->node->u.path.data[0], "U32") == 0
+                   || strcmp(head->node->u.path.data[0], "U64") == 0
+                   || strcmp(head->node->u.path.data[0], "F32") == 0
+                   || strcmp(head->node->u.path.data[0], "F64") == 0)) {
+        /* The machine-word spellings bridge with no symbol: the head
+           form is the type-namespace form all the same (Clause
+           10.3.1), the written arguments filling the signature
+           receiver-first. */
+        family = head->node->u.path.data[0];
     }
     if (!family) {
         return (lower_val){ NULL, 0 };

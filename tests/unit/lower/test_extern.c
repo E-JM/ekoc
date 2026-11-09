@@ -282,7 +282,7 @@ static void c_get_errno(void)
     lfx_begin(&f,
               "main: () -> _ =\n"
               "    e = C.get_errno()\n"
-              "    d = 1 / (e - 0)\n"
+              "    d = 1 / (Int.from_i32(e) - 0)\n"
               "    _ := d\n"
               "    _\n");
     EK_CHECK(lfx_check_clean(&f));

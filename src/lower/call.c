@@ -52,26 +52,57 @@ lower_val c_ns_call(lower_ctx *c, lower_scope *scope,
                            const call_form *form)
 {
     const ek_node *recv = callee->u.field.recv;
-    const ek_ref *ref = recv ? lower_ref(c, recv) : NULL;
-    const char *name;
+    const ek_node *cnode = NULL;
+    const ek_ref *ref = NULL;
+    const char *name = NULL;
     const char *t;
 
-    /* The namespace head reads as a bridged external or as a module
-       without a surface; either way it names no value. */
-    if (!ref || ref->symbol || !recv || recv->kind != EK_N_NAME
-        || recv->u.path.count != 1
-        || strcmp(recv->u.path.data[0], "C") != 0
-        || (ref->kind != EK_SYM_EXTERNAL
-            && ref->kind != EK_SYM_MODULE)) {
+    /* The C shapes only: the namespace itself and its Size type. The
+       bridged reading lives on the `C` name; a Size segment between
+       carries no ref of its own. Any other head falls through to the
+       member paths (a machine-word head is one of those). */
+    if (!recv) {
+        return (lower_val){ NULL, 0 };
+    }
+    if (recv->kind == EK_N_NAME && recv->u.path.count == 1
+        && strcmp(recv->u.path.data[0], "C") == 0) {
+        cnode = recv;
+    } else if (recv->kind == EK_N_FIELD && recv->u.field.recv
+               && recv->u.field.recv->kind == EK_N_NAME
+               && recv->u.field.recv->u.path.count == 1
+               && strcmp(recv->u.field.recv->u.path.data[0], "C") == 0) {
+        cnode = recv->u.field.recv;
+    }
+    if (!cnode) {
         return (lower_val){ NULL, 0 };
     }
     name = callee->u.field.name;
-    if (strcmp(name, "get_errno") == 0 && e->u.call.args.count == 0
-        && !form->extra && !form->has_recv) {
-        t = lower_temp(c, scope);
-        lower_pad(c);
-        lower_emitf(c, "ek_val %s = ek_val_int(ek_get_errno());\n", t);
-        return (lower_val){ t, 1 };
+    ref = lower_ref(c, cnode);
+    if (!ref || ref->symbol
+        || (ref->kind != EK_SYM_EXTERNAL && ref->kind != EK_SYM_MODULE)) {
+        return (lower_val){ NULL, 0 };
+    }
+    if (recv->kind == EK_N_NAME) {
+        if (strcmp(name, "get_errno") == 0 && e->u.call.args.count == 0
+            && !form->extra && !form->has_recv) {
+            t = lower_temp(c, scope);
+            lower_pad(c);
+            lower_emitf(c, "ek_val %s = ek_val_int(ek_get_errno());\n", t);
+            return (lower_val){ t, 1 };
+        }
+        lower_error(c, e, "the member `C.%s` has no lowering", name);
+        return lower_discard_call(c, scope, e, form);
+    }
+    /* `C.Size.to_uint(v)`: the head form of the receiver reading; the
+       written argument is the size. */
+    if (strcmp(name, "to_uint") == 0
+        && strcmp(recv->u.field.name, "Size") == 0
+        && e->u.call.args.count == 1 && !form->extra && !form->has_recv) {
+        lower_val a = lower_sub(c, scope, e->u.call.args.data[0]);
+        const char *at = lower_as_temp(c, scope, &a);
+
+        return lower_wrap_option(c, scope, e, "ek_try_to_uint", at,
+                                 EK_OUT_U64);
     }
     lower_error(c, e, "the member `C.%s` has no lowering", name);
     return lower_discard_call(c, scope, e, form);

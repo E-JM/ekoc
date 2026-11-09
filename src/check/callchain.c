@@ -21,6 +21,14 @@ int type_head(ck_ctx *c, const ek_node *recv, const ek_type **out)
         return 0;
     }
     if (!ck_ref_at(c, recv, EK_SYM_TYPE, &r)) {
+        /* A machine-word spelling bridges with no symbol and no TYPE
+           ref: its head form is the type-namespace form all the same
+           (Clause 10.3.1). */
+        if (recv->kind == EK_N_NAME && recv->u.path.count == 1
+            && ck_is_word_name(recv->u.path.data[0])) {
+            *out = ck_std_type(c, recv->u.path.data[0]);
+            return *out != NULL;
+        }
         return 0;
     }
     if (r->station == EK_ST_MODULE_PATH) {
@@ -257,6 +265,68 @@ static void walk_of(ck_ctx *c, const ek_node *callee, int qualified,
     }
 }
 
+/* The C vocabulary's head shapes: the namespace itself (`C.get_errno`)
+   and the Size type (`C.Size.to_uint`). */
+static int c_head_recv(const ek_node *recv)
+{
+    if (!recv) {
+        return 0;
+    }
+    if (recv->kind == EK_N_NAME) {
+        return recv->u.path.count == 1
+               && strcmp(recv->u.path.data[0], "C") == 0;
+    }
+    if (recv->kind == EK_N_FIELD) {
+        return recv->u.field.name
+               && strcmp(recv->u.field.name, "Size") == 0
+               && recv->u.field.recv
+               && recv->u.field.recv->kind == EK_N_NAME
+               && recv->u.field.recv->u.path.count == 1
+               && strcmp(recv->u.field.recv->u.path.data[0], "C") == 0;
+    }
+    return 0;
+}
+
+/* One C-vocabulary call: the closed member set types here, and the
+   lowerer's C paths carry the emission (Clauses 10.2, 10.3). A
+   spelling the set does not carry is absent. */
+static const ek_type *c_head_call(ck_ctx *c, const ek_node *e,
+                                  const ek_node *callee, int implicit)
+{
+    const ek_node *recv = callee->u.field.recv;
+    const char *name = callee->u.field.name;
+    const ek_type *ret = NULL;
+    const ek_type *param = NULL;
+    const ek_type *t;
+
+    if (recv->kind == EK_N_NAME && strcmp(name, "get_errno") == 0) {
+        ret = ck_std_type(c, "I32");
+    } else if (recv->kind == EK_N_FIELD && strcmp(name, "to_uint") == 0) {
+        /* C.Size has no checked type: the written annotation carries
+           it to the marshalling layer. The conversion reads the
+           Option the runtime answers with. */
+        const ek_type *oargs[1];
+        const ek_type *uint_t = ck_std_type(c, "UInt");
+        const ek_symbol *opt = uint_t ? ck_std_symbol(c, "Option") : NULL;
+
+        param = ck_opaque(c);
+        if (opt && uint_t) {
+            oargs[0] = uint_t;
+            ret = ck_nominal(c, opt, oargs, 1);
+        }
+    }
+    if (!ret) {
+        ck_error(c, e, "E-unbound-member",
+                 "the C vocabulary has no member `%s` for this head "
+                 "(Clauses 7.4.3, 10.2)", name);
+        return call_fn(c, e, NULL, name, NULL, NULL, &e->u.call.args, 1,
+                       implicit);
+    }
+    t = ck_fn(c, param ? &param : NULL, param ? 1 : 0, ret, EK_ARROW_PURE);
+    ck_row(c, callee, t, EK_RD_NAMESPACE);
+    return call_fn(c, e, t, name, NULL, NULL, &e->u.call.args, 0, implicit);
+}
+
 /* A receiver-chain call: the link is typed at the receiver, and a
    function-valued field calls its value. `pre` reuses a walk the
    caller already made. */
@@ -290,6 +360,12 @@ static const ek_type *call_member_walk(ck_ctx *c, const ek_node *e,
                lowerer reads the reading to dispatch the intrinsic. */
             ck_row(c, callee, t, rd);
         }
+    }
+    if (!handled && !qualified && !pre && c_head_recv(callee->u.field.recv)) {
+        /* The C vocabulary (Clauses 10.2, 10.3): no module surface
+           stands behind the head, so the member set is closed here --
+           a spelling outside it is absent, never bridged. */
+        return c_head_call(c, e, callee, implicit);
     }
     if (!handled) {
         walk_of(c, callee, qualified, pre, &w);

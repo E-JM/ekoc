@@ -9,7 +9,7 @@
 /* The machine words. The placeholder surface does not list them, so
    check owns their identity for literal placement, the ctype field
    predicate, and the marshalling whitelist. */
-static int is_word_name(const char *n)
+int ck_is_word_name(const char *n)
 {
     static const char *words[] = {"I8",  "I16", "I32", "I64",
                                   "U8",  "U16", "U32", "U64",
@@ -80,7 +80,7 @@ static const ek_type *type_name(ck_ctx *c, const ek_node *t,
         }
         return ck_nominal(c, ref->symbol, NULL, 0);
     }
-    if (is_word_name(n0)) {
+    if (ck_is_word_name(n0)) {
         return ck_std_type(c, n0);
     }
     return ck_opaque(c); /* the placeholder std bridge */
