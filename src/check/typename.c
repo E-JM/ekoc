@@ -233,7 +233,10 @@ static int name_append(ck_ctx *c, ek_buf *b, const ek_type *t, int depth)
     case EK_T_TVAR:
         return ek_buf_append_str(b, t->u.tvar.name ? t->u.tvar.name : "t");
     default:
-        return ek_buf_append_char(b, '?');
+        /* An undetermined variable is not the open bit: the bare `?`
+           is that marker's spelling (Clause 7.9.8), so the inference
+           artifact reads distinctly. */
+        return ek_buf_append_str(b, "?t");
     }
 }
 

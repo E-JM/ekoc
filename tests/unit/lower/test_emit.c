@@ -73,7 +73,9 @@ static void ownership(void)
     /* a name argument passes the frame's own local: the caller's
        frame keeps it alive across the call, so no keep is born and
        nothing releases after the call */
-    EK_CHECK(lfx_has(&f, "ek_val t0 = ekf_test$_helper(ek_p0);\n"
+    EK_CHECK(lfx_has(&f, "ek_frame_site(3, 33);\n"
+                         "    ek_val t0 = ekf_test$_helper(ek_p0);\n"
+                         "    ek_frame_site(3, 46);\n"
                          "    ek_val t1 = ekf_test$_helper(ek_p1);"));
     EK_CHECK(lfx_lacks(&f, "ekf_test$_helper(t"));
     /* a parameter the body only reads stays borrowed: the prologue
@@ -110,6 +112,7 @@ static void argument_shapes(void)
        outer argument slot and dies with its own release */
     EK_CHECK(lfx_has(&f, "ek_val t1 = ekf_test$_echo(t0);\n"
                          "    ek_release(t0);\n"
+                         "    ek_frame_site(3, 9);\n"
                          "    ek_val t2 = ekf_test$_echo(t1);\n"
                          "    ek_release(t1);"));
     lfx_end(&f);
@@ -127,6 +130,7 @@ static void argument_shapes(void)
        frame's own local, borrowed */
     EK_CHECK(lfx_has(&f, "ek_val t3 = ek_keep(((ekS_test$Person *)"
                          "p.as.ref)->f_age);\n"
+                         "    ek_frame_site(5, 9);\n"
                          "    ek_val t4 = ekf_test$_adult(t3);\n"
                          "    ek_release(t3);"));
     EK_CHECK(lfx_lacks(&f, "ek_keep(p);"));

@@ -557,8 +557,9 @@ static void undetermined_owner_text(void)
     EK_CHECK(f.cdn == 1);
     EK_CHECK_STR(diag_message(&f, 3),
                  "two constructors named `True` are visible and no "
-                 "expected type anchors the reference; write a `Bool or "
-                 "std.Bool` annotation (Clause 7.4.6)");
+                 "expected type anchors the reference; write the "
+                 "annotation of one of them: `Bool` or `std.Bool` "
+                 "(Clause 7.4.6)");
     cfx_end(&f);
 }
 

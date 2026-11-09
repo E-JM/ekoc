@@ -324,8 +324,9 @@ static void panic_backtrace(void)
     EK_CHECK_U64(WEXITSTATUS(status), 1);
     EK_CHECK(strstr(err, "panic [P-panic]: bottom\n") != NULL);
     EK_CHECK(strstr(err, "  at test.inner (test.eko:1:1)\n") != NULL);
-    EK_CHECK(strstr(err, "  at test.outer (test.eko:5:1)\n") != NULL);
-    EK_CHECK(strstr(err, "  at test.main (test.eko:6:1)\n") != NULL);
+    /* the caller frames read the call sites, not the declarations */
+    EK_CHECK(strstr(err, "  at test.outer (test.eko:5:26)\n") != NULL);
+    EK_CHECK(strstr(err, "  at test.main (test.eko:6:34)\n") != NULL);
     EK_CHECK(strstr(err, "at test.inner\n  at test.inner") == NULL);
     EK_CHECK(strstr(err, "ek_frame") == NULL);
 }

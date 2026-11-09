@@ -339,6 +339,7 @@ static void invert_shape(void)
        applied variables t, e, u in first-occurrence order */
     EK_CHECK(lfx_has(&f, "ek_val t1 = ek_closure_new(ekl_0, t0);\n"
                          "    ek_release(t0);\n"
+                         "    ek_frame_site(2, 10);\n"
                          "    ek_val t2 = ekf_std$Result$try$Int$"
                          "String$Int(ek_p0, t1);\n"
                          "    ek_release(t1);"));

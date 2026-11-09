@@ -1068,6 +1068,7 @@ typedef struct {
 extern ek_frame ek_frames[EK_FRAME_MAX];
 extern size_t ek_frame_depth;
 void ek_frame_push(const char *name, const char *file, int line, int col);
+void ek_frame_site(int line, int col);
 void ek_frame_pop(void);
 
 /* Writes the panic line and the frame backtrace to standard error and

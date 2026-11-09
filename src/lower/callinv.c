@@ -205,6 +205,11 @@ lower_val direct_call(lower_ctx *c, lower_scope *scope,
     }
     fill_written(c, scope, &e->u.call.args, form, argv, owned, n, first,
                  inst ? inst : lower_row_type(c, e->u.call.callee));
+    if (sym->decl) {
+        /* The caller marks its frame with the call site, so a panic
+           below points at the line that asked for it (Clause B.6). */
+        lower_emitf(c, "    ek_frame_site(%d, %d);\n", e->line, e->col);
+    }
     if (inst) {
         lower_enqueue_item(c, sym, iargs, ni, inst);
         t = emit_invoke(c, scope, lower_inst_name(c, sym, iargs, ni),

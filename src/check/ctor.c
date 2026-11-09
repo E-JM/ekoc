@@ -74,13 +74,17 @@ static char *owners_text(ck_ctx *c, const ek_ref *ref)
         if (i) {
             ok = ek_buf_append_str(&b, " or ");
         }
+        if (ok) {
+            ok = ek_buf_append_char(&b, '`');
+        }
         if (ok && cand->module
             && strcmp(cand->module, "std") == 0) {
             ok = ek_buf_append_str(&b, cand->module)
               && ek_buf_append_char(&b, '.');
         }
         if (ok) {
-            ok = ek_buf_append_str(&b, cand->owner ? cand->owner : "?");
+            ok = ek_buf_append_str(&b, cand->owner ? cand->owner : "?")
+              && ek_buf_append_char(&b, '`');
         }
     }
     if (ok && b.len) {
@@ -110,14 +114,14 @@ static void undetermined_many(ck_ctx *c, const ek_node *n, const ek_ref *ref)
     if (word) {
         ck_error(c, n, "E-undetermined",
                  "%s constructors named `%s` are visible and no expected "
-                 "type anchors the reference; write a `%s` annotation "
-                 "(Clause 7.4.6)", word, name, owners);
+                 "type anchors the reference; write the annotation of "
+                 "one of them: %s (Clause 7.4.6)", word, name, owners);
         return;
     }
     ck_error(c, n, "E-undetermined",
              "%zu constructors named `%s` are visible and no expected "
-             "type anchors the reference; write a `%s` annotation "
-             "(Clause 7.4.6)", ref->ncands, name, owners);
+             "type anchors the reference; write the annotation of "
+             "one of them: %s (Clause 7.4.6)", ref->ncands, name, owners);
 }
 
 ck_ctorsel ck_ctor_select(ck_ctx *c, const ek_node *n, const ek_ref *ref,
