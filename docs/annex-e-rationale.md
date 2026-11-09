@@ -43,6 +43,19 @@ timeouts (Clause 8.9.4). The design record preserves these costs; the
 normative clauses state the resulting rules. The table is not a priority
 order.
 
+The annotation slot itself once carried a purity rule: an annotated binding
+with a value type required a pure body, on the theory that an annotation is a
+declarative fact about a pure derivation. The cost landed on the most common
+shape: every effectful binding lost its type documentation, because `:=`
+carries no annotation (Clause 6.3.1) and the effectful form was the only
+writable one. Combined with composite literals needing an expected type
+(Clauses 6.6.2, 7.5.3), an effectful composite binding such as
+`xs: []Int = {f(), g()}` had no legal spelling at all. The rule is withdrawn:
+an annotation documents a type, not a purity, and the binding's world answer
+belongs to the enclosing arrow (Clause 7.9.2). What remains of the old
+discipline is the declaration rule itself, where the annotation is a function
+type and the arrow is the claim under test.
+
 Visible cost decides the sequence surface too. The cost model names every
 non-constant operation, so the quadratic scan shape is called out where it
 can bite and the linear shape is stated instead (Clauses 8.10, 9.10.1);

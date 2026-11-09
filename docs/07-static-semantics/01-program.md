@@ -45,8 +45,9 @@ bindings are mutually visible throughout their module, including their own
 right-hand sides (Clause 7.4.2).
 
 Top-level initialization is pure. No capability value is in scope at top
-level, so a world-touching call is not typeable in an initializer (Clause
-7.9.7).
+level, and a world-touching call is `E-world-bit` in an initializer whatever
+the binding form: an extern call needs no capability, so the rule is checked,
+not left to scope (Clauses 7.9.2, 7.9.7, 10.1.3).
 
 ### 7.1.3 The Entry Point
 

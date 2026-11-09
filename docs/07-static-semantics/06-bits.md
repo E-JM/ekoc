@@ -79,18 +79,23 @@ A call that observes or changes the world sets the bit; a pure derivation does
 not. `Out.println` and `Clock.now` set the bit; `Out.tee` and `Fs.root` are
 pure.
 
-At an annotated binding, the binding's own bit is the top-level arrow of the
-annotation when the annotation is a function type, and pure otherwise. The own
-bit MUST equal the OR of the call bits of the body; a missing `!` and a
-surplus `!` are both errors with code `E-world-bit` (Annex B). Independently,
-the body is checked against the annotation by type identity; bit adaptation
-applies only at the positions of Clause 7.9.5, never at a declaration, and
-never in the reverse direction. A pure function value is therefore bound under
-its exact type and adapts at its use positions.
+At an annotated binding whose annotation is a function type, the binding's
+own bit is the top-level arrow of the annotation, and the own bit MUST equal
+the OR of the call bits of the body; a missing `!` and a surplus `!` are both
+errors with code `E-world-bit` (Annex B). At an annotated binding whose
+annotation is not a function type, the binding carries no bit: the body's
+call bits answer to the enclosing context exactly as at a `:=` binding, so a
+call that sets the bit is legal inside a world-touching or open function and
+is `E-world-bit` in a pure function and at top level (Clause 7.1.2).
+Independently, the body is checked against the annotation by type identity;
+bit adaptation applies only at the positions of Clause 7.9.5, never at a
+declaration, and never in the reverse direction. A pure function value is
+therefore bound under its exact type and adapts at its use positions.
 
 The bit lives on the arrow and does not infect data. `logged := List.map(xs,
-greeter)` requires an enclosing `!`, but `logged: []String` is an ordinary
-value; there is no world-touching list type.
+greeter)` and `logged: []String = List.map(xs, greeter)` alike require an
+enclosing `!`, but `logged: []String` is an ordinary value; there is no
+world-touching list type.
 
 `?` appears only on a dispatcher that is pure if its callback is pure. A
 higher-order function that is itself world-touching uses `!` and no `?`:
@@ -261,9 +266,10 @@ The argument is structural.
 4. Bit adaptation is one-directional: a pure function may flow into a
    world-touching position, never the reverse (Clause 7.9.5).
 
-**Corollary (top-level purity).** Top-level initialization is pure. No
-capability value is in scope at top level, so a bit-setting call is not
-typeable there (Clause 7.1.2).
+**Corollary (top-level purity).** Top-level initialization is pure. A
+bit-setting call at top level is `E-world-bit` in every binding form: no
+capability value is in scope there, and an extern call, which needs no
+capability, is rejected by the same rule (Clauses 7.1.2, 10.1.3).
 
 The absence of `!` does not promise freedom from panic, termination, blocking,
 or cancellation. A pure function MAY panic (Clause 8.4.2), diverge (Clause
