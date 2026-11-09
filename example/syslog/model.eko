@@ -1,0 +1,146 @@
+// The data model of the syslog tool: the priority and entry types, the
+// write and show configurations, and the facility and severity name
+// tables with their lookups. Every other module of the tool meets here,
+// so this module imports nothing.
+
+// -------------------------------------------------------------------- model
+
+/// The PRI components: the facility is 0..23, the severity 0..7.
+Pri: type = [facility: Int, severity: Int]
+
+/// One parsed log entry. The stamp keeps the written form, so display
+/// never re-renders a timestamp the writer chose.
+Entry: type = [pri: Pri, stamp: String, host: String, tag: String, msg: String]
+
+/// The write configuration: the priority, an optional tag, the wire
+/// format, an optional target file, and the optional message (absent
+/// means read standard input).
+WriteCfg: type = [
+    pri: Pri,
+    tag: Option String,
+    rfc3164: Bool,
+    file: Option String,
+    msg: Option String]
+
+/// The show configuration: the severity ceiling, the optional facility
+/// and tag filters, the message substring, and the output decisions.
+ShowCfg: type = [
+    level: Int,
+    facility: Option Int,
+    tag: Option String,
+    needle: Option String,
+    count: Bool,
+    last: Option Int,
+    raw: Bool,
+    files: []String]
+
+// ------------------------------------------------------------- name tables
+
+_severity_names: []String = {
+    "emergency", "alert", "critical", "error", "warning",
+    "notice", "informational", "debug"}
+
+_facility_names: []String = {
+    "kern", "user", "mail", "daemon", "auth", "syslog", "lpr", "news",
+    "uucp", "cron", "authpriv", "ftp", "ntp", "audit", "console", "clock",
+    "local0", "local1", "local2", "local3", "local4", "local5", "local6",
+    "local7"}
+
+// The index of the first equal name, or None.
+_index_of: (xs: []String, s: String) -> Option Int =
+    _index_loop(xs, s, 0)
+
+_index_loop: (xs: []String, s: String, i: Int) -> Option Int =
+    case xs:
+        {} -> None
+        {h, ..rest} -> if h == s: Some i else: _index_loop(rest, s, i + 1)
+
+// The severity index: a table name, the classic abbreviation, or a
+// decimal number in range.
+severity_index: (name: String) -> Option Int =
+    _index_of(_severity_names, name).or_else((): _severity_alias(name))
+
+_severity_alias: (name: String) -> Option Int =
+    case name:
+        "panic" -> Some 0
+        "crit" -> Some 2
+        "err" -> Some 3
+        "warn" -> Some 4
+        "info" -> Some 6
+        _ ->
+            case Int.parse(name):
+                Ok n if n >= 0 && n <= 7 -> Some n
+                _ -> None
+
+// The facility index: a table name or a decimal number in range.
+facility_index: (name: String) -> Option Int =
+    case _index_of(_facility_names, name):
+        Some i -> Some i
+        None ->
+            case Int.parse(name):
+                Ok n if n >= 0 && n <= 23 -> Some n
+                _ -> None
+
+severity_name: (sev: Int) -> String =
+    _severity_names.get(sev).unwrap_or("unknown")
+
+facility_name: (fac: Int) -> String =
+    _facility_names.get(fac).unwrap_or("unknown")
+
+// The PRI value: facility * 8 + severity.
+pri_of: (fac: Int, sev: Int) -> Int = fac * 8 + sev
+
+// The priority spec `facility.severity`, names or numbers.
+parse_priority: (spec: String) -> Result Pri String =
+    parts := spec.split(".")
+    case parts.get(0), parts.get(1), parts.get(2):
+        Some f, Some s, None ->
+            case facility_index(f), severity_index(s):
+                Some fac, Some sev -> Ok {facility: fac, severity: sev}
+                _, _ -> Err "unknown priority: {spec}"
+        _, _, _ -> Err "the priority is facility.severity: {spec}"
+
+// --------------------------------------------------------------- defaults
+
+// The initial write configuration: user.notice, RFC 5424, no tag, the
+// default file, no message.
+write_default: () -> WriteCfg =
+    {pri: {facility: 1, severity: 5}, tag: None, rfc3164: False, file: None, msg: None}
+
+// The initial show configuration: every severity, no filters, no
+// output decisions, no files.
+show_default: () -> ShowCfg =
+    {level: 7, facility: None, tag: None, needle: None, count: False, last: None, raw: False, files: {}}
+
+// --------------------------------------------------------------------- tests
+
+name_tables: test =
+    assert_eq(severity_index("debug"), Some 7)
+    assert_eq(severity_index("notice"), Some 5)
+    assert_eq(severity_index("err"), Some 3)
+    assert_eq(severity_index("3"), Some 3)
+    assert_eq(severity_index("8"), None)
+    assert_eq(severity_index("bogus"), None)
+    assert_eq(facility_index("local7"), Some 23)
+    assert_eq(facility_index("16"), Some 16)
+    assert_eq(facility_index("24"), None)
+    assert_eq(severity_name(0), "emergency")
+    assert_eq(facility_name(0), "kern")
+
+pri_math: test =
+    assert_eq(pri_of(1, 5), 13)
+    assert_eq(pri_of(16, 6), 134)
+    assert_eq(pri_of(0, 0), 0)
+    assert_eq(parse_priority("user.notice"), Ok {facility: 1, severity: 5})
+    assert_eq(parse_priority("local3.err"), Ok {facility: 19, severity: 3})
+    assert_eq(parse_priority("19.3"), Ok {facility: 19, severity: 3})
+    assert_eq(parse_priority("user"), Err "the priority is facility.severity: user")
+    assert_eq(parse_priority("nope.info"), Err "unknown priority: nope.info")
+    assert_eq(parse_priority("user.nope"), Err "unknown priority: user.nope")
+
+defaults: test =
+    assert_eq(write_default().pri, {facility: 1, severity: 5})
+    assert(write_default().rfc3164.eq(False))
+    assert_eq(show_default().level, 7)
+    assert(show_default().facility.is_none())
+    assert(show_default().raw.eq(False))

@@ -1,0 +1,724 @@
+// ekolife — Conway's Game of Life for the terminal.
+//
+//   ekolife [options]
+//
+// The grid and every rule of the game live in the pure core below: neighbour
+// counts, one generation step, plaintext pattern parsing, cropping and padding,
+// deterministic seeded soup, rendering, and option parsing. The shell at the
+// bottom only reads a file, prints, sleeps between frames, and chooses an exit
+// code. That split keeps the interesting behaviour directly testable.
+//
+// Module: ekolife (the file is the module).
+
+import std/time
+
+/// A rectangular Life grid stored row-major: index = y * width + x.
+Grid: type = [width: Int, height: Int, cells: []Bool]
+
+/// Where the initial pattern comes from. DefaultSource means the glider preset.
+Source: type = Preset String | Seeded Int | PatternFile String | DefaultSource
+
+/// Parsed command line. The source options are mutually exclusive.
+Options: type = [
+    width: Int,
+    height: Int,
+    generations: Int,
+    delay: Int,
+    bounded: Bool,
+    plain: Bool,
+    source: Source,
+    want_help: Bool]
+
+/// Defaults required by the CLI contract: 24x16, 50 generations, 80 ms.
+default_options: Options = {
+    width: 24,
+    height: 16,
+    generations: 50,
+    delay: 80,
+    bounded: False,
+    plain: False,
+    source: DefaultSource,
+    want_help: False}
+
+/// Every preset name, in the order shown by --help.
+preset_names: []String = {"glider", "blinker", "block", "pulsar", "r-pentomino"}
+
+_preset_list: String = preset_names.join(", ")
+
+_help_lines: []String = {
+    "ekolife — Conway's Game of Life",
+    "",
+    "usage: ekolife [options]",
+    "",
+    "options:",
+    "  --pattern NAME   start from a built-in preset (default: glider)",
+    "  --file PATH      start from a plaintext pattern file",
+    "  --seed N         fill the grid with deterministic pseudo-random soup",
+    "  --generations N  number of generations to advance (default: 50; 0 = initial only)",
+    "  --delay MS       milliseconds between animated frames (default: 80; 0 = no sleep)",
+    "  --width W        grid width (default: 24, 1..4096)",
+    "  --height H       grid height (default: 16, 1..4096)",
+    "  --bounded        dead cells outside the grid instead of a torus",
+    "                   (default wraps at every edge; --bounded stops at walls)",
+    "  --plain          no ANSI and no animation; print every frame",
+    "  -h, --help       show this help and exit 0",
+    "  --               end option processing",
+    "",
+    "presets: {_preset_list}",
+    "",
+    "plaintext pattern format:",
+    "  .        dead cell",
+    "  # or O   live cell",
+    "  spaces   ignored",
+    "  ! ...    comment line",
+    "  ragged rows are padded with dead cells; extra grid space is dead"}
+
+// Preset sources. Parsing them through the ordinary parser keeps the preset
+// format and the file format identical.
+
+_glider_text: String = ".O.\n..O\nOOO"
+
+_blinker_text: String = "OOO"
+
+_block_text: String = "OO\nOO"
+
+_r_pentomino_text: String = ".OO\nOO.\n.O."
+
+_pulsar_text: String = "..OOO...OOO..\n.............\nO....O.O....O\nO....O.O....O\nO....O.O....O\n..OOO...OOO..\n.............\n..OOO...OOO..\nO....O.O....O\nO....O.O....O\nO....O.O....O\n.............\n..OOO...OOO.."
+
+// ---------------------------------------------------------------- pure core
+
+/// Reads one cell; out-of-range coordinates are dead.
+_at: (g: Grid, x: Int, y: Int) -> Bool =
+    in_bounds := x >= 0 && y >= 0 && x < g.width && y < g.height
+    if in_bounds:
+        g.cells.get(y * g.width + x).unwrap_or(False)
+    else:
+        False
+
+/// Builds an all-dead grid.
+empty_grid: (width: Int, height: Int) -> Grid =
+    cells: []Bool = (0..(width * height)).map((_): False)
+    {width: width, height: height, cells: cells}
+
+/// Euclidean modulo for a positive modulus. Int.rem keeps the dividend's sign,
+/// so a negative coordinate is corrected here.
+_wrap: (n: Int, size: Int) -> Int =
+    r := n % size
+    if r < 0: r + size else: r
+
+_neighbor_offsets: [][Int, Int] = {
+    {-1, -1},
+    {0, -1},
+    {1, -1},
+    {-1, 0},
+    {1, 0},
+    {-1, 1},
+    {0, 1},
+    {1, 1}}
+
+/// Counts live neighbours of (x, y). With `bounded` true, cells outside the
+/// rectangle are dead; otherwise coordinates wrap around the torus.
+neighbors: (g: Grid, x: Int, y: Int, bounded: Bool) -> Int =
+    _neighbor_offsets.fold(0, (acc, offset):
+        (dx, dy) = offset
+        nx := if bounded: x + dx else: _wrap(x + dx, g.width)
+        ny := if bounded: y + dy else: _wrap(y + dy, g.height)
+        if _at(g, nx, ny): acc + 1 else: acc)
+
+/// The Life rule for one cell.
+_next_cell: (g: Grid, x: Int, y: Int, bounded: Bool) -> Bool =
+    n := neighbors(g, x, y, bounded)
+    if _at(g, x, y):
+        n == 2 || n == 3
+    else:
+        n == 3
+
+/// Advances the whole grid by one generation.
+step: (g: Grid, bounded: Bool) -> Grid =
+    cells: []Bool = (0..g.height).fold({}, (acc, y):
+        acc ++ (0..g.width).map((x): _next_cell(g, x, y, bounded)))
+    {width: g.width, height: g.height, cells: cells}
+
+/// Crops or pads a pattern to exactly the requested dimensions. The top-left
+/// corner is the anchor; new cells are dead.
+crop_pad: (pattern: Grid, width: Int, height: Int) -> Grid =
+    cells: []Bool = (0..height).fold({}, (acc, y):
+        acc ++ (0..width).map((x): _at(pattern, x, y)))
+    {width: width, height: height, cells: cells}
+
+/// Places a pattern with its top-left corner at (ox, oy). Only live pattern
+/// cells overwrite the base; pattern dead cells are transparent.
+_overlay: (base: Grid, pattern: Grid, ox: Int, oy: Int) -> Grid =
+    cells: []Bool = (0..base.height).fold({}, (acc, y):
+        acc ++ (0..base.width).map((x):
+            _at(pattern, x - ox, y - oy) || _at(base, x, y)))
+    base.with({cells: cells})
+
+/// Centres a pattern in a grid, cropping when it is larger than the grid.
+place_centered: (pattern: Grid, width: Int, height: Int) -> Grid =
+    ox := (width - pattern.width) / 2
+    oy := (height - pattern.height) / 2
+    _overlay(empty_grid(width, height), pattern, ox, oy)
+
+/// One row of the plaintext format. Spaces, tabs, and carriage returns are
+/// ignored; unknown characters are an error.
+_parse_row_chars: (chars: []Char, acc: []Bool) -> Result ([]Bool) String =
+    case chars:
+        {} -> Ok acc
+        {c, ..rest} ->
+            case c:
+                ' ' | '\t' | '\r' -> _parse_row_chars(rest, acc)
+                '.' -> _parse_row_chars(rest, acc ++ {False})
+                '#' | 'O' -> _parse_row_chars(rest, acc ++ {True})
+                _ -> Err "unexpected character '{c}'"
+
+/// One line: None for a blank line or comment, Some row otherwise.
+_parse_line: (line: String, line_no: Int) -> Result (Option ([]Bool)) String =
+    if line.trim() == "":
+        Ok None
+    else:
+        if line.trim_start().starts_with("!"):
+            Ok None
+        else:
+            _parse_row_chars(line.chars(), {}).map((row): Some row).map_err((e): "pattern line {line_no}: {e}")
+
+_collect_rows: (lines: []Result (Option ([]Bool)) String,
+                acc: [][]Bool) -> Result ([][]Bool) String =
+    case lines:
+        {} -> Ok acc
+        {line, ..rest} ->
+            maybe_row <- line.try()
+            case maybe_row:
+                None -> _collect_rows(rest, acc)
+                Some row -> _collect_rows(rest, acc ++ {row})
+
+/// Parses the plaintext pattern format. The returned pattern has the maximum
+/// row length as its width; short rows are padded with dead cells.
+parse_pattern: (text: String) -> Result Grid String =
+    raw_lines := text.lines()
+    indexed: []Result (Option ([]Bool)) String =
+        (0..raw_lines.length()).map((i):
+            case raw_lines.get(i):
+                Some line -> _parse_line(line, i + 1)
+                None -> Ok None)
+    rows <- _collect_rows(indexed, {}).try()
+    width := rows.fold(0, (best, row):
+        if row.length() > best: row.length() else: best)
+    if width == 0:
+        Err "pattern contains no cells (only comments or blank lines)"
+    else:
+        cells: []Bool = rows.fold({}, (acc, row):
+            acc ++ row ++ (0..(width - row.length())).map((_): False))
+        Ok {width: width, height: rows.length(), cells: cells}
+
+_preset_text: (name: String) -> Result String String =
+    case name:
+        "glider" -> Ok _glider_text
+        "blinker" -> Ok _blinker_text
+        "block" -> Ok _block_text
+        "pulsar" -> Ok _pulsar_text
+        "r-pentomino" -> Ok _r_pentomino_text
+        _ -> Err "unknown preset '{name}' (known presets: {_preset_list})"
+
+/// Loads a built-in preset as a pattern.
+preset_grid: (name: String) -> Result Grid String =
+    text <- _preset_text(name).try()
+    parse_pattern(text)
+
+_preset_exists: (name: String) -> Bool =
+    preset_grid(name).is_ok()
+
+// A 31-bit linear congruential generator. The product stays below 2^63, so
+// ordinary checked Int arithmetic cannot overflow. It is deterministic and
+// explicitly not cryptographic.
+_lcg_modulus: Int = 2147483648
+
+_prng_next: (state: Int) -> Int =
+    (state * 1103515245 + 12345) % _lcg_modulus
+
+_soup_cells: (state: Int, remaining: Int, acc: []Bool) -> []Bool =
+    if remaining <= 0:
+        acc
+    else:
+        next := _prng_next(state)
+        _soup_cells(next, remaining - 1, acc ++ {next % 100 < 30})
+
+/// Deterministic soup at roughly 30% density, seeded by an arbitrary Int.
+soup: (seed: Int, width: Int, height: Int) -> Grid =
+    initial_state := _wrap(seed, _lcg_modulus)
+    cells := _soup_cells(initial_state, width * height, {})
+    {width: width, height: height, cells: cells}
+
+/// One cell rendered as the default two-character vocabulary.
+_cell_text: (g: Grid, x: Int, y: Int) -> String =
+    if _at(g, x, y): "#" else: " "
+
+/// Grid lines only, with a stable width and height.
+render: (g: Grid) -> []String =
+    (0..g.height).map((y):
+        (0..g.width).map((x): _cell_text(g, x, y)).join(""))
+
+/// The header plus the grid. The header makes plain output self-describing.
+frame_lines: (generation: Int, g: Grid) -> []String =
+    {"generation {generation}"} ++ render(g)
+
+// ------------------------------------------------------------ option parsing
+
+_read_int: (flag: String, raw: String, minimum: Int) -> Result Int String =
+    n <- Int.parse(raw).map_err((_): "{flag}: invalid number '{raw}'").try()
+    if n < minimum:
+        Err "{flag}: must be at least {minimum}"
+    else:
+        Ok n
+
+_read_any_int: (flag: String, raw: String) -> Result Int String =
+    Int.parse(raw).map_err((_): "{flag}: invalid number '{raw}'")
+
+_set_source: (opts: Options, source: Source, rest: []String) -> Result Options String =
+    case opts.source:
+        DefaultSource -> _parse_args(rest, opts.with({source: source}))
+        _ -> Err "only one of --pattern, --file, and --seed may be given"
+
+_validate_size: (opts: Options) -> Result Options String =
+    if opts.width > 4096 || opts.height > 4096:
+        Err "grid dimensions must be at most 4096"
+    else:
+        if opts.width * opts.height > 1000000:
+            Err "grid is too large (at most 1000000 cells)"
+        else:
+            Ok opts
+
+// One `--name VALUE` option: VALUE parses as an integer at least `minimum`,
+// then parsing continues over the rest of the line with the field set.
+_int_option: (name: String, raw: String, rest: []String, minimum: Int, opts: Options,
+              set: (Options, Int) -> Options) -> Result Options String =
+    n <- _read_int(name, raw, minimum).try()
+    _parse_args(rest, set(opts, n))
+
+// Every valued option shares the shape: take the value and the remaining
+// arguments, or report what the option required.
+_valued: (missing: String, tail: []String,
+          go: (String, []String) -> Result Options String) -> Result Options String =
+    case tail:
+        {raw, ..rest} -> go(raw, rest)
+        _ -> Err missing
+
+_parse_args: (argv: []String, opts: Options) -> Result Options String =
+    case argv:
+        {} -> Ok opts
+        {head, ..tail} ->
+            case head:
+                "--" ->
+                    case tail:
+                        {} -> Ok opts
+                        {extra, .._} -> Err "unexpected argument after --: {extra}"
+                "-h" | "--help" ->
+                    _parse_args(tail, opts.with({want_help: True}))
+                "--bounded" ->
+                    _parse_args(tail, opts.with({bounded: True}))
+                "--plain" ->
+                    _parse_args(tail, opts.with({plain: True}))
+                "--pattern" ->
+                    _valued("--pattern requires a name", tail, (name, rest):
+                        if _preset_exists(name):
+                            _set_source(opts, Preset name, rest)
+                        else:
+                            Err "unknown preset '{name}' (known presets: {_preset_list})")
+                "--file" ->
+                    _valued("--file requires a path", tail, (path, rest):
+                        if path == "":
+                            Err "--file requires a non-empty path"
+                        else:
+                            _set_source(opts, PatternFile path, rest))
+                "--seed" ->
+                    _valued("--seed requires a number", tail, (raw, rest):
+                        n <- _read_any_int("--seed", raw).try()
+                        _set_source(opts, Seeded n, rest))
+                "--generations" ->
+                    _valued("--generations requires a number", tail, (raw, rest):
+                        _int_option("--generations", raw, rest, 0, opts,
+                                    (o, n): o.with({generations: n})))
+                "--delay" ->
+                    _valued("--delay requires a number", tail, (raw, rest):
+                        _int_option("--delay", raw, rest, 0, opts,
+                                    (o, n): o.with({delay: n})))
+                "--width" ->
+                    _valued("--width requires a number", tail, (raw, rest):
+                        _int_option("--width", raw, rest, 1, opts,
+                                    (o, n): o.with({width: n})))
+                "--height" ->
+                    _valued("--height requires a number", tail, (raw, rest):
+                        _int_option("--height", raw, rest, 1, opts,
+                                    (o, n): o.with({height: n})))
+                _ ->
+                    if head.starts_with("-"):
+                        Err "unknown option: {head}"
+                    else:
+                        Err "unexpected argument: {head}"
+
+/// Parses and validates the whole command line. Pure and directly testable.
+parse_options: (argv: []String) -> Result Options String =
+    opts <- _parse_args(argv, default_options).try()
+    _validate_size(opts)
+
+// ---------------------------------------------------------------- I/O shell
+
+print_help: (out: Out) ! =
+    _help_lines.each((line): out.println(line))
+
+// Usage errors and diagnostics report on the error channel, so they never
+// mix into the frame stream that `out` carries.
+_fail: (err: Out, proc: Proc, message: String) !-> Never =
+    err.println("ekolife: {message}")
+    err.println("try 'ekolife --help' for usage")
+    Proc.exit(proc, 2)
+
+_placed_preset: (name: String, opts: Options) -> Result Grid String =
+    pattern <- preset_grid(name).try()
+    Ok (place_centered(pattern, opts.width, opts.height))
+
+/// Resolves the initial frame. Reading a pattern file is the only world contact.
+initial_grid: (fs: Fs, opts: Options) !-> Result Grid String =
+    case opts.source:
+        DefaultSource ->
+            _placed_preset("glider", opts)
+        Preset name ->
+            _placed_preset(name, opts)
+        Seeded seed ->
+            Ok (soup(seed, opts.width, opts.height))
+        PatternFile path ->
+            text <- fs.read(path).map_err((e): "cannot read pattern file '{path}': {e}").try()
+            pattern <- parse_pattern(text).map_err((e): "pattern file '{path}': {e}").try()
+            Ok (place_centered(pattern, opts.width, opts.height))
+
+// One frame: print the generation's rows with the loop's trailing whitespace,
+// then either the next grid or nothing when the run is over.
+_frame_step: (out: Out, opts: Options, generation: Int, g: Grid,
+              trailing: String) !-> Option Grid =
+    out.print(frame_lines(generation, g).join("\n") ++ trailing)
+    if generation < opts.generations:
+        Some (step(g, opts.bounded))
+    else:
+        None
+
+_plain_loop: (out: Out, opts: Options, generation: Int, g: Grid) ! =
+    case _frame_step(out, opts, generation, g, "\n\n"):
+        Some next -> _plain_loop(out, opts, generation + 1, next)
+        None -> _
+
+_animated_loop: (out: Out, clock: Clock, opts: Options, generation: Int, g: Grid) ! =
+    out.print("\u{1b}[2J\u{1b}[H")
+    case _frame_step(out, opts, generation, g, "\n"):
+        Some next ->
+            if opts.delay > 0:
+                Clock.sleep(clock, Duration.millis(opts.delay))
+            _animated_loop(out, clock, opts, generation + 1, next)
+        None -> _
+
+play: (out: Out, clock: Clock, opts: Options, g: Grid) ! =
+    if opts.plain:
+        _plain_loop(out, opts, 0, g)
+    else:
+        _animated_loop(out, clock, opts, 0, g)
+
+// The parameter list is the authorization manifest. The error channel rides
+// the Out session as host wiring, so the manifest stays as written.
+main: (out: Out, args: Args, fs: Fs, clock: Clock, proc: Proc) ! =
+    err: Out = Out.err()
+    case parse_options(args.all()):
+        Err message ->
+            _fail(err, proc, message)
+        Ok opts ->
+            if opts.want_help:
+                print_help(out)
+            else:
+                case initial_grid(fs, opts):
+                    Err message -> _fail(err, proc, message)
+                    Ok g -> play(out, clock, opts, g)
+
+// --------------------------------------------------------------------- tests
+
+// Test-only helper: parse a pattern or fail loudly.
+_pattern: (text: String) -> Grid =
+    case parse_pattern(text):
+        Ok g -> g
+        Err e -> panic("test pattern failed: {e}")
+
+// Test-only helper: parse a pattern and crop/pad it to a test grid.
+_grid: (text: String, width: Int, height: Int) -> Grid =
+    crop_pad(_pattern(text), width, height)
+
+// Test-only helper: all-live grid.
+_full_grid: (width: Int, height: Int) -> Grid =
+    {width: width, height: height, cells: (0..(width * height)).map((_): True)}
+
+// Test-only helper: generate n generations.
+_advance: (g: Grid, n: Int, bounded: Bool) -> Grid =
+    if n <= 0:
+        g
+    else:
+        _advance(step(g, bounded), n - 1, bounded)
+
+// Test-only helper: live coordinates in row-major order.
+_live_coords: (g: Grid) -> [][Int, Int] =
+    coords: [][Int, Int] = (0..g.height).fold({}, (acc, y):
+        acc ++ (0..g.width).to_list()
+            .filter((x): _at(g, x, y))
+            .map((x): {x, y}))
+    coords
+
+_shift_coords: (coords: [][Int, Int], dx: Int, dy: Int) -> [][Int, Int] =
+    coords.map((pair):
+        (x, y) = pair
+        {x + dx, y + dy})
+
+// Test-only helper: unwrap parsed options, failing loudly.
+_options: (argv: []String) -> Options =
+    case parse_options(argv):
+        Ok opts -> opts
+        Err e -> panic("option parse failed: {e}")
+
+// ------------------------------------------------------------------ core tests
+
+neighbours_bounded: test =
+    full := _full_grid(3, 3)
+    assert_eq(neighbors(full, 1, 1, True), 8)   // middle
+    assert_eq(neighbors(full, 0, 1, True), 5)   // edge
+    assert_eq(neighbors(full, 0, 0, True), 3)   // corner
+    empty := empty_grid(3, 3)
+    assert_eq(neighbors(empty, 1, 1, True), 0)
+    assert_eq(neighbors(empty, 0, 0, True), 0)
+
+neighbours_torus: test =
+    full := _full_grid(3, 3)
+    assert_eq(neighbors(full, 1, 1, False), 8)
+    assert_eq(neighbors(full, 0, 1, False), 8)  // edge wraps
+    assert_eq(neighbors(full, 0, 0, False), 8)  // corner wraps
+    empty := empty_grid(3, 3)
+    assert_eq(neighbors(empty, 0, 0, False), 0)
+
+neighbour_counts_on_partial_grid: test =
+    // A single live cell is seen only next to itself.
+    g := _grid(".O.\n...\n...", 3, 3)
+    assert_eq(neighbors(g, 0, 0, True), 1)
+    assert_eq(neighbors(g, 1, 0, True), 0)
+    assert_eq(neighbors(g, 0, 1, True), 1)
+    assert_eq(neighbors(g, 2, 2, True), 0)
+    // On the torus the two far edges of a 3x3 grid are adjacent.
+    assert_eq(neighbors(g, 2, 0, False), 1)
+    assert_eq(neighbors(g, 0, 2, False), 1)
+
+block_is_still_life: test =
+    pattern := _pattern("OO\nOO")
+    g := place_centered(pattern, 6, 6)
+    assert_eq(step(g, True), g)
+    assert_eq(step(g, False), g)
+
+blinker_oscillates: test =
+    g := place_centered(_pattern("OOO"), 5, 5)
+    horizontal := _live_coords(g)
+    assert_eq(horizontal, {{1, 2}, {2, 2}, {3, 2}})
+    g1 := step(g, True)
+    vertical := _live_coords(g1)
+    assert_eq(vertical, {{2, 1}, {2, 2}, {2, 3}})
+    assert_ne(g1, g)
+    assert_eq(step(g1, True), g)
+    // The torus has the same local result away from the seam.
+    assert_eq(step(g, False), g1)
+    assert_eq(step(g1, False), g)
+
+glider_moves_diagonally: test =
+    g := _overlay(empty_grid(10, 10), _pattern(".O.\n..O\nOOO"), 2, 2)
+    before := _live_coords(g)
+    after := _live_coords(_advance(g, 4, False))
+    assert_eq(after, _shift_coords(before, 1, 1))
+
+glider_on_bounded_grid: test =
+    g := _overlay(empty_grid(10, 10), _pattern(".O.\n..O\nOOO"), 1, 1)
+    after := _advance(g, 4, True)
+    assert_eq(_live_coords(after), _shift_coords(_live_coords(g), 1, 1))
+    // After enough generations the glider reaches the wall and does not wrap.
+    assert_ne(_advance(g, 40, True), _advance(g, 40, False))
+
+dead_stays_dead: test =
+    g := empty_grid(8, 5)
+    assert_eq(step(g, True), g)
+    assert_eq(step(g, False), g)
+    assert_eq(_advance(g, 12, False), g)
+
+// ---------------------------------------------------------------- parsing tests
+
+pattern_parsing: test =
+    g := _pattern("! a comment\n.O.\n###\nOO\n")
+    assert_eq(g.width, 3)
+    assert_eq(g.height, 3)
+    assert_eq(g.cells, {False, True, False,
+                        True, True, True,
+                        True, True, False})
+
+pattern_symbols_and_spaces: test =
+    g := _pattern("  ! leading comment\n. O .\n # . # \n")
+    assert_eq(g.width, 3)
+    assert_eq(g.height, 2)
+    assert_eq(g.cells, {False, True, False, True, False, True})
+
+ragged_rows_pad_dead: test =
+    g := _pattern("O\nOOO\nOO")
+    assert_eq(g.width, 3)
+    assert_eq(g.height, 3)
+    assert_eq(g.cells, {True, False, False,
+                        True, True, True,
+                        True, True, False})
+
+pattern_errors: test =
+    assert(parse_pattern("").is_err())
+    assert(parse_pattern("! only a comment\n\n").is_err())
+    assert(parse_pattern("O?\n").is_err())
+    assert(parse_pattern("O\n!\n").is_ok())  // a comment row is not a row
+
+preset_loading: test =
+    expected: [][String, Int, Int] = {
+        {"glider", 3, 3},
+        {"blinker", 3, 1},
+        {"block", 2, 2},
+        {"pulsar", 13, 13},
+        {"r-pentomino", 3, 3}}
+    expected.each((row):
+        (name, w, h) = row
+        g := preset_grid(name).expect("preset {name}")
+        assert_eq(g.width, w)
+        assert_eq(g.height, h)
+        assert(_live_coords(g).length() > 0))
+    assert_eq(preset_names.length(), 5)
+    assert(preset_grid("nope").is_err())
+
+pulsar_period_three: test =
+    p := place_centered(preset_grid("pulsar").expect("pulsar preset"), 20, 20)
+    assert_eq(_advance(p, 3, False), p)
+    assert_ne(_advance(p, 1, False), p)
+
+preset_centering: test =
+    g := place_centered(_pattern("OOO"), 7, 5)
+    assert_eq(_live_coords(g), {{2, 2}, {3, 2}, {4, 2}})
+    // A pattern wider than the grid is cropped around the centre.
+    wide := place_centered(_pattern("OOOOO"), 3, 3)
+    assert_eq(wide.width, 3)
+    assert_eq(wide.cells, {False, False, False,
+                           True, True, True,
+                           False, False, False})
+
+crop_and_pad: test =
+    p := _pattern("OO\nO.")
+    assert_eq(p.width, 2)
+    assert_eq(p.height, 2)
+    clipped := crop_pad(p, 1, 1)
+    assert_eq(clipped.width, 1)
+    assert_eq(clipped.height, 1)
+    assert_eq(clipped.cells, {True})
+    padded := crop_pad(p, 4, 3)
+    assert_eq(padded.width, 4)
+    assert_eq(padded.height, 3)
+    assert_eq(padded.cells, {True, True, False, False,
+                             True, False, False, False,
+                             False, False, False, False})
+    // Cropping does not move the pattern; only the top-left corner survives.
+    assert_eq(crop_pad(p, 2, 1).cells, {True, True})
+
+render_dimensions: test =
+    g := _grid("O.\n..\nO#", 4, 3)
+    lines := render(g)
+    assert_eq(lines.length(), 3)
+    lines.each((line): assert_eq(line.length(), 4))
+    assert_eq(lines, {"#   ", "    ", "##  "})
+    assert_eq(render(empty_grid(2, 2)), {"  ", "  "})
+    frame := frame_lines(7, g)
+    assert_eq(frame.length(), 4)
+    assert_eq(frame.get(0), Some "generation 7")
+    assert_eq(frame.get(1), Some "#   ")
+
+soup_is_deterministic: test =
+    a := soup(42, 24, 16)
+    b := soup(42, 24, 16)
+    c := soup(43, 24, 16)
+    assert_eq(a, b)
+    assert_ne(a, c)
+    assert_eq(a.width, 24)
+    assert_eq(a.height, 16)
+    assert_eq(a.cells.length(), 24 * 16)
+
+soup_density_is_roughly_thirty_percent: test =
+    g := soup(7, 40, 30)
+    live := _live_coords(g).length()
+    assert(live > 240)
+    assert(live < 480)
+    // Negative seeds are accepted and remain deterministic.
+    assert_eq(soup(-9, 8, 8), soup(-9, 8, 8))
+    assert_ne(soup(-9, 8, 8), soup(9, 8, 8))
+
+// --------------------------------------------------------- option parsing tests
+
+option_defaults: test =
+    opts := _options({})
+    assert_eq(opts.width, 24)
+    assert_eq(opts.height, 16)
+    assert_eq(opts.generations, 50)
+    assert_eq(opts.delay, 80)
+    assert_eq(opts.bounded, False)
+    assert_eq(opts.plain, False)
+    assert_eq(opts.source, DefaultSource)
+    assert_eq(opts.want_help, False)
+    assert_eq(_options({"--"}).source, DefaultSource)
+
+option_parsing: test =
+    opts := _options({"--pattern", "blinker", "--width", "5", "--height", "7",
+                      "--generations", "0", "--delay", "0", "--plain", "--bounded"})
+    assert_eq(opts.width, 5)
+    assert_eq(opts.height, 7)
+    assert_eq(opts.generations, 0)
+    assert_eq(opts.delay, 0)
+    assert_eq(opts.plain, True)
+    assert_eq(opts.bounded, True)
+    assert_eq(opts.source, Preset "blinker")
+    assert_eq(_options({"--seed", "-5"}).source, Seeded (-5))
+    assert_eq(_options({"--file", "x.txt"}).source, PatternFile "x.txt")
+    assert_eq(_options({"--help"}).want_help, True)
+    assert_eq(_options({"-h"}).want_help, True)
+    // Last value wins for scalar options.
+    assert_eq(_options({"--generations", "2", "--generations", "9"}).generations, 9)
+
+option_errors: test =
+    assert(parse_options({"--nope"}).is_err())
+    assert(parse_options({"stray"}).is_err())
+    assert(parse_options({"--pattern"}).is_err())
+    assert(parse_options({"--pattern", "nope"}).is_err())
+    assert(parse_options({"--file"}).is_err())
+    assert(parse_options({"--file", ""}).is_err())
+    assert(parse_options({"--seed"}).is_err())
+    assert(parse_options({"--seed", "x"}).is_err())
+    assert(parse_options({"--generations"}).is_err())
+    assert(parse_options({"--generations", "-1"}).is_err())
+    assert(parse_options({"--generations", "x"}).is_err())
+    assert(parse_options({"--delay", "-1"}).is_err())
+    assert(parse_options({"--width", "0"}).is_err())
+    assert(parse_options({"--height", "0"}).is_err())
+    assert(parse_options({"--width", "100"}).is_ok())
+    assert(parse_options({"--width", "5000"}).is_err())
+    assert(parse_options({"--", "extra"}).is_err())
+    assert(parse_options({"--pattern", "glider", "--seed", "1"}).is_err())
+    assert(parse_options({"--seed", "1", "--file", "x"}).is_err())
+
+option_help_can_combine: test =
+    opts := _options({"--plain", "--help"})
+    assert_eq(opts.plain, True)
+    assert_eq(opts.want_help, True)
+
+// ------------------------------------------------------------------ frame tests
+
+plain_frame_shape: test =
+    g := place_centered(_pattern("OOO"), 5, 5)
+    frame := frame_lines(0, g)
+    assert_eq(frame.length(), 6)
+    assert_eq(frame.get(0), Some "generation 0")
+    assert_eq(frame.get(3), Some " ### ")
+    assert_eq(frame.get(5), Some "     ")

@@ -1,0 +1,1965 @@
+// ekosql — a small SQL engine over one CSV file, written in Eko.
+//
+//   ekosql [options] 'SELECT ... FROM data.csv ...'
+//
+// The whole query is one command-line argument; the CSV path comes from the
+// FROM clause (bare dotted names, or a quoted string for paths with slashes).
+//
+// Supported: SELECT [DISTINCT] items, WHERE, GROUP BY, HAVING, ORDER BY
+// (multi-key, ASC/DESC, aliases, ordinals), LIMIT/OFFSET; arithmetic,
+// comparisons, AND/OR/NOT, IN, BETWEEN, LIKE, IS [NOT] NULL; UPPER, LOWER,
+// LENGTH, TRIM, ABS, ROUND; COUNT, SUM, AVG, MIN, MAX. NULL is SQL NULL:
+// comparisons with it are unknown, WHERE keeps only true, aggregates skip
+// it, and ORDER BY sorts it first ascending.
+//
+// Column types are inferred per column at load: every unquoted non-empty
+// cell an integer makes the column Int, any float makes it Float, otherwise
+// Text. An unquoted empty field is NULL; a quoted empty field is the empty
+// string. Text never participates in arithmetic; comparing text with a
+// number is an error.
+//
+// Structure follows the house style: the CSV parser, SQL lexer, parser,
+// evaluator, executor, and formatters are pure and directly tested; only
+// main and the file read hold capabilities. Module: ekosql (the file is
+// the module).
+//
+// A few compiler limits shape the code: Result accumulation walks lists
+// with explicit recursion instead of fold; parser step results are small
+// named records rather than bare tuples; composite literals that a lambda
+// returns bind to an annotated name first; String.slice takes a start and
+// a length, not an end index; and an `if` whose branches build Results is
+// lifted into its own helper. Braced patterns that bind a rest list stay
+// out of `<-` continuation bodies, so those Result propagations keep the
+// explicit case form.
+
+// ------------------------------------------------------------------ values
+
+Val: type =
+    | VNull
+    | VText String
+    | VInt Int
+    | VFloat Float
+
+/// A raw CSV cell: the text and whether it was quoted.
+Cell: type = [text: String, quoted: Bool]
+
+ColT: type = TText | TInt | TFloat
+
+Table: type = [cols: []String, colts: []ColT, rows: [][]Val]
+
+// ---------------------------------------------------------------- CSV input
+
+_p_fields: (cs: []Char, row: []Cell, rows: [][]Cell) -> Result ([][]Cell) String =
+    _p_field(cs, row, rows, False, {})
+
+// One field: an unquoted run, or a quoted string with "" escapes.
+_p_field: (cs: []Char, row: []Cell, rows: [][]Cell, quoted: Bool, acc: []Char) -> Result ([][]Cell) String =
+    case cs:
+        {} ->
+            if quoted:
+                Err "unterminated quoted field at end of input"
+            else:
+                f: Cell = {text: String.from_chars(acc.reverse()), quoted: quoted}
+                Ok ({({f} ++ row).reverse()} ++ rows).reverse()
+        {c, ..rest} ->
+            case True:
+                _ if c == '"' && quoted.not() && acc.length() == 0 ->
+                    _p_field(rest, row, rows, True, acc)
+                _ if quoted && c == '"' -> _p_quoted_end(rest, row, rows, acc)
+                _ if quoted -> _p_field(rest, row, rows, True, {c} ++ acc)
+                _ if c == ',' ->
+                    f: Cell = {text: String.from_chars(acc.reverse()), quoted: False}
+                    _p_field(rest, {f} ++ row, rows, False, {})
+                _ if c == '\r' ->
+                    case _s_peek(rest, 0):
+                        Some '\n' ->
+                            f: Cell = {text: String.from_chars(acc.reverse()), quoted: False}
+                            _p_row_end(_s_drop1(rest), {f} ++ row, rows)
+                        _ -> _p_field(rest, row, rows, False, {'\r'} ++ acc)
+                _ if c == '\n' ->
+                    f: Cell = {text: String.from_chars(acc.reverse()), quoted: False}
+                    _p_row_end(rest, {f} ++ row, rows)
+                _ -> _p_field(rest, row, rows, False, {c} ++ acc)
+
+_p_quoted_end: (cs: []Char, row: []Cell, rows: [][]Cell, acc: []Char) -> Result ([][]Cell) String =
+    case cs:
+        {'"', ..rest} -> _p_field(rest, row, rows, True, {'"'} ++ acc)
+        _ ->
+            f: Cell = {text: String.from_chars(acc.reverse()), quoted: True}
+            _p_after_field(cs, {f} ++ row, rows)
+
+// After a quoted field: only , or a line end may follow.
+_p_after_field: (cs: []Char, row: []Cell, rows: [][]Cell) -> Result ([][]Cell) String =
+    case cs:
+        {} -> Ok ({row.reverse()} ++ rows).reverse()
+        {c, ..rest} ->
+            case c:
+                ',' -> _p_field(rest, row, rows, False, {})
+                '\n' -> _p_row_end(rest, row, rows)
+                _ -> Err "unexpected character after quoted field"
+
+_p_row_end: (cs: []Char, row: []Cell, rows: [][]Cell) -> Result ([][]Cell) String =
+    case cs:
+        {'\r', ..rest} -> _p_row_end(rest, row, rows)
+        _ -> _p_fields(cs, {}, {row.reverse()} ++ rows)
+
+/// Parses RFC 4180 CSV text; the final row may lack a trailing newline.
+parse_csv: (text: String) -> Result ([][]Cell) String =
+    rows <- _p_fields(text.chars(), {}, {}).try()
+    case rows:
+        {} -> Ok {}
+        _ ->
+            last := rows.get(rows.length() - 1).unwrap_or({})
+            lone: Cell = {text: "", quoted: False}
+            if last.length() == 1 && last.get(0).unwrap_or(lone).eq(lone):
+                Ok rows.take(rows.length() - 1)
+            else:
+                Ok rows
+
+// ------------------------------------------------------------ table loading
+
+_lc: (c: Char) -> Char =
+    code := c.to_code()
+    if 'A' <= c && c <= 'Z':
+        Char.from_code(code + 32).unwrap_or(c)
+    else:
+        c
+
+_lower_name: (s: String) -> String =
+    String.from_chars(s.chars().map((c): _lc(c)))
+
+_upper_name: (s: String) -> String =
+    String.from_chars(s.chars().map((c): _uc(c)))
+
+_uc: (c: Char) -> Char =
+    code := c.to_code()
+    if 'a' <= c && c <= 'z':
+        Char.from_code(code - 32).unwrap_or(c)
+    else:
+        c
+
+_cell_val: (cell: Cell, t: ColT) -> Result Val String =
+    if cell.quoted:
+        Ok (VText cell.text)
+    else:
+        if cell.text == "":
+            Ok VNull
+        else:
+            case t:
+                TInt ->
+                    Int.parse(cell.text).map((n): VInt n).map_err((_): "cell '{cell.text}' is not an integer")
+                TFloat ->
+                    case Float.parse(cell.text):
+                        Ok f -> Ok (VFloat f)
+                        Err _ ->
+                            Int.parse(cell.text).map((n): VFloat Int.to_float(n)).map_err((_): "cell '{cell.text}' is not a number")
+                TText -> Ok (VText cell.text)
+
+_col_kind: (cells: []Cell) -> ColT =
+    _kind_of(cells, True, False)
+
+_kind_of: (cells: []Cell, all_int: Bool, saw_num: Bool) -> ColT =
+    case cells:
+        {} ->
+            if saw_num.not():
+                TText
+            else:
+                if all_int: TInt else: TFloat
+        {c, ..rest} ->
+            if c.quoted || c.text == "":
+                _kind_of(rest, all_int, saw_num)
+            else:
+                if Int.parse(c.text).is_ok():
+                    _kind_of(rest, all_int, True)
+                else:
+                    if Float.parse(c.text).is_ok():
+                        _kind_of(rest, False, True)
+                    else:
+                        TText
+
+_load_col_vals: (cells: []Cell, t: ColT) -> Result ([]Val) String =
+    case cells:
+        {} -> Ok {}
+        {c, ..rest} ->
+            v <- _cell_val(c, t).try()
+            rest_vals <- _load_col_vals(rest, t).try()
+            Ok ({v} ++ rest_vals)
+
+_load_rows: (rows: [][]Cell, colts: []ColT) -> Result ([][]Val) String =
+    case rows:
+        {} -> Ok {}
+        {row, ..rest} ->
+            vals <- _load_row_vals(row, colts).try()
+            rest_rows <- _load_rows(rest, colts).try()
+            Ok ({vals} ++ rest_rows)
+
+_load_row_vals: (cells: []Cell, colts: []ColT) -> Result ([]Val) String =
+    case cells, colts:
+        {}, {} -> Ok {}
+        {}, _ -> Err "row is short"
+        _, {} -> Err "row has more fields than the header"
+        {c, ..crest}, {t, ..trest} ->
+            v <- _cell_val(c, t).try()
+            rest_vals <- _load_row_vals(crest, trest).try()
+            Ok ({v} ++ rest_vals)
+
+_col_cells: (rows: [][]Cell, i: Int) -> []Cell =
+    case rows:
+        {} -> {}
+        {row, ..rest} -> {row.get(i).unwrap_or({text: "", quoted: False})} ++ _col_cells(rest, i)
+
+_dup_check: (header: []Cell, seen: [String]Bool) -> Result Bool String =
+    case header:
+        {} -> Ok True
+        {c, ..rest} ->
+            k := _lower_name(c.text)
+            if seen.get(k).unwrap_or(False):
+                Err "duplicate column name: {c.text}"
+            else:
+                _dup_check(rest, seen.insert(k, True))
+
+_colts_of: (body: [][]Cell, n: Int) -> []ColT =
+    _colts_loop(body, 0, n, {})
+
+_colts_loop: (body: [][]Cell, i: Int, n: Int, acc: []ColT) -> []ColT =
+    if i >= n:
+        acc.reverse()
+    else:
+        _colts_loop(body, i + 1, n, {_col_kind(_col_cells(body, i))} ++ acc)
+
+/// Builds the table: header names, per-column types, typed rows.
+load_table: (text: String) -> Result Table String =
+    raw <- parse_csv(text).try()
+    case raw:
+        {} -> Err "empty CSV input"
+        {header, ..body} ->
+            _ <- _dup_check(header, {}).try()
+            colts := _colts_of(body, header.length())
+            cols := header.map((c): c.text)
+            rows <- _load_rows(body, colts).try()
+            Ok {cols: cols, colts: colts, rows: rows}
+
+// -------------------------------------------------------------- SQL tokens
+
+STok: type =
+    | SSym String
+    | SName String
+    | SInt Int
+    | SFloat Float
+    | SStr String
+    | SEof
+
+SToken: type = [tok: STok, pos: Int]
+
+_s_digit: (c: Char) -> Bool = '0' <= c && c <= '9'
+_s_alpha: (c: Char) -> Bool = ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') || c == '_'
+_s_alnum: (c: Char) -> Bool = _s_alpha(c) || _s_digit(c)
+
+_s_peek: (cs: []Char, n: Int) -> Option Char =
+    case cs:
+        {c, ..rest} -> if n == 0: Some c else: _s_peek(rest, n - 1)
+        {} -> None
+
+_s_drop1: (cs: []Char) -> []Char =
+    case cs:
+        {_, ..rest} -> rest
+        {} -> {}
+
+_s_take_digits: (cs: []Char, acc: []Char) -> [[]Char, []Char] =
+    case cs:
+        {c, ..rest} if _s_digit(c) -> _s_take_digits(rest, {c} ++ acc)
+        _ -> {acc.reverse(), cs}
+
+_s_take_frac: (cs: []Char) -> [String, []Char] =
+    case _s_peek(cs, 1):
+        Some d if _s_digit(d) ->
+            (ds, rest2) = _s_take_digits(_s_drop1(cs), {})
+            {"." ++ String.from_chars(ds), rest2}
+        _ -> {"", cs}
+
+_s_take_exp: (cs: []Char) -> [String, []Char] =
+    case _s_peek(cs, 0):
+        Some c if c == 'e' || c == 'E' ->
+            case _s_peek(cs, 1):
+                Some s if s == '+' || s == '-' ->
+                    (ds, rest2) = _s_take_digits(_s_drop1(_s_drop1(cs)), {})
+                    if ds.length() == 0: {"", cs} else: {"e" ++ String.from_char(s) ++ String.from_chars(ds), rest2}
+                _ ->
+                    (ds, rest1) = _s_take_digits(_s_drop1(cs), {})
+                    if ds.length() == 0: {"", cs} else: {"e" ++ String.from_chars(ds), rest1}
+        _ -> {"", cs}
+
+_s_take_name: (cs: []Char, acc: []Char) -> [String, []Char] =
+    case cs:
+        {c, ..rest} if _s_alnum(c) -> _s_take_name(rest, {c} ++ acc)
+        _ -> {String.from_chars(acc.reverse()), cs}
+
+_s_string: (cs: []Char, i: Int, w: Int, acc: []Char, toks: []SToken) -> Result ([]SToken) String =
+    case cs:
+        {} -> Err "unterminated string literal at offset {i}"
+        {c, ..rest} ->
+            case c:
+                '\'' ->
+                    case _s_peek(rest, 0):
+                        Some '\'' -> _s_string(_s_drop1(rest), i, w + 2, {'\''} ++ acc, toks)
+                        _ -> _s_emit(rest, i, w + 2, SStr (String.from_chars(acc.reverse())), toks)
+                _ -> _s_string(rest, i, w + 1, {c} ++ acc, toks)
+
+_s_emit: (cs: []Char, i: Int, w: Int, t: STok, toks: []SToken) -> Result ([]SToken) String =
+    tk: SToken = {tok: t, pos: i}
+    _s_lex(cs, i + w, {tk} ++ toks)
+
+_s_sym_two: (c: Char, c2: Char, rest2: []Char, i: Int, toks: []SToken) -> Result ([]SToken) String =
+    case c, c2:
+        '!', '=' -> _s_emit(rest2, i, 2, SSym "!=", toks)
+        '<', '>' -> _s_emit(rest2, i, 2, SSym "!=", toks)
+        '<', '=' -> _s_emit(rest2, i, 2, SSym "<=", toks)
+        '>', '=' -> _s_emit(rest2, i, 2, SSym ">=", toks)
+        _, _ -> _s_sym_one(c, {c2} ++ rest2, i, toks)
+
+_s_sym_one: (c: Char, rest: []Char, i: Int, toks: []SToken) -> Result ([]SToken) String =
+    case c:
+        '(' | ')' | ',' | '*' | '+' | '-' | '/' | '%' | '=' | '<' | '>' | '.' ->
+            _s_emit(rest, i, 1, SSym (String.from_char(c)), toks)
+        _ -> Err "unexpected character '{c}' at offset {i}"
+
+_s_lex: (cs: []Char, i: Int, toks: []SToken) -> Result ([]SToken) String =
+    case cs:
+        {} ->
+            eof: SToken = {tok: SEof, pos: i}
+            Ok ({eof} ++ toks).reverse()
+        {c, ..rest} ->
+            case c:
+                ' ' | '\t' | '\n' | '\r' -> _s_lex(rest, i + 1, toks)
+                _ if _s_digit(c) -> _s_number(cs, i, toks)
+                _ if _s_alpha(c) -> _s_name(cs, i, toks)
+                '\'' -> _s_string(rest, i, 0, {}, toks)
+                _ ->
+                    case rest:
+                        {c2, ..rest2} -> _s_sym_two(c, c2, rest2, i, toks)
+                        {} -> _s_sym_one(c, {}, i, toks)
+
+_s_number: (cs: []Char, i: Int, toks: []SToken) -> Result ([]SToken) String =
+    (int_chs, cs1) = _s_take_digits(cs, {})
+    (frac, cs2) = _s_take_frac(cs1)
+    (exp, cs3) = _s_take_exp(cs2)
+    text := String.from_chars(int_chs) ++ frac ++ exp
+    width := int_chs.length() + frac.length() + exp.length()
+    if frac == "" && exp == "":
+        n <- Int.parse(text).map_err((_): "integer literal out of range at offset {i}").try()
+        _s_emit(cs3, i, width, SInt n, toks)
+    else:
+        f <- Float.parse(text).map_err((_): "bad number '{text}' at offset {i}").try()
+        _s_emit(cs3, i, width, SFloat f, toks)
+
+_s_name: (cs: []Char, i: Int, toks: []SToken) -> Result ([]SToken) String =
+    (chs, rest) = _s_take_name(cs, {})
+    _s_emit(rest, i, chs.length(), SName chs, toks)
+
+_s_lex_all: (src: String) -> Result ([]SToken) String =
+    _s_lex(src.chars(), 0, {})
+
+// --------------------------------------------------------------- SQL syntax
+
+E: type =
+    | ELit Val
+    | ECol String
+    | EStar
+    | ENot E
+    | EAnd [E, E]
+    | EOr [E, E]
+    | ECmp [String, E, E]
+    | EArith [String, E, E]
+    | ENeg E
+    | EIn [E, []E]
+    | EBetween [E, E, E]
+    | ELike [E, E]
+    | EIsNull [E, Bool]
+    | ECall [String, []E]
+    | EAgg [String, Option E]
+
+SelItem: type = [expr: E, alias: Option String, text: String]
+OrderItem: type = [expr: E, desc: Bool]
+
+Query: type = [distinct: Bool, star: Bool, items: []SelItem, from: String, where: Option E, group: []E, having: Option E, order: []OrderItem, limit: Option Int, offset: Option Int]
+
+_empty_query: Query =
+    {distinct: False, star: False, items: {}, from: "", where: None,
+     group: {}, having: None, order: {}, limit: None, offset: None}
+
+Grouped: type = [key: String, rows: [][]Val]
+
+SStep: type = [expr: E, rest: []SToken]
+InStep: type = [items: []E, rest: []SToken]
+ItemStep: type = [item: SelItem, rest: []SToken]
+PathStep: type = [path: String, rest: []SToken]
+
+_reserved: []String = {"from", "where", "group", "having", "order", "limit", "offset", "and", "or", "as", "by", "on", "join", "inner", "left", "union"}
+
+_kw_tok: (t: STok, s: String) -> Bool =
+    case t:
+        SName n -> _lower_name(n) == s
+        _ -> False
+
+_kw_is: (toks: []SToken, s: String) -> Bool =
+    case toks:
+        {t, ..} -> _kw_tok(t.tok, s)
+        {} -> False
+
+_s_expect_sym: (s: String, toks: []SToken) -> Result ([]SToken) String =
+    case toks:
+        {t, ..rest} ->
+            case t.tok:
+                SSym got if got == s -> Ok rest
+                _ -> Err "expected '{s}' at offset {t.pos}"
+        {} -> Err "expected '{s}' at end of query"
+
+_s_name_of: (t: STok) -> Option String =
+    case t:
+        SName n -> Some n
+        _ -> None
+
+_s_expect_kw: (s: String, toks: []SToken) -> Result ([]SToken) String =
+    case toks:
+        {t, ..rest} ->
+            if _kw_tok(t.tok, s):
+                Ok rest
+            else:
+                Err "expected {s} at offset {t.pos}"
+        {} -> Err "expected {s} at end of query"
+
+// --------------------------------------------------------- expression parser
+
+_p_or: (toks: []SToken) -> Result SStep String =
+    p <- _p_and(toks).try()
+    _p_or_rest(p.expr, p.rest)
+
+_p_or_rest: (l: E, toks: []SToken) -> Result SStep String =
+    if _kw_is(toks, "or"):
+        r1 <- _s_expect_kw("or", toks).try()
+        p <- _p_and(r1).try()
+        _p_or_rest(EOr {l, p.expr}, p.rest)
+    else:
+        Ok {expr: l, rest: toks}
+
+_p_and: (toks: []SToken) -> Result SStep String =
+    p <- _p_not(toks).try()
+    _p_and_rest(p.expr, p.rest)
+
+_p_and_rest: (l: E, toks: []SToken) -> Result SStep String =
+    if _kw_is(toks, "and"):
+        r1 <- _s_expect_kw("and", toks).try()
+        p <- _p_not(r1).try()
+        _p_and_rest(EAnd {l, p.expr}, p.rest)
+    else:
+        Ok {expr: l, rest: toks}
+
+_p_not: (toks: []SToken) -> Result SStep String =
+    if _kw_is(toks, "not"):
+        r1 <- _s_expect_kw("not", toks).try()
+        p <- _p_not(r1).try()
+        Ok {expr: ENot p.expr, rest: p.rest}
+    else:
+        _p_cmp(toks)
+
+_p_cmp: (toks: []SToken) -> Result SStep String =
+    p <- _p_add(toks).try()
+    _p_cmp_tail(p.expr, p.rest)
+
+_p_cmp_tail: (l: E, toks: []SToken) -> Result SStep String =
+    case toks:
+        {t, ..rest} ->
+            case t.tok:
+                SSym op if op == "=" || op == "!=" || op == "<" || op == "<=" || op == ">" || op == ">=" ->
+                    p2 <- _p_add(rest).try()
+                    _p_pred_tail(ECmp {op, l, p2.expr}, p2.rest)
+                _ -> _p_pred_tail(l, toks)
+        {} -> Ok {expr: l, rest: toks}
+
+// IN / BETWEEN / LIKE / IS NULL attach after a comparison operand.
+_p_pred_tail: (l: E, toks: []SToken) -> Result SStep String =
+    if _kw_is(toks, "in"):
+        r1 <- _s_expect_kw("in", toks).try()
+        r2 <- _s_expect_sym("(", r1).try()
+        pr <- _p_in_list(r2).try()
+        _p_pred_tail(EIn {l, pr.items}, pr.rest)
+    else:
+        if _kw_is(toks, "between"):
+            r1 <- _s_expect_kw("between", toks).try()
+            lo <- _p_add(r1).try()
+            r2 <- _s_expect_kw("and", lo.rest).try()
+            hi <- _p_add(r2).try()
+            _p_pred_tail(EBetween {l, lo.expr, hi.expr}, hi.rest)
+        else:
+            if _kw_is(toks, "like"):
+                r1 <- _s_expect_kw("like", toks).try()
+                p <- _p_add(r1).try()
+                _p_pred_tail(ELike {l, p.expr}, p.rest)
+            else:
+                if _kw_is(toks, "is"):
+                    r1 <- _s_expect_kw("is", toks).try()
+                    _p_is_null(l, r1)
+                else:
+                    Ok {expr: l, rest: toks}
+
+_p_is_null: (l: E, toks: []SToken) -> Result SStep String =
+    if _kw_is(toks, "not"):
+        r1 <- _s_expect_kw("not", toks).try()
+        r2 <- _s_expect_kw("null", r1).try()
+        _p_pred_tail(EIsNull {l, False}, r2)
+    else:
+        r1 <- _s_expect_kw("null", toks).try()
+        _p_pred_tail(EIsNull {l, True}, r1)
+
+_p_in_list: (toks: []SToken) -> Result InStep String =
+    p <- _p_or(toks).try()
+    _p_in_rest({p.expr} ++ {}, p.rest)
+
+_p_in_rest: (acc: []E, toks: []SToken) -> Result InStep String =
+    case toks:
+        {t, ..rest} ->
+            case t.tok:
+                SSym ")" -> Ok {items: acc.reverse(), rest: rest}
+                SSym "," ->
+                    p <- _p_or(rest).try()
+                    _p_in_rest({p.expr} ++ acc, p.rest)
+                _ -> Err "expected ',' or ')' in list at offset {t.pos}"
+        {} -> Err "unterminated IN list"
+
+_p_add: (toks: []SToken) -> Result SStep String =
+    p <- _p_mul(toks).try()
+    _p_add_rest(p.expr, p.rest)
+
+_p_add_rest: (l: E, toks: []SToken) -> Result SStep String =
+    case toks:
+        {t, ..rest} ->
+            case t.tok:
+                SSym "+" ->
+                    p <- _p_mul(rest).try()
+                    _p_add_rest(EArith {"+", l, p.expr}, p.rest)
+                SSym "-" ->
+                    p <- _p_mul(rest).try()
+                    _p_add_rest(EArith {"-", l, p.expr}, p.rest)
+                _ -> Ok {expr: l, rest: toks}
+        {} -> Ok {expr: l, rest: toks}
+
+_p_mul: (toks: []SToken) -> Result SStep String =
+    p <- _p_unary(toks).try()
+    _p_mul_rest(p.expr, p.rest)
+
+_p_mul_rest: (l: E, toks: []SToken) -> Result SStep String =
+    case toks:
+        {t, ..rest} ->
+            case t.tok:
+                SSym "*" ->
+                    p <- _p_unary(rest).try()
+                    _p_mul_rest(EArith {"*", l, p.expr}, p.rest)
+                SSym "/" ->
+                    p <- _p_unary(rest).try()
+                    _p_mul_rest(EArith {"/", l, p.expr}, p.rest)
+                SSym "%" ->
+                    p <- _p_unary(rest).try()
+                    _p_mul_rest(EArith {"%", l, p.expr}, p.rest)
+                _ -> Ok {expr: l, rest: toks}
+        {} -> Ok {expr: l, rest: toks}
+
+_p_unary: (toks: []SToken) -> Result SStep String =
+    case toks:
+        {t, ..rest} ->
+            case t.tok:
+                SSym "-" ->
+                    p <- _p_unary(rest).try()
+                    Ok {expr: ENeg p.expr, rest: p.rest}
+                _ -> _p_primary(toks)
+        {} -> Err "unexpected end of expression"
+
+_agg_names: []String = {"count", "sum", "avg", "min", "max"}
+_fun_names: []String = {"upper", "lower", "length", "trim", "abs", "round"}
+
+_is_agg_name: (s: String) -> Bool = _agg_names.any((n): n == _lower_name(s))
+_is_fun_name: (s: String) -> Bool = _fun_names.any((n): n == _lower_name(s))
+
+_p_primary: (toks: []SToken) -> Result SStep String =
+    case toks:
+        {t, ..rest} ->
+            case t.tok:
+                SInt n -> Ok {expr: ELit (VInt n), rest: rest}
+                SFloat f -> Ok {expr: ELit (VFloat f), rest: rest}
+                SStr s -> Ok {expr: ELit (VText s), rest: rest}
+                SName n ->
+                    low := _lower_name(n)
+                    case low:
+                        "null" -> Ok {expr: ELit VNull, rest: rest}
+                        "true" -> Ok {expr: ELit (VInt 1), rest: rest}
+                        "false" -> Ok {expr: ELit (VInt 0), rest: rest}
+                        _ ->
+                            case rest:
+                                {t2, ..rest2} ->
+                                    case t2.tok:
+                                        SSym "(" ->
+                                            if _is_agg_name(n):
+                                                _p_agg(n, rest2)
+                                            else:
+                                                if _is_fun_name(n):
+                                                    _p_call(n, rest2)
+                                                else:
+                                                    Err "unknown function: {n}"
+                                        _ -> Ok {expr: ECol n, rest: rest}
+                                {} -> Ok {expr: ECol n, rest: rest}
+                SSym "(" ->
+                    p <- _p_or(rest).try()
+                    r2 <- _s_expect_sym(")", p.rest).try()
+                    Ok {expr: p.expr, rest: r2}
+                _ -> Err "unexpected token at offset {t.pos}"
+        {} -> Err "unexpected end of expression"
+
+// toks start after the opening parenthesis, consumed by _p_primary.
+_p_agg: (name: String, toks: []SToken) -> Result SStep String =
+    case toks:
+        {t, ..rest} ->
+            case t.tok:
+                SSym "*" if _lower_name(name) == "count" ->
+                    r2 <- _s_expect_sym(")", rest).try()
+                    Ok {expr: EAgg {_upper_name(name), None}, rest: r2}
+                _ ->
+                    p <- _p_or(toks).try()
+                    r2 <- _s_expect_sym(")", p.rest).try()
+                    Ok {expr: EAgg {_upper_name(name), Some p.expr}, rest: r2}
+        {} -> Err "unterminated argument list of {name}"
+
+_p_call: (name: String, toks: []SToken) -> Result SStep String =
+    case toks:
+        {t, ..rest} ->
+            case t.tok:
+                SSym ")" -> Ok {expr: ECall {_upper_name(name), {}}, rest: rest}
+                _ ->
+                    p <- _p_or(toks).try()
+                    _p_call_args(name, {p.expr} ++ {}, p.rest)
+        {} -> Err "unterminated argument list of {name}"
+
+_p_call_args: (name: String, acc: []E, toks: []SToken) -> Result SStep String =
+    case toks:
+        {t, ..rest} ->
+            case t.tok:
+                SSym ")" -> Ok {expr: ECall {_upper_name(name), acc.reverse()}, rest: rest}
+                SSym "," ->
+                    p <- _p_or(rest).try()
+                    _p_call_args(name, {p.expr} ++ acc, p.rest)
+                _ -> Err "expected ',' or ')' in argument list at offset {t.pos}"
+        {} -> Err "unterminated argument list of {name}"
+
+// ------------------------------------------------------------ query parser
+
+parse_query: (src: String) -> Result Query String =
+    toks <- _s_lex_all(src).try()
+    r1 <- _s_expect_kw("select", toks).try()
+    _p_query_body(src, r1)
+
+_p_query_body: (src: String, toks: []SToken) -> Result Query String =
+    if _kw_is(toks, "distinct"):
+        r1 <- _s_expect_kw("distinct", toks).try()
+        _p_items(src, _empty_query.with({distinct: True}), r1)
+    else:
+        _p_items(src, _empty_query, toks)
+
+_p_items: (src: String, q: Query, toks: []SToken) -> Result Query String =
+    case toks:
+        {t, ..rest} ->
+            case t.tok:
+                SSym "*" ->
+                    if q.items.length() > 0:
+                        Err "cannot mix * with select items"
+                    else:
+                        _p_from(src, q.with({star: True}), rest)
+                _ ->
+                    ip <- _p_item(src, toks).try()
+                    q1 := q.with({items: q.items ++ {ip.item}})
+                    _p_after_item(src, q1, ip.rest)
+        {} -> Err "unexpected end of query"
+
+_p_after_item: (src: String, q: Query, toks: []SToken) -> Result Query String =
+    case toks:
+        {t, ..rest} ->
+            case t.tok:
+                SSym "," -> _p_items(src, q, rest)
+                _ -> _p_from(src, q, toks)
+        {} -> Err "expected FROM at end of query"
+
+_p_item: (src: String, toks: []SToken) -> Result ItemStep String =
+    p <- _p_or(toks).try()
+    text := _item_text(src, _first_pos(toks), p.rest)
+    _p_alias(p.expr, text, p.rest)
+
+// The item's source text starts at its first token, which heads the list
+// the item parser received.
+_first_pos: (start: []SToken) -> Int =
+    _pos_at(start, 0)
+
+_pos_at: (toks: []SToken, n: Int) -> Int =
+    case toks:
+        {} -> 0
+        {t, ..rest} -> if n == 0: t.pos else: _pos_at(rest, n - 1)
+
+// The item text spans from its first token to where the parse stopped.
+_item_text: (src: String, start: Int, rest: []SToken) -> String =
+    end := _width_to(rest)
+    String.slice(src, start, end - start).unwrap_or("").trim()
+
+_width_to: (rest: []SToken) -> Int =
+    case rest:
+        {t, ..} -> t.pos
+        {} -> 1000000
+
+_p_alias: (e: E, text: String, toks: []SToken) -> Result ItemStep String =
+    if _kw_is(toks, "as"):
+        r1 <- _s_expect_kw("as", toks).try()
+        case r1:
+            {t, ..rest} ->
+                case _s_name_of(t.tok):
+                    Some a -> Ok {item: {expr: e, alias: Some a, text: text}, rest: rest}
+                    None -> Err "expected alias name after AS"
+            {} -> Err "expected alias name after AS"
+    else:
+        case toks:
+            {t, ..rest} ->
+                case _s_name_of(t.tok):
+                    Some a ->
+                        if _reserved.any((r): r == _lower_name(a)):
+                            Ok {item: {expr: e, alias: None, text: text}, rest: toks}
+                        else:
+                            Ok {item: {expr: e, alias: Some a, text: text}, rest: rest}
+                    None -> Ok {item: {expr: e, alias: None, text: text}, rest: toks}
+            {} -> Ok {item: {expr: e, alias: None, text: text}, rest: {}}
+
+_p_from: (src: String, q: Query, toks: []SToken) -> Result Query String =
+    r1 <- _s_expect_kw("from", toks).try()
+    pp <- _p_from_path(r1).try()
+    q1 := q.with({from: pp.path})
+    _p_clauses(src, q1, pp.rest)
+
+_p_from_path: (toks: []SToken) -> Result PathStep String =
+    case toks:
+        {t, ..rest} ->
+            case t.tok:
+                SStr s -> Ok {path: s, rest: rest}
+                SName n -> _p_dotted(n, rest)
+                _ -> Err "expected a file path after FROM"
+        {} -> Err "expected a file path after FROM"
+
+_p_dotted: (acc: String, toks: []SToken) -> Result PathStep String =
+    case toks:
+        {t, ..rest} ->
+            case t.tok:
+                SSym "." ->
+                    case rest:
+                        {t2, ..rest2} ->
+                            case t2.tok:
+                                SName n -> _p_dotted(acc ++ "." ++ n, rest2)
+                                _ -> Ok {path: acc, rest: toks}
+                        {} -> Ok {path: acc, rest: {}}
+                _ -> Ok {path: acc, rest: toks}
+        {} -> Ok {path: acc, rest: {}}
+
+_p_clauses: (src: String, q: Query, toks: []SToken) -> Result Query String =
+    if _kw_is(toks, "where"):
+        r1 <- _s_expect_kw("where", toks).try()
+        p <- _p_or(r1).try()
+        _p_clauses(src, q.with({where: Some p.expr}), p.rest)
+    else:
+        if _kw_is(toks, "group"):
+            r1 <- _s_expect_kw("group", toks).try()
+            r2 <- _s_expect_kw("by", r1).try()
+            pl <- _p_expr_list(r2).try()
+            _p_clauses(src, q.with({group: pl.exprs}), pl.rest)
+        else:
+            if _kw_is(toks, "having"):
+                r1 <- _s_expect_kw("having", toks).try()
+                p <- _p_or(r1).try()
+                _p_clauses(src, q.with({having: Some p.expr}), p.rest)
+            else:
+                if _kw_is(toks, "order"):
+                    r1 <- _s_expect_kw("order", toks).try()
+                    r2 <- _s_expect_kw("by", r1).try()
+                    ol <- _p_order_list(r2).try()
+                    _p_clauses(src, q.with({order: ol.orders}), ol.rest)
+                else:
+                    if _kw_is(toks, "limit"):
+                        r1 <- _s_expect_kw("limit", toks).try()
+                        _p_limit(src, q, r1)
+                    else:
+                        _p_end(q, toks)
+
+_p_limit: (src: String, q: Query, toks: []SToken) -> Result Query String =
+    case toks:
+        {t, ..rest} ->
+            case t.tok:
+                SInt n ->
+                    if n < 0:
+                        Err "LIMIT must not be negative"
+                    else:
+                        _p_offset(src, q.with({limit: Some n}), rest)
+                _ -> Err "expected a number after LIMIT"
+        {} -> Err "expected a number after LIMIT"
+
+_p_offset: (src: String, q: Query, toks: []SToken) -> Result Query String =
+    if _kw_is(toks, "offset"):
+        r1 <- _s_expect_kw("offset", toks).try()
+        case r1:
+            {t, ..rest} ->
+                case t.tok:
+                    SInt n ->
+                        if n < 0:
+                            Err "OFFSET must not be negative"
+                        else:
+                            _p_clauses(src, q.with({offset: Some n}), rest)
+                    _ -> Err "expected a number after OFFSET"
+            {} -> Err "expected a number after OFFSET"
+    else:
+        _p_clauses(src, q, toks)
+
+_p_end: (q: Query, toks: []SToken) -> Result Query String =
+    case toks:
+        {t, ..} ->
+            case t.tok:
+                SEof -> Ok q
+                _ -> Err "unexpected token at offset {t.pos}"
+        {} -> Ok q
+
+_p_expr_list: (toks: []SToken) -> Result ExprList String =
+    p <- _p_or(toks).try()
+    _p_expr_rest({p.expr} ++ {}, p.rest)
+
+_p_expr_rest: (acc: []E, toks: []SToken) -> Result ExprList String =
+    case toks:
+        {t, ..rest} ->
+            case t.tok:
+                SSym "," ->
+                    p <- _p_or(rest).try()
+                    _p_expr_rest({p.expr} ++ acc, p.rest)
+                _ -> Ok {exprs: acc.reverse(), rest: toks}
+        {} -> Ok {exprs: acc.reverse(), rest: {}}
+
+_p_order_list: (toks: []SToken) -> Result OrderList String =
+    p <- _p_or(toks).try()
+    od <- _p_dir(p.rest).try()
+    first: OrderItem = {expr: p.expr, desc: od.desc}
+    _p_order_rest({first} ++ {}, od.rest)
+
+DirStep: type = [desc: Bool, rest: []SToken]
+
+_p_dir: (toks: []SToken) -> Result DirStep String =
+    if _kw_is(toks, "desc"):
+        r1 <- _s_expect_kw("desc", toks).try()
+        Ok {desc: True, rest: r1}
+    else:
+        if _kw_is(toks, "asc"):
+            r1 <- _s_expect_kw("asc", toks).try()
+            Ok {desc: False, rest: r1}
+        else:
+            Ok {desc: False, rest: toks}
+
+_p_order_rest: (acc: []OrderItem, toks: []SToken) -> Result OrderList String =
+    case toks:
+        {t, ..rest} ->
+            case t.tok:
+                SSym "," ->
+                    p <- _p_or(rest).try()
+                    od <- _p_dir(p.rest).try()
+                    item: OrderItem = {expr: p.expr, desc: od.desc}
+                    _p_order_rest({item} ++ acc, od.rest)
+                _ -> Ok {orders: acc.reverse(), rest: toks}
+        {} -> Ok {orders: acc.reverse(), rest: {}}
+
+ExprList: type = [exprs: []E, rest: []SToken]
+OrderList: type = [orders: []OrderItem, rest: []SToken]
+
+// ------------------------------------------------------------- value logic
+
+_v_eq: (a: Val, b: Val) -> Bool =
+    case a, b:
+        VNull, VNull -> True
+        VNull, _ -> False
+        _, VNull -> False
+        VText x, VText y -> x == y
+        VInt x, VInt y -> x == y
+        VFloat x, VFloat y -> x == y
+        VInt x, VFloat y -> Int.to_float(x) == y
+        VFloat x, VInt y -> x == Int.to_float(y)
+        _, _ -> False
+
+_v_num: (v: Val) -> Option Float =
+    case v:
+        VInt i -> Some (Int.to_float(i))
+        VFloat f -> Some f
+        _ -> None
+
+/// Total order for ORDER BY keys; NULL sorts first ascending.
+_v_cmp_total: (a: Val, b: Val) -> Int =
+    case a, b:
+        VNull, VNull -> 0
+        VNull, _ -> -1
+        _, VNull -> 1
+        VText x, VText y -> if x < y: -1 else: if y < x: 1 else: 0
+        VText _, _ -> -1
+        _, VText _ -> 1
+        _, _ ->
+            fa := _v_num(a).unwrap_or(0.0)
+            fb := _v_num(b).unwrap_or(0.0)
+            if fa < fb: -1 else: if fb < fa: 1 else: 0
+
+_v_show: (v: Val) -> String =
+    case v:
+        VNull -> ""
+        VText s -> s
+        VInt n -> show(n)
+        VFloat f -> show(f)
+
+_arith_v: (op: String, a: Val, b: Val) -> Result Val String =
+    case a, b:
+        VNull, _ -> Ok VNull
+        _, VNull -> Ok VNull
+        VInt x, VInt y ->
+            case op:
+                "+" -> Ok (VInt (x + y))
+                "-" -> Ok (VInt (x - y))
+                "*" -> Ok (VInt (x * y))
+                "/" ->
+                    if y == 0:
+                        Err "division by zero"
+                    else:
+                        if x.rem(y) == 0:
+                            Ok (VInt x.quot(y))
+                        else:
+                            Ok (VFloat (Int.to_float(x) / Int.to_float(y)))
+                _ ->
+                    if y == 0:
+                        Err "division by zero"
+                    else:
+                        Ok (VInt x.rem(y))
+        VInt x, VFloat y -> _arith_f(op, Int.to_float(x), y)
+        VFloat x, VInt y -> _arith_f(op, x, Int.to_float(y))
+        VFloat x, VFloat y -> _arith_f(op, x, y)
+        VText _, _ -> Err "text is not a number ('{a}')"
+        _, VText _ -> Err "text is not a number ('{b}')"
+
+_arith_f: (op: String, x: Float, y: Float) -> Result Val String =
+    case op:
+        "+" -> Ok (VFloat (x + y))
+        "-" -> Ok (VFloat (x - y))
+        "*" -> Ok (VFloat (x * y))
+        "/" ->
+            if y == 0.0:
+                Err "division by zero"
+            else:
+                Ok (VFloat (x / y))
+        _ ->
+            if y == 0.0:
+                Err "division by zero"
+            else:
+                Ok (VFloat (x / y))
+
+_cmp_vals: (op: String, a: Val, b: Val) -> Result (Option Bool) String =
+    case a, b:
+        VNull, _ -> Ok None
+        _, VNull -> Ok None
+        VText x, VText y -> Ok (Some (_cmp_op(op, _s_cmp(x, y))))
+        VText _, _ -> Err "cannot compare text with a number ('{a}')"
+        _, VText _ -> Err "cannot compare text with a number ('{b}')"
+        _, _ ->
+            fa := _v_num(a).unwrap_or(0.0)
+            fb := _v_num(b).unwrap_or(0.0)
+            c := if fa < fb: -1 else: if fb < fa: 1 else: 0
+            Ok (Some (_cmp_op(op, c)))
+
+_s_cmp: (x: String, y: String) -> Int =
+    if x < y: -1 else: if y < x: 1 else: 0
+
+_cmp_op: (op: String, c: Int) -> Bool =
+    case op:
+        "=" -> c == 0
+        "!=" -> c != 0
+        "<" -> c < 0
+        "<=" -> c <= 0
+        ">" -> c > 0
+        _ -> c >= 0
+
+// ---------------------------------------------------------------- evaluator
+
+Ctx: type = [cols: [String]Int, row: Option ([]Val), grp: Option ([][]Val)]
+
+/// Truth with SQL three-valued logic: None is unknown.
+_truth: (ov: Option Val) -> Result (Option Bool) String =
+    case ov:
+        None -> Ok None
+        Some VNull -> Ok None
+        Some (VInt 0) -> Ok (Some False)
+        Some (VInt _) -> Ok (Some True)
+        Some (VFloat f) -> Ok (Some (f != 0.0))
+        Some (VText _) -> Err "expected a boolean, found text"
+
+_and_t: (a: Option Bool, b: Option Bool) -> Option Bool =
+    case a, b:
+        Some False, _ -> Some False
+        _, Some False -> Some False
+        Some True, Some True -> Some True
+        _, _ -> None
+
+_or_t: (a: Option Bool, b: Option Bool) -> Option Bool =
+    case a, b:
+        Some True, _ -> Some True
+        _, Some True -> Some True
+        Some False, Some False -> Some False
+        _, _ -> None
+
+_bool_val: (ob: Option Bool) -> Val =
+    case ob:
+        Some True -> VInt 1
+        Some False -> VInt 0
+        None -> VNull
+
+eval_e: (e: E, ctx: Ctx) -> Result (Option Val) String =
+    case e:
+        ELit v -> Ok (Some v)
+        ECol name ->
+            case ctx.row:
+                None -> Err "column {name} is not valid here (aggregates only)"
+                Some row ->
+                    case ctx.cols.get(_lower_name(name)):
+                        None -> Err "no such column: {name}"
+                        Some i -> Ok (Some row.get(i).unwrap_or(VNull))
+        EStar -> Err "* is only allowed in COUNT(*)"
+        ENot x ->
+            ov <- eval_e(x, ctx).try()
+            t <- _truth(ov).try()
+            case t:
+                Some b -> Ok (Some (_bool_val(Some b.not())))
+                None -> Ok None
+        EAnd {l, r} -> _eval_and(l, r, ctx)
+        EOr {l, r} -> _eval_or(l, r, ctx)
+        ECmp {op, l, r} ->
+            lv <- eval_e(l, ctx).try()
+            rv <- eval_e(r, ctx).try()
+            ob <- _cmp_vals(op, lv.unwrap_or(VNull), rv.unwrap_or(VNull)).try()
+            Ok (Some (_bool_val(ob)))
+        EArith {op, l, r} ->
+            lv <- eval_e(l, ctx).try()
+            rv <- eval_e(r, ctx).try()
+            v <- _arith_v(op, lv.unwrap_or(VNull), rv.unwrap_or(VNull)).try()
+            Ok (Some v)
+        ENeg x ->
+            ov <- eval_e(x, ctx).try()
+            case ov:
+                None -> Ok None
+                Some (VInt i) -> Ok (Some (VInt (0 - i)))
+                Some (VFloat f) -> Ok (Some (VFloat (0.0 - f)))
+                Some v -> Err "cannot negate {v}"
+        EIn {x, items} -> _eval_in(x, items, ctx)
+        EBetween {x, lo, hi} -> _eval_between(x, lo, hi, ctx)
+        ELike {x, pat} -> _eval_like(x, pat, ctx)
+        EIsNull {x, is_null} -> _eval_is_null(x, is_null, ctx)
+        ECall {name, args} -> _call(name, args, ctx)
+        EAgg {name, arg} -> _agg(name, arg, ctx)
+
+// A known-false left side settles AND without evaluating the right.
+_eval_and: (l: E, r: E, ctx: Ctx) -> Result (Option Val) String =
+    la <- eval_e(l, ctx).try()
+    ta <- _truth(la).try()
+    if ta.eq(Some False):
+        Ok (Some (VInt 0))
+    else:
+        rb <- eval_e(r, ctx).try()
+        tb <- _truth(rb).try()
+        Ok (Some (_bool_val(_and_t(ta, tb))))
+
+// A known-true left side settles OR without evaluating the right.
+_eval_or: (l: E, r: E, ctx: Ctx) -> Result (Option Val) String =
+    la <- eval_e(l, ctx).try()
+    ta <- _truth(la).try()
+    if ta.eq(Some True):
+        Ok (Some (VInt 1))
+    else:
+        rb <- eval_e(r, ctx).try()
+        tb <- _truth(rb).try()
+        Ok (Some (_bool_val(_or_t(ta, tb))))
+
+_eval_in: (x: E, items: []E, ctx: Ctx) -> Result (Option Val) String =
+    ov <- eval_e(x, ctx).try()
+    case ov:
+        None -> Ok None
+        Some v -> _in_any(v, items, ctx)
+
+_eval_between: (x: E, lo: E, hi: E, ctx: Ctx) -> Result (Option Val) String =
+    ov <- eval_e(x, ctx).try()
+    lov <- eval_e(lo, ctx).try()
+    hiv <- eval_e(hi, ctx).try()
+    c1 <- _cmp_vals(">=", ov.unwrap_or(VNull), lov.unwrap_or(VNull)).try()
+    c2 <- _cmp_vals("<=", ov.unwrap_or(VNull), hiv.unwrap_or(VNull)).try()
+    Ok (Some (_bool_val(_and_t(c1, c2))))
+
+_eval_like: (x: E, pat: E, ctx: Ctx) -> Result (Option Val) String =
+    xv <- eval_e(x, ctx).try()
+    pv <- eval_e(pat, ctx).try()
+    _like_vals(xv.unwrap_or(VNull), pv.unwrap_or(VNull))
+
+_eval_is_null: (x: E, want_null: Bool, ctx: Ctx) -> Result (Option Val) String =
+    ov <- eval_e(x, ctx).try()
+    isv := case ov:
+        None -> True
+        Some VNull -> True
+        _ -> False
+    Ok (Some (VInt (if isv == want_null: 1 else: 0)))
+
+_in_any: (v: Val, items: []E, ctx: Ctx) -> Result (Option Val) String =
+    case items:
+        {} -> Ok (Some (VInt 0))
+        {it, ..rest} ->
+            iv <- eval_e(it, ctx).try()
+            ob <- _cmp_vals("=", v, iv.unwrap_or(VNull)).try()
+            case ob:
+                Some True -> Ok (Some (VInt 1))
+                _ -> _in_any(v, rest, ctx)
+
+_like_vals: (x: Val, p: Val) -> Result (Option Val) String =
+    case x, p:
+        VNull, _ -> Ok None
+        _, VNull -> Ok None
+        VText s, VText pat -> Ok (Some (VInt (if _like(s.chars(), pat.chars()): 1 else: 0)))
+        _, _ -> Err "LIKE requires text on both sides"
+
+// % matches any run, _ matches exactly one character.
+_like: (s: []Char, p: []Char) -> Bool =
+    case p:
+        {} -> s.length() == 0
+        {'%', ..prest} -> _like_any(s, prest)
+        {'_', ..prest} ->
+            case s:
+                {_, ..srest} -> _like(srest, prest)
+                {} -> False
+        {c, ..prest} ->
+            case s:
+                {sc, ..srest} -> if sc == c: _like(srest, prest) else: False
+                {} -> False
+
+_like_any: (s: []Char, p: []Char) -> Bool =
+    if _like(s, p):
+        True
+    else:
+        case s:
+            {} -> False
+            {_, ..rest} -> _like_any(rest, p)
+
+_call: (name: String, args: []E, ctx: Ctx) -> Result (Option Val) String =
+    case name:
+        "UPPER" -> _text1(args, ctx, _uc)
+        "LOWER" -> _text1(args, ctx, _lc)
+        "TRIM" -> _trim1(args, ctx)
+        "LENGTH" ->
+            a <- _one_arg(args).try()
+            v <- eval_e(a, ctx).try()
+            case v:
+                None -> Ok None
+                Some VNull -> Ok None
+                Some (VText s) -> Ok (Some (VInt s.length()))
+                Some v2 -> Err "LENGTH requires text, found {v2}"
+        "ABS" ->
+            a <- _one_arg(args).try()
+            v <- eval_e(a, ctx).try()
+            case v:
+                None -> Ok None
+                Some (VInt i) -> Ok (Some (VInt (if i < 0: 0 - i else: i)))
+                Some (VFloat f) -> Ok (Some (VFloat f.abs()))
+                Some v2 -> Err "ABS requires a number, found {v2}"
+        "ROUND" ->
+            a <- _one_arg(args).try()
+            v <- eval_e(a, ctx).try()
+            case v:
+                None -> Ok None
+                Some (VInt i) -> Ok (Some (VInt i))
+                Some (VFloat f) ->
+                    case Float.to_int(f.round()):
+                        Some i -> Ok (Some (VInt i))
+                        None -> Err "ROUND out of range"
+                Some v2 -> Err "ROUND requires a number, found {v2}"
+        _ -> Err "unknown function: {name}"
+
+_text1: (args: []E, ctx: Ctx, f: (Char) -> Char) -> Result (Option Val) String =
+    a <- _one_arg(args).try()
+    v <- eval_e(a, ctx).try()
+    case v:
+        None -> Ok None
+        Some (VText s) -> Ok (Some (VText _map_text(s, f)))
+        Some v2 -> Err "function requires text, found {v2}"
+
+// TRIM is special-cased: it trims, not maps.
+_trim1: (args: []E, ctx: Ctx) -> Result (Option Val) String =
+    a <- _one_arg(args).try()
+    v <- eval_e(a, ctx).try()
+    case v:
+        None -> Ok None
+        Some VNull -> Ok None
+        Some (VText s) -> Ok (Some (VText s.trim()))
+        Some v2 -> Err "function requires text, found {v2}"
+
+_map_text: (s: String, f: (Char) -> Char) -> String =
+    String.from_chars(s.chars().map((c): f(c)))
+
+_one_arg: (args: []E) -> Result E String =
+    if args.length() != 1:
+        Err "expected exactly one argument"
+    else:
+        case args.get(0):
+            Some a -> Ok a
+            None -> Err "expected exactly one argument"
+
+_not_null: (v: Val) -> Bool =
+    case v:
+        VNull -> False
+        _ -> True
+
+_agg: (name: String, arg: Option E, ctx: Ctx) -> Result (Option Val) String =
+    case ctx.grp:
+        None -> Err "aggregate {name} used outside an aggregation context"
+        Some rows -> _agg_rows(name, arg, rows, ctx)
+
+_agg_rows: (name: String, arg: Option E, rows: [][]Val, ctx: Ctx) -> Result (Option Val) String =
+    case name:
+        "COUNT" ->
+            case arg:
+                None -> Ok (Some (VInt rows.length()))
+                Some a -> _agg_count(a, rows, ctx)
+        "SUM" -> _agg_sum(arg, rows, ctx)
+        "AVG" -> _agg_avg(arg, rows, ctx)
+        "MIN" -> _agg_minmax(arg, rows, ctx, True)
+        "MAX" -> _agg_minmax(arg, rows, ctx, False)
+        _ -> Err "unknown aggregate: {name}"
+
+_agg_evals: (a: E, rows: [][]Val, ctx: Ctx) -> Result ([]Val) String =
+    case rows:
+        {} -> Ok {}
+        {row, ..rest} ->
+            v <- eval_e(a, ctx.with({row: Some row})).try()
+            rest_vals <- _agg_evals(a, rest, ctx).try()
+            Ok ({v.unwrap_or(VNull)} ++ rest_vals)
+
+_agg_count: (a: E, rows: [][]Val, ctx: Ctx) -> Result (Option Val) String =
+    vals <- _agg_evals(a, rows, ctx).try()
+    n := vals.filter(_not_null).length()
+    Ok (Some (VInt n))
+
+// Sums skip NULL; an all-NULL group sums to NULL, like SQL.
+_sum_nonnull: (vals: []Val) -> Result (Option Val) String =
+    nn := vals.filter(_not_null)
+    case nn:
+        {} -> Ok None
+        _ -> _sum_all(nn)
+
+_sum_all: (vals: []Val) -> Result (Option Val) String =
+    case vals:
+        {} -> Ok (Some (VInt 0))
+        {v, ..rest} ->
+            t <- _sum_all(rest).try()
+            _add_vals(v, t.unwrap_or(VNull))
+
+_add_vals: (v: Val, acc: Val) -> Result (Option Val) String =
+    case v, acc:
+        VNull, _ -> Ok (Some acc)
+        _, VNull -> Ok (Some v)
+        VInt x, VInt y -> Ok (Some (VInt (x + y)))
+        _, _ ->
+            fa := _v_num(v).unwrap_or(0.0)
+            fb := _v_num(acc).unwrap_or(0.0)
+            Ok (Some (VFloat (fa + fb)))
+
+_agg_sum: (arg: Option E, rows: [][]Val, ctx: Ctx) -> Result (Option Val) String =
+    case arg:
+        None -> Err "SUM requires an argument"
+        Some a ->
+            vals <- _agg_evals(a, rows, ctx).try()
+            _sum_nonnull(vals)
+
+_agg_avg: (arg: Option E, rows: [][]Val, ctx: Ctx) -> Result (Option Val) String =
+    case arg:
+        None -> Err "AVG requires an argument"
+        Some a ->
+            vals <- _agg_evals(a, rows, ctx).try()
+            nn := vals.filter(_not_null)
+            case nn:
+                {} -> Ok None
+                _ ->
+                    s <- _sum_all(nn).try()
+                    f := _v_num(s.unwrap_or(VNull)).unwrap_or(0.0)
+                    Ok (Some (VFloat (f / Int.to_float(nn.length()))))
+
+_agg_minmax: (arg: Option E, rows: [][]Val, ctx: Ctx, want_min: Bool) -> Result (Option Val) String =
+    case arg:
+        None -> Err "aggregate requires an argument"
+        Some a ->
+            vals <- _agg_evals(a, rows, ctx).try()
+            nn := vals.filter(_not_null)
+            case nn:
+                {} -> Ok None
+                {first, ..rest} -> Ok (Some _minmax(first, rest, want_min))
+
+_minmax: (best: Val, rest: []Val, want_min: Bool) -> Val =
+    case rest:
+        {} -> best
+        {v, ..r} ->
+            c := _v_cmp_total(v, best)
+            take := if want_min: c < 0 else: c > 0
+            if take:
+                _minmax(v, r, want_min)
+            else:
+                _minmax(best, r, want_min)
+
+_has_agg: (e: E) -> Bool =
+    case e:
+        EAgg _ -> True
+        ENot x -> _has_agg(x)
+        EAnd {l, r} -> _has_agg(l) || _has_agg(r)
+        EOr {l, r} -> _has_agg(l) || _has_agg(r)
+        ECmp {_, l, r} -> _has_agg(l) || _has_agg(r)
+        EArith {_, l, r} -> _has_agg(l) || _has_agg(r)
+        ENeg x -> _has_agg(x)
+        EIn {x, items} -> _has_agg(x) || items.any(_has_agg)
+        EBetween {x, lo, hi} -> _has_agg(x) || _has_agg(lo) || _has_agg(hi)
+        ELike {x, p} -> _has_agg(x) || _has_agg(p)
+        EIsNull {x, _} -> _has_agg(x)
+        ECall {_, args} -> args.any(_has_agg)
+        _ -> False
+
+// ---------------------------------------------------------------- executor
+
+OutRow: type = [vals: []Val, ctx: Ctx]
+RunOut: type = [cols: []String, rows: []OutRow]
+
+_colmap: (cols: []String) -> [String]Int =
+    empty: [String]Int = {}
+    _colmap_build(cols, 0, empty)
+
+_colmap_build: (cols: []String, i: Int, acc: [String]Int) -> [String]Int =
+    case cols:
+        {} -> acc
+        {c, ..rest} -> _colmap_build(rest, i + 1, acc.insert(_lower_name(c), i))
+
+_where_keep: (w: Option E, row: []Val, cols: [String]Int) -> Result Bool String =
+    case w:
+        None -> Ok True
+        Some e ->
+            ov <- eval_e(e, {cols: cols, row: Some row, grp: None}).try()
+            ob <- _truth(ov).try()
+            Ok (_known_true(ob))
+
+_known_true: (ob: Option Bool) -> Bool =
+    ob.unwrap_or(False)
+
+_filter_rows: (w: Option E, rows: [][]Val, cols: [String]Int) -> Result ([][]Val) String =
+    case rows:
+        {} -> Ok {}
+        {row, ..rest} ->
+            keep <- _where_keep(w, row, cols).try()
+            rest_rows <- _filter_rows(w, rest, cols).try()
+            if keep:
+                Ok ({row} ++ rest_rows)
+            else:
+                Ok rest_rows
+
+_row_ctx: (row: []Val, cols: [String]Int) -> Ctx =
+    {cols: cols, row: Some row, grp: None}
+
+_grp_ctx: (rows: [][]Val, cols: [String]Int) -> Ctx =
+    {cols: cols, row: rows.get(0), grp: Some rows}
+
+_sep: String = String.from_chars({Char.from_code(31).unwrap_or('|')})
+
+_encode: (v: Val) -> String =
+    case v:
+        VNull -> "n"
+        VText s -> "s" ++ _sep ++ s
+        VInt i -> "i" ++ _sep ++ show(i)
+        VFloat f -> "f" ++ _sep ++ show(f)
+
+_key_of: (vals: []Val) -> String =
+    vals.map((v): _encode(v)).join(_sep)
+
+// Groups rows by the key of the evaluated GROUP BY expressions, in
+// first-seen order.
+_group_rows: (q: Query, rows: [][]Val, cols: [String]Int) -> Result ([]Grouped) String =
+    _group_build(q.group, rows, cols, {})
+
+_group_build: (ges: []E, rows: [][]Val, cols: [String]Int, acc: [String][][]Val) -> Result ([]Grouped) String =
+    case rows:
+        {} ->
+            emptyg: []Grouped = {}
+            Ok acc.fold(emptyg, (gacc, k, rs):
+                g: Grouped = {key: k, rows: rs.reverse()}
+                {g} ++ gacc).reverse()
+        {row, ..rest} ->
+            kv <- _key_vals(ges, row, cols).try()
+            k := _key_of(kv)
+            existing := acc.get(k).unwrap_or({})
+            acc2 := acc.insert(k, {row} ++ existing)
+            _group_build(ges, rest, cols, acc2)
+
+_key_vals: (ges: []E, row: []Val, cols: [String]Int) -> Result ([]Val) String =
+    case ges:
+        {} -> Ok {}
+        {g, ..rest} ->
+            v <- eval_e(g, _row_ctx(row, cols)).try()
+            vs <- _key_vals(rest, row, cols).try()
+            Ok ({v.unwrap_or(VNull)} ++ vs)
+
+_having_keep: (h: Option E, rows: [][]Val, cols: [String]Int) -> Result Bool String =
+    case h:
+        None -> Ok True
+        Some e ->
+            ov <- eval_e(e, _grp_ctx(rows, cols)).try()
+            ob <- _truth(ov).try()
+            Ok (_known_true(ob))
+
+_project_star: (t: Table, row: []Val) -> OutRow =
+    ctx := _row_ctx(row, _colmap(t.cols))
+    {vals: row, ctx: ctx}
+
+_project_items: (q: Query, ctx: Ctx) -> Result OutRow String =
+    _project_loop(q.items, ctx, {})
+
+_project_loop: (items: []SelItem, ctx: Ctx, acc: []Val) -> Result OutRow String =
+    case items:
+        {} -> Ok {vals: acc.reverse(), ctx: ctx}
+        {it, ..rest} ->
+            v <- eval_e(it.expr, ctx).try()
+            rest_vals <- _project_loop(rest, ctx, acc).try()
+            Ok {vals: {v.unwrap_or(VNull)} ++ rest_vals.vals, ctx: ctx}
+
+_having_has_agg: (h: Option E) -> Bool =
+    case h:
+        Some e -> _has_agg(e)
+        None -> False
+
+/// The whole pure pipeline: WHERE, grouping, HAVING, projection,
+/// DISTINCT, ORDER BY, LIMIT/OFFSET.
+run_query: (q: Query, t: Table) -> Result RunOut String =
+    cols := _colmap(t.cols)
+    kept <- _filter_rows(q.where, t.rows, cols).try()
+    has_agg := q.items.any((it): _has_agg(it.expr)) || _having_has_agg(q.having)
+    out <- _run_grouped(q, t, kept, cols, has_agg).try()
+    deduped <- _distinct(q, out).try()
+    ordered <- _order(q, deduped, t).try()
+    limited := _limit(q, ordered)
+    names := _out_names(q, t)
+    Ok {cols: names, rows: limited}
+
+_run_grouped: (q: Query, t: Table, rows: [][]Val, cols: [String]Int, has_agg: Bool) -> Result ([]OutRow) String =
+    if q.group.length() > 0:
+        groups <- _group_rows(q, rows, cols).try()
+        _emit_groups(q, groups, cols)
+    else:
+        if has_agg:
+            whole: Grouped = {key: "", rows: rows}
+            _emit_groups(q, {whole}, cols)
+        else:
+            _emit_rows(q, t, rows, cols)
+
+_emit_groups: (q: Query, groups: []Grouped, cols: [String]Int) -> Result ([]OutRow) String =
+    if q.star:
+        Err "SELECT * cannot be used with GROUP BY or aggregates"
+    else:
+        _emit_g(q, groups, cols)
+
+_emit_g: (q: Query, groups: []Grouped, cols: [String]Int) -> Result ([]OutRow) String =
+    case groups:
+        {} -> Ok {}
+        {g, ..rest} ->
+            keep <- _having_keep(q.having, g.rows, cols).try()
+            tail <- _emit_g(q, rest, cols).try()
+            if keep:
+                orow <- _project_items(q, _grp_ctx(g.rows, cols)).try()
+                Ok ({orow} ++ tail)
+            else:
+                Ok tail
+
+_emit_rows: (q: Query, t: Table, rows: [][]Val, cols: [String]Int) -> Result ([]OutRow) String =
+    case rows:
+        {} -> Ok {}
+        {row, ..rest} ->
+            head <- _emit_one(q, t, row, cols).try()
+            tail <- _emit_rows(q, t, rest, cols).try()
+            Ok ({head} ++ tail)
+
+_emit_one: (q: Query, t: Table, row: []Val, cols: [String]Int) -> Result OutRow String =
+    if q.star:
+        Ok _project_star(t, row)
+    else:
+        _project_items(q, _row_ctx(row, cols))
+
+_distinct: (q: Query, rows: []OutRow) -> Result ([]OutRow) String =
+    if q.distinct:
+        _dedupe(rows, {})
+    else:
+        Ok rows
+
+_dedupe: (rows: []OutRow, seen: [String]Bool) -> Result ([]OutRow) String =
+    case rows:
+        {} -> Ok {}
+        {r, ..rest} ->
+            k := _key_of(r.vals)
+            if seen.get(k).unwrap_or(False):
+                _dedupe(rest, seen)
+            else:
+                tail <- _dedupe(rest, seen.insert(k, True)).try()
+                Ok ({r} ++ tail)
+
+_order_val: (e: E, r: OutRow, aliases: [String]Int) -> Result Val String =
+    case e:
+        ELit (VInt n) ->
+            if n >= 1 && n <= r.vals.length():
+                Ok r.vals.get(n - 1).unwrap_or(VNull)
+            else:
+                Err "ORDER BY position {n} is out of range"
+        ELit _ -> eval_e(e, r.ctx).map((ov): ov.unwrap_or(VNull))
+        ECol name ->
+            case _alias_index(name, aliases):
+                Some i -> Ok r.vals.get(i).unwrap_or(VNull)
+                None -> eval_e(e, r.ctx).map((ov): ov.unwrap_or(VNull))
+        _ -> eval_e(e, r.ctx).map((ov): ov.unwrap_or(VNull))
+
+_order: (q: Query, rows: []OutRow, t: Table) -> Result ([]OutRow) String =
+    if q.order.length() == 0:
+        Ok rows
+    else:
+        aliases := _alias_map(q)
+        keyed <- _with_keys(q.order, rows, aliases, {}).try()
+        sorted := keyed.sort_by((a, b): _outrow_less(a, b, q.order))
+        Ok sorted.map((kr): kr.row)
+
+KeyedRow: type = [row: OutRow, keys: []Val]
+
+_with_keys: (orders: []OrderItem, rows: []OutRow, aliases: [String]Int, acc: []KeyedRow) -> Result ([]KeyedRow) String =
+    case rows:
+        {} -> Ok acc.reverse()
+        {r, ..rest} ->
+            keys <- _order_keys_raw(orders, r, aliases).try()
+            kr: KeyedRow = {row: r, keys: keys}
+            _with_keys(orders, rest, aliases, {kr} ++ acc)
+
+_order_keys_raw: (orders: []OrderItem, r: OutRow, aliases: [String]Int) -> Result ([]Val) String =
+    case orders:
+        {} -> Ok {}
+        {oi, ..rest} ->
+            v <- _order_val(oi.expr, r, aliases).try()
+            tail <- _order_keys_raw(rest, r, aliases).try()
+            Ok ({v} ++ tail)
+
+_outrow_less: (a: KeyedRow, b: KeyedRow, orders: []OrderItem) -> Bool =
+    _keys_less(a.keys, b.keys, orders)
+
+_keys_less: (ka: []Val, kb: []Val, orders: []OrderItem) -> Bool =
+    case ka, kb, orders:
+        {va, ..ra}, {vb, ..rb}, {oi, ..ro} ->
+            c := _v_cmp_total(va, vb)
+            c2 := if oi.desc: 0 - c else: c
+            if c2 != 0:
+                c2 < 0
+            else:
+                _keys_less(ra, rb, ro)
+        _, _, _ -> False
+
+_limit: (q: Query, rows: []OutRow) -> []OutRow =
+    off := q.offset.unwrap_or(0)
+    after := rows.drop(off)
+    case q.limit:
+        Some n -> after.take(n)
+        None -> after
+
+_out_names: (q: Query, t: Table) -> []String =
+    if q.star:
+        t.cols
+    else:
+        q.items.map((it): _item_name(it, t))
+
+_item_name: (it: SelItem, t: Table) -> String =
+    case it.alias:
+        Some a -> a
+        None ->
+            case it.expr:
+                ECol name -> name
+                _ -> it.text
+
+_alias_index: (name: String, aliases: [String]Int) -> Option Int =
+    aliases.get(_lower_name(name))
+
+_alias_map: (q: Query) -> [String]Int =
+    empty: [String]Int = {}
+    _alias_build(q.items, 0, empty)
+
+_alias_build: (items: []SelItem, i: Int, acc: [String]Int) -> [String]Int =
+    case items:
+        {} -> acc
+        {it, ..rest} ->
+            acc2 := case it.alias:
+                Some a -> acc.insert(_lower_name(a), i)
+                None -> acc
+            _alias_build(rest, i + 1, acc2)
+
+// ---------------------------------------------------------------- output
+
+_widths: (cols: []String, rows: [][]Val) -> []Int =
+    base := cols.map((c): c.length())
+    _widths_rows(rows, base)
+
+_widths_rows: (rows: [][]Val, base: []Int) -> []Int =
+    case rows:
+        {} -> base
+        {row, ..rest} ->
+            grown := _zip_max(base, row)
+            _widths_rows(rest, grown)
+
+_zip_max: (ws: []Int, row: []Val) -> []Int =
+    case ws, row:
+        {w, ..wrest}, {v, ..vrest} ->
+            m := if _v_show(v).length() > w: _v_show(v).length() else: w
+            {m} ++ _zip_max(wrest, vrest)
+        _, _ -> {}
+
+_pad_row: (vals: []Val, ws: []Int) -> String =
+    _pad_join(vals, ws, True)
+
+_pad_join: (vals: []Val, ws: []Int, first: Bool) -> String =
+    case vals, ws:
+        {v, ..vrest}, {w, ..wrest} ->
+            sep := if first: "" else: " | "
+            cell := _v_show(v)
+            padded := String.pad_right(cell, w, ' ')
+            sep ++ padded ++ _pad_join(vrest, wrest, False)
+        _, _ -> ""
+
+_dashes: (w: Int) -> String =
+    if w <= 0:
+        ""
+    else:
+        "-" ++ _dashes(w - 1)
+
+_table_text: (cols: []String, rows: [][]Val) -> String =
+    ws := _widths(cols, rows)
+    header := _pad_join(cols.map((c): VText c), ws, True)
+    line := ws.map((w): _dashes(w)).join("-+-")
+    body := rows.map((row): _pad_row(row, ws))
+    all := {header, line} ++ body
+    all.join("\n")
+
+_csv_cell: (v: Val) -> String =
+    case v:
+        VNull -> ""
+        VText s -> _csv_quote(s)
+        VInt n -> show(n)
+        VFloat f -> show(f)
+
+_csv_quote: (s: String) -> String =
+    needs := s.contains(",") || s.contains("\"") || s.contains("\n") || s.contains("\r")
+    if needs:
+        "\"" ++ s.replace("\"", "\"\"") ++ "\""
+    else:
+        s
+
+_csv_text: (cols: []String, rows: [][]Val) -> String =
+    header := cols.map((c): _csv_quote(c)).join(",")
+    body := rows.map((row): row.map((v): _csv_cell(v)).join(","))
+    ({header} ++ body).join("\n")
+
+_val_json: (v: Val) -> Json =
+    case v:
+        VNull -> Null
+        VText s -> Str s
+        VInt n -> Int n
+        VFloat f -> Float f
+
+_json_text: (cols: []String, rows: [][]Val) -> String =
+    objs: []Json = rows.map((row): Obj (_row_obj(cols, row, {})))
+    Json.show(Arr objs)
+
+_row_obj: (cols: []String, row: []Val, acc: [String]Json) -> [String]Json =
+    case cols, row:
+        {c, ..crest}, {v, ..vrest} -> _row_obj(crest, vrest, acc.insert(c, _val_json(v)))
+        _, _ -> acc
+
+// ------------------------------------------------------------------ options
+
+Opts: type = [csv: Bool, json: Bool, help: Bool, query: String]
+
+_base_opts: Opts = {csv: False, json: False, help: False, query: ""}
+
+_parse_opts: (argv: []String) -> Result Opts String =
+    _opts(argv, _base_opts)
+
+_opts: (argv: []String, o: Opts) -> Result Opts String =
+    case argv:
+        {} ->
+            if o.help:
+                Ok o
+            else:
+                if o.query == "":
+                    Err "no query given"
+                else:
+                    Ok o
+        {a, ..rest} ->
+            case a:
+                "--csv" -> _opts(rest, o.with({csv: True}))
+                "--json" -> _opts(rest, o.with({json: True}))
+                "-h" -> _opts(rest, o.with({help: True}))
+                "--help" -> _opts(rest, o.with({help: True}))
+                "--" -> _rest_query(rest, o)
+                _ if a.starts_with("-") -> Err "unknown option: {a}"
+                _ ->
+                    if o.query == "":
+                        _opts(rest, o.with({query: a}))
+                    else:
+                        Err "unexpected extra argument: {a}"
+
+_rest_query: (rest: []String, o: Opts) -> Result Opts String =
+    case rest:
+        {q} -> if o.query == "": Ok o.with({query: q}) else: Err "unexpected extra argument: {q}"
+        {} -> Ok o
+        _ -> Err "unexpected extra arguments after '--'"
+
+_help_lines: []String = {
+    "usage: ekosql [options] 'SELECT ... FROM data.csv ...'",
+    "",
+    "A small SQL engine over one CSV file. The file path comes from the",
+    "FROM clause; quote it if it contains slashes.",
+    "",
+    "Options:",
+    "  --csv     output CSV instead of an aligned table",
+    "  --json    output a JSON array of row objects",
+    "  -h        show this help",
+    "  --        treat all remaining arguments as the query",
+    "",
+    "Exit codes: 0 ok, 2 for usage, file, and query errors."}
+
+// --------------------------------------------------------------- I/O shell
+
+_dispatch: (out: Out, errout: Out, argv: []String, fs: Fs) !-> Int =
+    case _parse_opts(argv):
+        Err m ->
+            errout.println("ekosql: {m}")
+            errout.println("usage: ekosql [options] 'SELECT ...' (--help for details)")
+            2
+        Ok o ->
+            if o.help:
+                _help_lines.each((l): out.println(l))
+                0
+            else:
+                case parse_query(o.query):
+                    Err m ->
+                        errout.println("ekosql: {m}")
+                        2
+                    Ok q ->
+                        case fs.read(q.from):
+                            Err e ->
+                                errout.println("ekosql: read {q.from}: {e}")
+                                2
+                            Ok text ->
+                                case load_table(text):
+                                    Err m ->
+                                        errout.println("ekosql: {m}")
+                                        2
+                                    Ok t ->
+                                        case run_query(q, t):
+                                            Err m ->
+                                                errout.println("ekosql: {m}")
+                                                2
+                                            Ok r ->
+                                                _print_out(out, r, o)
+                                                0
+
+_print_out: (out: Out, r: RunOut, o: Opts) ! =
+    vals := r.rows.map((kr): kr.vals)
+    if o.csv:
+        out.println(_csv_text(r.cols, vals))
+    else:
+        if o.json:
+            out.println(_json_text(r.cols, vals))
+        else:
+            out.println(_table_text(r.cols, vals))
+
+// The parameter list is the authorization manifest: output, arguments, the
+// file system, and the process. There is no other I/O entrance.
+main: (out: Out, args: Args, fs: Fs, proc: Proc) ! =
+    code := _dispatch(out, Out.err(), args.all(), fs)
+    Proc.exit(proc, code)
+
+// --------------------------------------------------------------------- tests
+
+_c: (s: String, q: Bool) -> Cell = {text: s, quoted: q}
+
+_demo: Table =
+    {cols: {"name", "age", "city"}, colts: {TText, TInt, TText},
+     rows: {
+         {VText "ada", VInt 36, VText "nyc"},
+         {VText "bob", VInt 9, VText "sf"},
+         {VText "cyd", VNull, VText "nyc"},
+         {VText "dee", VInt 41, VText ""}}}
+
+_q: (sql: String) -> Result RunOut String =
+    q <- parse_query(sql).try()
+    run_query(q, _demo)
+
+// The values of one output row, for tests that assert whole rows.
+_row_vals: (r: RunOut, i: Int) -> []Val =
+    empty: OutRow = {vals: {}, ctx: {cols: {}, row: None, grp: None}}
+    r.rows.get(i).unwrap_or(empty).vals
+
+csv_parsing: test =
+    assert_eq(parse_csv("a,b\nc,d"), Ok {{_c("a", False), _c("b", False)}, {_c("c", False), _c("d", False)}})
+    assert_eq(parse_csv("a,b\nc,d\n"), Ok {{_c("a", False), _c("b", False)}, {_c("c", False), _c("d", False)}})
+    assert_eq(parse_csv("\"a,b\",c"), Ok {{_c("a,b", True), _c("c", False)}})
+    assert_eq(parse_csv("\"he said \"\"hi\"\"\""), Ok {{_c("he said \"hi\"", True)}})
+    assert_eq(parse_csv("a,b\r\nc,d"), Ok {{_c("a", False), _c("b", False)}, {_c("c", False), _c("d", False)}})
+    assert_eq(parse_csv("\"multi\nline\",x"), Ok {{_c("multi\nline", True), _c("x", False)}})
+    assert_eq(parse_csv(""), Ok {})
+    assert(parse_csv("\"unterminated").is_err())
+
+loading: test =
+    t := load_table("name,age,score\nada,36,2.5\nbob,,\n").unwrap()
+    assert_eq(t.cols, {"name", "age", "score"})
+    assert_eq(t.colts, {TText, TInt, TFloat})
+    assert_eq(t.rows.get(0).unwrap_or({}), {VText "ada", VInt 36, VFloat 2.5})
+    assert_eq(t.rows.get(1).unwrap_or({}), {VText "bob", VNull, VNull})
+    tq := load_table("a,b\n\"1\",1\n").unwrap()
+    assert_eq(tq.colts, {TText, TInt})
+    assert(load_table("a,a\n").is_err())
+    assert(load_table("").is_err())
+
+sql_lexing: test =
+    assert_eq(_s_lex_all("SELECT a, 1.5 FROM 'x.csv'"),
+        Ok {{tok: SName "SELECT", pos: 0}, {tok: SName "a", pos: 7}, {tok: SSym ",", pos: 8},
+            {tok: SFloat 1.5, pos: 10}, {tok: SName "FROM", pos: 14}, {tok: SStr "x.csv", pos: 19},
+            {tok: SEof, pos: 26}})
+
+sql_parsing: test =
+    q := parse_query("SELECT name AS n, age * 2 FROM people.csv WHERE age > 10 ORDER BY n DESC LIMIT 5").unwrap()
+    assert(q.distinct.not() && q.star.not() && q.from == "people.csv")
+    assert_eq(q.items.length(), 2)
+    assert_eq(q.items.get(0).unwrap_or({expr: EStar, alias: None, text: ""}).alias, Some "n")
+    assert(q.order.get(0).unwrap_or({expr: EStar, desc: False}).desc)
+    assert_eq(q.limit, Some 5)
+    q2 := parse_query("SELECT * FROM d.csv").unwrap()
+    assert(q2.star)
+    q3 := parse_query("SELECT name FROM 'my file.csv'").unwrap()
+    assert_eq(q3.from, "my file.csv")
+    assert(parse_query("SELECT FROM x").is_err())
+    assert(parse_query("SELECT a FROM").is_err())
+    assert(parse_query("SELECT a FROM x LIMIT -1").is_err())
+
+where_and_projection: test =
+    r := _q("SELECT name, age FROM t.csv WHERE age > 18").unwrap()
+    assert_eq(r.cols, {"name", "age"})
+    assert_eq(r.rows.length(), 2)
+    assert_eq(r.rows.get(0).unwrap_or({vals: {}, ctx: {cols: {}, row: None, grp: None}}).vals, {VText "ada", VInt 36})
+    r2 := _q("SELECT name FROM t.csv WHERE city = 'nyc'").unwrap()
+    assert_eq(r2.rows.length(), 2)
+
+three_valued: test =
+    r := _q("SELECT name FROM t.csv WHERE age > 18 OR age IS NULL").unwrap()
+    assert_eq(r.rows.length(), 3)
+    r2 := _q("SELECT name FROM t.csv WHERE NOT (age > 18)").unwrap()
+    assert_eq(r2.rows.length(), 1)
+
+grouping: test =
+    r := _q("SELECT city, COUNT(*), MIN(age) FROM t.csv GROUP BY city ORDER BY city").unwrap()
+    assert_eq(r.rows.length(), 3)
+    r2 := _q("SELECT COUNT(*), AVG(age) FROM t.csv").unwrap()
+    row2 := r2.rows.get(0).unwrap_or({vals: {}, ctx: {cols: {}, row: None, grp: None}})
+    assert_eq(row2.vals.get(0), Some (VInt 4))
+    r3 := _q("SELECT city FROM t.csv GROUP BY city HAVING COUNT(*) > 1 ORDER BY city").unwrap()
+    assert_eq(r3.rows.length(), 1)
+    assert_eq(r3.rows.get(0).unwrap_or({vals: {}, ctx: {cols: {}, row: None, grp: None}}).vals.get(0), Some (VText "nyc"))
+
+order_and_paging: test =
+    r := _q("SELECT name, age FROM t.csv ORDER BY age DESC, name LIMIT 2").unwrap()
+    assert_eq(r.rows.get(0).unwrap_or({vals: {}, ctx: {cols: {}, row: None, grp: None}}).vals.get(0), Some (VText "dee"))
+    assert_eq(r.rows.get(1).unwrap_or({vals: {}, ctx: {cols: {}, row: None, grp: None}}).vals.get(0), Some (VText "ada"))
+    r2 := _q("SELECT name FROM t.csv ORDER BY name LIMIT 2 OFFSET 1").unwrap()
+    assert_eq(r2.rows.length(), 2)
+    assert_eq(r2.rows.get(0).unwrap_or({vals: {}, ctx: {cols: {}, row: None, grp: None}}).vals.get(0), Some (VText "bob"))
+    r3 := _q("SELECT name, age FROM t.csv ORDER BY 2 DESC LIMIT 1").unwrap()
+    r4 := _q("SELECT city, COUNT(*) AS n FROM t.csv GROUP BY city ORDER BY n DESC, city LIMIT 1").unwrap()
+    assert_eq(r4.rows.get(0).unwrap_or({vals: {}, ctx: {cols: {}, row: None, grp: None}}).vals.get(0), Some (VText "nyc"))
+    assert_eq(r3.rows.get(0).unwrap_or({vals: {}, ctx: {cols: {}, row: None, grp: None}}).vals.get(0), Some (VText "dee"))
+
+order_null_first: test =
+    r := _q("SELECT name, age FROM t.csv ORDER BY age").unwrap()
+    assert_eq(_row_vals(r, 0), {VText "cyd", VNull})
+    assert_eq(_row_vals(r, 1), {VText "bob", VInt 9})
+    assert_eq(_row_vals(r, 2), {VText "ada", VInt 36})
+    assert_eq(_row_vals(r, 3), {VText "dee", VInt 41})
+
+expressions: test =
+    r := _q("SELECT name FROM t.csv WHERE name LIKE '%b%'").unwrap()
+    assert_eq(r.rows.length(), 1)
+    r2 := _q("SELECT name FROM t.csv WHERE age IN (9, 41)").unwrap()
+    assert_eq(r2.rows.length(), 2)
+    r3 := _q("SELECT name FROM t.csv WHERE age BETWEEN 30 AND 45").unwrap()
+    assert_eq(r3.rows.length(), 2)
+    r4 := _q("SELECT UPPER(name), LENGTH(city) FROM t.csv WHERE age = 9").unwrap()
+    row4 := r4.rows.get(0).unwrap_or({vals: {}, ctx: {cols: {}, row: None, grp: None}})
+    assert_eq(row4.vals.get(0), Some (VText "BOB"))
+    assert_eq(row4.vals.get(1), Some (VInt 2))
+    r5 := _q("SELECT DISTINCT city FROM t.csv ORDER BY city").unwrap()
+    assert_eq(r5.rows.length(), 3)
+
+like_underscore: test =
+    r := _q("SELECT name FROM t.csv WHERE name LIKE '_ob'").unwrap()
+    assert_eq(r.rows.length(), 1)
+    assert_eq(_row_vals(r, 0), {VText "bob"})
+    r2 := _q("SELECT name FROM t.csv WHERE name LIKE 'a_a'").unwrap()
+    assert_eq(_row_vals(r2, 0), {VText "ada"})
+    r3 := _q("SELECT name FROM t.csv WHERE name LIKE '_'").unwrap()
+    assert_eq(r3.rows.length(), 0)
+
+trim_function: test =
+    r := _q("SELECT TRIM('  x  ') FROM t.csv WHERE name = 'ada'").unwrap()
+    assert_eq(_row_vals(r, 0), {VText "x"})
+    r2 := _q("SELECT TRIM('x') FROM t.csv WHERE name = 'ada'").unwrap()
+    assert_eq(_row_vals(r2, 0), {VText "x"})
+    r3 := _q("SELECT TRIM(age) FROM t.csv WHERE name = 'cyd'").unwrap()
+    assert_eq(_row_vals(r3, 0), {VNull})
+    assert(_q("SELECT TRIM(age) FROM t.csv WHERE name = 'bob'").is_err())
+
+errors: test =
+    assert(_q("SELECT nope FROM t.csv").is_err())
+    assert(_q("SELECT age + 'x' FROM t.csv").is_err())
+    assert(_q("SELECT age / 0 FROM t.csv").is_err())
+    assert(_q("SELECT COUNT(*) FROM t.csv WHERE COUNT(*) > 0").is_err())
+    assert(_q("SELECT * FROM t.csv GROUP BY city").is_err())
+    assert(_q("SELECT age FROM t.csv WHERE UPPER(age) = 1").is_err())
+
+formatting: test =
+    r := _q("SELECT name, age FROM t.csv WHERE age = 9").unwrap()
+    txt := _table_text(r.cols, r.rows.map((kr): kr.vals))
+    assert_eq(txt, "name | age\n-----+----\nbob  | 9  ")
+    csv := _csv_text(r.cols, r.rows.map((kr): kr.vals))
+    assert_eq(csv, "name,age\nbob,9")
+    js := _json_text(r.cols, r.rows.map((kr): kr.vals))
+    assert_eq(js, "[\{\"name\":\"bob\",\"age\":9}]")
+
+table_alignment: test =
+    r := _q("SELECT name, age FROM t.csv WHERE age > 30").unwrap()
+    txt := _table_text(r.cols, r.rows.map((kr): kr.vals))
+    assert_eq(txt, "name | age\n-----+----\nada  | 36 \ndee  | 41 ")
+
+// An unaliased function item names its column after its own source text.
+unaliased_item_naming: test =
+    r := _q("SELECT COUNT(*), AVG(age) FROM t.csv").unwrap()
+    assert_eq(r.cols, {"COUNT(*)", "AVG(age)"})
+    aliased := _q("SELECT COUNT(*) AS n FROM t.csv").unwrap()
+    assert_eq(aliased.cols, {"n"})
+
+options_parsing: test =
+    assert_eq(_parse_opts({"--csv", "SELECT 1"}).map((o): o.query), Ok "SELECT 1")
+    assert(_parse_opts({}).is_err())
+    assert(_parse_opts({"-z", "q"}).is_err())
+    assert(_parse_opts({"q", "extra"}).is_err())
+    oh := _parse_opts({"-h"}).unwrap()
+    assert(oh.help)
+    o := _parse_opts({"--json", "--", "SELECT 1"}).unwrap()
+    assert(o.json && o.query == "SELECT 1")

@@ -1,0 +1,252 @@
+// Lua runtime values and the mutable-state model.
+//
+// Values themselves are immutable. Tables are ids into a table store;
+// variables are ids into a cell store. This gives Lua's mutable aliasing
+// semantics while keeping every Eko value immutable.
+
+import ast
+
+// -------------------------------------------------------------- value types
+
+Value: type =
+    | VNil
+    | VBool Bool
+    | VNum Float
+    | VStr String
+    | VTable Int
+    | VFunc Int
+    | VBuiltin String
+
+Table: type = [fields: [Value]Value]
+Scope: type = [vars: [String]Int]
+Closure: type = [params: []String, body: []Stmt, env: []Scope]
+
+State: type = [next_cell: Int, cells: [Int]Value, next_table: Int, tables: [Int]Table, next_func: Int, funcs: [Int]Closure, globals: [String]Int, out: []String]
+
+Flow: type = FNormal | FBreak | FReturn Value
+Pair: type = [key: Value, value: Value]
+
+
+// --------------------------------------------------------- value utilities
+
+type_name: (v: Value) -> String =
+    case v:
+        VNil -> "nil"
+        VBool _ -> "boolean"
+        VNum _ -> "number"
+        VStr _ -> "string"
+        VTable _ -> "table"
+        VFunc _ -> "function"
+        VBuiltin _ -> "function"
+
+truthy: (v: Value) -> Bool =
+    case v:
+        VNil -> False
+        VBool b -> b
+        _ -> True
+
+_num_to_string: (n: Float) -> String =
+    if n.is_nan():
+        "nan"
+    else:
+        if n.is_inf():
+            if n < 0.0: "-inf" else: "inf"
+        else:
+            case Float.to_int(n):
+                Some i -> if Int.to_float(i) == n: show(i) else: show(n)
+                None -> show(n)
+
+lua_tostring: (v: Value) -> String =
+    case v:
+        VNil -> "nil"
+        VBool b -> if b: "true" else: "false"
+        VNum n -> _num_to_string(n)
+        VStr s -> s
+        VTable id -> "table: 0x{Int.to_hex(id)}"
+        VFunc id -> "function: 0x{Int.to_hex(id)}"
+        VBuiltin name -> "function: builtin {name}"
+
+as_num: (v: Value) -> Result Float String =
+    case v:
+        VNum n -> Ok n
+        _ -> Err "number expected, got {type_name(v)}"
+
+dict_set: (d: [Value]Value, k: Value, v: Value) -> [Value]Value =
+    case v:
+        VNil -> d.remove(k)
+        _ -> d.insert(k, v)
+
+check_key: (k: Value) -> Result Value String =
+    case k:
+        VNil -> Err "table index is nil"
+        VNum n if n.is_nan() -> Err "table index is NaN"
+        _ -> Ok k
+
+table_length: (fields: [Value]Value) -> Int = _table_length_from(fields, 1)
+
+_table_length_from: (fields: [Value]Value, i: Int) -> Int =
+    case fields.get(VNum (Int.to_float(i))):
+        Some _ -> _table_length_from(fields, i + 1)
+        None -> i - 1
+
+// ---------------------------------------------------------- state and env
+
+base_state: () -> State =
+    {next_cell: 1, cells: {}, next_table: 1, tables: {}, next_func: 1, funcs: {}, globals: {}, out: {}}
+
+_set_cell: (state: State, id: Int, v: Value) -> State =
+    state.with({cells: state.cells.insert(id, v)})
+
+_new_cell: (state: State, v: Value) -> [State, Int] =
+    id := state.next_cell
+    {state.with({next_cell: id + 1, cells: state.cells.insert(id, v)}), id}
+
+new_table: (state: State, fields: [Value]Value) -> [State, Int] =
+    id := state.next_table
+    table: Table = {fields: fields}
+    {state.with({next_table: id + 1, tables: state.tables.insert(id, table)}), id}
+
+new_func: (state: State, c: Closure) -> [State, Int] =
+    id := state.next_func
+    {state.with({next_func: id + 1, funcs: state.funcs.insert(id, c)}), id}
+
+bind_global: (state: State, name: String, v: Value) -> State =
+    (s1, id) = _new_cell(state, v)
+    s1.with({globals: s1.globals.insert(name, id)})
+
+_lookup_cell: (env: []Scope, name: String) -> Option Int =
+    case env:
+        {} -> None
+        {scope, ..rest} -> scope.vars.get(name).or_else(((): _lookup_cell(rest, name)))
+
+lookup_value: (state: State, env: []Scope, name: String) -> Value =
+    case _lookup_cell(env, name).or_else(((): state.globals.get(name))):
+        Some id -> state.cells.get(id).unwrap_or(VNil)
+        None -> VNil
+
+assign_var: (state: State, env: []Scope, name: String, v: Value) -> State =
+    case _lookup_cell(env, name).or_else(((): state.globals.get(name))):
+        Some id -> _set_cell(state, id, v)
+        None -> bind_global(state, name, v)
+
+_singleton_scope: (name: String, id: Int) -> Scope =
+    vars: [String]Int = {}
+    {vars: vars.insert(name, id)}
+
+define_local: (state: State, env: []Scope, name: String, v: Value) -> [State, []Scope] =
+    (s1, id) = _new_cell(state, v)
+    case env:
+        {} -> {s1, {_singleton_scope(name, id)}}
+        {scope, ..rest} -> {s1, {{vars: scope.vars.insert(name, id)}} ++ rest}
+
+define_locals: (state: State, env: []Scope, names: []String, values: []Value) -> [State, []Scope] =
+    case names:
+        {} -> {state, env}
+        {n, ..rest} -> _define_locals_step(state, env, n, rest, values)
+
+_define_locals_step: (state: State, env: []Scope, n: String, rest: []String, values: []Value) -> [State, []Scope] =
+    v := values.get(0).unwrap_or(VNil)
+    (s1, e1) = define_local(state, env, n, v)
+    define_locals(s1, e1, rest, values.drop(1))
+
+bind_params: (state: State, params: []String, args: []Value, vars: [String]Int) -> [State, [String]Int] =
+    case params:
+        {} -> {state, vars}
+        {p, ..rest} -> _bind_params_step(state, p, rest, args, vars)
+
+_bind_params_step: (state: State, p: String, rest: []String, args: []Value, vars: [String]Int) -> [State, [String]Int] =
+    v := args.get(0).unwrap_or(VNil)
+    (s1, id) = _new_cell(state, v)
+    bind_params(s1, rest, args.drop(1), vars.insert(p, id))
+
+scoped_env: (env: []Scope) -> []Scope =
+    scope: Scope = {vars: {}}
+    {scope} ++ env
+
+env_with: (vars: [String]Int, env: []Scope) -> []Scope =
+    scope: Scope = {vars: vars}
+    {scope} ++ env
+
+concat_part: (v: Value) -> Result String String =
+    case v:
+        VStr s -> Ok s
+        VNum n -> Ok (_num_to_string(n))
+        _ -> Err "attempt to concatenate a {type_name(v)} value"
+
+pairs_of: (fields: [Value]Value) -> []Pair =
+    empty: []Pair = {}
+    fields.fold(empty, (acc, k, v): acc ++ {{key: k, value: v}})
+
+ipairs_of: (fields: [Value]Value) -> []Pair =
+    _ipairs_from(fields, 1, {})
+
+_ipairs_from: (fields: [Value]Value, i: Int, acc: []Pair) -> []Pair =
+    case fields.get(VNum (Int.to_float(i))):
+        None -> acc
+        Some v -> _ipairs_from(fields, i + 1, acc ++ {{key: VNum (Int.to_float(i)), value: v}})
+
+// --------------------------------------------------------------------- tests
+
+num_to_string: test =
+    assert_eq(_num_to_string(42.0), "42")
+    assert_eq(_num_to_string(4.5), "4.5")
+    assert_eq(_num_to_string(-7.0), "-7")
+    assert_eq(_num_to_string(0.0 / 0.0), "nan")
+    assert_eq(_num_to_string(1.0 / 0.0), "inf")
+    assert_eq(_num_to_string(-1.0 / 0.0), "-inf")
+
+lua_tostring_forms: test =
+    assert_eq(lua_tostring(VNil), "nil")
+    assert_eq(lua_tostring(VBool True), "true")
+    assert_eq(lua_tostring(VBool False), "false")
+    assert_eq(lua_tostring(VStr "s"), "s")
+    assert_eq(lua_tostring(VNum 3.0), "3")
+    assert(lua_tostring(VTable 1).starts_with("table: 0x"))
+    assert(lua_tostring(VBuiltin "print").starts_with("function: builtin"))
+
+type_and_truth: test =
+    assert_eq(type_name(VNil), "nil")
+    assert_eq(type_name(VNum 1.0), "number")
+    assert_eq(type_name(VStr "s"), "string")
+    assert_eq(type_name(VBuiltin "print"), "function")
+    assert(truthy(VNum 0.0))
+    assert(truthy(VStr ""))
+    assert(truthy(VNil).not())
+    assert(truthy(VBool False).not())
+
+dict_set_nil_removes: test =
+    d := dict_set({}, VStr "a", VNum 1.0)
+    assert_eq(d.get(VStr "a"), Some (VNum 1.0))
+    d1 := dict_set(d, VStr "a", VNil)
+    assert_eq(d1.get(VStr "a"), None)
+    assert_eq(d1.get(VStr "b"), None)
+
+table_length_counts: test =
+    assert_eq(table_length({}), 0)
+    assert_eq(table_length({VNum 1.0: VStr "a", VNum 2.0: VStr "b"}), 2)
+    // A gap in the array part ends the count.
+    assert_eq(table_length({VNum 1.0: VStr "a", VNum 3.0: VStr "c"}), 1)
+
+globals_and_locals: test =
+    s1 := bind_global(base_state(), "g", VNum 5.0)
+    assert_eq(lookup_value(s1, {}, "g"), VNum 5.0)
+    s2 := assign_var(s1, {}, "g", VNum 6.0)
+    assert_eq(lookup_value(s2, {}, "g"), VNum 6.0)
+    // An assignment to an unseen name binds a new global cell.
+    s3 := assign_var(s2, {}, "h", VNum 1.0)
+    assert_eq(lookup_value(s3, {}, "h"), VNum 1.0)
+    (s4, env) = define_local(s3, {}, "x", VNum 2.0)
+    assert_eq(lookup_value(s4, env, "x"), VNum 2.0)
+    assert_eq(lookup_value(s4, {}, "x"), VNil)
+    // A local shadows the global of the same name.
+    (s5, env1) = define_local(s4, env, "g", VStr "loc")
+    assert_eq(lookup_value(s5, env1, "g"), VStr "loc")
+
+pairs_and_ipairs: test =
+    fields: [Value]Value = {VNum 1.0: VStr "a", VNum 2.0: VStr "b", VStr "k": VBool True}
+    assert_eq(pairs_of(fields).length(), 3)
+    assert_eq(ipairs_of(fields).length(), 2)
+    first: Pair = {key: VNil, value: VNil}
+    p := ipairs_of(fields).get(0).unwrap_or(first)
+    assert_eq(p.key, VNum 1.0)
+    assert_eq(p.value, VStr "a")

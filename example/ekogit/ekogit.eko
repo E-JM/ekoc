@@ -1,0 +1,1560 @@
+// ekogit: a tiny content-addressed version-control system.
+//
+//   ekogit init
+//   ekogit add [-A] <path>...
+//   ekogit status
+//   ekogit commit -m <message>
+//   ekogit log
+//   ekogit diff [<commit>]
+//   ekogit restore <commit> <path>
+//   ekogit cat <commit>:<path>
+//   ekogit help
+//
+// Everything lives under .ekogit/ in the repository root. Commands discover
+// the root by walking up from the working directory, so they can be run from
+// any subdirectory. Object ids are FNV-1a 64-bit hashes over "kind\n" plus the
+// payload. Blobs are raw text; trees and commits are canonical JSON records.
+//
+// This is a toy, not git: no branches, merges, remotes, packfiles, binary
+// files, or garbage collection. See README.md for the full contract.
+
+// ------------------------------------------------------------- object model
+
+/// The three object kinds. The kind is prefixed to the payload before hashing
+/// so a blob and a tree with identical text cannot share an id.
+ObjectKind: type = BlobKind | TreeKind | CommitKind
+
+/// A tree maps every repository-relative path to its blob id. The dictionary
+/// is kept in sorted insertion order so its JSON is canonical.
+Tree: type = [entries: [String]String]
+
+/// A commit names its parent (if any), its tree, the message, and a sequence
+/// number. Sequence 1 is the root commit.
+Commit: type = [parent: Option String, tree: String, message: String, seq: Int]
+
+/// One step of a line edit script.
+LineChange: type = Same String | Add String | Del String
+
+/// The two sides of one file's diff. None means the file is absent.
+DiffInput: type = [path: String, old: Option String, new: Option String]
+
+/// The three status classes, already sorted by path.
+StatusReport: type = [staged_added: []String,
+                      staged_modified: []String,
+                      staged_deleted: []String,
+                      unstaged_modified: []String,
+                      unstaged_deleted: []String,
+                      untracked: []String]
+
+/// A command's output: logical lines, or one raw string (cat).
+Output: type = Lines []String | Raw String
+
+// ---------------------------------------------------------------- constants
+
+_empty_entries: [String]String = {}
+_empty_commits: [String]Commit = {}
+_empty_paths: []String = {}
+_empty_lines: []String = {}
+_empty_diffs: []DiffInput = {}
+_empty_changes: []LineChange = {}
+
+_fnv_seed: UInt = 0xcbf29ce484222325
+_fnv_prime: UInt = 0x100000001b3
+_two32: UInt = 0x100000000
+
+// ------------------------------------------------------- content addressing
+
+/// Wrapping addition on the UInt ring. The compiler build used here does not
+/// lower UInt.wrapping_add, so the ring operation is written out with the
+/// checked primitive: a + b - 2^64 when the sum would exceed UInt.max.
+_add_wrap: (a: UInt, b: UInt) -> UInt =
+    if a > UInt.max - b:
+        a - (UInt.max - b) - 1
+    else:
+        a + b
+
+/// Multiplication modulo 2^64 via 32-bit limbs. Every intermediate product is
+/// below 2^64, and the final high*2^32 + low sum is below 2^64 by construction.
+_mul_wrap: (a: UInt, b: UInt) -> UInt =
+    a_lo := a % _two32
+    a_hi := a / _two32
+    b_lo := b % _two32
+    b_hi := b / _two32
+    low := a_lo * b_lo
+    low_lo := low % _two32
+    carry := low / _two32
+    cross := _add_wrap(_add_wrap(a_lo * b_hi, a_hi * b_lo), carry)
+    cross_lo := cross % _two32
+    cross_lo * _two32 + low_lo
+
+/// Bitwise xor, written as arithmetic because the same compiler build does
+/// not lower UInt.bxor. Only eight bits are needed for the byte step below,
+/// so callers pass values below 256.
+_xor_wrap: (a: UInt, b: UInt) -> UInt =
+    if a == 0 && b == 0:
+        0
+    else:
+        abit := a % 2
+        bbit := b % 2
+        rest := _xor_wrap(a / 2, b / 2)
+        rest * 2 + (if abit == bbit: 0 else: 1)
+
+_xor_byte: (h: UInt, b: UInt) -> UInt =
+    (h / 256) * 256 + _xor_wrap(h % 256, b)
+
+_fnv_step: (h: UInt, b: Int) -> UInt =
+    byte: UInt = b.to_uint().unwrap_or(0)
+    _mul_wrap(_xor_byte(h, byte), _fnv_prime)
+
+/// FNV-1a 64-bit over the UTF-8 bytes of a string, as a UInt.
+_fnv1a: (s: String) -> UInt =
+    s.to_bytes().to_ints().fold(_fnv_seed, (h, b): _fnv_step(h, b))
+
+/// The canonical 16-digit lowercase hexadecimal object id text.
+_hash_hex: (s: String) -> String =
+    _fnv1a(s).to_hex().pad_left(16, '0')
+
+_kind_prefix: (kind: ObjectKind) -> String =
+    case kind:
+        BlobKind -> "blob"
+        TreeKind -> "tree"
+        CommitKind -> "commit"
+
+/// The content address of one object: FNV-1a 64 over "kind\npayload".
+_object_id: (kind: ObjectKind, payload: String) -> String =
+    _hash_hex(_kind_prefix(kind) ++ "\n" ++ payload)
+
+_blob_id: (text: String) -> String = _object_id(BlobKind, text)
+
+// -------------------------------------------------------------------- paths
+
+/// Validate and normalize a repository-relative path. Absolute paths and any
+/// ".." component are refused; "." and empty components collapse; the
+/// repository root itself normalizes to ".".
+_normalize_repo_path: (raw: String) -> Result String String =
+    if raw == "":
+        Err "empty path"
+    else:
+        absolute := Path.is_absolute(raw) || raw.starts_with("/")
+        if absolute:
+            Err "absolute paths are not allowed: {raw}"
+        else:
+            parts := raw.split("/")
+            if parts.any((p): p == ".."):
+                Err "path must not contain '..': {raw}"
+            else:
+                kept := parts.filter((p): p != "" && p != ".")
+                norm := kept.join("/")
+                if norm == "":
+                    Ok "."
+                else:
+                    Ok norm
+
+/// Rebase a path typed while standing in a repository subdirectory. `prefix`
+/// is the current directory relative to the repository root ("" at the root).
+/// The join is lexical, so `../sibling.txt` works from a subdirectory; a path
+/// that escapes the root still contains ".." and is rejected.
+_rebase_repo_path: (prefix: String, raw: String) -> Result String String =
+    if raw == "":
+        Err "empty path"
+    else:
+        absolute := Path.is_absolute(raw) || raw.starts_with("/")
+        if absolute:
+            Err "absolute paths are not allowed: {raw}"
+        else:
+            combined := if prefix == "": raw else: Path.join(prefix, raw)
+            _normalize_repo_path(Path.normalize(combined))
+
+_is_metadata_path: (p: String) -> Bool =
+    p == ".ekogit" || p.starts_with(".ekogit/")
+
+/// The path check used by commands that touch the working tree or index,
+/// after rebasing a path typed in a subdirectory.
+_validate_arg_path: (prefix: String, raw: String) -> Result String String =
+    p <- _rebase_repo_path(prefix, raw).try()
+    if _is_metadata_path(p):
+        Err "refusing to touch repository metadata: {raw}"
+    else:
+        Ok p
+
+_parent_dir: (p: String) -> String =
+    parts := p.split("/")
+    if parts.length() <= 1:
+        ""
+    else:
+        parts.take(parts.length() - 1).join("/")
+
+_is_full_id: (s: String) -> Bool =
+    s.length() == 16 && s.chars().all((c): (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))
+
+_is_hex_prefix: (s: String) -> Bool =
+    s.length() > 0 && s.length() <= 16 && s.chars().all((c): (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))
+
+// --------------------------------------------------------- canonical records
+
+_dict_keys: (d: [String]String) -> []String =
+    d.fold(_empty_paths, (acc, k, v): acc ++ {k})
+
+_commit_ids: (d: [String]Commit) -> []String =
+    d.fold(_empty_paths, (acc, k, v): acc ++ {k})
+
+/// Rebuild a path map in sorted insertion order.
+_sort_entries: (d: [String]String) -> [String]String =
+    _dict_keys(d).sort().fold(_empty_entries, (acc, k): acc.insert(k, d.get(k).unwrap_or("")))
+
+_tree_from_entries: (entries: [String]String) -> Tree =
+    {entries: _sort_entries(entries)}
+
+_encode_tree: (t: Tree) -> String =
+    Json.show(_tree_from_entries(t.entries).to_json())
+
+_decode_tree: (payload: String) -> Result Tree String =
+    j <- Json.parse(payload).map_err((e): "parse tree: {e}").try()
+    Tree.from_json(j).map_err((e): "decode tree: {e}")
+
+_encode_commit: (c: Commit) -> String = Json.show(c.to_json())
+
+_decode_commit: (payload: String) -> Result Commit String =
+    j <- Json.parse(payload).map_err((e): "parse commit: {e}").try()
+    Commit.from_json(j).map_err((e): "decode commit: {e}")
+
+/// The index file is a bare JSON object: {"path": "blobid", ...}. The keys are
+/// sorted before writing so the file is deterministic.
+_encode_index: (entries: [String]String) -> String =
+    Json.show(_sort_entries(entries).to_json())
+
+_entries_add: (acc: Result ([String]String) String, k: String, v: Json) -> Result ([String]String) String =
+    cur <- acc.try()
+    parsed: Result String String = case v:
+        Str s -> Ok s
+        _ -> Err "index: value for '{k}' is not a string"
+    s <- parsed.try()
+    Ok (cur.insert(k, s))
+
+_entries_from_json: (d: [String]Json) -> Result ([String]String) String =
+    d.fold(Ok _empty_entries, (acc, k, v): _entries_add(acc, k, v))
+
+_decode_index: (text: String) -> Result ([String]String) String =
+    j <- Json.parse(text).map_err((e): "parse index: {e}").try()
+    case j:
+        Obj d -> _entries_from_json(d)
+        _ -> Err "index: expected a JSON object"
+
+_same_entries: (a: [String]String, b: [String]String) -> Bool =
+    _encode_index(a) == _encode_index(b)
+
+// --------------------------------------------------------------- commit data
+
+_next_seq: (parent: Option Commit) -> Int =
+    parent.map((c): c.seq + 1).unwrap_or(1)
+
+_make_commit: (parent: Option String, parent_commit: Option Commit,
+              tree: String, message: String) -> Commit =
+    {parent: parent, tree: tree, message: message, seq: _next_seq(parent_commit)}
+
+/// Newest-first commit id chain, or an error on a missing parent or a cycle.
+/// `fuel` is commits.length() + 1 at the call site.
+_chain: (id: Option String, commits: [String]Commit, fuel: Int) -> Result ([]String) String =
+    if fuel <= 0:
+        Err "commit chain is cyclic or too long"
+    else:
+        case id:
+            None -> Ok _empty_paths
+            Some cid ->
+                c <- commits.get(cid).to_result("missing commit object: {cid}").try()
+                rest <- _chain(c.parent, commits, fuel - 1).try()
+                Ok ({cid} ++ rest)
+
+_log_line: (id: String, commits: [String]Commit) -> String =
+    case commits.get(id):
+        None -> "{id}  <missing commit>"
+        Some c -> "{id}  seq {c.seq}  {c.message}"
+
+_log_lines: (ids: []String, commits: [String]Commit) -> []String =
+    ids.map((id): _log_line(id, commits))
+
+/// Resolve a full id or a unique lowercase hexadecimal prefix against the
+/// loaded commit map.
+_resolve_commit_prefix: (spec: String, commits: [String]Commit) -> Result String String =
+    if _is_hex_prefix(spec).not():
+        Err "invalid commit id '{spec}' (expected 1-16 lowercase hex digits)"
+    else:
+        if spec.length() == 16:
+            if commits.get(spec).is_some():
+                Ok spec
+            else:
+                Err "unknown commit: {spec}"
+        else:
+            matches := _commit_ids(commits).filter((id): id.starts_with(spec)).sort()
+            case matches:
+                {} -> Err "unknown commit: {spec}"
+                {only} -> Ok only
+                _ -> Err "ambiguous commit prefix '{spec}' matches {matches.length()} commits"
+
+/// Walk `n` parents from `cid`, newest first. `HEAD~0` is the commit named by
+/// HEAD, `HEAD~1` its first parent, and so on.
+_walk_parents: (commits: [String]Commit, cid: String, n: Int,
+                spec: String) -> Result String String =
+    if n <= 0:
+        Ok cid
+    else:
+        c <- commits.get(cid).to_result("missing commit object: {cid}").try()
+        parent <- c.parent.to_result("cannot resolve {spec}: commit {cid} has no parent").try()
+        _walk_parents(commits, parent, n - 1, spec)
+
+_resolve_head: (commits: [String]Commit, head: Option String,
+                n: Int, spec: String) -> Result String String =
+    cid <- head.to_result("HEAD does not point to a commit yet").try()
+    _walk_parents(commits, cid, n, spec)
+
+/// Resolve a symbolic `HEAD`/`HEAD~n` spec or a hexadecimal prefix. Symbolic
+/// resolution is pure so it can be tested without the file system.
+_resolve_commit_spec: (spec: String, head: Option String,
+                      commits: [String]Commit) -> Result String String =
+    if spec == "HEAD":
+        _resolve_head(commits, head, 0, spec)
+    else:
+        if spec.starts_with("HEAD~"):
+            digits := String.slice(spec, 5, spec.length() - 5).unwrap_or("")
+            case Int.parse(digits):
+                Err _ -> Err "invalid symbolic reference '{spec}' (use HEAD or HEAD~<n>)"
+                Ok n ->
+                    if n < 0:
+                        Err "invalid symbolic reference '{spec}' (use HEAD or HEAD~<n>)"
+                    else:
+                        _resolve_head(commits, head, n, spec)
+        else:
+            _resolve_commit_prefix(spec, commits)
+
+// -------------------------------------------------------------------- status
+
+_union3: (a: [String]String, b: [String]String, c: [String]String) -> []String =
+    Set.of(_dict_keys(a) ++ _dict_keys(b) ++ _dict_keys(c)).to_list().sort()
+
+_is_staged_add: (p: String, head: [String]String, index: [String]String) -> Bool =
+    case head.get(p), index.get(p):
+        None, Some _ -> True
+        _, _ -> False
+
+_is_staged_del: (p: String, head: [String]String, index: [String]String) -> Bool =
+    case head.get(p), index.get(p):
+        Some _, None -> True
+        _, _ -> False
+
+_is_staged_mod: (p: String, head: [String]String, index: [String]String) -> Bool =
+    case head.get(p), index.get(p):
+        Some a, Some b -> a != b
+        _, _ -> False
+
+_is_unstaged_mod: (p: String, index: [String]String, work: [String]String) -> Bool =
+    case index.get(p), work.get(p):
+        Some a, Some b -> a != b
+        _, _ -> False
+
+_is_unstaged_del: (p: String, index: [String]String, work: [String]String) -> Bool =
+    case index.get(p), work.get(p):
+        Some _, None -> True
+        _, _ -> False
+
+_is_untracked: (p: String, index: [String]String, work: [String]String) -> Bool =
+    case index.get(p), work.get(p):
+        None, Some _ -> True
+        _, _ -> False
+
+/// Classify in-memory path maps. `head` and `index` are path -> blob id;
+/// `work` is path -> blob id for the current working tree.
+_classify_status: (head: [String]String, index: [String]String,
+                  work: [String]String) -> StatusReport =
+    paths := _union3(head, index, work)
+    {
+        staged_added: paths.filter((p): _is_staged_add(p, head, index)),
+        staged_modified: paths.filter((p): _is_staged_mod(p, head, index)),
+        staged_deleted: paths.filter((p): _is_staged_del(p, head, index)),
+        unstaged_modified: paths.filter((p): _is_unstaged_mod(p, index, work)),
+        unstaged_deleted: paths.filter((p): _is_unstaged_del(p, index, work)),
+        untracked: paths.filter((p): _is_untracked(p, index, work))}
+
+_has_staged: (r: StatusReport) -> Bool =
+    r.staged_added.length() + r.staged_modified.length() + r.staged_deleted.length() > 0
+
+_has_unstaged: (r: StatusReport) -> Bool =
+    r.unstaged_modified.length() + r.unstaged_deleted.length() > 0
+
+_is_clean: (r: StatusReport) -> Bool =
+    _has_staged(r).not() && _has_unstaged(r).not() && r.untracked.length() == 0
+
+_staged_lines: (r: StatusReport) -> []String =
+    if _has_staged(r).not():
+        _empty_lines
+    else:
+        adds := r.staged_added.map((p): "  added: {p}")
+        mods := r.staged_modified.map((p): "  modified: {p}")
+        dels := r.staged_deleted.map((p): "  deleted: {p}")
+        {"changes staged for commit:"} ++ adds ++ mods ++ dels
+
+_unstaged_lines: (r: StatusReport) -> []String =
+    if _has_unstaged(r).not():
+        _empty_lines
+    else:
+        mods := r.unstaged_modified.map((p): "  modified: {p}")
+        dels := r.unstaged_deleted.map((p): "  deleted: {p}")
+        {"changes not staged for commit:"} ++ mods ++ dels
+
+_untracked_lines: (r: StatusReport) -> []String =
+    if r.untracked.length() == 0:
+        _empty_lines
+    else:
+        {"untracked files:"} ++ r.untracked.map((p): "  {p}")
+
+_status_lines: (r: StatusReport) -> []String =
+    if _is_clean(r):
+        {"nothing to commit, working tree clean"}
+    else:
+        _staged_lines(r) ++ _unstaged_lines(r) ++ _untracked_lines(r)
+
+// -------------------------------------------------------------------- diffing
+
+// Myers' O((N+M)D) shortest-edit algorithm. `v` maps
+// each diagonal k = x - y to the furthest x reached on it. Every round
+// snapshots `v` before extending the frontier, so the backtrack is a pure
+// walk over immutable snapshots and no quadratic LCS table is built. Every
+// loop here is a self tail call, so neither file length nor edit distance
+// grows the call stack. Lines are reached through a chunked index (see
+// _index_lines) instead of List.get, whose linear walk would make the snakes
+// quadratic. When a deletion and an insertion reach equally far, the frontier
+// extends along k - 1 (the deletion), so for a changed line the removed text
+// is rendered "-old" and the added text "+new", never the reverse.
+
+MyersStep: type = Continue [Int]Int | Found
+MyersSnapshot: type = [v: [Int]Int]
+
+_empty_ints: [Int]Int = {}
+_empty_line_map: [Int][]String = {}
+_no_snapshots: []MyersSnapshot = {}
+
+/// Stride of the chunked line index. Dictionary inserts copy the whole table
+/// (persistent maps), so indexing every line would be quadratic; storing one
+/// cons-list tail per chunk costs n/_chunk inserts, and any line is then at
+/// most _chunk list steps away.
+_chunk: Int = 64
+
+/// Cons-list tails at every _chunk-th position, keyed by chunk index. The
+/// tail for position i is the input list itself at that point, so building
+/// the index is one pass with no per-line work.
+_index_lines: (lines: []String, i: Int, acc: [Int][]String) -> [Int][]String =
+    case lines:
+        {} -> acc
+        {_, ..rest} ->
+            acc2 := if i % _chunk == 0: acc.insert(i / _chunk, lines) else: acc
+            _index_lines(rest, i + 1, acc2)
+
+/// The line at position i: at most _chunk list steps from the chunk tail.
+_line_at: (index: [Int][]String, i: Int) -> String =
+    case index.get(i / _chunk):
+        Some tail -> tail.get(i % _chunk).unwrap_or("")
+        None -> ""
+
+_myers_get: (v: [Int]Int, k: Int) -> Int =
+    v.get(k).unwrap_or(0)
+
+/// Follow the diagonal through the run of equal lines, returning the furthest
+/// consistent position.
+_snake: (a: [Int][]String, b: [Int][]String, n: Int, m: Int, x: Int, y: Int) -> [Int, Int] =
+    if x < n && y < m && _line_at(a, x) == _line_at(b, y):
+        _snake(a, b, n, m, x + 1, y + 1)
+    else:
+        {x, y}
+
+/// Extend every diagonal of depth `d`. Found means the bottom-right corner is
+/// reachable at this depth.
+_kloop: (a: [Int][]String, b: [Int][]String, n: Int, m: Int, d: Int, i: Int,
+         v: [Int]Int) -> MyersStep =
+    if i > d:
+        Continue v
+    else:
+        k := -d + 2 * i
+        x := if k == -d || (k != d && _myers_get(v, k - 1) < _myers_get(v, k + 1)):
+            _myers_get(v, k + 1)
+        else:
+            _myers_get(v, k - 1) + 1
+        y := x - k
+        (x2, y2) = _snake(a, b, n, m, x, y)
+        v2 := v.insert(k, x2)
+        if x2 >= n && y2 >= m:
+            Found
+        else:
+            _kloop(a, b, n, m, d, i + 1, v2)
+
+_snapshot: (v: [Int]Int) -> MyersSnapshot = {v: v}
+
+/// Round over round, keeping each depth's pre-round snapshot of the frontier.
+_myers_loop: (a: [Int][]String, b: [Int][]String, n: Int, m: Int, d: Int, v: [Int]Int,
+              trace_rev: []MyersSnapshot) -> Option ([]MyersSnapshot) =
+    if d > n + m:
+        None
+    else:
+        case _kloop(a, b, n, m, d, 0, v):
+            Found -> Some (({_snapshot(v)} ++ trace_rev).reverse())
+            Continue v2 -> _myers_loop(a, b, n, m, d + 1, v2, {_snapshot(v)} ++ trace_rev)
+
+_myers_trace: (a: [Int][]String, b: [Int][]String, n: Int, m: Int) -> []MyersSnapshot =
+    v0: [Int]Int = {1: 0}
+    _myers_loop(a, b, n, m, 0, v0, _no_snapshots).unwrap_or(_no_snapshots)
+
+/// Collect the diagonal run behind the current position, prepending Same steps.
+_snake_back: (a: [Int][]String, x: Int, y: Int, px: Int, py: Int,
+              acc: []LineChange) -> [Int, Int, []LineChange] =
+    if x > px && y > py:
+        _snake_back(a, x - 1, y - 1, px, py, {Same (_line_at(a, x - 1))} ++ acc)
+    else:
+        {x, y, acc}
+
+/// Walk the snapshots backwards from the bottom-right corner, prepending one
+/// edit per depth, so `acc` ends up in file order with no final reverse.
+_script_back: (a: [Int][]String, b: [Int][]String, trace: []MyersSnapshot, d: Int,
+               x: Int, y: Int, acc: []LineChange) -> []LineChange =
+    if d < 0:
+        acc
+    else:
+        v := trace.get(d).map((s): s.v).unwrap_or(_empty_ints)
+        k := x - y
+        prev_k := if k == -d || (k != d && _myers_get(v, k - 1) < _myers_get(v, k + 1)):
+            k + 1
+        else:
+            k - 1
+        prev_x := _myers_get(v, prev_k)
+        prev_y := prev_x - prev_k
+        (x1, _, acc2) = _snake_back(a, x, y, prev_x, prev_y, acc)
+        if d == 0:
+            _script_back(a, b, trace, d - 1, prev_x, prev_y, acc2)
+        else:
+            if x1 == prev_x:
+                _script_back(a, b, trace, d - 1, prev_x, prev_y,
+                             {Add (_line_at(b, prev_y))} ++ acc2)
+            else:
+                _script_back(a, b, trace, d - 1, prev_x, prev_y,
+                             {Del (_line_at(a, prev_x))} ++ acc2)
+
+/// The Same/Add/Del script for two line lists, in file order.
+_script: (a: []String, b: []String) -> []LineChange =
+    n := a.length()
+    m := b.length()
+    ai := _index_lines(a, 0, _empty_line_map)
+    bi := _index_lines(b, 0, _empty_line_map)
+    trace := _myers_trace(ai, bi, n, m)
+    _script_back(ai, bi, trace, trace.length() - 1, n, m, _empty_changes)
+
+_render_change: (c: LineChange) -> String =
+    case c:
+        Same s -> " " ++ s
+        Add s -> "+" ++ s
+        Del s -> "-" ++ s
+
+_hunk_header: (old_n: Int, new_n: Int) -> String =
+    left := if old_n == 0: "-0,0" else: "-1,{old_n}"
+    right := if new_n == 0: "+0,0" else: "+1,{new_n}"
+    "@@ {left} {right} @@"
+
+/// A whole-file unified diff (one hunk) for one path. The Myers edit script is
+/// reused for every file; only text is supported.
+_diff_text: (path: String, old: Option String, new: Option String) -> []String =
+    old_lines := old.map((s): s.lines()).unwrap_or(_empty_lines)
+    new_lines := new.map((s): s.lines()).unwrap_or(_empty_lines)
+    script := _script(old_lines, new_lines)
+    old_header := if old.is_none(): "--- /dev/null" else: "--- a/{path}"
+    new_header := if new.is_none(): "+++ /dev/null" else: "+++ b/{path}"
+    head: []String =
+        {"diff --git a/{path} b/{path}", old_header, new_header,
+         _hunk_header(old_lines.length(), new_lines.length())}
+    head ++ script.map((c): _render_change(c))
+
+_diff_lines: (inputs: []DiffInput) -> []String =
+    inputs.sort_by((a, b): a.path < b.path).fold(_empty_lines, (acc, d):
+        acc ++ _diff_text(d.path, d.old, d.new))
+
+_changed_paths: (base: [String]String, work: [String]String) -> []String =
+    _union3(base, work, _empty_entries).filter((p):
+        case base.get(p), work.get(p):
+            None, None -> False
+            Some a, Some b -> a != b
+            _, _ -> True)
+
+// ------------------------------------------------------------- filesystem I/O
+
+_object_path: (id: String) -> String = ".ekogit/objects/" ++ id
+
+_write_object: (fs: Fs, kind: ObjectKind, payload: String) !-> Result String String =
+    id := _object_id(kind, payload)
+    path := _object_path(id)
+    if fs.exists(path):
+        existing <- fs.read(path).map_err((e): "read object {id}: {e}").try()
+        if existing == payload:
+            Ok id
+        else:
+            Err "object collision at {id}: existing content differs (FNV-1a 64-bit collision; refusing to overwrite)"
+    else:
+        _ <- fs.write(path, payload).map_err((e): "write object {id}: {e}").try()
+        Ok id
+
+_read_object: (fs: Fs, id: String, kind: ObjectKind) !-> Result String String =
+    if _is_full_id(id):
+        path := _object_path(id)
+        text <- fs.read(path).map_err((e): "read object {id}: {e}").try()
+        actual := _object_id(kind, text)
+        if actual == id:
+            Ok text
+        else:
+            Err "object {id}: content hashes to {actual} (corrupt object or wrong kind)"
+    else:
+        Err "invalid object id: {id}"
+
+_load_commit: (fs: Fs, id: String) !-> Result Commit String =
+    text <- _read_object(fs, id, CommitKind).try()
+    _decode_commit(text)
+
+_load_tree: (fs: Fs, id: String) !-> Result Tree String =
+    text <- _read_object(fs, id, TreeKind).try()
+    _decode_tree(text)
+
+_load_blob: (fs: Fs, id: String) !-> Result String String =
+    _read_object(fs, id, BlobKind)
+
+_tree_blob_id: (tree: Tree, path: String, cid: String) -> Result String String =
+    tree.entries.get(path).to_result("path not in commit {cid}: {path}")
+
+_commit_of_head: (fs: Fs, head: Option String) !-> Result (Option Commit) String =
+    case head:
+        None -> Ok None
+        Some cid -> _load_commit(fs, cid).map((c): Some c)
+
+_base_text: (fs: Fs, base: [String]String, p: String) !-> Result (Option String) String =
+    case base.get(p):
+        None -> Ok None
+        Some id -> _load_blob(fs, id).map((text): Some text)
+
+_load_commit_named: (fs: Fs, acc: Result ([String]Commit) String,
+                    name: String) !-> Result ([String]Commit) String =
+    cur <- acc.try()
+    if _is_full_id(name):
+        text <- fs.read(_object_path(name)).map_err((e): "read object {name}: {e}").try()
+        case _decode_commit(text):
+            Err _ -> Ok cur
+            Ok c ->
+                if _object_id(CommitKind, text) == name:
+                    Ok (cur.insert(name, c))
+                else:
+                    Ok cur
+    else:
+        Ok cur
+
+/// Scan the flat object directory and keep every well-formed commit. Non
+/// commit payloads (blobs and trees) are skipped.
+_load_commits: (fs: Fs) !-> Result ([String]Commit) String =
+    names <- fs.list_dir(".ekogit/objects").map_err((e): "list objects: {e}").try()
+    names.fold(Ok _empty_commits, (acc, name): _load_commit_named(fs, acc, name))
+
+_resolve_commit: (fs: Fs, spec: String) !-> Result String String =
+    commits <- _load_commits(fs).try()
+    head <- _read_head(fs).try()
+    _resolve_commit_spec(spec, head, commits)
+
+_read_head: (fs: Fs) !-> Result (Option String) String =
+    case fs.read(".ekogit/HEAD"):
+        Err NotFound -> Ok None
+        Err e -> Err "read HEAD: {e}"
+        Ok text ->
+            id := text.trim()
+            if id == "":
+                Ok None
+            else:
+                if _is_full_id(id):
+                    Ok (Some id)
+                else:
+                    Err "HEAD: invalid commit id '{id}'"
+
+_write_head: (fs: Fs, id: String) !-> Result _ String =
+    fs.write(".ekogit/HEAD", id ++ "\n").map_err((e): "write HEAD: {e}")
+
+_read_index: (fs: Fs) !-> Result ([String]String) String =
+    case fs.read(".ekogit/index.json"):
+        Err NotFound -> Err "missing .ekogit/index.json (run 'ekogit init')"
+        Err e -> Err "read index: {e}"
+        Ok text -> _decode_index(text)
+
+_write_index: (fs: Fs, entries: [String]String) !-> Result _ String =
+    fs.write(".ekogit/index.json", _encode_index(entries)).map_err((e): "write index: {e}")
+
+/// The committed tree's path map, or the empty map before the first commit.
+_head_entries: (fs: Fs, head: Option String) !-> Result ([String]String) String =
+    case head:
+        None -> Ok _empty_entries
+        Some cid ->
+            c <- _load_commit(fs, cid).try()
+            t <- _load_tree(fs, c.tree).try()
+            Ok t.entries
+
+_ensure_repo: (fs: Fs) !-> Result _ String =
+    if fs.exists(".ekogit/objects"):
+        Ok _
+    else:
+        if fs.exists(".ekogit"):
+            Err ".ekogit exists but is incomplete; remove it and run 'ekogit init'"
+        else:
+            Err "not an ekogit repository (run 'ekogit init')"
+
+// --------------------------------------------------------- repository discovery
+
+/// The absolute parent of an absolute path, or None at the root.
+_parent_abs: (p: String) -> Option String =
+    if p == "" || p == "/":
+        None
+    else:
+        parts := p.split("/").filter((x): x != "")
+        if parts.length() <= 1:
+            Some "/"
+        else:
+            Some ("/" ++ parts.take(parts.length() - 1).join("/"))
+
+/// Climb from `dir` toward the file-system root looking for `.ekogit/objects`.
+/// A `.ekogit` directory without an object store is reported as incomplete so
+/// the user does not get a misleading "not a repository" message.
+_find_repo_root: (fs: Fs, dir: String) !-> Result String String =
+    if fs.exists(Path.join(dir, ".ekogit/objects")):
+        Ok dir
+    else:
+        if fs.exists(Path.join(dir, ".ekogit")):
+            Err ".ekogit exists but is incomplete; remove it and run 'ekogit init'"
+        else:
+            parent <- _parent_abs(dir).to_result("not an ekogit repository (run 'ekogit init')").try()
+            _find_repo_root(fs, parent)
+
+/// The current directory relative to the repository root, "" at the root.
+_relative_prefix: (root: String, dir: String) -> String =
+    if root == dir:
+        ""
+    else:
+        root_parts := root.split("/").filter((p): p != "")
+        dir_parts := dir.split("/").filter((p): p != "")
+        dir_parts.drop(root_parts.length()).join("/")
+
+/// Discover the enclosing repository and return a file-system capability
+/// rooted there plus the current directory's prefix. Commands that work on
+/// repository paths use the rooted capability, so they behave the same from
+/// any subdirectory.
+_open_repo: (fs: Fs) !-> Result ([Fs, String]) String =
+    cwd <- fs.realpath(".").map_err((e): "resolve working directory: {e}").try()
+    root <- _find_repo_root(fs, cwd).try()
+    Ok ({Fs.root(fs, root), _relative_prefix(root, cwd)})
+
+// ------------------------------------------------------- working-tree scans
+
+/// Read `.ekogit/ignore`. A missing file means no rules. Blank lines and lines
+/// whose first non-space character is `#` are ignored; other lines are trimmed
+/// and kept in order.
+_load_ignore: (fs: Fs) !-> Result ([]String) String =
+    case fs.read(".ekogit/ignore"):
+        Err NotFound -> Ok _empty_paths
+        Err e -> Err "read .ekogit/ignore: {e}"
+        Ok text ->
+            Ok (text.lines()
+                .map((line): line.trim())
+                .filter((line): line != "" && line.starts_with("#").not()))
+
+/// A small glob matcher: `*` matches any run of characters and `?` matches
+/// one. It is deliberately not a full shell glob; ignore rules only need
+/// prefixes, suffixes, and simple wildcards.
+_glob_match: (pat: []Char, text: []Char) -> Bool =
+    case pat:
+        {} -> text.length() == 0
+        {'*', ..rest} -> _glob_star(rest, text)
+        {'?', ..rest} ->
+            case text:
+                {} -> False
+                {_, ..tail} -> _glob_match(rest, tail)
+        {p, ..rest} ->
+            case text:
+                {} -> False
+                {c, ..tail} -> p == c && _glob_match(rest, tail)
+
+_glob_star: (pat: []Char, text: []Char) -> Bool =
+    if _glob_match(pat, text):
+        True
+    else:
+        case text:
+            {} -> False
+            {_, ..tail} -> _glob_star(pat, tail)
+
+/// Match one ignore rule against a repository-relative path. A trailing `/`
+/// is a directory prefix (`build/`); a rule containing `/` is matched against
+/// the whole path; any other rule is matched against every path component, so
+/// `*.log` and `build` cover every directory level.
+_ignore_match: (rule: String, path: String) -> Bool =
+    if rule.ends_with("/"):
+        dir := String.slice(rule, 0, rule.length() - 1).unwrap_or("")
+        path == dir || path.starts_with(rule)
+    else:
+        if rule.contains("/"):
+            anchored := if rule.starts_with("/"):
+                String.slice(rule, 1, rule.length() - 1).unwrap_or("")
+            else:
+                rule
+            _glob_match(anchored.chars(), path.chars())
+        else:
+            path.split("/")
+                .filter((part): part != "")
+                .any((part): _glob_match(rule.chars(), part.chars()))
+
+_is_ignored: (rules: []String, path: String) -> Bool =
+    rules.any((rule): _ignore_match(rule, path))
+
+_scan_acc: (fs: Fs, rel: String, rules: []String, acc: Result ([]String) String,
+            name: String) !-> Result ([]String) String =
+    cur <- acc.try()
+    if name == ".ekogit":
+        Ok cur
+    else:
+        child := if rel == "": name else: rel ++ "/" ++ name
+        if _is_ignored(rules, child):
+            Ok cur
+        else:
+            info <- fs.stat(child).map_err((e): "stat {child}: {e}").try()
+            if info.is_dir:
+                more <- _scan_dir(fs, child, rules).try()
+                Ok (cur ++ more)
+            else:
+                Ok (cur ++ {child})
+
+_scan_dir: (fs: Fs, rel: String, rules: []String) !-> Result ([]String) String =
+    dir := if rel == "": "." else: rel
+    names <- fs.list_dir(dir).map_err((e): "list {dir}: {e}").try()
+    names.fold(Ok _empty_paths, (acc, name): _scan_acc(fs, rel, rules, acc, name))
+
+_scan_work: (fs: Fs) !-> Result ([]String) String =
+    rules <- _load_ignore(fs).try()
+    _scan_dir(fs, "", rules)
+
+_expand_one: (fs: Fs, rules: []String, p: String) !-> Result ([]String) String =
+    if p == ".":
+        _scan_dir(fs, "", rules)
+    else:
+        info <- fs.stat(p).map_err((e): "stat {p}: {e}").try()
+        if info.is_dir:
+            _scan_dir(fs, p, rules)
+        else:
+            Ok {p}
+
+_expand_acc: (fs: Fs, rules: []String, acc: Result ([]String) String,
+              p: String) !-> Result ([]String) String =
+    cur <- acc.try()
+    more <- _expand_one(fs, rules, p).try()
+    Ok (cur ++ more)
+
+/// Read the working-tree files that matter for status or diff: every tracked
+/// path plus every untracked path that no ignore rule covers. Ignored paths
+/// are skipped without reading their contents.
+_read_work_one: (fs: Fs, rules: []String, tracked: Set String,
+                 acc: Result ([String]String) String,
+                 p: String) !-> Result ([String]String) String =
+    cur <- acc.try()
+    if tracked.contains(p) || _is_ignored(rules, p).not():
+        text <- fs.read(p).map_err((e): "read {p}: {e}").try()
+        Ok (cur.insert(p, text))
+    else:
+        Ok cur
+
+_read_work: (fs: Fs, rules: []String,
+            tracked: Set String) !-> Result ([String]String) String =
+    paths <- _scan_dir(fs, "", _empty_paths).try()
+    paths.fold(Ok _empty_entries, (acc, p): _read_work_one(fs, rules, tracked, acc, p))
+
+_store_one: (fs: Fs, acc: Result ([String]String) String,
+             p: String) !-> Result ([String]String) String =
+    cur <- acc.try()
+    text <- fs.read(p).map_err((e): "read {p}: {e}").try()
+    id <- _write_object(fs, BlobKind, text).try()
+    Ok (cur.insert(p, id))
+
+_store_files: (fs: Fs, paths: []String) !-> Result ([String]String) String =
+    paths.fold(Ok _empty_entries, (acc, p): _store_one(fs, acc, p))
+
+// ----------------------------------------------------------------- commands
+
+_init_cmd: (fs: Fs) !-> Result Output String =
+    if fs.exists(".ekogit"):
+        Err "already initialized: .ekogit exists"
+    else:
+        _ <- fs.mkdir_all(".ekogit/objects").map_err((e): "create .ekogit/objects: {e}").try()
+        _ <- fs.write(".ekogit/index.json", _encode_index(_empty_entries)).map_err((e): "create index: {e}").try()
+        Ok (Lines {"initialized empty ekogit repository in .ekogit"})
+
+_add_all: (fs: Fs) !-> Result Output String =
+    paths <- _scan_work(fs).try()
+    stored <- _store_files(fs, paths).try()
+    _ <- _write_index(fs, stored).try()
+    Ok (Lines {"staged {paths.length()} file(s) from the working tree"})
+
+_add_paths: (fs: Fs, prefix: String, args: []String) !-> Result Output String =
+    normalized <- args.fold(Ok _empty_paths, (acc, a):
+        cur <- acc.try()
+        p <- _validate_arg_path(prefix, a).try()
+        Ok (cur ++ {p})).try()
+    rules <- _load_ignore(fs).try()
+    expanded <- normalized.fold(Ok _empty_paths, (acc, p):
+        _expand_acc(fs, rules, acc, p)).try()
+    paths := Set.of(expanded).to_list().sort()
+    stored <- _store_files(fs, paths).try()
+    index <- _read_index(fs).try()
+    updated := paths.fold(index, (acc, p): acc.insert(p, stored.get(p).unwrap_or("")))
+    _ <- _write_index(fs, updated).try()
+    Ok (Lines {"staged {paths.length()} file(s)"})
+
+_add_cmd: (fs: Fs, prefix: String, rest: []String) !-> Result Output String =
+    _ <- _ensure_repo(fs).try()
+    case rest:
+        {"-A"} -> _add_all(fs)
+        {"-A", ..} -> Err "usage: add -A takes no paths"
+        {} -> Err "usage: add [-A] <path>..."
+        _ ->
+            if rest.any((a): a.starts_with("-")):
+                Err "usage: add only accepts -A (use ./ for a path beginning with '-')"
+            else:
+                _add_paths(fs, prefix, rest)
+
+_status_cmd: (fs: Fs) !-> Result Output String =
+    _ <- _ensure_repo(fs).try()
+    head <- _read_head(fs).try()
+    head_map <- _head_entries(fs, head).try()
+    index <- _read_index(fs).try()
+    rules <- _load_ignore(fs).try()
+    tracked := Set.of(_dict_keys(head_map) ++ _dict_keys(index))
+    work_text <- _read_work(fs, rules, tracked).try()
+    work_map := work_text.map((p, text): _blob_id(text))
+    Ok (Lines (_status_lines(_classify_status(head_map, index, work_map))))
+
+_parse_commit_args: (rest: []String) -> Result String String =
+    case rest:
+        {"-m", msg} ->
+            if msg.trim() == "":
+                Err "commit message must not be empty"
+            else:
+                Ok msg
+        {"-m"} -> Err "usage: commit -m requires a message"
+        {"-m", ..} -> Err "usage: commit -m <message> (quote the message)"
+        {} -> Err "usage: commit -m <message>"
+        {flag, ..} ->
+            if flag.starts_with("-"):
+                Err "usage: commit does not support option {flag}"
+            else:
+                Err "usage: commit -m <message>"
+
+_commit_cmd: (fs: Fs, rest: []String) !-> Result Output String =
+    _ <- _ensure_repo(fs).try()
+    message <- _parse_commit_args(rest).try()
+    index <- _read_index(fs).try()
+    head <- _read_head(fs).try()
+    committed <- _head_entries(fs, head).try()
+    if _same_entries(index, committed):
+        Err "nothing staged to commit"
+    else:
+        tree := _tree_from_entries(index)
+        tree_id <- _write_object(fs, TreeKind, _encode_tree(tree)).try()
+        parent_commit <- _commit_of_head(fs, head).try()
+        commit := _make_commit(head, parent_commit, tree_id, message)
+        cid <- _write_object(fs, CommitKind, _encode_commit(commit)).try()
+        _ <- _write_head(fs, cid).try()
+        _ <- _write_index(fs, index).try()
+        Ok (Lines {cid})
+
+_log_cmd: (fs: Fs) !-> Result Output String =
+    _ <- _ensure_repo(fs).try()
+    head <- _read_head(fs).try()
+    commits <- _load_commits(fs).try()
+    ids <- _chain(head, commits, commits.length() + 1).try()
+    if ids.length() == 0:
+        Ok (Lines {"no commits"})
+    else:
+        Ok (Lines (_log_lines(ids, commits)))
+
+_diff_against: (fs: Fs, base: [String]String, work_text: [String]String,
+                work_ids: [String]String) !-> Result Output String =
+    paths := _changed_paths(base, work_ids)
+    if paths.length() == 0:
+        Ok (Lines {"no changes"})
+    else:
+        inputs <- _make_diff_inputs(fs, base, work_text, paths).try()
+        Ok (Lines (_diff_lines(inputs)))
+
+_diff_input: (fs: Fs, base: [String]String, work: [String]String,
+              p: String) !-> Result DiffInput String =
+    old <- _base_text(fs, base, p).try()
+    Ok {path: p, old: old, new: work.get(p)}
+
+_append_diff: (fs: Fs, acc: Result ([]DiffInput) String,
+               base: [String]String, work: [String]String,
+               p: String) !-> Result ([]DiffInput) String =
+    cur <- acc.try()
+    d <- _diff_input(fs, base, work, p).try()
+    Ok (cur ++ {d})
+
+_make_diff_inputs: (fs: Fs, base: [String]String, work: [String]String,
+                    paths: []String) !-> Result ([]DiffInput) String =
+    paths.fold(Ok _empty_diffs, (acc, p): _append_diff(fs, acc, base, work, p))
+
+_diff_worktree: (fs: Fs, base: [String]String) !-> Result Output String =
+    rules <- _load_ignore(fs).try()
+    tracked := Set.of(_dict_keys(base))
+    work_text <- _read_work(fs, rules, tracked).try()
+    work_ids := work_text.map((p, text): _blob_id(text))
+    _diff_against(fs, base, work_text, work_ids)
+
+_diff_cmd: (fs: Fs, rest: []String) !-> Result Output String =
+    _ <- _ensure_repo(fs).try()
+    case rest:
+        {} ->
+            base <- _read_index(fs).try()
+            _diff_worktree(fs, base)
+        {spec} ->
+            if spec.starts_with("-"):
+                Err "usage: diff does not support option {spec}"
+            else:
+                cid <- _resolve_commit(fs, spec).try()
+                c <- _load_commit(fs, cid).try()
+                t <- _load_tree(fs, c.tree).try()
+                _diff_worktree(fs, t.entries)
+        _ -> Err "usage: diff [<commit>]"
+
+_split_cat_arg: (arg: String) -> Result ([String, String]) String =
+    parts := arg.split(":")
+    case parts:
+        {commit, ..rest} if rest.length() > 0 ->
+            Ok {commit, rest.join(":")}
+        _ -> Err "usage: cat <commit>:<path>"
+
+_cat_cmd: (fs: Fs, prefix: String, rest: []String) !-> Result Output String =
+    _ <- _ensure_repo(fs).try()
+    case rest:
+        {arg} ->
+            parts <- _split_cat_arg(arg).try()
+            (spec, raw_path) = parts
+            path <- _validate_arg_path(prefix, raw_path).try()
+            cid <- _resolve_commit(fs, spec).try()
+            c <- _load_commit(fs, cid).try()
+            t <- _load_tree(fs, c.tree).try()
+            blob <- _tree_blob_id(t, path, cid).try()
+            text <- _load_blob(fs, blob).try()
+            Ok (Raw text)
+        _ -> Err "usage: cat <commit>:<path>"
+
+_restore_cmd: (fs: Fs, prefix: String, rest: []String) !-> Result Output String =
+    _ <- _ensure_repo(fs).try()
+    case rest:
+        {spec, raw_path} ->
+            path <- _validate_arg_path(prefix, raw_path).try()
+            cid <- _resolve_commit(fs, spec).try()
+            c <- _load_commit(fs, cid).try()
+            t <- _load_tree(fs, c.tree).try()
+            blob <- _tree_blob_id(t, path, cid).try()
+            text <- _load_blob(fs, blob).try()
+            _write_restored(fs, path, text, cid)
+        _ -> Err "usage: restore <commit> <path>"
+
+/// Create `parent` when the path has one; "" means the path sits at the
+/// repository root and needs no directory.
+_ensure_parent: (fs: Fs, parent: String) !-> Result _ String =
+    if parent == "":
+        Ok _
+    else:
+        fs.mkdir_all(parent).map_err((e): "create {parent}: {e}")
+
+/// Write the committed text back into the working tree, creating the path's
+/// parent directory when it has one, and report the restore.
+_write_restored: (fs: Fs, path: String, text: String, cid: String) !-> Result Output String =
+    parent := _parent_dir(path)
+    _ <- _ensure_parent(fs, parent).try()
+    _ <- fs.write(path, text).map_err((e): "restore {path}: {e}").try()
+    Ok (Lines {"restored {path} from {cid}"})
+
+_help_lines: []String = {
+    "usage: ekogit <command> [args]",
+    "",
+    "commands:",
+    "  init                        create .ekogit in the current directory",
+    "  add [-A] <path>...          stage files or directories recursively",
+    "  status                      show staged, unstaged, and untracked paths",
+    "  commit -m <message>         commit the staged tree",
+    "  log                         list commits, newest first",
+    "  diff [<commit>]             diff the working tree vs the index or a commit",
+    "  restore <commit> <path>     write a committed blob into the working tree",
+    "  cat <commit>:<path>         print a committed blob",
+    "  help                        show this help",
+    "",
+    "Commit ids are 16-digit FNV-1a 64-bit hashes; a unique prefix is accepted.",
+    "Commits may also be named HEAD or HEAD~<n>. Commands find the enclosing",
+    "repository from any subdirectory. Paths in .ekogit/ignore are skipped by",
+    "add -A and status. This is a toy, not git: no branches or remotes."}
+
+_route: (fs: Fs, prefix: String, cmd: String, rest: []String) !-> Result Output String =
+    case cmd:
+        "init" ->
+            if rest.length() == 0: _init_cmd(fs) else: Err "usage: init takes no arguments"
+        "add" -> _add_cmd(fs, prefix, rest)
+        "status" ->
+            if rest.length() == 0: _status_cmd(fs) else: Err "usage: status takes no arguments"
+        "commit" -> _commit_cmd(fs, rest)
+        "log" ->
+            if rest.length() == 0: _log_cmd(fs) else: Err "usage: log takes no arguments"
+        "diff" -> _diff_cmd(fs, rest)
+        "restore" -> _restore_cmd(fs, prefix, rest)
+        "cat" -> _cat_cmd(fs, prefix, rest)
+        "help" | "--help" | "-h" ->
+            if rest.length() == 0:
+                Ok (Lines _help_lines)
+            else:
+                Err "usage: help takes no arguments"
+        _ -> Err "usage: unknown command: {cmd} (try 'ekogit help')"
+
+/// Commands that need an enclosing repository. `init` creates one in the
+/// current directory, and help/unknown-command handling does not need one.
+_needs_repo: (cmd: String) -> Bool =
+    case cmd:
+        "add" | "status" | "commit" | "log" | "diff" | "restore" | "cat" -> True
+        _ -> False
+
+_run: (fs: Fs, argv: []String) !-> Result Output String =
+    case argv:
+        {} -> Ok (Lines _help_lines)
+        {cmd, ..rest} ->
+            if _needs_repo(cmd):
+                pair <- _open_repo(fs).try()
+                (repo_fs, prefix) = pair
+                _route(repo_fs, prefix, cmd, rest)
+            else:
+                _route(fs, "", cmd, rest)
+
+/// Usage errors exit 2, matching ekogrep and ekodiff; repository and I/O
+/// failures exit 1.
+_error_status: (message: String) -> Int =
+    if message.starts_with("usage:"): 2 else: 1
+
+/// Print one command's output and return the exit status: 0 on success, 2
+/// for a usage error, 1 for any other failure. A failure prints one
+/// diagnostic line on `err` and nothing on `out`.
+_run_status: (out: Out, err: Out, fs: Fs, argv: []String) !-> Int =
+    case _run(fs, argv):
+        Ok (Lines lines) ->
+            lines.each((l): out.println(l))
+            0
+        Ok (Raw text) ->
+            out.print(text)
+            0
+        Err e ->
+            err.println("error: {e}")
+            _error_status(e)
+
+// The parameter list is the authorization manifest: output, arguments, the
+// file system, and the process exit channel. There is no other I/O entrance.
+// The error channel rides the Out session as host wiring, so the manifest
+// stays as written and diagnostics never mix into the command output.
+main: (out: Out, args: Args, fs: Fs, proc: Proc) ! =
+    code := _run_status(out, Out.err(), fs, args.all())
+    Proc.exit(proc, code)
+
+// -------------------------------------------------------------------- tests
+
+hash_vectors: test =
+    assert_eq(_hash_hex("hello"), "a430d84680aabd0b")
+    assert_eq(_hash_hex(""), "cbf29ce484222325")
+    assert_eq(_hash_hex("a"), "af63dc4c8601ec8c")
+    assert_eq(_hash_hex("héllo"), "a35ff71f960240e0")
+    assert_ne(_hash_hex("a"), _hash_hex("b"))
+    assert_eq(_fnv1a("hello").to_hex(), "a430d84680aabd0b")
+
+object_ids: test =
+    hello_id := _object_id(BlobKind, "hello")
+    assert_eq(hello_id, "1e2018d700a90b18")
+    assert_eq(hello_id, _hash_hex("blob\nhello"))
+    assert_eq(hello_id.length(), 16)
+    assert_eq(_object_id(BlobKind, "hello"), hello_id)
+    assert_ne(_object_id(TreeKind, "hello"), hello_id)
+    assert_ne(_object_id(CommitKind, "hello"), _object_id(TreeKind, "hello"))
+    assert_eq(_object_id(TreeKind, "\{}"), _hash_hex("tree\n\{}"))
+
+tree_ordering: test =
+    entries: [String]String = {"z.txt": "3", "a.txt": "1", "m/n.txt": "2"}
+    t := _tree_from_entries(entries)
+    assert_eq(_encode_tree(t), "\{\"entries\":\{\"a.txt\":\"1\",\"m/n.txt\":\"2\",\"z.txt\":\"3\"}}")
+    assert_eq(_decode_tree(_encode_tree(t)), Ok t)
+    other: [String]String = {"a.txt": "1", "z.txt": "3", "m/n.txt": "2"}
+    assert(_same_entries(entries, other))
+
+commit_round_trip: test =
+    c1: Commit = _make_commit(None, None, "0123456789abcdef", "first")
+    assert_eq(c1.seq, 1)
+    assert_eq(c1.parent, None)
+    assert_eq(_decode_commit(_encode_commit(c1)), Ok c1)
+    c2 := _make_commit(Some "0123456789abcdef", Some c1, "fedcba9876543210", "second \"quoted\"\nline")
+    assert_eq(c2.seq, 2)
+    assert_eq(c2.parent, Some "0123456789abcdef")
+    assert_eq(_decode_commit(_encode_commit(c2)), Ok c2)
+    assert_eq(_next_seq(None), 1)
+    assert_eq(_next_seq(Some c2), 3)
+
+commit_chain: test =
+    c1: Commit = {parent: None, tree: "t1", message: "one", seq: 1}
+    c2: Commit = {parent: Some "aaaaaaaaaaaaaaaa", tree: "t2", message: "two", seq: 2}
+    c3: Commit = {parent: Some "bbbbbbbbbbbbbbbb", tree: "t3", message: "three", seq: 3}
+    commits: [String]Commit =
+        {"aaaaaaaaaaaaaaaa": c1, "bbbbbbbbbbbbbbbb": c2, "cccccccccccccccc": c3}
+    ids := _chain(Some "cccccccccccccccc", commits, 4).expect("chain")
+    assert_eq(ids, {"cccccccccccccccc", "bbbbbbbbbbbbbbbb", "aaaaaaaaaaaaaaaa"})
+    assert_eq(_log_lines(ids, commits).get(0), Some "cccccccccccccccc  seq 3  three")
+    assert(_chain(Some "dddddddddddddddd", commits, 4).is_err())
+    cyc1: Commit = {parent: Some "cccccccccccccccc", tree: "t", message: "a", seq: 1}
+    cyc3: Commit = {parent: Some "aaaaaaaaaaaaaaaa", tree: "t", message: "c", seq: 3}
+    cycle: [String]Commit =
+        {"aaaaaaaaaaaaaaaa": cyc1, "cccccccccccccccc": cyc3}
+    assert(_chain(Some "aaaaaaaaaaaaaaaa", cycle, 2).is_err())
+
+path_rules: test =
+    assert_eq(_normalize_repo_path("a/b.txt"), Ok "a/b.txt")
+    assert_eq(_normalize_repo_path("./a//b/./c.txt"), Ok "a/b/c.txt")
+    assert_eq(_normalize_repo_path("a/b/"), Ok "a/b")
+    assert_eq(_normalize_repo_path("."), Ok ".")
+    assert(_normalize_repo_path("").is_err())
+    assert(_normalize_repo_path("/etc/passwd").is_err())
+    assert(_normalize_repo_path("../escape").is_err())
+    assert(_normalize_repo_path("a/../../escape").is_err())
+    assert(_normalize_repo_path("a/../b").is_err())
+    assert_eq(_validate_arg_path("", "a/b"), Ok "a/b")
+    assert(_validate_arg_path("", ".ekogit/index.json").is_err())
+    assert_eq(_rebase_repo_path("", "a/b"), Ok "a/b")
+    assert_eq(_rebase_repo_path("sub/dir", "a.txt"), Ok "sub/dir/a.txt")
+    assert_eq(_rebase_repo_path("sub/dir", "../a.txt"), Ok "sub/a.txt")
+    assert_eq(_rebase_repo_path("sub/dir", "../../a.txt"), Ok "a.txt")
+    assert(_rebase_repo_path("sub", "../../../a.txt").is_err())
+    assert(_validate_arg_path("sub", "../.ekogit/index.json").is_err())
+    assert_eq(_parent_abs("/home/user/repo/src"), Some "/home/user/repo")
+    assert_eq(_parent_abs("/home"), Some "/")
+    assert_eq(_parent_abs("/"), None)
+    assert_eq(_relative_prefix("/home/user/repo", "/home/user/repo"), "")
+    assert_eq(_relative_prefix("/home/user/repo", "/home/user/repo/a/b"), "a/b")
+    assert_eq(_relative_prefix("/", "/home"), "home")
+    assert_eq(_parent_dir("a/b/c.txt"), "a/b")
+    assert_eq(_parent_dir("file.txt"), "")
+    assert_eq(_split_cat_arg("0123456789abcdef:a/b:c.txt"), Ok {"0123456789abcdef", "a/b:c.txt"})
+    assert(_split_cat_arg("nocolon").is_err())
+
+status_classes: test =
+    head: [String]String =
+        {"both.txt": "b1", "del.txt": "d1", "gone.txt": "g1",
+         "keep.txt": "k1", "mod.txt": "m1", "staged.txt": "s1"}
+    index: [String]String =
+        {"both.txt": "b2", "keep.txt": "k1", "mod.txt": "m2",
+         "staged_add.txt": "a1", "staged_add_gone.txt": "q1"}
+    work: [String]String =
+        {"both.txt": "b3", "keep.txt": "k1", "mod.txt": "m2",
+         "new.txt": "n1", "staged_add.txt": "a1"}
+    r := _classify_status(head, index, work)
+    assert_eq(r.staged_added, {"staged_add.txt", "staged_add_gone.txt"})
+    assert_eq(r.staged_modified, {"both.txt", "mod.txt"})
+    assert_eq(r.staged_deleted, {"del.txt", "gone.txt", "staged.txt"})
+    assert_eq(r.unstaged_modified, {"both.txt"})
+    assert_eq(r.unstaged_deleted, {"staged_add_gone.txt"})
+    assert_eq(r.untracked, {"new.txt"})
+    empty: [String]String = {}
+    clean := _classify_status(empty, empty, empty)
+    assert_eq(_status_lines(clean), {"nothing to commit, working tree clean"})
+
+status_rendering: test =
+    head: [String]String = {"old.txt": "o1"}
+    index: [String]String = {"new.txt": "n1", "old.txt": "o2"}
+    work: [String]String = {"new.txt": "n1", "untracked.txt": "u1"}
+    r := _classify_status(head, index, work)
+    assert_eq(_status_lines(r),
+        {"changes staged for commit:",
+         "  added: new.txt",
+         "  modified: old.txt",
+         "changes not staged for commit:",
+         "  deleted: old.txt",
+         "untracked files:",
+         "  untracked.txt"})
+
+diff_modified: test =
+    assert_eq(_diff_text("f.txt", Some "a\nb\nc\n", Some "a\nc\nd\n"),
+        {"diff --git a/f.txt b/f.txt",
+         "--- a/f.txt",
+         "+++ b/f.txt",
+         "@@ -1,3 +1,3 @@",
+         " a",
+         "-b",
+         " c",
+         "+d"})
+    assert_eq(_diff_text("r.txt", Some "old\n", Some "new\n"),
+        {"diff --git a/r.txt b/r.txt",
+         "--- a/r.txt",
+         "+++ b/r.txt",
+         "@@ -1,1 +1,1 @@",
+         "-old",
+         "+new"})
+
+diff_added_deleted: test =
+    assert_eq(_diff_text("new.txt", None, Some "x\ny\n"),
+        {"diff --git a/new.txt b/new.txt",
+         "--- /dev/null",
+         "+++ b/new.txt",
+         "@@ -0,0 +1,2 @@",
+         "+x",
+         "+y"})
+    assert_eq(_diff_text("old.txt", Some "x\n", None),
+        {"diff --git a/old.txt b/old.txt",
+         "--- a/old.txt",
+         "+++ /dev/null",
+         "@@ -1,1 +0,0 @@",
+         "-x"})
+    assert_eq(_diff_text("empty.txt", Some "", Some ""),
+        {"diff --git a/empty.txt b/empty.txt",
+         "--- a/empty.txt",
+         "+++ b/empty.txt",
+         "@@ -0,0 +0,0 @@"})
+
+diff_order: test =
+    inputs: []DiffInput =
+        {{path: "b.txt", old: None, new: Some "b\n"},
+         {path: "a.txt", old: None, new: Some "a\n"}}
+    lines := _diff_lines(inputs)
+    assert_eq(lines,
+        {"diff --git a/a.txt b/a.txt",
+         "--- /dev/null",
+         "+++ b/a.txt",
+         "@@ -0,0 +1,1 @@",
+         "+a",
+         "diff --git a/b.txt b/b.txt",
+         "--- /dev/null",
+         "+++ b/b.txt",
+         "@@ -0,0 +1,1 @@",
+         "+b"})
+    assert_eq(_changed_paths({"a": "1", "b": "2"}, {"a": "1", "b": "3", "c": "4"}),
+        {"b", "c"})
+
+diff_pure_insertion: test =
+    assert_eq(_diff_text("f.txt", Some "a\nb\nc\n", Some "a\nx\nb\nc\n"),
+        {"diff --git a/f.txt b/f.txt",
+         "--- a/f.txt",
+         "+++ b/f.txt",
+         "@@ -1,3 +1,4 @@",
+         " a",
+         "+x",
+         " b",
+         " c"})
+    assert_eq(_diff_text("f.txt", Some "a\nb\nc\n", Some "x\na\nb\nc\n").drop(4),
+        {"+x", " a", " b", " c"})
+
+diff_pure_deletion: test =
+    assert_eq(_diff_text("f.txt", Some "a\nx\nb\nc\n", Some "a\nb\nc\n"),
+        {"diff --git a/f.txt b/f.txt",
+         "--- a/f.txt",
+         "+++ b/f.txt",
+         "@@ -1,4 +1,3 @@",
+         " a",
+         "-x",
+         " b",
+         " c"})
+    assert_eq(_diff_text("f.txt", Some "x\na\nb\nc\n", Some "a\nb\nc\n").drop(4),
+        {"-x", " a", " b", " c"})
+
+diff_change_first_last: test =
+    assert_eq(_diff_text("f.txt", Some "a\nb\nc\n", Some "A\nb\nc\n").drop(4),
+        {"-a", "+A", " b", " c"})
+    assert_eq(_diff_text("f.txt", Some "a\nb\nc\n", Some "a\nb\nC\n").drop(4),
+        {" a", " b", "-c", "+C"})
+
+diff_identical_all_same: test =
+    assert_eq(_diff_text("f.txt", Some "a\nb\n", Some "a\nb\n"),
+        {"diff --git a/f.txt b/f.txt",
+         "--- a/f.txt",
+         "+++ b/f.txt",
+         "@@ -1,2 +1,2 @@",
+         " a",
+         " b"})
+    assert_eq(_diff_text("f.txt", Some "", Some ""),
+        {"diff --git a/f.txt b/f.txt",
+         "--- a/f.txt",
+         "+++ b/f.txt",
+         "@@ -0,0 +0,0 @@"})
+
+text_line_splitting: test =
+    assert_eq("a\nb\nc\n".lines(), {"a", "b", "c"})
+    assert_eq("a\nb\nc".lines(), {"a", "b", "c"})
+    assert_eq("".lines(), {})
+    assert_eq("\n".lines(), {""})
+    assert_eq("\n\n".lines(), {"", ""})
+    assert_eq("a\n\nb".lines(), {"a", "", "b"})
+    assert_eq("\na".lines(), {"", "a"})
+    assert_eq("a\n".lines(), {"a"})
+
+diff_empty_to_content: test =
+    assert_eq(_diff_text("e.txt", Some "", Some "x\ny\n"),
+        {"diff --git a/e.txt b/e.txt",
+         "--- a/e.txt",
+         "+++ b/e.txt",
+         "@@ -0,0 +1,2 @@",
+         "+x",
+         "+y"})
+
+// On duplicate-heavy content several minimal edit scripts exist. The Myers
+// frontier is furthest-reaching, so which occurrences of a repeated line are
+// matched follows from the frontier rule, and the edit count is the same for
+// every minimal script (here: 3 Same, 3 Del, 3 Add). This pins the Myers
+// interleaving as deliberate.
+diff_myers_equal_cost_order: test =
+    assert_eq(_diff_text("f.txt", Some "x\nx\nx\ny\ny\nz\n", Some "x\ny\nx\ny\nx\nw\n").drop(4),
+        {" x",
+         "+y",
+         " x",
+         "-x",
+         " y",
+         "-y",
+         "-z",
+         "+x",
+         "+w"})
+
+index_json: test =
+    d: [String]String = {"a": "1", "b": "2"}
+    assert_eq(_encode_index(d), "\{\"a\":\"1\",\"b\":\"2\"}")
+    assert_eq(_decode_index(_encode_index(d)), Ok d)
+    assert_eq(_decode_index("\{}"), Ok _empty_entries)
+    assert(_decode_index("[]").is_err())
+    assert(_decode_index("\{\"a\":1}").is_err())
+    assert(_decode_index("not json").is_err())
+
+prefix_resolution: test =
+    c1: Commit = {parent: None, tree: "t1", message: "one", seq: 1}
+    c2: Commit = {parent: None, tree: "t2", message: "two", seq: 2}
+    c3: Commit = {parent: None, tree: "t3", message: "three", seq: 3}
+    commits: [String]Commit =
+        {"aaaaaaaaaaaaaaaa": c1, "aaaaaaabaaaaaaaa": c2, "bbbbbbbbbbbbbbbb": c3}
+    assert_eq(_resolve_commit_prefix("bbbb", commits), Ok "bbbbbbbbbbbbbbbb")
+    assert_eq(_resolve_commit_prefix("bbbbbbbbbbbbbbbb", commits), Ok "bbbbbbbbbbbbbbbb")
+    assert(_resolve_commit_prefix("aaa", commits).is_err())
+    assert(_resolve_commit_prefix("cccc", commits).is_err())
+    assert(_resolve_commit_prefix("NOTHEX", commits).is_err())
+    assert(_resolve_commit_prefix("", commits).is_err())
+
+symbolic_refs: test =
+    c1: Commit = {parent: None, tree: "t1", message: "one", seq: 1}
+    c2: Commit = {parent: Some "aaaaaaaaaaaaaaaa", tree: "t2", message: "two", seq: 2}
+    c3: Commit = {parent: Some "bbbbbbbbbbbbbbbb", tree: "t3", message: "three", seq: 3}
+    commits: [String]Commit =
+        {"aaaaaaaaaaaaaaaa": c1, "bbbbbbbbbbbbbbbb": c2, "cccccccccccccccc": c3}
+    head: Option String = Some "cccccccccccccccc"
+    assert_eq(_resolve_commit_spec("HEAD", head, commits), Ok "cccccccccccccccc")
+    assert_eq(_resolve_commit_spec("HEAD~1", head, commits), Ok "bbbbbbbbbbbbbbbb")
+    assert_eq(_resolve_commit_spec("HEAD~2", head, commits), Ok "aaaaaaaaaaaaaaaa")
+    assert(_resolve_commit_spec("HEAD~3", head, commits).is_err())
+    assert(_resolve_commit_spec("HEAD~", head, commits).is_err())
+    assert(_resolve_commit_spec("HEAD~x", head, commits).is_err())
+    assert(_resolve_commit_spec("HEAD~-1", head, commits).is_err())
+    assert(_resolve_commit_spec("HEAD", None, commits).is_err())
+    assert_eq(_resolve_commit_spec("bbbb", head, commits), Ok "bbbbbbbbbbbbbbbb")
+
+ignore_rules: test =
+    rules: []String = {"build/", "*.log", "tmp", "/vendor/*.o"}
+    assert(_ignore_match("build/", "build/out/app"))
+    assert(_ignore_match("build/", "build"))
+    assert(_ignore_match("build/", "src/build/out").not())
+    assert(_ignore_match("*.log", "server.log"))
+    assert(_ignore_match("*.log", "logs/server.log"))
+    assert(_ignore_match("*.log", "server.log.old").not())
+    assert(_ignore_match("tmp", "a/b/tmp"))
+    assert(_ignore_match("tmp", "a/tmp/file.txt"))
+    assert(_ignore_match("tmp", "attempt.txt").not())
+    assert(_ignore_match("/vendor/*.o", "vendor/x.o"))
+    assert(_ignore_match("/vendor/*.o", "src/vendor/x.o").not())
+    assert(_ignore_match("a?c", "abc"))
+    assert(_ignore_match("a?c", "ac").not())
+    assert(_is_ignored(rules, "build/x"))
+    assert(_is_ignored(rules, "deep/dir/x.log"))
+    assert(_is_ignored(rules, "keep.txt").not())
+
+usage_exit_status: test =
+    assert_eq(_error_status("usage: unknown command: x"), 2)
+    assert_eq(_error_status("not an ekogit repository (run 'ekogit init')"), 1)
+    assert_eq(_error_status("read object abc: not found"), 1)
+    assert_eq(_needs_repo("add"), True)
+    assert_eq(_needs_repo("init"), False)
+    assert_eq(_needs_repo("help"), False)
+
+help_is_not_empty: test =
+    assert(_help_lines.length() > 10)
+    assert_eq(_help_lines.get(0), Some "usage: ekogit <command> [args]")
+
+// ----------------------------------------------------------- dispatch tests
+
+commit_args_success: test =
+    assert_eq(_parse_commit_args({"-m", "hello"}), Ok "hello")
+    assert_eq(_parse_commit_args({"-m", "  spaced  "}), Ok "  spaced  ")
+
+commit_args_empty_message: test =
+    assert_eq(_parse_commit_args({"-m", "   "}), Err "commit message must not be empty")
+    assert_eq(_error_status("commit message must not be empty"), 1)
+
+commit_args_usage_errors: test =
+    assert_eq(_parse_commit_args({}), Err "usage: commit -m <message>")
+    assert_eq(_parse_commit_args({"-m"}), Err "usage: commit -m requires a message")
+    assert_eq(_parse_commit_args({"-m", "a", "b"}),
+        Err "usage: commit -m <message> (quote the message)")
+    assert_eq(_parse_commit_args({"-x"}), Err "usage: commit does not support option -x")
+    assert_eq(_parse_commit_args({"stage it"}), Err "usage: commit -m <message>")
+    assert_eq(_error_status("usage: commit does not support option -x"), 2)
+
+route_help_commands: test =
+    assert_eq(_route(Fs.null(), "", "help", {}), Ok (Lines _help_lines))
+    assert_eq(_route(Fs.null(), "", "--help", {}), Ok (Lines _help_lines))
+    assert_eq(_route(Fs.null(), "", "-h", {}), Ok (Lines _help_lines))
+
+route_arity_errors: test =
+    assert_eq(_route(Fs.null(), "", "init", {"x"}), Err "usage: init takes no arguments")
+    assert_eq(_route(Fs.null(), "", "status", {"x"}), Err "usage: status takes no arguments")
+    assert_eq(_route(Fs.null(), "", "log", {"x"}), Err "usage: log takes no arguments")
+    assert_eq(_route(Fs.null(), "", "help", {"x"}), Err "usage: help takes no arguments")
+    assert_eq(_error_status("usage: status takes no arguments"), 2)
+
+route_unknown_command: test =
+    assert_eq(_route(Fs.null(), "", "bogus", {}),
+        Err "usage: unknown command: bogus (try 'ekogit help')")
+
+run_no_args_shows_help: test =
+    case _run(Fs.null(), {}):
+        Ok (Lines lines) -> assert_eq(lines, _help_lines)
+        _ -> panic("expected the help text")
+    case _run(Fs.null(), {"help"}):
+        Ok (Lines lines) -> assert_eq(lines, _help_lines)
+        _ -> panic("expected the help text")
+    case _run(Fs.null(), {"--help"}):
+        Ok (Lines lines) -> assert_eq(lines, _help_lines)
+        _ -> panic("expected the help text")
+
+run_status_no_args_is_zero: test =
+    status := _run_status(Out.null(), Out.null(), Fs.null(), {})
+    assert_eq(status, 0)
+
+run_status_unknown_command: test =
+    err := Out.tee(Out.null(),
+        (s): assert_eq(s, "error: usage: unknown command: bogus (try 'ekogit help')"))
+    status := _run_status(Out.null(), err, Fs.null(), {"bogus"})
+    assert_eq(status, 2)
+
+run_status_init_rejects_arguments: test =
+    err := Out.tee(Out.null(), (s): assert_eq(s, "error: usage: init takes no arguments"))
+    status := _run_status(Out.null(), err, Fs.null(), {"init", "x"})
+    assert_eq(status, 2)
+
+run_status_init_without_repo: test =
+    err := Out.tee(Out.null(), (s): assert(s.contains("error: create .ekogit/objects:")))
+    status := _run_status(Out.null(), err, Fs.null(), {"init"})
+    assert_eq(status, 1)
+
+run_status_repo_command_without_repo: test =
+    err := Out.tee(Out.null(), (s): assert(s.contains("error: resolve working directory:")))
+    status := _run_status(Out.null(), err, Fs.null(), {"status"})
+    assert_eq(status, 1)

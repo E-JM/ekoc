@@ -1,0 +1,76 @@
+// The wire-format stamps: the RFC 3164 header form and the RFC 5424
+// ISO form, plus the month table the reader validates the legacy
+// header against. An entry keeps its stamp as written, so nothing
+// here re-renders a stamp that was parsed.
+
+import std/time
+
+_month_names: []String = {
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"}
+
+// The index of the first equal month name, or None.
+month_index: (name: String) -> Option Int =
+    _month_loop(_month_names, name, 0)
+
+_month_loop: (xs: []String, s: String, i: Int) -> Option Int =
+    case xs:
+        {} -> None
+        {h, ..rest} -> if h == s: Some i else: _month_loop(rest, s, i + 1)
+
+// The civil date of a day count since 1970-01-01, floor-division
+// throughout, so dates before the epoch decompose the same way.
+_civil: (z0: Int) -> [y: Int, m: Int, d: Int] =
+    z := z0 + 719_468
+    era := z.div(146_097)
+    doe := z - era * 146_097
+    yoe := (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365
+    y0 := yoe + era * 400
+    doy := doe - (365 * yoe + yoe / 4 - yoe / 100)
+    mp := (5 * doy + 2) / 153
+    d := doy - (153 * mp + 2) / 5 + 1
+    m := if mp < 10: mp + 3 else: mp - 9
+    y := if m <= 2: y0 + 1 else: y0
+    {y: y, m: m, d: d}
+
+// The time of day of a nanosecond count within one day: two digits each.
+_clock: (day_ns: Int) -> String =
+    hh := "{day_ns / 3_600_000_000_000}".pad_left(2, '0')
+    mm := "{(day_ns % 3_600_000_000_000) / 60_000_000_000}".pad_left(2, '0')
+    ss := "{(day_ns % 60_000_000_000) / 1_000_000_000}".pad_left(2, '0')
+    "{hh}:{mm}:{ss}"
+
+// The RFC 3164 header stamp: the month name, a space-padded day, and the
+// clock, in UTC.
+stamp_3164: (t: Time) -> String =
+    n := t.to_ns()
+    date := _civil(n.div(86_400_000_000_000))
+    mon := _month_names.get(date.m - 1).unwrap_or("Jan")
+    day := "{date.d}".pad_left(2, ' ')
+    "{mon} {day} {_clock(n.mod(86_400_000_000_000))}"
+
+// The RFC 5424 stamp is the ISO 8601 UTC display of the time itself.
+stamp_5424: (t: Time) -> String = t.show()
+
+// --------------------------------------------------------------------- tests
+
+civil_dates: test =
+    assert_eq(_civil(0), {y: 1970, m: 1, d: 1})
+    assert_eq(_civil(31), {y: 1970, m: 2, d: 1})
+    assert_eq(_civil(365), {y: 1971, m: 1, d: 1})
+    assert_eq(_civil(19_723), {y: 2024, m: 1, d: 1})
+    assert_eq(_civil(-1), {y: 1969, m: 12, d: 31})
+    assert_eq(_civil(-719_468), {y: 0, m: 3, d: 1})
+
+stamp_3164_cases: test =
+    assert_eq(stamp_3164(Time 0), "Jan  1 00:00:00")
+    assert_eq(stamp_3164(Time 1_704_067_200_000_000_000), "Jan  1 00:00:00")
+    assert_eq(stamp_3164(Time 1_704_067_261_500_000_000), "Jan  1 00:01:01")
+    assert_eq(stamp_3164(Time 86_399_000_000_000), "Jan  1 23:59:59")
+    assert_eq(stamp_3164(Time (0 - 1)), "Dec 31 23:59:59")
+
+month_index_cases: test =
+    assert_eq(month_index("Nov"), Some 10)
+    assert_eq(month_index("Dec"), Some 11)
+    assert_eq(month_index("Xyz"), None)
+    assert_eq(month_index("Jan"), Some 0)

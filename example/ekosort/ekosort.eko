@@ -1,0 +1,759 @@
+// ekosort: a sort utility with multi-key ordering, numeric and folded
+// comparison, and stable equal-key handling.
+//
+//   ekosort [options] [file ...]
+//
+// All inputs are concatenated into one line sequence, decorated with the
+// key values the `-k` specifications select, and sorted with a stable
+// comparator. The command layer is pure: arguments parse into Config and
+// Invocation, the decorated sequence is sorted as a value, and only main
+// and its explicit helpers touch the capabilities.
+//
+// Comparison follows the reference implementation's model: keys are
+// compared through the specification list in order; when every key is
+// equal the whole line breaks the tie unless -u asked for key-only
+// equality. Numeric keys parse the leading numeric prefix and treat
+// garbage as zero. Folded comparison lowercases ASCII letters.
+//
+// Module: ekosort (the file is the module).
+
+// ------------------------------------------------------------------- core
+
+/// One half-open char span of a field inside a line.
+FieldSpan: type = [lo: Int, hi: Int]
+
+/// One key specification: the field range (0 means line start or end), the
+/// 1-based character positions inside the edge fields, the blank skip, and
+/// the flag overrides (None inherits the global flag).
+KeySpec: type = [
+    from: Int,
+    from_char: Int,
+    to: Int,
+    to_char: Int,
+    blank: Bool,
+    numeric: Option Bool,
+    reverse: Option Bool,
+    fold: Option Bool]
+
+/// One line's whole-line key, used when no -k is given.
+_whole_line_spec: KeySpec = {
+    from: 0,
+    from_char: 0,
+    to: 0,
+    to_char: 0,
+    blank: False,
+    numeric: None,
+    reverse: None,
+    fold: None}
+
+/// One extracted key: the comparison text (already folded when the spec
+/// folds) and the parsed numeric prefix.
+KeyVal: type = [text: String, num: Float]
+
+/// One decorated line: the original text and its key values, in the same
+/// order as the specification list.
+Decorated: type = [line: String, keys: []KeyVal]
+
+_zero_kv: KeyVal = {text: "", num: 0.0}
+
+// ------------------------------------------------------------ field spans
+
+_int_max: (a: Int, b: Int) -> Int = if a > b: a else: b
+
+_int_min: (a: Int, b: Int) -> Int = if a < b: a else: b
+
+_is_blank: (c: Char) -> Bool = c == ' ' || c == '\t'
+
+_is_digit: (c: Char) -> Bool =
+    '0' <= c && c <= '9'
+
+// Fields under an explicit separator: every occurrence of the separator
+// ends a field, and empty fields are kept.
+_fields_sep: (cs: []Char, sep: Char, pos: Int, lo: Int, acc: []FieldSpan) -> []FieldSpan =
+    case cs:
+        {} -> acc.reverse() ++ {{lo: lo, hi: pos}}
+        {c, ..rest} ->
+            if c == sep:
+                _fields_sep(rest, sep, pos + 1, pos + 1, {{lo: lo, hi: pos}} ++ acc)
+            else:
+                _fields_sep(rest, sep, pos + 1, lo, acc)
+
+// Fields under the default separator: each field is a maximal run of
+// non-blank characters; blanks only separate and belong to no field.
+_fields_blank: (cs: []Char, pos: Int, acc: []FieldSpan) -> []FieldSpan =
+    case cs:
+        {} -> acc.reverse()
+        {c, ..rest} ->
+            if _is_blank(c):
+                _fields_blank(rest, pos + 1, acc)
+            else:
+                _run_field(rest, pos + 1, pos, acc)
+
+_run_field: (cs: []Char, pos: Int, lo: Int, acc: []FieldSpan) -> []FieldSpan =
+    case cs:
+        {} -> acc.reverse() ++ {{lo: lo, hi: pos}}
+        {c, ..rest} ->
+            if _is_blank(c):
+                _fields_blank(rest, pos + 1, {{lo: lo, hi: pos}} ++ acc)
+            else:
+                _run_field(rest, pos + 1, lo, acc)
+
+_fields: (line: String, sep: Option Char) -> []FieldSpan =
+    case sep:
+        Some c -> _fields_sep(line.chars(), c, 0, 0, {})
+        None -> _fields_blank(line.chars(), 0, {})
+
+// ------------------------------------------------------------ key values
+
+_ascii_lower: (c: Char) -> Char =
+    code := Char.to_code(c)
+    if code >= 65 && code <= 90:
+        Char.from_code(code + 32).unwrap_or(c)
+    else:
+        c
+
+_folded: (s: String) -> String =
+    String.from_chars(s.chars().map((c): _ascii_lower(c)))
+
+_drop_blanks: (cs: []Char) -> []Char =
+    case cs:
+        {c, ..rest} if _is_blank(c) -> _drop_blanks(rest)
+        _ -> cs
+
+// The numeric prefix of a key: optional blanks and sign, then digits with
+// an optional fraction. Anything else stops the scan, and an empty prefix
+// is zero.
+_num_of_chars: (cs: []Char) -> Float =
+    digits := _num_signed(_drop_blanks(cs), {})
+    if digits.length() == 0:
+        0.0
+    else:
+        Float.parse(String.from_chars(digits)).unwrap_or(0.0)
+
+_num_digits: (cs: []Char, acc: []Char) -> []Char =
+    case cs:
+        {c, ..rest} if _is_digit(c) -> _num_digits(rest, {c} ++ acc)
+        {'.', ..rest} -> _num_frac(rest, {'.'} ++ acc)
+        _ -> acc.reverse()
+
+_num_frac: (cs: []Char, acc: []Char) -> []Char =
+    case cs:
+        {c, ..rest} if _is_digit(c) -> _num_frac(rest, {c} ++ acc)
+        _ -> acc.reverse()
+
+_num_signed: (cs: []Char, acc: []Char) -> []Char =
+    case cs:
+        {'-', ..rest} -> _num_signed(rest, {'-'} ++ acc)
+        {'+', ..rest} -> _num_signed(rest, acc)
+        _ -> _num_digits(cs, acc)
+
+// The key's char span. A missing field yields None, which the caller turns
+// into an empty key; a character position past the field end does the same.
+_key_span: (line: String, spans: []FieldSpan, spec: KeySpec) -> Option FieldSpan =
+    _key_start(spans, spec).and_then((lo):
+        _key_end(line, spans, spec).map((hi): {lo: lo, hi: hi}))
+
+_key_start: (spans: []FieldSpan, spec: KeySpec) -> Option Int =
+    if spec.from == 0:
+        Some 0
+    else:
+        case spans.get(spec.from - 1):
+            None -> None
+            Some sp ->
+                pos := sp.lo + _int_max(0, spec.from_char - 1)
+                if pos > sp.hi: None else: Some pos
+
+_key_end: (line: String, spans: []FieldSpan, spec: KeySpec) -> Option Int =
+    if spec.to == 0:
+        Some (String.length(line))
+    else:
+        case spans.get(spec.to - 1):
+            None -> Some (String.length(line))
+            Some sp ->
+                if spec.to_char == 0:
+                    Some (sp.hi)
+                else:
+                    Some (_int_min(sp.lo + spec.to_char, sp.hi))
+
+_key_of: (line: String, spans: []FieldSpan, spec: KeySpec) -> KeyVal =
+    case _key_span(line, spans, spec):
+        None -> _zero_kv
+        Some span ->
+            chars := _drop_blanks(String.slice(line, span.lo, span.hi - span.lo)
+                                      .unwrap_or("").chars())
+            text := String.from_chars(chars)
+            {text: if spec.fold.unwrap_or(False): _folded(text) else: text,
+             num: if spec.numeric.unwrap_or(False): _num_of_chars(chars) else: 0.0}
+
+_decorate: (line: String, specs: []KeySpec, sep: Option Char) -> Decorated =
+    spans := _fields(line, sep)
+    {line: line, keys: specs.map((spec): _key_of(line, spans, spec))}
+
+// ------------------------------------------------------------ comparison
+
+_kv_cmp: (a: KeyVal, b: KeyVal, spec: KeySpec) -> Int =
+    raw := if spec.numeric.unwrap_or(False):
+        _float_cmp(a.num, b.num)
+    else:
+        _text_cmp(a.text, b.text)
+    if spec.reverse.unwrap_or(False): Int.neg(raw) else: raw
+
+_float_cmp: (a: Float, b: Float) -> Int =
+    if a < b: -1 else:
+        if b < a: 1 else: 0
+
+_text_cmp: (a: String, b: String) -> Int =
+    if a < b: -1 else:
+        if b < a: 1 else: 0
+
+// Walk the specification list in order; the first unequal key decides.
+_specs_less: (a: []KeyVal, b: []KeyVal, specs: []KeySpec, i: Int) -> Bool =
+    case specs.get(i):
+        None -> False
+        Some spec ->
+            c := _kv_cmp(a.get(i).unwrap_or(_zero_kv), b.get(i).unwrap_or(_zero_kv), spec)
+            c < 0 || (c == 0 && _specs_less(a, b, specs, i + 1))
+
+_specs_equal: (a: []KeyVal, b: []KeyVal, specs: []KeySpec, i: Int) -> Bool =
+    case specs.get(i):
+        None -> True
+        Some spec ->
+            _kv_cmp(a.get(i).unwrap_or(_zero_kv), b.get(i).unwrap_or(_zero_kv), spec) == 0 &&
+                _specs_equal(a, b, specs, i + 1)
+
+_less_base: (a: Decorated, b: Decorated, specs: []KeySpec, last_resort: Bool) -> Bool =
+    _specs_less(a.keys, b.keys, specs, 0) ||
+        (_specs_equal(a.keys, b.keys, specs, 0) && last_resort && a.line < b.line)
+
+_less: (a: Decorated, b: Decorated, specs: []KeySpec, last_resort: Bool,
+        reverse: Bool) -> Bool =
+    if reverse: _less_base(b, a, specs, last_resort) else: _less_base(a, b, specs, last_resort)
+
+// Keep the first line of every run whose keys are equal.
+_dedup: (ds: []Decorated, specs: []KeySpec) -> []Decorated =
+    _dedup_walk(ds, None, specs, {})
+
+_dedup_walk: (ds: []Decorated, prev: Option Decorated, specs: []KeySpec,
+              acc: []Decorated) -> []Decorated =
+    case ds:
+        {} -> acc.reverse()
+        {d, ..rest} ->
+            fresh := prev.map((p): _specs_equal(p.keys, d.keys, specs, 0).not())
+                         .unwrap_or(True)
+            if fresh:
+                _dedup_walk(rest, Some d, specs, {d} ++ acc)
+            else:
+                _dedup_walk(rest, prev, specs, acc)
+
+// ------------------------------------------------------------ argument parse
+
+/// The completed command configuration.
+Config: type = [
+    specs: []KeySpec,
+    sep: Option Char,
+    reverse: Bool,
+    numeric: Bool,
+    fold: Bool,
+    unique: Bool,
+    files: []String]
+
+/// What the argument vector denotes.
+Invocation: type = Help | Fail String | Run Config
+
+Flags: type = [
+    specs: []KeySpec,
+    sep: Option Char,
+    reverse: Bool,
+    numeric: Bool,
+    fold: Bool,
+    unique: Bool]
+
+_default_flags: Flags = {
+    specs: {},
+    sep: None,
+    reverse: False,
+    numeric: False,
+    fold: False,
+    unique: False}
+
+parse_args: (argv: []String) -> Invocation =
+    _parse_options(argv, _default_flags, {})
+
+_parse_options: (argv: []String, flags: Flags, files: []String) -> Invocation =
+    case argv:
+        {} -> Run _to_config(flags, files)
+        {a, ..rest} ->
+            case a:
+                "--" -> Run _to_config(flags, files ++ rest)
+                "-h" | "--help" -> Help
+                "-r" -> _parse_options(rest, flags.with({reverse: True}), files)
+                "-n" -> _parse_options(rest, flags.with({numeric: True}), files)
+                "-f" -> _parse_options(rest, flags.with({fold: True}), files)
+                "-u" -> _parse_options(rest, flags.with({unique: True}), files)
+                "-t" -> _sep_option(rest, flags, files)
+                "-k" -> _key_option(rest, flags, files)
+                _ if a.starts_with("-t") && a.length() > 2 ->
+                    _sep_text(_after_flag(a), rest, flags, files)
+                _ if a.starts_with("-k") && a.length() > 2 ->
+                    _key_text(_after_flag(a), rest, flags, files)
+                _ if a.starts_with("-") && a.length() > 1 && _is_bundle(a) ->
+                    _parse_options(rest, _bundle_flags(a, flags), files)
+                _ if a.starts_with("-") && a.length() > 1 ->
+                    Fail "unknown option: {a}"
+                _ ->
+                    _parse_options(rest, flags, files ++ {a})
+
+// The text an option carries attached to its two leading characters, as
+// in `-k2,2`.
+_after_flag: (a: String) -> String =
+    String.from_chars(a.chars().drop(2))
+
+// A bundled short option such as -rn means -r -n.
+_is_bundle: (a: String) -> Bool = a.chars().drop(1).all((c): _is_flag_letter(c))
+
+_is_flag_letter: (c: Char) -> Bool = c == 'r' || c == 'n' || c == 'f' || c == 'u'
+
+_is_spec_flag: (c: Char) -> Bool = c == 'n' || c == 'r' || c == 'f' || c == 'b'
+
+_bundle_flags: (a: String, flags: Flags) -> Flags =
+    a.chars().drop(1).fold(flags, (fs, c): _bundle_one(fs, c))
+
+_bundle_one: (fs: Flags, c: Char) -> Flags =
+    case c:
+        'r' -> fs.with({reverse: True})
+        'n' -> fs.with({numeric: True})
+        'f' -> fs.with({fold: True})
+        'u' -> fs.with({unique: True})
+        _ -> fs
+
+_sep_text: (s: String, rest: []String, flags: Flags, files: []String) -> Invocation =
+    case s.chars():
+        {c} -> _parse_options(rest, flags.with({sep: Some c}), files)
+        _ -> Fail "the separator must be one character"
+
+_key_text: (spec_text: String, rest: []String, flags: Flags, files: []String) -> Invocation =
+    case _parse_key_spec(spec_text):
+        Err e -> Fail e
+        Ok spec -> _parse_options(rest, flags.with({specs: flags.specs ++ {spec}}), files)
+
+_to_config: (flags: Flags, files: []String) -> Config =
+    base: []KeySpec = if flags.specs.eq({}): ({_whole_line_spec}) else: flags.specs
+    {specs: base.map((spec): _resolve_spec(spec, flags)),
+     sep: flags.sep,
+     reverse: flags.reverse,
+     numeric: flags.numeric,
+     fold: flags.fold,
+     unique: flags.unique,
+     files: files}
+
+// Global flags fill the gaps a key specification left open, whichever way
+// the two were ordered on the command line.
+_resolve_spec: (spec: KeySpec, flags: Flags) -> KeySpec =
+    spec.with({
+        numeric: spec.numeric.or_else((): _some_if(flags.numeric)),
+        fold: spec.fold.or_else((): _some_if(flags.fold))})
+
+_some_if: (b: Bool) -> Option Bool = if b: Some True else: None
+
+_sep_option: (rest: []String, flags: Flags, files: []String) -> Invocation =
+    case rest:
+        {} -> Fail "missing separator after -t"
+        {s, ..more} ->
+            _sep_text(s, more, flags, files)
+
+_key_option: (rest: []String, flags: Flags, files: []String) -> Invocation =
+    case rest:
+        {} -> Fail "missing key specification after -k"
+        {spec_text, ..more} -> _key_text(spec_text, more, flags, files)
+
+// One position of a key spec: leading and trailing modifier letters around
+// `N[.C]`. The modifiers are `n` (numeric), `r` (reverse), `f` (fold), and
+// `b` (skip leading blanks).
+SpecPos: type = [pos: Int, char_pos: Int, flags: []Char]
+
+_parse_key_spec: (text: String) -> Result KeySpec String =
+    parts := String.split(text, ",")
+    left <- parts.get(0).to_result("empty key specification").try()
+    from_pos <- _parse_spec_pos(left).try()
+    to_pos <- _parse_to_pos(parts).try()
+    _finish_spec(from_pos, to_pos)
+
+// The optional second position of a key spec; its absence ends the key at
+// the end of the line.
+_parse_to_pos: (parts: []String) -> Result (Option SpecPos) String =
+    case parts.get(1):
+        None -> Ok None
+        Some right -> _parse_spec_pos(right).map((sp): Some sp)
+
+_finish_spec: (from_pos: SpecPos, to_pos: Option SpecPos) -> Result KeySpec String =
+    if from_pos.pos < 1:
+        Err "field index must be at least 1"
+    else:
+        case to_pos:
+            None ->
+                Ok _spec_of(from_pos.pos, from_pos.char_pos, 0, 0, from_pos.flags, {})
+            Some tp ->
+                if tp.pos < 1:
+                    Err "field index must be at least 1"
+                else:
+                    Ok _spec_of(from_pos.pos, from_pos.char_pos, tp.pos, tp.char_pos,
+                                from_pos.flags, tp.flags)
+
+_spec_of: (from: Int, fc: Int, to: Int, tc: Int, fl: []Char, tl: []Char) -> KeySpec =
+    all := fl ++ tl
+    {from: from,
+     from_char: fc,
+     to: to,
+     to_char: tc,
+     blank: all.any((c): c == 'b'),
+     numeric: _flag_of(all, 'n'),
+     reverse: _flag_of(all, 'r'),
+     fold: _flag_of(all, 'f')}
+
+// A modifier present anywhere in the part sets the override; an absent one
+// leaves None so the global flag applies.
+_flag_of: (chars: []Char, which: Char) -> Option Bool =
+    if chars.any((c): c == which): Some True else: None
+
+_parse_spec_pos: (text: String) -> Result SpecPos String =
+    _parse_spec_lead(text.chars(), 0, 0, {})
+
+_parse_spec_lead: (cs: []Char, pos: Int, char_pos: Int, flags: []Char) -> Result SpecPos String =
+    case cs:
+        {c, ..rest} if _is_spec_flag(c) ->
+            _parse_spec_lead(rest, pos, char_pos, {c} ++ flags)
+        {c, ..rest} if _is_digit(c) ->
+            _parse_spec_num(rest, Char.to_code(c) - 48, char_pos, flags)
+        {c, .._} -> Err ("invalid key specification: {c}")
+        {} -> Err "missing field index in key specification"
+
+_parse_spec_num: (cs: []Char, pos: Int, char_pos: Int, flags: []Char) -> Result SpecPos String =
+    case cs:
+        {c, ..rest} if _is_digit(c) ->
+            _parse_spec_num(rest, pos * 10 + (Char.to_code(c) - 48), char_pos, flags)
+        {'.', ..rest} -> _parse_spec_char(rest, pos, 0, flags)
+        {_, .._} -> _parse_spec_tail(cs, pos, char_pos, flags)
+        {} -> Ok {pos: pos, char_pos: char_pos, flags: flags.reverse()}
+
+_parse_spec_char: (cs: []Char, pos: Int, char_pos: Int, flags: []Char) -> Result SpecPos String =
+    case cs:
+        {c, ..rest} if _is_digit(c) ->
+            _parse_spec_char(rest, pos, char_pos * 10 + (Char.to_code(c) - 48), flags)
+        _ ->
+            if char_pos == 0:
+                Err "character index must be at least 1"
+            else:
+                _parse_spec_tail(cs, pos, char_pos, flags)
+
+_parse_spec_tail: (cs: []Char, pos: Int, char_pos: Int, flags: []Char) -> Result SpecPos String =
+    case cs:
+        {} -> Ok {pos: pos, char_pos: char_pos, flags: flags.reverse()}
+        {c, ..rest} if _is_spec_flag(c) ->
+            _parse_spec_tail(rest, pos, char_pos, {c} ++ flags)
+        {c, .._} -> Err ("invalid key specification: {c}")
+
+// ----------------------------------------------------------------- I/O shell
+
+_help_lines: []String = {
+    "usage: ekosort [options] [file ...]",
+    "",
+    "Sort the lines of the named files, or standard input when no file is",
+    "given, and print the result. A file argument of '-' also means standard",
+    "input. All inputs are concatenated before sorting.",
+    "",
+    "options:",
+    "  -r              reverse the final comparison",
+    "  -n              compare keys by their numeric prefix; garbage is zero",
+    "  -f              fold ASCII letters to lowercase before comparing",
+    "  -u              keep only the first line of every equal-key run",
+    "  -t SEP          use SEP (one character) as the field separator;",
+    "                  without it, fields are runs of non-blank characters",
+    "  -k N[.C][flags][,M[.C][flags]]",
+    "                  select a key: fields N through M (default through the",
+    "                  end), characters C within the edge fields, with per-",
+    "                  key flags n, r, f, and b (skip leading blanks).",
+    "                  Repeatable; earlier keys decide first.",
+    "  -h, --help      show this help and exit",
+    "  --              end of options",
+    "",
+    "exit status: 0 on success, 2 on usage or file error."}
+
+_print_help: (out: Out) ! =
+    _help_lines.each((line): out.println(line))
+
+_io_message: (e: IoError) -> String =
+    case e:
+        NotFound -> "no such file or directory"
+        Permission -> "permission denied"
+        Exists -> "file exists"
+        NotFile -> "not a regular file"
+        Closed -> "handle closed"
+        InvalidData d -> "invalid data: {d}"
+        Other m -> m
+
+_read_file: (fs: Fs, path: String) !-> Result String String =
+    case fs.stat(path):
+        Ok info if info.is_dir -> Err "is a directory"
+        _ -> fs.read(path).map_err(_io_message)
+
+// Gather every input line. Standard input is streamed; files are read whole.
+_collect: (lines: []String, fs: Fs, inp: In, files: []String) !-> Result ([]String) String =
+    case files:
+        {} ->
+            more <- _read_stdin({}, inp).map_err(_io_message).try()
+            Ok (lines ++ List.reverse(more))
+        {path, ..rest} ->
+            if path == "-":
+                more <- _read_stdin({}, inp).map_err(_io_message).try()
+                _collect(lines ++ List.reverse(more), fs, inp, rest)
+            else:
+                text <- _read_file(fs, path).map_err((msg): "{path}: {msg}").try()
+                _collect(lines ++ String.lines(text), fs, inp, rest)
+
+_read_stdin: (lines: []String, inp: In) !-> Result ([]String) IoError =
+    line <- inp.read_line().try()
+    case line:
+        None -> Ok lines
+        Some text -> _read_stdin({text} ++ lines, inp)
+
+// The whole pipeline over the gathered lines: decorate, stable-sort through
+// the specification list, optionally deduplicate equal-key runs.
+run: (lines: []String, cfg: Config) -> []String =
+    decorated := lines.map((line): _decorate(line, cfg.specs, cfg.sep))
+    sorted := decorated.sort_by((a, b): _less(a, b, cfg.specs, cfg.unique.not(), cfg.reverse))
+    shown := if cfg.unique: _dedup(sorted, cfg.specs) else: sorted
+    shown.map((d): d.line)
+
+_run_config: (out: Out, err: Out, fs: Fs, inp: In, cfg: Config) !-> Int =
+    case _collect({}, fs, inp, cfg.files):
+        Err msg ->
+            err.println("ekosort: {msg}")
+            2
+        Ok lines ->
+            run(lines, cfg).each((line): out.println(line))
+            0
+
+_help_status: (out: Out) !-> Int =
+    _print_help(out)
+    0
+
+_usage_failure: (err: Out, msg: String) !-> Int =
+    err.println("ekosort: {msg}")
+    err.println("Try 'ekosort --help' for usage.")
+    2
+
+_dispatch: (out: Out, err: Out, argv: []String, fs: Fs, inp: In) !-> Int =
+    case parse_args(argv):
+        Help -> _help_status(out)
+        Fail msg -> _usage_failure(err, msg)
+        Run cfg -> _run_config(out, err, fs, inp, cfg)
+
+// The parameter list is the authorization manifest: output, arguments, the
+// file system, standard input, and the process exit channel. The error
+// channel rides the Out session as host wiring.
+main: (out: Out, args: Args, fs: Fs, inp: In, proc: Proc) ! =
+    code := _dispatch(out, Out.err(), args.all(), fs, inp)
+    Proc.exit(proc, code)
+
+// --------------------------------------------------------------------- tests
+
+_expect_run: (argv: []String) -> Config =
+    case parse_args(argv):
+        Run cfg -> cfg
+        Help -> panic("expected Run but got Help")
+        Fail e -> panic("expected Run but got: {e}")
+
+_expect_fail: (argv: []String) -> String =
+    case parse_args(argv):
+        Fail e -> e
+        Help -> panic("expected Fail but got Help")
+        Run _ -> panic("expected Fail but got Run")
+
+_sort: (lines: []String, argv: []String) -> []String =
+    run(lines, _expect_run(argv))
+
+field_span_default: test =
+    spans := _fields("  a  bb c", None)
+    assert_eq(spans, {{lo: 2, hi: 3}, {lo: 5, hi: 7}, {lo: 8, hi: 9}})
+
+field_span_separator: test =
+    assert_eq(_fields("a:bb:", Some ':'), {{lo: 0, hi: 1}, {lo: 2, hi: 4}, {lo: 5, hi: 5}})
+    assert_eq(_fields("", Some ':'), {{lo: 0, hi: 0}})
+
+numeric_prefix: test =
+    assert_eq(_num_of_chars("12.5x".chars()), 12.5)
+    assert_eq(_num_of_chars("  -3abc".chars()), 0.0 - 3.0)
+    assert_eq(_num_of_chars("garbage".chars()), 0.0)
+    assert_eq(_num_of_chars(".".chars()), 0.0)
+    assert_eq(_num_of_chars(".".chars()) + 1.0, 1.0)
+
+key_whole_line: test =
+    spec := _whole_line_spec
+    kv := _key_of("hello", _fields("hello", None), spec)
+    assert_eq(kv.text, "hello")
+
+key_field_range: test =
+    spec := _parse_key_spec("2,2").expect("spec should parse")
+    kv := _key_of("a bb c", _fields("a bb c", None), spec)
+    assert_eq(kv.text, "bb")
+
+key_open_end: test =
+    spec := _parse_key_spec("2").expect("spec should parse")
+    kv := _key_of("a bb c", _fields("a bb c", None), spec)
+    assert_eq(kv.text, "bb c")
+
+key_char_positions: test =
+    spec := _parse_key_spec("1.2,1.3").expect("spec should parse")
+    kv := _key_of("abcde", _fields("abcde", None), spec)
+    assert_eq(kv.text, "bc")
+
+key_missing_field: test =
+    spec := _parse_key_spec("3").expect("spec should parse")
+    kv := _key_of("a b", _fields("a b", None), spec)
+    assert_eq(kv.text, "")
+
+key_end_rules: test =
+    spans := _fields("a bb c", None)
+    // A bare end position stops at the field's end; a .C clips into it.
+    open := _parse_key_spec("2").expect("spec should parse")
+    assert_eq(_key_end("a bb c", spans, open), Some 6)
+    bare := _parse_key_spec("2,2").expect("spec should parse")
+    assert_eq(_key_end("a bb c", spans, bare), Some 4)
+    clipped := _parse_key_spec("2,2.1").expect("spec should parse")
+    assert_eq(_key_end("a bb c", spans, clipped), Some 3)
+    whole := _parse_key_spec("1").expect("spec should parse")
+    assert_eq(_key_end("a bb c", spans, whole), Some 6)
+    beyond := _parse_key_spec("1,9").expect("spec should parse")
+    assert_eq(_key_end("a bb c", spans, beyond), Some 6)
+
+key_fold_and_blank: test =
+    spec := _parse_key_spec("1f").expect("spec should parse")
+    kv := _key_of("ABC", _fields("ABC", None), spec)
+    assert_eq(kv.text, "abc")
+    spec2 := _parse_key_spec("2b").expect("spec should parse")
+    kv2 := _key_of("a:  b", _fields("a:  b", Some ':'), spec2)
+    assert_eq(kv2.text, "b")
+
+spec_parse_ok: test =
+    spec := _parse_key_spec("2n,3.4r").expect("spec should parse")
+    assert_eq(spec.from, 2)
+    assert_eq(spec.numeric, Some True)
+    assert_eq(spec.to, 3)
+    assert_eq(spec.to_char, 4)
+    assert_eq(spec.reverse, Some True)
+    assert(_parse_key_spec("2nf").is_ok())
+    assert(_parse_key_spec("f2").is_ok())
+    assert(_parse_key_spec("2,3b").is_ok())
+
+spec_parse_rejection: test =
+    bad: []String = {"", "0", "x", "2,x", "2,x3", "2,", ",2", "2.0", "2z"}
+    bad.each((text): assert(_parse_key_spec(text).is_err()))
+
+basic_sort: test =
+    assert_eq(_sort({"b", "a", "c"}, {}), {"a", "b", "c"})
+
+numeric_sort: test =
+    assert_eq(_sort({"10", "9", "100"}, {"-n"}), {"9", "10", "100"})
+    assert_eq(_sort({"b10", "b9", "b100"}, {"-n"}), {"b10", "b100", "b9"})
+    assert_eq(_sort({"  5", "3", "-2"}, {"-n"}), {"-2", "3", "  5"})
+
+fold_sort: test =
+    assert_eq(_sort({"B", "a", "C", "b"}, {"-f"}), {"a", "B", "b", "C"})
+
+reverse_sort: test =
+    assert_eq(_sort({"a", "b", "c"}, {"-r"}), {"c", "b", "a"})
+
+key_sort: test =
+    assert_eq(_sort({"b  a", "a b"}, {"-k", "2,2"}), {"b  a", "a b"})
+    assert_eq(_sort({"apple 5", "banana 3", "apple 2"}, {"-k", "1,1", "-k", "2,2n"}),
+              {"apple 2", "apple 5", "banana 3"})
+    assert_eq(_sort({"b  a", "a b"}, {"-k2,2"}), {"b  a", "a b"})
+
+separator_sort: test =
+    assert_eq(_sort({"x:a", "x::b"}, {"-t:", "-k", "2,2"}), {"x::b", "x:a"})
+    assert_eq(_sort({"x:a", "x::b"}, {"-t:", "-k2,2"}), {"x::b", "x:a"})
+
+unique_sort: test =
+    assert_eq(_sort({"b", "a", "b"}, {"-u"}), {"a", "b"})
+    assert_eq(_sort({"B", "b"}, {"-u", "-f"}), {"B"})
+
+unique_by_key: test =
+    assert_eq(_sort({"1 a", "2 a"}, {"-k", "2,2", "-u"}), {"1 a"})
+
+last_resort: test =
+    assert_eq(_sort({"b10", "b9", "b100"}, {"-n"}), {"b10", "b100", "b9"})
+
+cli_defaults: test =
+    cfg := _expect_run({})
+    assert_eq(cfg.files, {})
+    assert_eq(cfg.specs.length(), 1)
+    assert(cfg.reverse.not())
+    assert(cfg.unique.not())
+
+cli_flags_and_files: test =
+    cfg := _expect_run({"-r", "-n", "-f", "-u", "a.txt", "b.txt"})
+    assert(cfg.reverse)
+    assert(cfg.numeric)
+    assert(cfg.fold)
+    assert(cfg.unique)
+    assert_eq(cfg.files, {"a.txt", "b.txt"})
+
+cli_separator_and_keys: test =
+    cfg := _expect_run({"-t", ":", "-k", "2,2n", "-k", "3r"})
+    assert_eq(cfg.sep, Some ':')
+    assert_eq(cfg.specs.length(), 2)
+    assert_eq(cfg.specs.get(0).map((s): s.numeric), Some (Some True))
+
+cli_usage_errors: test =
+    assert(_expect_fail({"-x"}).contains("unknown option"))
+    assert(_expect_fail({"-t"}).contains("missing separator"))
+    assert(_expect_fail({"-t", "ab"}).contains("one character"))
+    assert(_expect_fail({"-k"}).contains("missing key"))
+    assert(_expect_fail({"-k", "0"}).contains("at least 1"))
+
+cli_help: test =
+    case parse_args({"-h"}):
+        Help -> assert(True)
+        _ -> panic("expected Help")
+    case parse_args({"--help"}):
+        Help -> assert(True)
+        _ -> panic("expected Help")
+
+cli_double_dash: test =
+    cfg := _expect_run({"--", "-r"})
+    assert_eq(cfg.files, {"-r"})
+
+file_line_splitting: test =
+    assert_eq("".lines(), {})
+    assert_eq("a\nb\n".lines(), {"a", "b"})
+    assert_eq("a\nb".lines(), {"a", "b"})
+    assert_eq("a\n\nb\n".lines(), {"a", "", "b"})
+
+dispatch_stdin_sort: test =
+    out := Out.tee(Out.null(), (s): assert(s == "a" || s == "b"))
+    status := _dispatch(out, Out.null(), {"-u"}, Fs.null(), In.from_lines({"b", "a", "b"}))
+    assert_eq(status, 0)
+
+dispatch_stdin_numeric: test =
+    out := Out.tee(Out.null(), (s): assert(s == "9" || s == "10"))
+    status := _dispatch(out, Out.null(), {"-n"}, Fs.null(), In.from_lines({"10", "9"}))
+    assert_eq(status, 0)
+
+dispatch_help: test =
+    status := _dispatch(Out.null(), Out.null(), {"--help"}, Fs.null(), In.empty())
+    assert_eq(status, 0)
+
+dispatch_usage_error: test =
+    status := _dispatch(Out.null(), Out.null(), {"-x"}, Fs.null(), In.empty())
+    assert_eq(status, 2)
+
+dispatch_missing_file: test =
+    status := _dispatch(Out.null(), Out.null(), {"does-not-exist.txt"}, Fs.null(),
+                        In.empty())
+    assert_eq(status, 2)
+
+dispatch_dash_is_stdin: test =
+    out := Out.tee(Out.null(), (s): assert_eq(s, "1"))
+    status := _dispatch(out, Out.null(), {"-n", "-"}, Fs.null(), In.from_lines({"1"}))
+    assert_eq(status, 0)
+

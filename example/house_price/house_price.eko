@@ -1,0 +1,352 @@
+// House price prediction by linear regression, trained on the CSV
+// dataset of the pyml/house_price project: price from area, room
+// count, and age. The two files are read through the Fs capability,
+// the three features are standardized on the training rows before the
+// full-batch descent, and the learned weights are mapped back to the
+// original unit for the report. The language has no loops, so every
+// pass is a tail-recursive walk.
+//
+//   ekoc build house_price.eko -o house_price
+//   ./house_price [train.csv test.csv]
+//   ekoc test house_price.eko
+
+// One listing: the three features and the closing price in 万元.
+Row: type = [area: Float, rooms: Float, age: Float, price: Float]
+
+// One training row on the standardized features.
+Point: type = [xa: Float, xr: Float, xg: Float, y: Float]
+
+// The linear model: price = wa * area + wr * rooms + wg * age + b.
+Model: type = [wa: Float, wr: Float, wg: Float, b: Float]
+
+// The mean and standard deviation of the three features, computed on
+// the training rows.
+Stats: type = [area_m: Float, area_s: Float,
+               rooms_m: Float, rooms_s: Float,
+               age_m: Float, age_s: Float]
+
+// One data line with its line number, for the parse error messages.
+Numbered: type = [num: Int, line: String]
+
+// One entry of the loss curve: the step count and the loss there.
+Checkpoint: type = [step: Int, loss: Float]
+
+// The outcome of training: the final model on the standardized
+// features and the sampled loss curve.
+Fit: type = [model: Model, curve: []Checkpoint]
+
+// The hyperparameters of the descent: the learning rate, the step
+// budget, and how often a checkpoint is recorded.
+Hyper: type = [lr: Float, epochs: Int, every: Int]
+
+// The data schema and the default file locations; the command-line
+// arguments override them in order.
+_header: String = "area,room_num,age,price"
+_train_path: String = "/home/erxat/Work/pyml/house_price/data.csv"
+_test_path: String = "/home/erxat/Work/pyml/house_price/test.csv"
+
+// The mean and the population standard deviation of one column,
+// picked by the selector.
+_col_mean: (rows: []Row, pick: (Row) -> Float) -> Float =
+    rows.fold(0.0, (a, r): a + pick(r)) / rows.length().to_float()
+
+_col_std: (rows: []Row, pick: (Row) -> Float, m: Float) -> Float =
+    v := rows.fold(0.0, (a, r):
+        d := pick(r) - m
+        a + d * d) / rows.length().to_float()
+    v.sqrt()
+
+_stats: (rows: []Row) -> Stats =
+    am := _col_mean(rows, (r): r.area)
+    rm := _col_mean(rows, (r): r.rooms)
+    gm := _col_mean(rows, (r): r.age)
+    {area_m: am, area_s: _col_std(rows, (r): r.area, am),
+     rooms_m: rm, rooms_s: _col_std(rows, (r): r.rooms, rm),
+     age_m: gm, age_s: _col_std(rows, (r): r.age, gm)}
+
+_to_point: (r: Row, s: Stats) -> Point =
+    {xa: (r.area - s.area_m) / s.area_s,
+     xr: (r.rooms - s.rooms_m) / s.rooms_s,
+     xg: (r.age - s.age_m) / s.age_s,
+     y: r.price}
+
+// The affine prediction on the original unit of area, rooms, and age.
+_predict: (m: Model, area: Float, rooms: Float, age: Float) -> Float =
+    m.wa * area + m.wr * rooms + m.wg * age + m.b
+
+// The gradient sums over one pass: the error weighted by each
+// standardized feature, and the plain error. One tail-recursive walk
+// accumulates all four.
+_sums: (pts: []Point, m: Model,
+        sa: Float, sr: Float, sg: Float, sb: Float) -> [Float, Float, Float, Float] =
+    case pts:
+        {} -> {sa, sr, sg, sb}
+        {p, ..rest} ->
+            e := m.wa * p.xa + m.wr * p.xr + m.wg * p.xg + m.b - p.y
+            _sums(rest, m, sa + e * p.xa, sr + e * p.xr, sg + e * p.xg, sb + e)
+
+// One batch gradient-descent step on the mean squared error.
+_step: (m: Model, pts: []Point, lr: Float) -> Model =
+    (sa, sr, sg, sb) = _sums(pts, m, 0.0, 0.0, 0.0, 0.0)
+    n := pts.length().to_float()
+    m.with({wa: m.wa - lr * 2.0 * sa / n,
+            wr: m.wr - lr * 2.0 * sr / n,
+            wg: m.wg - lr * 2.0 * sg / n,
+            b: m.b - lr * 2.0 * sb / n})
+
+_sq_err: (m: Model, p: Point) -> Float =
+    e := m.wa * p.xa + m.wr * p.xr + m.wg * p.xg + m.b - p.y
+    e * e
+
+// The mean squared error over the normalized rows; the target is in
+// the original 万元 unit, so the loss reads in 万元².
+_loss: (pts: []Point, m: Model) -> Float =
+    pts.fold(0.0, (a, p): a + _sq_err(m, p)) / pts.length().to_float()
+
+// The descent: one step per iteration, a checkpoint recorded every
+// `every` steps, the curve kept reversed and straightened at the end.
+_descend: (m: Model, pts: []Point, h: Hyper, step: Int, curve: []Checkpoint) -> Fit =
+    if step == h.epochs:
+        {model: m, curve: List.reverse(curve)}
+    else:
+        next := _step(m, pts, h.lr)
+        if step % h.every == 0:
+            mark: Checkpoint = {step: step, loss: _loss(pts, m)}
+            _descend(next, pts, h, step + 1, {mark} ++ curve)
+        else:
+            _descend(next, pts, h, step + 1, curve)
+
+// The learned weights on the standardized features map back to the
+// original units: each weight divides by its feature's standard
+// deviation, and the intercept absorbs the shifted means.
+_to_original: (m: Model, s: Stats) -> Model =
+    wa := m.wa / s.area_s
+    wr := m.wr / s.rooms_s
+    wg := m.wg / s.age_s
+    {wa: wa, wr: wr, wg: wg,
+     b: m.b - wa * s.area_m - wr * s.rooms_m - wg * s.age_m}
+
+_sq_err_row: (m: Model, r: Row) -> Float =
+    e := _predict(m, r.area, r.rooms, r.age) - r.price
+    e * e
+
+// The evaluation over original rows: mean squared error, mean
+// absolute error, and the coefficient of determination.
+_mse: (m: Model, rows: []Row) -> Float =
+    rows.fold(0.0, (a, r): a + _sq_err_row(m, r)) / rows.length().to_float()
+
+_mae: (m: Model, rows: []Row) -> Float =
+    rows.fold(0.0, (a, r):
+        d := (_predict(m, r.area, r.rooms, r.age) - r.price).abs()
+        a + d) / rows.length().to_float()
+
+_r2: (m: Model, rows: []Row) -> Float =
+    ym := rows.fold(0.0, (a, r): a + r.price) / rows.length().to_float()
+    res := rows.fold(0.0, (a, r): a + _sq_err_row(m, r))
+    tot := rows.fold(0.0, (a, r):
+        d := r.price - ym
+        a + d * d)
+    1.0 - res / tot
+
+// One CSV data row: four comma-separated fields, each a valid float.
+_fields_to_row: (fields: []String, num: Int) -> Result Row String =
+    area_s <- fields.get(0).to_result("row {num}: missing area").try()
+    rooms_s <- fields.get(1).to_result("row {num}: missing room_num").try()
+    age_s <- fields.get(2).to_result("row {num}: missing age").try()
+    price_s <- fields.get(3).to_result("row {num}: missing price").try()
+    area <- Float.parse(area_s).map_err((p): "row {num}: area: {p.show()}").try()
+    rooms <- Float.parse(rooms_s).map_err((p): "row {num}: room_num: {p.show()}").try()
+    age <- Float.parse(age_s).map_err((p): "row {num}: age: {p.show()}").try()
+    price <- Float.parse(price_s).map_err((p): "row {num}: price: {p.show()}").try()
+    Ok {area: area, rooms: rooms, age: age, price: price}
+
+_parse_row: (line: String, num: Int) -> Result Row String =
+    fields := line.split(",")
+    if fields.length() == 4:
+        _fields_to_row(fields, num)
+    else:
+        Err "row {num}: expected 4 fields, got {fields.length()}"
+
+_check_header: (line: String) -> Result _ String =
+    if line == _header:
+        Ok _
+    else:
+        Err "header: expected \"{_header}\", got \"{line}\""
+
+// The lines after the header parse in order; each failure carries its
+// line number, counting the header as line one.
+_parse_rows: (text: String) -> Result ([]Row) String =
+    case text.lines():
+        {} -> Err "no header row"
+        {header, ..body} ->
+            _ <- _check_header(header).try()
+            if body.length() == 0:
+                Err "no data rows"
+            else:
+                nums: []Int = (2..=body.length() + 1).to_list()
+                pairs: []Numbered = nums.zip_with(body, (i, line): {num: i, line: line.trim()})
+                Result.traverse(pairs, (p): _parse_row(p.line, p.num))
+
+// One file: read through the Fs capability, then parse. Every
+// recoverable problem surfaces as Err with its reason.
+_load: (fs: Fs, path: String) !-> Result ([]Row) String =
+    text <- Fs.read(fs, path).map_err((e): "{path}: {e.show()}").try()
+    rows <- _parse_rows(text).try()
+    Ok rows
+
+// The sign of a difference, for the error column of the report.
+_signed: (v: Float) -> String =
+    if v >= 0.0: "+" else: "-"
+
+// The report: the dataset lines, the feature moments, the descent's
+// loss curve, the learned model in the original units, its fit on
+// both sets, and the per-row test predictions.
+_fit_report: (out: Out, train: []Row, test: []Row) !-> _ =
+    s: Stats = _stats(train)
+    pts: []Point = train.map((r): _to_point(r, s))
+    h: Hyper = {lr: 0.02, epochs: 1000, every: 100}
+    fit: Fit = _descend({wa: 0.0, wr: 0.0, wg: 0.0, b: 0.0}, pts, h, 0, {})
+    m: Model = _to_original(fit.model, s)
+
+    Out.println(out, "特征标准化 feature stats (train):")
+    Out.println(out,
+        "  area     mean = {s.area_m.to_fixed(2).pad_left(8, ' ')}  std = {s.area_s.to_fixed(2).pad_left(7, ' ')}")
+    Out.println(out,
+        "  room_num mean = {s.rooms_m.to_fixed(2).pad_left(8, ' ')}  std = {s.rooms_s.to_fixed(2).pad_left(7, ' ')}")
+    Out.println(out,
+        "  age      mean = {s.age_m.to_fixed(2).pad_left(8, ' ')}  std = {s.age_s.to_fixed(2).pad_left(7, ' ')}")
+    Out.println(out,
+        "超参数 hyper: lr = {h.lr.show()}, epochs = {h.epochs.show()}, every = {h.every.show()}")
+    Out.println(out, "")
+    Out.println(out, "损失曲线 loss curve (MSE, 万元²):")
+    fit.curve.each((c):
+        Out.println(out,
+            "  step {c.step.show().pad_left(5, ' ')}  loss = {c.loss.to_fixed(4)}"))
+    Out.println(out, "")
+    Out.println(out, "学得模型 learned model:")
+    Out.println(out,
+        "  price ≈ {m.wa.to_fixed(4)} × area + {m.wr.to_fixed(4)} × room_num + {m.wg.to_fixed(4)} × age + {m.b.to_fixed(4)}")
+    Out.println(out,
+        "  训练集 train: MSE = {_mse(m, train).to_fixed(4)} 万元², MAE = {_mae(m, train).to_fixed(4)} 万元, R² = {_r2(m, train).to_fixed(6)}")
+    sample := _predict(m, 122.0, 3.0, 2.0)
+    Out.println(out,
+        "  单条预测 sample: area=122, room_num=3, age=2 → {sample.to_fixed(2)} 万元 (真实 true 350.0)")
+    Out.println(out, "")
+    Out.println(out,
+        "测试集 test: MSE = {_mse(m, test).to_fixed(4)} 万元², MAE = {_mae(m, test).to_fixed(4)} 万元, R² = {_r2(m, test).to_fixed(6)}")
+    test.each_with_index((r, i):
+        p := _predict(m, r.area, r.rooms, r.age)
+        e := p - r.price
+        Out.println(out,
+            "  #{(i + 1).show().pad_left(3, ' ')}  真实 {r.price.to_fixed(2).pad_left(8, ' ')}  预测 {p.to_fixed(2).pad_left(8, ' ')}  误差 {_signed(e)}{e.abs().to_fixed(2)}"))
+
+// The whole run: resolve the file paths, load both sets, report.
+// Recoverable failures surface as Err and the process exits nonzero.
+_run: (out: Out, fs: Fs, argv: []String) !-> Result _ String =
+    train_path := argv.get(0).unwrap_or(_train_path)
+    test_path := argv.get(1).unwrap_or(_test_path)
+    train <- _load(fs, train_path).try()
+    test <- _load(fs, test_path).try()
+    Out.println(out, "线性回归房价预测 · Linear Regression House Prices (Eko)")
+    Out.println(out,
+        "训练集 train = {train_path} ({train.length()} 行), 测试集 test = {test_path} ({test.length()} 行)")
+    Out.println(out, "")
+    _fit_report(out, train, test)
+    Ok _
+
+// The entry point. `Out` writes the report, `Fs` reads the CSV files,
+// `Args` carries the optional path overrides, and `Proc` exits the
+// process when a data file cannot be loaded.
+main: (out: Out, fs: Fs, args: Args, proc: Proc) !-> _ =
+    case _run(out, fs, args.all()):
+        Ok _ -> _
+        Err msg ->
+            Out.println(out, "加载失败 load failed: {msg}")
+            Proc.exit(proc, 1)
+
+// A zero model takes one step onto y = 2x up to the learning rate on
+// the one-row fixture: the error is -2 and only the first weight and
+// the intercept move.
+gradient_step: test =
+    pts: []Point = {{xa: 1.0, xr: 0.0, xg: 0.0, y: 2.0}}
+    m: Model = _step({wa: 0.0, wr: 0.0, wg: 0.0, b: 0.0}, pts, 0.1)
+    assert((m.wa - 0.4).abs() < 1e-9)
+    assert((m.b - 0.4).abs() < 1e-9)
+    assert(m.wr == 0.0)
+    assert(m.wg == 0.0)
+
+column_moments: test =
+    rows: []Row = {
+        {area: 2.0, rooms: 0.0, age: 0.0, price: 0.0},
+        {area: 4.0, rooms: 0.0, age: 0.0, price: 0.0},
+        {area: 6.0, rooms: 0.0, age: 0.0, price: 0.0}
+    }
+    assert((_col_mean(rows, (r): r.area) - 4.0).abs() < 1e-12)
+    assert((_col_std(rows, (r): r.area, 4.0) - 1.632993).abs() < 1e-5)
+
+loss_of_perfect_fit: test =
+    pts: []Point = {
+        {xa: 0.0, xr: 0.0, xg: 0.0, y: 1.0},
+        {xa: 1.0, xr: 0.0, xg: 0.0, y: 3.0},
+        {xa: 0.0, xr: 1.0, xg: 0.0, y: 4.0},
+        {xa: 0.0, xr: 0.0, xg: 2.0, y: -1.0}
+    }
+    assert((_loss(pts, {wa: 2.0, wr: 3.0, wg: -1.0, b: 1.0}) - 0.0).abs() < 1e-12)
+
+parse_row_ok: test =
+    assert_eq(_parse_row("84,2,10,252.0", 1),
+              Ok {area: 84.0, rooms: 2.0, age: 10.0, price: 252.0})
+
+parse_row_errors: test =
+    assert_eq(_parse_row("84,2,10", 3), Err "row 3: expected 4 fields, got 3")
+    assert(_parse_row("84,2,10,x", 1).is_err())
+
+// A two-row table parses through the header check, the numbering, and
+// the traverse; a wrong header and an empty body are rejections.
+parse_table: test =
+    text := "area,room_num,age,price\n84,2,10,252.0\n118,3,18,293.0\n"
+    want: Result ([]Row) String = Ok {
+        {area: 84.0, rooms: 2.0, age: 10.0, price: 252.0},
+        {area: 118.0, rooms: 3.0, age: 18.0, price: 293.0}
+    }
+    assert_eq(_parse_rows(text), want)
+    assert(_parse_rows("a,b\n1,2\n").is_err())
+    assert(_parse_rows("area,room_num,age,price\n").is_err())
+
+// The descent lands on the plane the fixture rows lie on: the loss
+// falls to a fraction of a 万元² and the predictions hit the targets.
+fit_converges: test =
+    rows: []Row = {
+        {area: 100.0, rooms: 3.0, age: 5.0, price: 215.0},
+        {area: 80.0, rooms: 2.0, age: 10.0, price: 156.0},
+        {area: 130.0, rooms: 4.0, age: 3.0, price: 280.0},
+        {area: 60.0, rooms: 1.0, age: 20.0, price: 87.0}
+    }
+    s: Stats = _stats(rows)
+    pts: []Point = rows.map((r): _to_point(r, s))
+    h: Hyper = {lr: 0.02, epochs: 1000, every: 100}
+    fit: Fit = _descend({wa: 0.0, wr: 0.0, wg: 0.0, b: 0.0}, pts, h, 0, {})
+    m: Model = _to_original(fit.model, s)
+    assert(_loss(pts, fit.model) < 0.1)
+    assert((_predict(m, 100.0, 3.0, 5.0) - 215.0).abs() < 0.5)
+    assert((_predict(m, 60.0, 1.0, 20.0) - 87.0).abs() < 0.5)
+
+// The evaluation metrics on a hand-checked fixture: the plane y = 2x + 1
+// against one row on it and one row one unit off.
+metrics: test =
+    m: Model = {wa: 2.0, wr: 0.0, wg: 0.0, b: 1.0}
+    rows: []Row = {
+        {area: 1.0, rooms: 0.0, age: 0.0, price: 3.0},
+        {area: 2.0, rooms: 0.0, age: 0.0, price: 4.0}
+    }
+    assert((_mse(m, rows) - 0.5).abs() < 1e-12)
+    assert((_mae(m, rows) - 0.5).abs() < 1e-12)
+    // The mean price is 3.5, so the total sum of squares is 0.5 and the
+    // model's single unit of error lands R² at -1.
+    assert((_r2(m, rows) + 1.0).abs() < 1e-12)
+
+predict_and_sign: test =
+    m: Model = {wa: 1.0, wr: 2.0, wg: 3.0, b: 0.5}
+    assert((_predict(m, 1.0, 1.0, 1.0) - 6.5).abs() < 1e-12)
+    assert_eq(_signed(0.5), "+")
+    assert_eq(_signed(0.0 - 0.5), "-")

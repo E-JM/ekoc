@@ -1,0 +1,265 @@
+// The command grammar: the write and show subcommands, their options,
+// the help text, and the usage failures. Parsing is pure: an argument
+// vector in, a command out.
+
+import model
+
+/// What argument parsing produced.
+Command: type = Write WriteCfg | Show ShowCfg | HelpCmd | UsageFail String
+
+// ------------------------------------------------------------- help and usage
+
+_help_lines: []String = {
+    "usage: syslog write [options] [<message>...]",
+    "       syslog show [options] [file ...]",
+    "       syslog help",
+    "",
+    "write appends formatted entries to the log file; with no message the",
+    "lines of standard input become one entry each.",
+    "",
+    "write options:",
+    "  -p, --priority F.S   facility.severity, names or numbers",
+    "                       (default user.notice)",
+    "  -t, --tag TAG        the application tag (default $USER)",
+    "  --rfc3164            write the legacy header instead of RFC 5424",
+    "  -f, --file PATH      the log file (default $SYSLOG_FILE, then",
+    "                       eko-syslog.log in the working directory)",
+    "",
+    "show options:",
+    "  -l, --level SEV      show severities at least this severe (default debug)",
+    "  -p, --facility F     only this facility",
+    "  -t, --tag TAG        only this tag",
+    "  -g, --grep TEXT      only messages containing TEXT",
+    "  -n, --last N         only the last N entries of the selection",
+    "  -c, --count          print the size of the selection instead",
+    "  --raw                print the lines as written",
+    "  -f, --file PATH      read this file ('-' is standard input; default",
+    "                       the write target)",
+    "",
+    "Lines that do not parse are skipped and reported on standard error.",
+    "",
+    "Exit status: 0 when entries were written or selected, 1 when show",
+    "selected none, 2 on a usage or input/output error."}
+
+print_help: (out: Out) ! =
+    _help_lines.each((line): out.println(line))
+
+// ---------------------------------------------------------------- arguments
+
+// The value of a value-taking option.
+_take_value: (rest: []String, opt: String) -> Result ([String, []String]) String =
+    case rest:
+        {} -> Err "missing value for {opt}"
+        {v, ..tail} ->
+            pair: [String, []String] = {v, tail}
+            Ok pair
+
+parse_command: (argv: []String) -> Command =
+    case argv:
+        {} -> UsageFail "missing command"
+        {cmd, ..rest} ->
+            case cmd:
+                "write" -> _write_loop(rest, model.write_default())
+                "show" -> _show_loop(rest, model.show_default())
+                "help" | "-h" | "--help" -> HelpCmd
+                _ -> UsageFail "unknown command: {cmd}"
+
+_write_loop: (argv: []String, cfg: WriteCfg) -> Command =
+    case argv:
+        {} -> Write cfg
+        {a, ..rest} ->
+            case a:
+                "-p" | "--priority" -> _write_pri(rest, cfg)
+                "-t" | "--tag" -> _write_tag(rest, cfg)
+                "-f" | "--file" -> _write_file(rest, cfg)
+                "--rfc3164" -> _write_loop(rest, cfg.with({rfc3164: True}))
+                "--" -> Write cfg.with({msg: Some rest.join(" ")})
+                _ -> _write_other(a, argv, cfg)
+
+_write_pri: (rest: []String, cfg: WriteCfg) -> Command =
+    case _take_value(rest, "-p"):
+        Err e -> UsageFail e
+        Ok pair ->
+            (v, tail) = pair
+            case model.parse_priority(v):
+                Err e -> UsageFail e
+                Ok pri -> _write_loop(tail, cfg.with({pri: pri}))
+
+_write_tag: (rest: []String, cfg: WriteCfg) -> Command =
+    case _take_value(rest, "-t"):
+        Err e -> UsageFail e
+        Ok pair ->
+            (v, tail) = pair
+            _write_loop(tail, cfg.with({tag: Some v}))
+
+_write_file: (rest: []String, cfg: WriteCfg) -> Command =
+    case _take_value(rest, "-f"):
+        Err e -> UsageFail e
+        Ok pair ->
+            (v, tail) = pair
+            _write_loop(tail, cfg.with({file: Some v}))
+
+_write_other: (a: String, argv: []String, cfg: WriteCfg) -> Command =
+    if a.starts_with("-"):
+        UsageFail "unknown write option: {a}"
+    else:
+        Write cfg.with({msg: Some argv.join(" ")})
+
+_show_loop: (argv: []String, cfg: ShowCfg) -> Command =
+    case argv:
+        {} -> Show cfg
+        {a, ..rest} ->
+            case a:
+                "-l" | "--level" -> _show_level(rest, cfg)
+                "-p" | "--facility" -> _show_facility(rest, cfg)
+                "-t" | "--tag" -> _show_tag(rest, cfg)
+                "-g" | "--grep" -> _show_grep(rest, cfg)
+                "-n" | "--last" -> _show_last(rest, cfg)
+                "-c" | "--count" -> _show_loop(rest, cfg.with({count: True}))
+                "--raw" -> _show_loop(rest, cfg.with({raw: True}))
+                "-f" | "--file" -> _show_file(rest, cfg)
+                "-" -> _show_loop(rest, cfg.with({files: cfg.files ++ {"-"}}))
+                "--" -> Show cfg.with({files: cfg.files ++ rest})
+                _ -> _show_other(a, rest, cfg)
+
+_show_level: (rest: []String, cfg: ShowCfg) -> Command =
+    case _take_value(rest, "-l"):
+        Err e -> UsageFail e
+        Ok pair ->
+            (v, tail) = pair
+            case model.severity_index(v):
+                None -> UsageFail "unknown severity: {v}"
+                Some sev -> _show_loop(tail, cfg.with({level: sev}))
+
+_show_facility: (rest: []String, cfg: ShowCfg) -> Command =
+    case _take_value(rest, "-p"):
+        Err e -> UsageFail e
+        Ok pair ->
+            (v, tail) = pair
+            case model.facility_index(v):
+                None -> UsageFail "unknown facility: {v}"
+                Some fac -> _show_loop(tail, cfg.with({facility: Some fac}))
+
+_show_tag: (rest: []String, cfg: ShowCfg) -> Command =
+    case _take_value(rest, "-t"):
+        Err e -> UsageFail e
+        Ok pair ->
+            (v, tail) = pair
+            _show_loop(tail, cfg.with({tag: Some v}))
+
+_show_grep: (rest: []String, cfg: ShowCfg) -> Command =
+    case _take_value(rest, "-g"):
+        Err e -> UsageFail e
+        Ok pair ->
+            (v, tail) = pair
+            _show_loop(tail, cfg.with({needle: Some v}))
+
+_show_last: (rest: []String, cfg: ShowCfg) -> Command =
+    case _take_value(rest, "-n"):
+        Err e -> UsageFail e
+        Ok pair ->
+            (v, tail) = pair
+            case Int.parse(v):
+                Err _ -> UsageFail "invalid count for --last: {v}"
+                Ok n -> _show_loop(tail, cfg.with({last: Some n}))
+
+_show_file: (rest: []String, cfg: ShowCfg) -> Command =
+    case _take_value(rest, "-f"):
+        Err e -> UsageFail e
+        Ok pair ->
+            (v, tail) = pair
+            _show_loop(tail, cfg.with({files: cfg.files ++ {v}}))
+
+_show_other: (a: String, rest: []String, cfg: ShowCfg) -> Command =
+    if a.starts_with("-"):
+        UsageFail "unknown show option: {a}"
+    else:
+        _show_loop(rest, cfg.with({files: cfg.files ++ {a}}))
+
+// --------------------------------------------------------------------- tests
+
+parse_command_help: test =
+    assert(parse_command({}).eq(UsageFail "missing command"))
+    assert(parse_command({"help"}).eq(HelpCmd))
+    assert(parse_command({"-h"}).eq(HelpCmd))
+    assert(parse_command({"--help"}).eq(HelpCmd))
+    assert(parse_command({"bogus"}).eq(UsageFail "unknown command: bogus"))
+
+parse_command_write: test =
+    case parse_command({"write", "hello", "world"}):
+        Write cfg ->
+            assert_eq(cfg.pri, {facility: 1, severity: 5})
+            assert_eq(cfg.msg, Some "hello world")
+            assert(cfg.rfc3164.eq(False))
+            assert(cfg.file.is_none())
+        _ -> panic("expected Write")
+    case parse_command({"write", "-p", "local3.err", "--rfc3164",
+                        "-t", "web", "-f", "/tmp/x.log", "boom"}):
+        Write cfg ->
+            assert_eq(cfg.pri, {facility: 19, severity: 3})
+            assert_eq(cfg.tag, Some "web")
+            assert_eq(cfg.file, Some "/tmp/x.log")
+            assert(cfg.rfc3164.eq(True))
+            assert_eq(cfg.msg, Some "boom")
+        _ -> panic("expected Write with options")
+    case parse_command({"write", "--", "-p looks like text"}):
+        Write cfg -> assert_eq(cfg.msg, Some "-p looks like text")
+        _ -> panic("expected Write after --")
+    case parse_command({"write", "-p", "16.6"}):
+        Write cfg -> assert_eq(cfg.pri, {facility: 16, severity: 6})
+        _ -> panic("expected numeric priority")
+
+parse_command_write_rejection: test =
+    case parse_command({"write", "-p"}):
+        UsageFail e -> assert(e.contains("missing value"))
+        _ -> panic("expected UsageFail")
+    case parse_command({"write", "-p", "bogus"}):
+        UsageFail e -> assert(e.contains("facility.severity"))
+        _ -> panic("expected UsageFail")
+    case parse_command({"write", "-p", "nope.info"}):
+        UsageFail e -> assert(e.contains("unknown priority"))
+        _ -> panic("expected UsageFail")
+    case parse_command({"write", "--bogus"}):
+        UsageFail e -> assert(e.contains("unknown write option"))
+        _ -> panic("expected UsageFail")
+
+parse_command_show: test =
+    case parse_command({"show"}):
+        Show cfg ->
+            assert_eq(cfg.level, 7)
+            assert(cfg.facility.is_none())
+            assert(cfg.count.eq(False))
+            assert_eq(cfg.files, {})
+        _ -> panic("expected Show")
+    case parse_command({"show", "-l", "err", "-p", "local0", "-t", "web",
+                        "-g", "disk", "-n", "3", "-c", "--raw",
+                        "-f", "a.log", "-", "b.log"}):
+        Show cfg ->
+            assert_eq(cfg.level, 3)
+            assert_eq(cfg.facility, Some 16)
+            assert_eq(cfg.tag, Some "web")
+            assert_eq(cfg.needle, Some "disk")
+            assert_eq(cfg.last, Some 3)
+            assert(cfg.count.eq(True))
+            assert(cfg.raw.eq(True))
+            assert_eq(cfg.files, {"a.log", "-", "b.log"})
+        _ -> panic("expected Show with options")
+
+parse_command_show_rejection: test =
+    case parse_command({"show", "-l", "bogus"}):
+        UsageFail e -> assert(e.contains("unknown severity"))
+        _ -> panic("expected UsageFail")
+    case parse_command({"show", "-p", "24"}):
+        UsageFail e -> assert(e.contains("unknown facility"))
+        _ -> panic("expected UsageFail")
+    case parse_command({"show", "-n", "x"}):
+        UsageFail e -> assert(e.contains("invalid count"))
+        _ -> panic("expected UsageFail")
+    case parse_command({"show", "-x"}):
+        UsageFail e -> assert(e.contains("unknown show option"))
+        _ -> panic("expected UsageFail")
+
+help_lines_cover_commands: test =
+    assert(_help_lines.any((l): l.contains("syslog write")))
+    assert(_help_lines.any((l): l.contains("syslog show")))
+    assert(_help_lines.any((l): l.contains("Exit status: 0 when entries were written")))

@@ -1,0 +1,525 @@
+// Recursive-descent parser for the supported Lua subset. The token cursor
+// lives in cursor.eko; this module holds the grammar and the entry point.
+
+import ast
+import lexer
+import cursor
+
+// --------------------------------------------------------------- statements
+
+_parse_block: (p: Parser, stops: []String, acc: []Stmt) -> Result ([Parser, []Stmt]) String =
+    case cursor.peek(p).tok:
+        TSym ";" -> _parse_block(cursor.advance(p), stops, acc)
+        TEof -> Ok {p, acc}
+        TKw w if stops.any((s): s == w) -> Ok {p, acc}
+        _ ->
+            sr <- _parse_stmt(p).try()
+            (p1, s) = sr
+            _parse_block(p1, stops, acc ++ {s})
+
+_parse_stmt: (p: Parser) -> Result ([Parser, Stmt]) String =
+    t := cursor.peek(p)
+    case t.tok:
+        TKw "local" -> _parse_local(cursor.advance(p))
+        TKw "function" -> _parse_function(cursor.advance(p))
+        TKw "do" ->
+            br <- _end_block(cursor.advance(p)).try()
+            (p1, body) = br
+            Ok {p1, SDo body}
+        TKw "while" -> _parse_while(cursor.advance(p))
+        TKw "repeat" -> _parse_repeat(cursor.advance(p))
+        TKw "if" -> _parse_if_clauses(cursor.advance(p), {})
+        TKw "for" -> _parse_for(cursor.advance(p))
+        TKw "return" -> _parse_return(cursor.advance(p))
+        TKw "break" -> Ok {cursor.advance(p), SBreak}
+        TKw w -> Err "line {t.line}: unexpected '{w}'"
+        _ -> _parse_expr_stmt(p)
+
+_parse_local: (p: Parser) -> Result ([Parser, Stmt]) String =
+    if cursor.at_kw(p, "function"):
+        nr <- cursor.expect_name(cursor.advance(p)).try()
+        (p1, name) = nr
+        fb <- _parse_funcbody(p1).try()
+        (p2, params, body) = fb
+        Ok {p2, SLocalFunc {name, params, body}}
+    else:
+        ns <- _parse_names(p).try()
+        (p1, names) = ns
+        if cursor.at_sym(p1, "="):
+            es <- _parse_exprs(cursor.advance(p1)).try()
+            (p2, exprs) = es
+            Ok {p2, SLocal {names, exprs}}
+        else:
+            Ok {p1, SLocal {names, {}}}
+
+// A `function` declaration is an assignment of a closure to the dotted or
+// method name; a method name gains the implicit `self` parameter.
+_parse_function: (p: Parser) -> Result ([Parser, Stmt]) String =
+    nr <- cursor.expect_name(p).try()
+    (p1, name) = nr
+    fr <- _funcname_suffix(p1, EVar name).try()
+    (p2, target, method) = fr
+    fb <- _parse_funcbody(p2).try()
+    (p3, params, body) = fb
+    params2 := if method: {"self"} ++ params else: params
+    targets: []Expr = {target}
+    Ok {p3, SAssign {targets, {EFunc {params2, body}}}}
+
+_funcname_suffix: (p: Parser, target: Expr) -> Result ([Parser, Expr, Bool]) String =
+    if cursor.at_sym(p, "."):
+        nr <- cursor.expect_name(cursor.advance(p)).try()
+        (p1, name) = nr
+        _funcname_suffix(p1, EIndex {target, EStr name})
+    else:
+        if cursor.at_sym(p, ":"):
+            nr <- cursor.expect_name(cursor.advance(p)).try()
+            (p1, name) = nr
+            Ok {p1, EIndex {target, EStr name}, True}
+        else:
+            Ok {p, target, False}
+
+_parse_funcbody: (p: Parser) -> Result ([Parser, []String, []Stmt]) String =
+    p1 <- cursor.expect_sym(p, "(").try()
+    pr <- _parse_params(p1).try()
+    (p2, params) = pr
+    p3 <- cursor.expect_sym(p2, ")").try()
+    br <- _end_block(p3).try()
+    (p4, body) = br
+    Ok {p4, params, body}
+
+_parse_params: (p: Parser) -> Result ([Parser, []String]) String =
+    if cursor.at_sym(p, ")"):
+        Ok {p, {}}
+    else:
+        ns <- _parse_names(p).try()
+        (p1, names) = ns
+        if cursor.at_sym(p1, "..."):
+            Err "line {cursor.peek(p1).line}: varargs are not supported"
+        else:
+            Ok {p1, names}
+
+_parse_names: (p: Parser) -> Result ([Parser, []String]) String =
+    nr <- cursor.expect_name(p).try()
+    (p1, n) = nr
+    _parse_comma_rest(p1, {n}, cursor.expect_name)
+
+// The tail of a comma-separated list; the element parser is a parameter.
+_parse_comma_rest: (p: Parser, acc: []t, one: (Parser) -> Result ([Parser, t]) String) -> Result ([Parser, []t]) String =
+    if cursor.at_sym(p, ","):
+        xr <- one(cursor.advance(p)).try()
+        (p1, x) = xr
+        _parse_comma_rest(p1, acc ++ {x}, one)
+    else:
+        Ok {p, acc}
+
+// A block closed by `end`, with the keyword consumed.
+_end_block: (p: Parser) -> Result ([Parser, []Stmt]) String =
+    br <- _parse_block(p, {"end"}, {}).try()
+    (p1, body) = br
+    p2 <- cursor.expect_kw(p1, "end").try()
+    Ok {p2, body}
+
+_parse_while: (p: Parser) -> Result ([Parser, Stmt]) String =
+    cr <- _parse_expr(p, 0).try()
+    (p1, cond) = cr
+    p2 <- cursor.expect_kw(p1, "do").try()
+    br <- _end_block(p2).try()
+    (p3, body) = br
+    Ok {p3, SWhile {cond, body}}
+
+_parse_repeat: (p: Parser) -> Result ([Parser, Stmt]) String =
+    br <- _parse_block(p, {"until"}, {}).try()
+    (p1, body) = br
+    p2 <- cursor.expect_kw(p1, "until").try()
+    cr <- _parse_expr(p2, 0).try()
+    (p3, cond) = cr
+    Ok {p3, SRepeat {body, cond}}
+
+// One `cond then body` clause per step; `elseif` chains through the
+// recursion, and `else`/`end` close the statement.
+_parse_if_clauses: (p: Parser, acc: []IfClause) -> Result ([Parser, Stmt]) String =
+    cr <- _parse_expr(p, 0).try()
+    (p1, cond) = cr
+    p2 <- cursor.expect_kw(p1, "then").try()
+    br <- _parse_block(p2, {"elseif", "else", "end"}, {}).try()
+    (p3, body) = br
+    clause: IfClause = {cond: cond, body: body}
+    acc1 := acc ++ {clause}
+    if cursor.at_kw(p3, "elseif"):
+        _parse_if_clauses(cursor.advance(p3), acc1)
+    else:
+        if cursor.at_kw(p3, "else"):
+            er <- _end_block(cursor.advance(p3)).try()
+            (p4, else_body) = er
+            Ok {p4, SIf {acc1, Some else_body}}
+        else:
+            p4 <- cursor.expect_kw(p3, "end").try()
+            Ok {p4, SIf {acc1, None}}
+
+_parse_for: (p: Parser) -> Result ([Parser, Stmt]) String =
+    nr <- cursor.expect_name(p).try()
+    (p1, name) = nr
+    if cursor.at_sym(p1, "="):
+        _parse_for_num(cursor.advance(p1), name)
+    else:
+        _parse_for_in(p1, name)
+
+// A numeric for is `for name = start, stop[, step] do body end`.
+_parse_for_num: (p: Parser, name: String) -> Result ([Parser, Stmt]) String =
+    sr <- _parse_expr(p, 0).try()
+    (p2, start) = sr
+    p3 <- cursor.expect_sym(p2, ",").try()
+    er <- _parse_expr(p3, 0).try()
+    (p4, stop) = er
+    if cursor.at_sym(p4, ","):
+        st <- _parse_expr(cursor.advance(p4), 0).try()
+        (p5, step_e) = st
+        _for_num_block(p5, name, start, stop, Some step_e)
+    else:
+        _for_num_block(p4, name, start, stop, None)
+
+_for_num_block: (p: Parser, name: String, start: Expr, stop: Expr, step: Option Expr) -> Result ([Parser, Stmt]) String =
+    p6 <- cursor.expect_kw(p, "do").try()
+    br <- _end_block(p6).try()
+    (p7, body) = br
+    Ok {p7, SForNum {name, start, stop, step, body}}
+
+_parse_for_in: (p: Parser, name: String) -> Result ([Parser, Stmt]) String =
+    ns <- _parse_comma_rest(p, {name}, cursor.expect_name).try()
+    (p2, names) = ns
+    p3 <- cursor.expect_kw(p2, "in").try()
+    ir <- _parse_expr(p3, 0).try()
+    (p4, iter) = ir
+    p5 <- cursor.expect_kw(p4, "do").try()
+    br <- _end_block(p5).try()
+    (p6, body) = br
+    Ok {p6, SForIn {names, iter, body}}
+
+_parse_return: (p: Parser) -> Result ([Parser, Stmt]) String =
+    if cursor.is_block_end(p):
+        Ok {p, SReturn None}
+    else:
+        er <- _parse_expr(p, 0).try()
+        (p1, e) = er
+        if cursor.at_sym(p1, ","):
+            Err "line {cursor.peek(p1).line}: multiple return values are not supported"
+        else:
+            Ok {p1, SReturn (Some e)}
+
+_parse_expr_stmt: (p: Parser) -> Result ([Parser, Stmt]) String =
+    er <- _parse_expr(p, 0).try()
+    (p1, first) = er
+    if cursor.at_sym(p1, "=") || cursor.at_sym(p1, ","):
+        tr <- _parse_comma_rest(p1, {first}, (q): _parse_expr(q, 0)).try()
+        (p2, targets) = tr
+        p3 <- cursor.expect_sym(p2, "=").try()
+        es <- _parse_exprs(p3).try()
+        (p4, exprs) = es
+        if targets.all((t): cursor.is_lvalue(t)):
+            Ok {p4, SAssign {targets, exprs}}
+        else:
+            Err "line {cursor.peek(p4).line}: assignment target is not a variable or field"
+    else:
+        if cursor.is_call_expr(first):
+            Ok {p1, SExpr first}
+        else:
+            Err "line {cursor.peek(p1).line}: expression is not a statement"
+
+// -------------------------------------------------------------- expressions
+
+_parse_expr: (p: Parser, min_prec: Int) -> Result ([Parser, Expr]) String =
+    ur <- _parse_unary(p).try()
+    (p1, e) = ur
+    _parse_bin_rest(p1, e, min_prec)
+
+_parse_bin_rest: (p: Parser, lhs: Expr, min_prec: Int) -> Result ([Parser, Expr]) String =
+    case cursor.bin_info(p):
+        None -> Ok {p, lhs}
+        Some info ->
+            if info.prec < min_prec:
+                Ok {p, lhs}
+            else:
+                rr <- _parse_expr(cursor.advance(p), if info.right: info.prec else: info.prec + 1).try()
+                (p2, rhs) = rr
+                _parse_bin_rest(p2, EBin {info.op, lhs, rhs}, min_prec)
+
+_parse_unary: (p: Parser) -> Result ([Parser, Expr]) String =
+    case cursor.peek(p).tok:
+        TSym "-" -> _unary_rest(p, UnNeg)
+        TKw "not" -> _unary_rest(p, UnNot)
+        TSym "#" -> _unary_rest(p, UnLen)
+        _ -> _parse_primary(p)
+
+_unary_rest: (p: Parser, op: UnOp) -> Result ([Parser, Expr]) String =
+    er <- _parse_expr(cursor.advance(p), 7).try()
+    (p1, e) = er
+    Ok {p1, EUn {op, e}}
+
+_parse_primary: (p: Parser) -> Result ([Parser, Expr]) String =
+    case cursor.peek(p).tok:
+        TKw "nil" -> Ok {cursor.advance(p), ENil}
+        TKw "true" -> Ok {cursor.advance(p), EBool True}
+        TKw "false" -> Ok {cursor.advance(p), EBool False}
+        TNum n -> Ok {cursor.advance(p), ENum n}
+        TStr s -> Ok {cursor.advance(p), EStr s}
+        TName n -> _parse_suffix(cursor.advance(p), EVar n)
+        TSym "(" -> _parse_paren(cursor.advance(p))
+        TSym "\{" ->
+            tf <- _parse_table(p).try()
+            (p1, fields) = tf
+            Ok {p1, ETable fields}
+        TKw "function" -> _parse_function_expr(cursor.advance(p))
+        _ -> Err "line {cursor.peek(p).line}: unexpected '{cursor.tok_text(cursor.peek(p).tok)}'"
+
+_parse_paren: (p: Parser) -> Result ([Parser, Expr]) String =
+    er <- _parse_expr(p, 0).try()
+    (p1, e) = er
+    p2 <- cursor.expect_sym(p1, ")").try()
+    _parse_suffix(p2, e)
+
+_parse_function_expr: (p: Parser) -> Result ([Parser, Expr]) String =
+    fb <- _parse_funcbody(p).try()
+    (p1, params, body) = fb
+    Ok {p1, EFunc {params, body}}
+
+_parse_suffix: (p: Parser, e: Expr) -> Result ([Parser, Expr]) String =
+    case cursor.peek(p).tok:
+        TSym "." -> _suffix_dot(p, e)
+        TSym "[" -> _suffix_index(p, e)
+        TSym ":" -> _suffix_method(p, e)
+        _ if cursor.starts_args(cursor.peek(p).tok) -> _suffix_args(p, e)
+        _ -> Ok {p, e}
+
+_suffix_dot: (p: Parser, e: Expr) -> Result ([Parser, Expr]) String =
+    nr <- cursor.expect_name(cursor.advance(p)).try()
+    (p1, name) = nr
+    _parse_suffix(p1, EIndex {e, EStr name})
+
+_suffix_index: (p: Parser, e: Expr) -> Result ([Parser, Expr]) String =
+    kr <- _parse_expr(cursor.advance(p), 0).try()
+    (p1, key) = kr
+    p2 <- cursor.expect_sym(p1, "]").try()
+    _parse_suffix(p2, EIndex {e, key})
+
+_suffix_method: (p: Parser, e: Expr) -> Result ([Parser, Expr]) String =
+    nr <- cursor.expect_name(cursor.advance(p)).try()
+    (p1, name) = nr
+    ar <- _parse_args(p1).try()
+    (p2, argv) = ar
+    _parse_suffix(p2, EMethod {e, name, argv})
+
+_suffix_args: (p: Parser, e: Expr) -> Result ([Parser, Expr]) String =
+    ar <- _parse_args(p).try()
+    (p1, argv) = ar
+    _parse_suffix(p1, ECall {e, argv})
+
+_parse_args: (p: Parser) -> Result ([Parser, []Expr]) String =
+    case cursor.peek(p).tok:
+        TSym "(" -> _parse_paren_args(cursor.advance(p))
+        TStr s -> Ok {cursor.advance(p), {EStr s}}
+        TSym "\{" ->
+            tf <- _parse_table(p).try()
+            (p1, fields) = tf
+            Ok {p1, {ETable fields}}
+        _ -> Err "line {cursor.peek(p).line}: expected call arguments"
+
+_parse_paren_args: (p: Parser) -> Result ([Parser, []Expr]) String =
+    if cursor.at_sym(p, ")"):
+        Ok {cursor.advance(p), {}}
+    else:
+        es <- _parse_exprs(p).try()
+        (p1, exprs) = es
+        p2 <- cursor.expect_sym(p1, ")").try()
+        Ok {p2, exprs}
+
+_parse_table: (p: Parser) -> Result ([Parser, []TableField]) String =
+    _parse_table_fields(cursor.advance(p), {})
+
+_parse_table_fields: (p: Parser, acc: []TableField) -> Result ([Parser, []TableField]) String =
+    if cursor.at_sym(p, "}"):
+        Ok {cursor.advance(p), acc}
+    else:
+        fr <- _parse_field(p).try()
+        (p1, f) = fr
+        if cursor.at_sym(p1, ",") || cursor.at_sym(p1, ";"):
+            _parse_table_fields(cursor.advance(p1), acc ++ {f})
+        else:
+            if cursor.at_sym(p1, "}"):
+                Ok {cursor.advance(p1), acc ++ {f}}
+            else:
+                Err "line {cursor.peek(p1).line}: expected ',' or '}' in table constructor"
+
+_parse_field: (p: Parser) -> Result ([Parser, TableField]) String =
+    if cursor.at_sym(p, "["):
+        _field_keyed(p)
+    else:
+        if cursor.looks_named(p):
+            _field_named(p)
+        else:
+            er <- _parse_expr(p, 0).try()
+            (p1, e) = er
+            Ok {p1, FPos e}
+
+_field_keyed: (p: Parser) -> Result ([Parser, TableField]) String =
+    kr <- _parse_expr(cursor.advance(p), 0).try()
+    (p1, key) = kr
+    p2 <- cursor.expect_sym(p1, "]").try()
+    p3 <- cursor.expect_sym(p2, "=").try()
+    vr <- _parse_expr(p3, 0).try()
+    (p4, value) = vr
+    Ok {p4, FKeyed {key, value}}
+
+_field_named: (p: Parser) -> Result ([Parser, TableField]) String =
+    case cursor.peek(p).tok:
+        TName name ->
+            vr <- _parse_expr(cursor.advance(cursor.advance(p)), 0).try()
+            (p1, value) = vr
+            Ok {p1, FNamed {name, value}}
+        _ -> Err "internal: named field is not a name"
+
+_parse_exprs: (p: Parser) -> Result ([Parser, []Expr]) String =
+    er <- _parse_expr(p, 0).try()
+    (p1, e) = er
+    _parse_comma_rest(p1, {e}, (q): _parse_expr(q, 0))
+
+/// Parses a Lua chunk into a statement list.
+parse: (src: String) -> Result ([]Stmt) String =
+    toks <- lexer.lex(src).try()
+    _parse_tokens(toks)
+
+_parse_tokens: (toks: []Token) -> Result ([]Stmt) String =
+    p: Parser = {tokens: toks, pos: 0}
+    br <- _parse_block(p, {}, {}).try()
+    (p1, stmts) = br
+    if cursor.is_eof(p1):
+        Ok stmts
+    else:
+        Err "line {cursor.peek(p1).line}: trailing input"
+
+// --------------------------------------------------------------------- tests
+
+_parse_ok: (src: String) -> []Stmt =
+    case parse(src):
+        Ok stmts -> stmts
+        Err e -> panic("parse failed: {e}")
+
+_parse_err: (src: String) -> String =
+    case parse(src):
+        Err e -> e
+        Ok _ -> panic("expected a parse error")
+
+parse_local: test =
+    assert_eq(_parse_ok("local x"), {SLocal {{"x"}, {}}})
+    assert_eq(_parse_ok("local x, y = 1, 2"),
+        {SLocal {{"x", "y"}, {ENum 1.0, ENum 2.0}}})
+    assert_eq(_parse_ok("local function f(a) return a end"),
+        {SLocalFunc {"f", {"a"}, {SReturn (Some (EVar "a"))}}})
+
+parse_assignment: test =
+    assert_eq(_parse_ok("a, b = 1, 2"),
+        {SAssign {{EVar "a", EVar "b"}, {ENum 1.0, ENum 2.0}}})
+    assert_eq(_parse_ok("t.x[1] = f()"),
+        {SAssign {{EIndex {EIndex {EVar "t", EStr "x"}, ENum 1.0}},
+                  {ECall {EVar "f", {}}}}})
+
+parse_if: test =
+    case _parse_ok("if a then x = 1 elseif b then y = 2 else z = 3 end"):
+        {SIf {clauses, else_body}} ->
+            assert_eq(clauses.length(), 2)
+            assert_eq(clauses.get(0).map((c): c.cond), Some (EVar "a"))
+            assert_eq(clauses.get(1).map((c): c.cond), Some (EVar "b"))
+            assert_eq(clauses.get(0).map((c): c.body),
+                Some {SAssign {{EVar "x"}, {ENum 1.0}}})
+            assert_eq(else_body, Some {SAssign {{EVar "z"}, {ENum 3.0}}})
+        _ -> panic("expected SIf")
+
+parse_loops: test =
+    assert_eq(_parse_ok("while a < b do x = x + 1 end"),
+        {SWhile {EBin {OpLt, EVar "a", EVar "b"},
+                 {SAssign {{EVar "x"}, {EBin {OpAdd, EVar "x", ENum 1.0}}}}}})
+    assert_eq(_parse_ok("repeat x = 1 until done"),
+        {SRepeat {{SAssign {{EVar "x"}, {ENum 1.0}}}, EVar "done"}})
+
+parse_for_num: test =
+    assert_eq(_parse_ok("for i = 1, 10 do x = i end"),
+        {SForNum {"i", ENum 1.0, ENum 10.0, None,
+                  {SAssign {{EVar "x"}, {EVar "i"}}}}})
+    assert_eq(_parse_ok("for i = 1, 10, 2 do end"),
+        {SForNum {"i", ENum 1.0, ENum 10.0, Some (ENum 2.0), {}}})
+
+parse_for_in: test =
+    assert_eq(_parse_ok("for k, v in pairs(t) do print(k, v) end"),
+        {SForIn {{"k", "v"}, ECall {EVar "pairs", {EVar "t"}},
+                 {SExpr (ECall {EVar "print", {EVar "k", EVar "v"}})}}})
+
+parse_break_return: test =
+    assert_eq(_parse_ok("break"), {SBreak})
+    assert_eq(_parse_ok("return"), {SReturn None})
+    assert_eq(_parse_ok("return x"), {SReturn (Some (EVar "x"))})
+
+parse_function_forms: test =
+    assert_eq(_parse_ok("function f() end"),
+        {SAssign {{EVar "f"}, {EFunc {{}, {}}}}})
+    assert_eq(_parse_ok("function a.b(x) end"),
+        {SAssign {{EIndex {EVar "a", EStr "b"}}, {EFunc {{"x"}, {}}}}})
+    // A method name gains the implicit self parameter.
+    assert_eq(_parse_ok("function a:b(x) end"),
+        {SAssign {{EIndex {EVar "a", EStr "b"}}, {EFunc {{"self", "x"}, {}}}}})
+
+parse_calls: test =
+    assert_eq(_parse_ok("f()"), {SExpr (ECall {EVar "f", {}})})
+    assert_eq(_parse_ok("f(1)(2)"),
+        {SExpr (ECall {ECall {EVar "f", {ENum 1.0}}, {ENum 2.0}})})
+    assert_eq(_parse_ok("obj:method(1, \"s\")"),
+        {SExpr (EMethod {EVar "obj", "method", {ENum 1.0, EStr "s"}})})
+    assert_eq(_parse_ok("t.x.y(2)"),
+        {SExpr (ECall {EIndex {EIndex {EVar "t", EStr "x"}, EStr "y"},
+                       {ENum 2.0}})})
+    assert_eq(_parse_ok("print\"x\""), {SExpr (ECall {EVar "print", {EStr "x"}})})
+    assert_eq(_parse_ok("print\{1}"),
+        {SExpr (ECall {EVar "print", {ETable {FPos (ENum 1.0)}}})})
+
+parse_table: test =
+    assert_eq(_parse_ok("t = \{1, name = \"x\", [k] = 2,}"),
+        {SAssign {{EVar "t"},
+                  {ETable {FPos (ENum 1.0), FNamed {"name", EStr "x"},
+                           FKeyed {EVar "k", ENum 2.0}}}}})
+
+parse_precedence: test =
+    assert_eq(_parse_ok("x = 1 + 2 * 3 ^ 4"),
+        {SAssign {{EVar "x"},
+                  {EBin {OpAdd, ENum 1.0,
+                         EBin {OpMul, ENum 2.0, EBin {OpPow, ENum 3.0, ENum 4.0}}}}}})
+    // Unary minus takes the whole power expression, as in Lua.
+    assert_eq(_parse_ok("x = -y ^ 2"),
+        {SAssign {{EVar "x"}, {EUn {UnNeg, EBin {OpPow, EVar "y", ENum 2.0}}}}})
+    assert_eq(_parse_ok("x = a < b and c"),
+        {SAssign {{EVar "x"},
+                  {EBin {OpAnd, EBin {OpLt, EVar "a", EVar "b"}, EVar "c"}}}})
+    assert_eq(_parse_ok("x = (1 + 2) * 3"),
+        {SAssign {{EVar "x"},
+                  {EBin {OpMul, EBin {OpAdd, ENum 1.0, ENum 2.0}, ENum 3.0}}}})
+    // Concatenation is right associative.
+    assert_eq(_parse_ok("x = a .. b .. c"),
+        {SAssign {{EVar "x"},
+                  {EBin {OpConcat, EVar "a", EBin {OpConcat, EVar "b", EVar "c"}}}}})
+
+parse_blocks: test =
+    assert_eq(_parse_ok("do ; end"), {SDo {}})
+    assert_eq(_parse_ok(";;").length(), 0)
+
+parse_errors: test =
+    assert_eq(_parse_err("local"), "line 1: expected a name, found 'end of input'")
+    assert_eq(_parse_err("x"), "line 1: expression is not a statement")
+    assert_eq(_parse_err("1 = 2"),
+        "line 1: assignment target is not a variable or field")
+    assert_eq(_parse_err("function f(a ...) end"),
+        "line 1: varargs are not supported")
+    assert_eq(_parse_err("return 1, 2"),
+        "line 1: multiple return values are not supported")
+    assert_eq(_parse_err("if a then"), "line 1: expected 'end', found 'end of input'")
+    assert_eq(_parse_err("x = "), "line 1: unexpected 'end of input'")
+    assert_eq(_parse_err("t = \{1, 2"),
+        "line 1: expected ',' or '}' in table constructor")
+    assert_eq(_parse_err("for = 1, 2 do end"), "line 1: expected a name, found '='")
+    assert_eq(_parse_err("local x = 1\ny +"), "line 2: unexpected 'end of input'")

@@ -1,0 +1,392 @@
+// syslog: a logger and a log viewer in the syslog(3) tradition.
+//
+//   syslog write [options] [<message>...]
+//   syslog show [options] [file ...]
+//   syslog help
+//
+// `write` is the logger(1) role: it stamps a message with a priority
+// (facility.severity), a tag, and the host name, and appends the formatted
+// entry to a log file. `show` is the viewer role: it reads one or more log
+// files (or standard input), parses the entries back, filters them by
+// severity, facility, tag, and text, and prints the selection.
+//
+// Entries are written in RFC 5424 form by default:
+//
+//   <134>1 2026-11-05T09:17:01.250Z host tag - - message
+//
+// and in RFC 3164 form under --rfc3164:
+//
+//   <6>Nov  5 09:17:01 host tag: message
+//
+// The reader accepts both forms on every line. There is no socket: the
+// transport is the log file itself, selected with --file or the
+// SYSLOG_FILE variable, defaulting to eko-syslog.log in the working
+// directory.
+//
+// The program is split into modules: model (the types and the name
+// tables), stamp (the wire-format timestamps), parse and format (the
+// wire formats), select (the filters), and args (the command grammar).
+// This module is the entry point: main and the I/O shell that turns a
+// parsed command into reads and writes, plus the round-trip and
+// dispatch tests.
+
+import std/time
+import model
+import stamp
+import parse
+import format
+import select
+import args
+
+// -------------------------------------------------------------------- shell
+
+// The failure text of the I/O error union.
+_io_message: (e: IoError) -> String =
+    case e:
+        NotFound -> "no such file or directory"
+        Permission -> "permission denied"
+        Exists -> "file exists"
+        NotFile -> "not a regular file"
+        Closed -> "handle closed"
+        InvalidData why -> "invalid data: {why}"
+        Other why -> why
+
+// The write target: $SYSLOG_FILE, then the working-directory default.
+_default_file: (env: Env) !-> String =
+    Env.get(env, "SYSLOG_FILE").unwrap_or("eko-syslog.log")
+
+// The default tag: $USER, then the tool's own name.
+_default_tag: (env: Env) !-> String =
+    Env.get(env, "USER").unwrap_or("syslog")
+
+// The host name of the running system, or `-` when it does not read.
+_read_hostname: (fs: Fs) !-> String =
+    case fs.read("/proc/sys/kernel/hostname"):
+        Ok s -> s.trim()
+        Err _ -> "-"
+
+// One entry at one instant, in the selected format's stamp style.
+_build_entry: (pri: Pri, tag: String, host: String, now: Time,
+               rfc3164: Bool, msg: String) -> Entry =
+    stamp_text := if rfc3164: stamp.stamp_3164(now) else: stamp.stamp_5424(now)
+    {pri: pri, stamp: stamp_text, host: host, tag: tag, msg: msg}
+
+_append_entry: (err: Out, fs: Fs, file: String, e: Entry,
+                rfc3164: Bool) !-> Int =
+    case fs.append(file, format.format_entry(e, rfc3164) ++ "\n"):
+        Ok _ -> 0
+        Err why ->
+            err.println("syslog: {file}: {_io_message(why)}")
+            2
+
+_write_one: (err: Out, fs: Fs, clock: Clock, file: String, tag: String,
+             host: String, cfg: WriteCfg, msg: String) !-> Int =
+    now := clock.now()
+    e := _build_entry(cfg.pri, tag, host, now, cfg.rfc3164, msg)
+    _append_entry(err, fs, file, e, cfg.rfc3164)
+
+_write_stream: (err: Out, fs: Fs, clock: Clock, inp: In, file: String,
+                tag: String, host: String, cfg: WriteCfg) !-> Int =
+    case inp.read_line():
+        Err why ->
+            err.println("syslog: <stdin>: {_io_message(why)}")
+            2
+        Ok None -> 0
+        Ok (Some line) ->
+            code := _write_one(err, fs, clock, file, tag, host, cfg, line)
+            if code == 0:
+                _write_stream(err, fs, clock, inp, file, tag, host, cfg)
+            else:
+                code
+
+_run_write: (err: Out, fs: Fs, env: Env, clock: Clock, inp: In,
+             cfg: WriteCfg) !-> Int =
+    file := cfg.file.unwrap_or(_default_file(env))
+    tag := cfg.tag.unwrap_or(_default_tag(env))
+    host := _read_hostname(fs)
+    case cfg.msg:
+        Some msg -> _write_one(err, fs, clock, file, tag, host, cfg, msg)
+        None -> _write_stream(err, fs, clock, inp, file, tag, host, cfg)
+
+// The accumulated viewer state across inputs.
+_ShowAcc: type = [lines: []Picked, skipped: Int, io_error: Bool]
+
+_empty_acc: () -> _ShowAcc = {lines: {}, skipped: 0, io_error: False}
+
+_error_acc: () -> _ShowAcc = {lines: {}, skipped: 0, io_error: True}
+
+// The merged viewer state of two walks.
+_merge_acc: (head: _ShowAcc, tail: _ShowAcc) -> _ShowAcc =
+    {lines: head.lines ++ tail.lines,
+     skipped: head.skipped + tail.skipped,
+     io_error: head.io_error || tail.io_error}
+
+_show_text: (acc: _ShowAcc, text: String, cfg: ShowCfg,
+             prefix: String) -> _ShowAcc =
+    res := select.pick(text.lines(), cfg, prefix)
+    _merge_acc(acc, {lines: res.picked, skipped: res.skipped, io_error: False})
+
+_show_input: (err: Out, fs: Fs, inp: In, name: String, cfg: ShowCfg,
+              prefix: String) !-> _ShowAcc =
+    if name == "-":
+        _show_stream(_empty_acc(), err, inp, cfg, prefix)
+    else:
+        case fs.read(name):
+            Err why ->
+                err.println("syslog: {name}: {_io_message(why)}")
+                _error_acc()
+            Ok text -> _show_text(_empty_acc(), text, cfg, prefix)
+
+// One line absorbed into the viewer state through the shared per-line
+// selection step: unparseable lines count, selected lines accumulate,
+// filtered lines change nothing.
+_absorb: (acc: _ShowAcc, line: String, cfg: ShowCfg,
+          prefix: String) -> _ShowAcc =
+    case select.step_line(line, cfg, prefix):
+        Skip -> acc.with({skipped: acc.skipped + 1})
+        Keep p -> acc.with({lines: acc.lines ++ {p}})
+        Drop -> acc
+
+// The streaming walk: one line of standard input at a time.
+_show_stream: (acc: _ShowAcc, err: Out, inp: In, cfg: ShowCfg,
+               prefix: String) !-> _ShowAcc =
+    case inp.read_line():
+        Err why ->
+            err.println("syslog: <stdin>: {_io_message(why)}")
+            acc.with({io_error: True})
+        Ok None -> acc
+        Ok (Some line) ->
+            _show_stream(_absorb(acc, line, cfg, prefix), err, inp, cfg, prefix)
+
+// The unparseable-line report for one input; silent when the input
+// parsed clean.
+_report_skipped: (err: Out, name: String, skipped: Int) ! =
+    if skipped > 0:
+        err.println("syslog: {name}: skipped {skipped} unparseable {if skipped == 1: "line" else: "lines"}")
+
+_show_all: (err: Out, fs: Fs, inp: In, names: []String, cfg: ShowCfg,
+            prefix_all: Bool) !-> _ShowAcc =
+    case names:
+        {} -> _empty_acc()
+        {name, ..rest} ->
+            prefix := if prefix_all: "{name}: " else: ""
+            head := _show_input(err, fs, inp, name, cfg, prefix)
+            _report_skipped(err, name, head.skipped)
+            tail := _show_all(err, fs, inp, rest, cfg, prefix_all)
+            _merge_acc(head, tail)
+
+_run_show: (out: Out, err: Out, fs: Fs, env: Env, inp: In,
+            cfg: ShowCfg) !-> Int =
+    names := if cfg.files.length() > 0: cfg.files else: {_default_file(env)}
+    acc := _show_all(err, fs, inp, names, cfg, names.length() > 1)
+    final := select.apply_last(acc.lines, cfg.last)
+    if cfg.count:
+        out.println("{final.length()}")
+    else:
+        final.each((p): out.println(if cfg.raw: p.raw else: p.pretty))
+    _show_status(acc.io_error, final.length())
+
+_show_status: (io_error: Bool, selected: Int) -> Int =
+    if io_error: 2
+    else:
+        if selected > 0: 0 else: 1
+
+// The parameter list is the authorization manifest: output, arguments,
+// the file system, the environment, the clock, standard input, and the
+// process exit channel. There is no other I/O entrance.
+main: (out: Out, args: Args, fs: Fs, env: Env, clock: Clock, inp: In,
+       proc: Proc) ! =
+    code := _dispatch(out, Out.err(), args.all(), fs, env, clock, inp)
+    Proc.exit(proc, code)
+
+_dispatch: (out: Out, err: Out, argv: []String, fs: Fs, env: Env,
+            clock: Clock, inp: In) !-> Int =
+    case args.parse_command(argv):
+        HelpCmd ->
+            args.print_help(out)
+            0
+        UsageFail msg ->
+            err.println("syslog: {msg}")
+            err.println("Try 'syslog help' for usage.")
+            2
+        Write cfg -> _run_write(err, fs, env, clock, inp, cfg)
+        Show cfg -> _run_show(out, err, fs, env, inp, cfg)
+
+// --------------------------------------------------------------------- tests
+
+// One known entry the round-trip tests share.
+_sample: Entry = {
+    pri: {facility: 1, severity: 5},
+    stamp: "2026-11-05T09:17:01.250Z",
+    host: "box",
+    tag: "app",
+    msg: "hello world"}
+
+parse_5424_round_trip: test =
+    line := format.format_5424(_sample)
+    assert_eq(parse.parse_line(line), Some _sample)
+    tagged: Entry = _sample.with({tag: "web[42]"})
+    assert_eq(parse.parse_line(format.format_5424(tagged)), Some tagged)
+    empty: Entry = _sample.with({msg: ""})
+    assert_eq(parse.parse_line(format.format_5424(empty)), Some empty)
+
+parse_3164_round_trip: test =
+    legacy: Entry = _sample.with({stamp: "Nov  5 09:17:01", msg: "boot ok"})
+    line := format.format_3164(legacy)
+    got := parse.parse_line(line)
+    assert_eq(got.map((e): e.pri), Some legacy.pri)
+    assert_eq(got.map((e): e.stamp), Some legacy.stamp)
+    assert_eq(got.map((e): e.host), Some legacy.host)
+    assert_eq(got.map((e): e.tag), Some legacy.tag)
+    assert_eq(got.map((e): e.msg), Some legacy.msg)
+
+io_messages: test =
+    assert_eq(_io_message(NotFound), "no such file or directory")
+    assert_eq(_io_message(Permission), "permission denied")
+    assert_eq(_io_message(NotFile), "not a regular file")
+    assert_eq(_io_message(Other "boom"), "boom")
+    assert_eq(_io_message(InvalidData "utf-8"), "invalid data: utf-8")
+
+show_status: test =
+    assert_eq(_show_status(False, 3), 0)
+    assert_eq(_show_status(False, 0), 1)
+    assert_eq(_show_status(True, 3), 2)
+
+// ---------------------------------------------------------- dispatch tests
+
+// One 5424 wire line and its rendered form, shared by the shell tests.
+_line: String = "<13>1 2026-11-05T09:17:01.250Z box app - - - hello world"
+_pretty: String = "2026-11-05T09:17:01.250Z user.notice app: hello world"
+
+// The frozen world the dispatch tests run in: no files, no variables,
+// the epoch clock.
+_test_fs: Fs = Fs.null()
+_test_env: Env = Env.frozen({})
+_test_clock: Clock = Clock.frozen(Time 0)
+
+dispatch_show_stdin_exact: test =
+    second := "<11>1 2026-11-05T09:17:02.250Z box web - - - second"
+    second_pretty := "2026-11-05T09:17:02.250Z user.error web: second"
+    out := Out.tee(Out.null(), (s): assert(s == _pretty || s == second_pretty))
+    status := _dispatch(out, Out.null(), {"show", "-f", "-"}, _test_fs,
+                        _test_env, _test_clock, In.from_lines({_line, second}))
+    assert_eq(status, 0)
+
+dispatch_show_count: test =
+    out := Out.tee(Out.null(), (s): assert_eq(s, "2"))
+    status := _dispatch(out, Out.null(), {"show", "-c", "-f", "-"}, _test_fs,
+                        _test_env, _test_clock, In.from_lines({_line, _line}))
+    assert_eq(status, 0)
+
+dispatch_show_raw: test =
+    out := Out.tee(Out.null(), (s): assert_eq(s, _line))
+    status := _dispatch(out, Out.null(), {"show", "--raw", "-f", "-"}, _test_fs,
+                        _test_env, _test_clock, In.from_lines({_line}))
+    assert_eq(status, 0)
+
+dispatch_show_level_ceiling: test =
+    out := Out.tee(Out.null(), (s): panic("unexpected output: {s}"))
+    status := _dispatch(out, Out.null(), {"show", "-l", "err", "-f", "-"},
+                        _test_fs, _test_env, _test_clock, In.from_lines({_line}))
+    assert_eq(status, 1)
+
+dispatch_show_facility: test =
+    out := Out.tee(Out.null(), (s): panic("unexpected output: {s}"))
+    miss := _dispatch(out, Out.null(), {"show", "-p", "daemon", "-f", "-"},
+                      _test_fs, _test_env, _test_clock, In.from_lines({_line}))
+    assert_eq(miss, 1)
+    hit_out := Out.tee(Out.null(), (s): assert_eq(s, _pretty))
+    hit := _dispatch(hit_out, Out.null(), {"show", "-p", "user", "-f", "-"},
+                     _test_fs, _test_env, _test_clock, In.from_lines({_line}))
+    assert_eq(hit, 0)
+
+dispatch_show_tag: test =
+    out := Out.tee(Out.null(), (s): panic("unexpected output: {s}"))
+    miss := _dispatch(out, Out.null(), {"show", "-t", "other", "-f", "-"},
+                      _test_fs, _test_env, _test_clock, In.from_lines({_line}))
+    assert_eq(miss, 1)
+    hit_out := Out.tee(Out.null(), (s): assert_eq(s, _pretty))
+    hit := _dispatch(hit_out, Out.null(), {"show", "-t", "app", "-f", "-"},
+                     _test_fs, _test_env, _test_clock, In.from_lines({_line}))
+    assert_eq(hit, 0)
+
+dispatch_show_grep: test =
+    out := Out.tee(Out.null(), (s): panic("unexpected output: {s}"))
+    miss := _dispatch(out, Out.null(), {"show", "-g", "absent", "-f", "-"},
+                      _test_fs, _test_env, _test_clock, In.from_lines({_line}))
+    assert_eq(miss, 1)
+    hit_out := Out.tee(Out.null(), (s): assert_eq(s, _pretty))
+    hit := _dispatch(hit_out, Out.null(), {"show", "-g", "hello", "-f", "-"},
+                     _test_fs, _test_env, _test_clock, In.from_lines({_line}))
+    assert_eq(hit, 0)
+
+dispatch_show_last_truncates: test =
+    second := "<11>1 2026-11-05T09:17:02.250Z box web - - - second"
+    second_pretty := "2026-11-05T09:17:02.250Z user.error web: second"
+    out := Out.tee(Out.null(), (s): assert_eq(s, second_pretty))
+    status := _dispatch(out, Out.null(), {"show", "-n", "1", "-f", "-"},
+                        _test_fs, _test_env, _test_clock,
+                        In.from_lines({_line, second}))
+    assert_eq(status, 0)
+
+dispatch_show_skip_report: test =
+    err := Out.tee(Out.null(), (s): assert_eq(s, "syslog: -: skipped 1 unparseable line"))
+    out := Out.tee(Out.null(), (s): assert_eq(s, _pretty))
+    status := _dispatch(out, err, {"show", "-f", "-"}, _test_fs, _test_env,
+                        _test_clock, In.from_lines({"garbage", _line}))
+    assert_eq(status, 0)
+
+dispatch_show_skip_report_plural: test =
+    err := Out.tee(Out.null(), (s): assert_eq(s, "syslog: -: skipped 2 unparseable lines"))
+    status := _dispatch(Out.null(), err, {"show", "-f", "-"}, _test_fs,
+                        _test_env, _test_clock,
+                        In.from_lines({"junk", "noise", _line}))
+    assert_eq(status, 0)
+
+dispatch_show_default_file_missing: test =
+    err := Out.tee(Out.null(), (s): assert_eq(s, "syslog: eko-syslog.log: no such file or directory"))
+    status := _dispatch(Out.null(), err, {"show"}, _test_fs, _test_env,
+                        _test_clock, In.empty())
+    assert_eq(status, 2)
+
+dispatch_show_file_variable: test =
+    err := Out.tee(Out.null(), (s): assert_eq(s, "syslog: mine.log: no such file or directory"))
+    env := Env.frozen({"SYSLOG_FILE": "mine.log"})
+    status := _dispatch(Out.null(), err, {"show"}, _test_fs, env, _test_clock,
+                        In.empty())
+    assert_eq(status, 2)
+
+dispatch_write_append_error: test =
+    err := Out.tee(Out.null(), (s): assert_eq(s, "syslog: app.log: no such file or directory"))
+    status := _dispatch(Out.null(), err, {"write", "-f", "app.log", "boom"},
+                        _test_fs, _test_env, _test_clock, In.empty())
+    assert_eq(status, 2)
+
+dispatch_write_stdin_stream: test =
+    err := Out.tee(Out.null(), (s): assert_eq(s, "syslog: app.log: no such file or directory"))
+    status := _dispatch(Out.null(), err, {"write", "-f", "app.log"}, _test_fs,
+                        _test_env, _test_clock, In.from_lines({"one", "two"}))
+    assert_eq(status, 2)
+
+dispatch_write_env_defaults: test =
+    err := Out.tee(Out.null(), (s): assert_eq(s, "syslog: from-env.log: no such file or directory"))
+    env := Env.frozen({"SYSLOG_FILE": "from-env.log", "USER": "amy"})
+    status := _dispatch(Out.null(), err, {"write", "hello"}, _test_fs, env,
+                        _test_clock, In.empty())
+    assert_eq(status, 2)
+
+dispatch_help: test =
+    status := _dispatch(Out.null(), Out.null(), {"help"}, _test_fs, _test_env,
+                        _test_clock, In.empty())
+    assert_eq(status, 0)
+
+dispatch_usage_error: test =
+    err := Out.tee(Out.null(), (s): assert(s == "syslog: unknown command: bogus" || s == "Try 'syslog help' for usage."))
+    status := _dispatch(Out.null(), err, {"bogus"}, _test_fs, _test_env,
+                        _test_clock, In.empty())
+    assert_eq(status, 2)
+
+dispatch_missing_command: test =
+    status := _dispatch(Out.null(), Out.null(), {}, _test_fs, _test_env,
+                        _test_clock, In.empty())
+    assert_eq(status, 2)

@@ -1,0 +1,1724 @@
+// ekodiff: a unified diff generator and patch applier.
+//
+//   ekodiff [--context N] [--label OLD LABEL] [--label NEW LABEL] OLD NEW
+//   ekodiff --apply [--check] [-p NUM] PATCHFILE
+//
+// The core is pure: splitting text into lines, Myers diffing, hunk
+// construction, patch parsing, and patch application all take and return
+// ordinary values. Only `main` and the world-touching shell hold
+// capabilities. See README.md for the CLI contract, exit codes, and the
+// supported patch format.
+
+// ---------------------------------------------------------------- line model
+
+/// One line without its terminator. `nl` records whether the terminator was
+/// present; the last line of a file may lack it, which unified diff marks
+/// with "\ No newline at end of file".
+Line: type = [text: String, nl: Bool]
+
+_line: (text: String, nl: Bool) -> Line = {text: text, nl: nl}
+
+_no_lines: []Line = {}
+_no_strings: []String = {}
+
+/// Splits text into lines without losing the presence or absence of the final
+/// newline. The empty file is the empty list; "\n" is one empty line that has
+/// a newline. The general formula below always emits a last line, so the
+/// empty text, which has none, is handled first.
+split_text: (s: String) -> []Line =
+    if s == "":
+        {}
+    else:
+        parts := s.lines()
+        n := parts.length()
+        has_nl := s.ends_with("\n")
+        prefix := if n == 0: _no_strings else: parts.slice(0, n - 1).unwrap_or(_no_strings)
+        last := parts.get(n - 1).unwrap_or("")
+        prefix.map((p): _line(p, True)) ++ {_line(last, has_nl)}
+
+/// Renders lines back to text, preserving the newline state of every line.
+render_lines: (lines: []Line) -> String =
+    lines.fold("", (acc, l): acc ++ l.text ++ (if l.nl: "\n" else: ""))
+
+// ---------------------------------------------------------------- edit script
+
+/// One step of a shortest edit script. Same emits a line present on both
+/// sides, Gone a line deleted from the old side, Added a line inserted on the
+/// new side.
+Op: type = Same Line | Gone Line | Added Line
+
+_old_weight: (op: Op) -> Int =
+    case op:
+        Same _ -> 1
+        Gone _ -> 1
+        Added _ -> 0
+
+_new_weight: (op: Op) -> Int =
+    case op:
+        Same _ -> 1
+        Gone _ -> 0
+        Added _ -> 1
+
+_edit_count: (ops: []Op) -> Int =
+    ops.fold(0, (acc, op): acc + (if _old_weight(op) == _new_weight(op): 0 else: 1))
+
+_apply_ops: (ops: []Op) -> []Line =
+    case ops:
+        {} -> {}
+        {op, ..rest} ->
+            case op:
+                Same l | Added l -> {l} ++ _apply_ops(rest)
+                Gone _ -> _apply_ops(rest)
+
+// Myers' O((N+M)D) shortest-edit algorithm. `v` maps a diagonal k = x - y to
+// the furthest x reached on it. Each round snapshots `v` before extending the
+// frontier, which makes the backtrack a pure walk over immutable snapshots.
+// `_kloop` and `_myers_loop` are self tail calls, so a large edit distance
+// does not grow the stack per diagonal.
+
+Step: type = Continue [Int]Int | Found
+Snapshot: type = [v: [Int]Int]
+
+_snapshot: (v: [Int]Int) -> Snapshot = {v: v}
+
+_no_trace: []Snapshot = {}
+
+_myers_get: (v: [Int]Int, k: Int) -> Int = v.get(k).unwrap_or(0)
+
+_snake: (a: []Line, b: []Line, n: Int, m: Int, x: Int, y: Int) -> [Int, Int] =
+    if x < n && y < m && a.get(x).unwrap().text == b.get(y).unwrap().text && a.get(x).unwrap().nl == b.get(y).unwrap().nl:
+        _snake(a, b, n, m, x + 1, y + 1)
+    else:
+        {x, y}
+
+_kloop: (a: []Line, b: []Line, n: Int, m: Int, d: Int, i: Int, v: [Int]Int) -> Step =
+    if i > d:
+        Continue v
+    else:
+        k := -d + 2 * i
+        x := if k == -d || (k != d && _myers_get(v, k - 1) < _myers_get(v, k + 1)): _myers_get(v, k + 1) else: _myers_get(v, k - 1) + 1
+        y := x - k
+        (x2, y2) = _snake(a, b, n, m, x, y)
+        v2 := v.insert(k, x2)
+        if x2 >= n && y2 >= m:
+            Found
+        else:
+            _kloop(a, b, n, m, d, i + 1, v2)
+
+_myers_loop: (a: []Line, b: []Line, n: Int, m: Int, d: Int, v: [Int]Int,
+              trace_rev: []Snapshot) -> Option ([]Snapshot) =
+    if d > n + m:
+        None
+    else:
+        case _kloop(a, b, n, m, d, 0, v):
+            Found -> Some (({_snapshot(v)} ++ trace_rev).reverse())
+            Continue v2 -> _myers_loop(a, b, n, m, d + 1, v2, {_snapshot(v)} ++ trace_rev)
+
+_myers_trace: (a: []Line, b: []Line) -> []Snapshot =
+    v0: [Int]Int = {1: 0}
+    _myers_loop(a, b, a.length(), b.length(), 0, v0, _no_trace).unwrap_or(_no_trace)
+
+_snake_back: (a: []Line, x: Int, y: Int, px: Int, py: Int, acc: []Op) -> [Int, Int, []Op] =
+    if x > px && y > py:
+        _snake_back(a, x - 1, y - 1, px, py, {Same (a.get(x - 1).unwrap())} ++ acc)
+    else:
+        {x, y, acc}
+
+_bt: (a: []Line, b: []Line, trace: []Snapshot, d: Int, x: Int, y: Int,
+      acc: []Op) -> []Op =
+    if d < 0:
+        acc
+    else:
+        v := trace.get(d).unwrap().v
+        k := x - y
+        prev_k := if k == -d || (k != d && _myers_get(v, k - 1) < _myers_get(v, k + 1)): k + 1 else: k - 1
+        prev_x := _myers_get(v, prev_k)
+        prev_y := prev_x - prev_k
+        (x1, _, acc2) = _snake_back(a, x, y, prev_x, prev_y, acc)
+        if d == 0:
+            _bt(a, b, trace, d - 1, prev_x, prev_y, acc2)
+        else:
+            if x1 == prev_x:
+                _bt(a, b, trace, d - 1, prev_x, prev_y, {Added (b.get(prev_y).unwrap())} ++ acc2)
+            else:
+                _bt(a, b, trace, d - 1, prev_x, prev_y, {Gone (a.get(prev_x).unwrap())} ++ acc2)
+
+myers: (a: []Line, b: []Line) -> []Op =
+    trace := _myers_trace(a, b)
+    _bt(a, b, trace, trace.length() - 1, a.length(), b.length(), {})
+
+// ---------------------------------------------------------------- hunk builder
+
+/// An edit step annotated with the line numbers around it. `old_before` and
+/// `new_before` are the numbers of lines already consumed before the step, so
+/// a zero-length range can be printed in unified-diff form.
+Marked: type = [op: Op, old_no: Int, new_no: Int, old_before: Int, new_before: Int]
+
+_mark: (op: Op, old_no: Int, new_no: Int) -> Marked =
+    case op:
+        Same _ -> {op: op, old_no: old_no + 1, new_no: new_no + 1,
+                   old_before: old_no, new_before: new_no}
+        Gone _ -> {op: op, old_no: old_no + 1, new_no: new_no,
+                   old_before: old_no, new_before: new_no}
+        Added _ -> {op: op, old_no: old_no, new_no: new_no + 1,
+                    old_before: old_no, new_before: new_no}
+
+_mark_ops: (ops: []Op, old_no: Int, new_no: Int, acc: []Marked) -> []Marked =
+    case ops:
+        {} -> acc.reverse()
+        {op, ..rest} ->
+            next_old := old_no + _old_weight(op)
+            next_new := new_no + _new_weight(op)
+            _mark_ops(rest, next_old, next_new, {_mark(op, old_no, new_no)} ++ acc)
+
+_is_change: (m: Marked) -> Bool =
+    case m.op:
+        Same _ -> False
+        _ -> True
+
+_change_indices: (ms: []Marked, i: Int, acc: []Int) -> []Int =
+    case ms:
+        {} -> acc.reverse()
+        {m, ..rest} ->
+            if _is_change(m):
+                _change_indices(rest, i + 1, {i} ++ acc)
+            else:
+                _change_indices(rest, i + 1, acc)
+
+Group: type = [first: Int, last: Int]
+
+_no_marked: []Marked = {}
+
+_group: (first: Int, last: Int) -> Group = {first: first, last: last}
+
+_finish_groups: (cur: Option Group, acc_rev: []Group) -> []Group =
+    case cur:
+        None -> acc_rev.reverse()
+        Some g -> ({g} ++ acc_rev).reverse()
+
+/// Groups change indices so that context regions which overlap or touch are
+/// one hunk. A gap of `2 * context + 1` unchanged lines leaves a one-line
+/// hole between the regions and therefore starts a new hunk.
+_group_changes: (cs: []Int, ctx: Int, cur: Option Group, acc: []Group) -> []Group =
+    case cs:
+        {} -> _finish_groups(cur, acc)
+        {c, ..rest} ->
+            case cur:
+                None -> _group_changes(rest, ctx, Some (_group(c, c)), acc)
+                Some g ->
+                    if c - g.last - 1 <= 2 * ctx:
+                        _group_changes(rest, ctx, Some (g.with({last: c})), acc)
+                    else:
+                        _group_changes(rest, ctx, Some (_group(c, c)), {g} ++ acc)
+
+_max_int: (a: Int, b: Int) -> Int = if a < b: b else: a
+
+_min_int: (a: Int, b: Int) -> Int = if a < b: a else: b
+
+_hunk_range: (g: Group, total: Int, ctx: Int) -> [Int, Int] =
+    {_max_int(0, g.first - ctx), _min_int(total, g.last + ctx + 1)}
+
+_range_str: (start: Int, count: Int) -> String =
+    if count == 1:
+        "{start}"
+    else:
+        "{start},{count}"
+
+_no_nl_marker: String = "\\ No newline at end of file"
+
+_marker: (l: Line) -> String =
+    if l.nl: "" else: "{_no_nl_marker}\n"
+
+_body_line: (op: Op) -> String =
+    case op:
+        Same l -> " " ++ l.text ++ "\n" ++ _marker(l)
+        Gone l -> "-" ++ l.text ++ "\n" ++ _marker(l)
+        Added l -> "+" ++ l.text ++ "\n" ++ _marker(l)
+
+_format_hunk: (ms: []Marked) -> String =
+    old_count := ms.fold(0, (acc, m): acc + _old_weight(m.op))
+    new_count := ms.fold(0, (acc, m): acc + _new_weight(m.op))
+    first := ms.get(0).expect("hunk is non-empty")
+    old_start := if old_count == 0: first.old_before else: first.old_before + 1
+    new_start := if new_count == 0: first.new_before else: first.new_before + 1
+    header := "@@ -{_range_str(old_start, old_count)} +{_range_str(new_start, new_count)} @@\n"
+    header ++ ms.fold("", (acc, m): acc ++ _body_line(m.op))
+
+_format_range: (ms: []Marked, r: [Int, Int]) -> String =
+    (start, stop) = r
+    chunk := if stop <= start: _no_marked else: ms.slice(start, stop - start).unwrap_or(_no_marked)
+    _format_hunk(chunk)
+
+/// The complete unified diff. An empty string means the inputs are identical.
+diff_texts: (old_label: String, new_label: String, old: []Line, new: []Line,
+             context: Int) -> String =
+    ctx := _max_int(0, context)
+    ops := myers(old, new)
+    marked := _mark_ops(ops, 0, 0, {})
+    changes := _change_indices(marked, 0, {})
+    if changes.length() == 0:
+        ""
+    else:
+        groups := _group_changes(changes, ctx, None, {})
+        hunks := groups.fold("", (acc, g):
+            acc ++ _format_range(marked, _hunk_range(g, marked.length(), ctx)))
+        "--- {old_label}\n+++ {new_label}\n" ++ hunks
+
+// ---------------------------------------------------------------- patch model
+
+/// One line of a hunk body after parsing. The `Line` payload records whether
+/// the file line ends in a newline; a following "\ No newline at end of file"
+/// marker clears `nl` on the preceding body line.
+PatchLine: type = Ctx Line | Del Line | Ins Line
+
+/// One unified-diff hunk. Ranges are printed exactly as in the header: a count
+/// of 1 is omitted on output, and a zero-length range still has a start.
+Hunk: type = [
+    old_start: Int,
+    old_count: Int,
+    new_start: Int,
+    new_count: Int,
+    lines: []PatchLine]
+
+/// One file section of a unified diff.
+FilePatch: type = [old_path: String, new_path: String, hunks: []Hunk]
+
+/// A computed target: `delete` is true when the new side is /dev/null.
+Prepared: type = [target: String, content: String, delete: Bool]
+
+/// A failure while preparing or writing patch results.
+PatchProblem: type = ApplyFailed String | IoFailed String
+
+_dev_null: String = "/dev/null"
+_max_offset: Int = 100
+
+/// The path a successful section writes. A normal unified diff updates the
+/// source (`---`) path; creation writes the new path, and deletion removes the
+/// old path.
+patch_target: (f: FilePatch) -> String =
+    if f.old_path == _dev_null: f.new_path else: f.old_path
+
+/// Deletion is signalled by /dev/null on the new side.
+patch_deletes: (f: FilePatch) -> Bool =
+    f.new_path == _dev_null
+
+_after: (s: String, n: Int) -> String =
+    s.slice(n, s.length() - n).unwrap_or("")
+
+_header_path: (s: String) -> String =
+    case s.split("\t"):
+        {p, ..} -> p
+        _ -> s
+
+// One non-negative integer with the option's name in the error message.
+_non_negative: (what: String, s: String) -> Result Int String =
+    bad: String = "{what} must be a non-negative integer, got '{s}'"
+    n <- Int.parse(s).map_err((_): bad).try()
+    if n < 0: Err bad else: Ok n
+
+/// Parses the `start[,count]` part of a range. The count defaults to one.
+_parse_range: (token: String) -> Result ([Int, Int]) String =
+    parts := token.split(",")
+    if parts.length() < 1 || parts.length() > 2:
+        Err "range must be start[,count], got '{token}'"
+    else:
+        start_text := parts.get(0).unwrap_or("")
+        start <- _non_negative("range", start_text).try()
+        case parts.get(1):
+            None ->
+                if start < 1:
+                    Err "a range with count 1 must start at line 1 or later"
+                else:
+                    Ok {start, 1}
+            Some count_text ->
+                count <- _non_negative("range", count_text).try()
+                if count > 0 && start < 1:
+                    Err "a non-empty range must start at line 1 or later"
+                else:
+                    Ok {start, count}
+
+/// Parses `@@ -old[,count] +new[,count] @@ [section]`.
+_parse_hunk_header: (text: String) -> Result ([Int, Int, Int, Int]) String =
+    case text.split(" "):
+        {at, old_token, new_token, close, ..} if at == "@@" && close == "@@" ->
+            if old_token.starts_with("-") && old_token.length() > 1 && new_token.starts_with("+") && new_token.length() > 1:
+                old_range <- _parse_range(_after(old_token, 1)).map_err((e): "old range: {e}").try()
+                new_range <- _parse_range(_after(new_token, 1)).map_err((e): "new range: {e}").try()
+                (old_start, old_count) = old_range
+                (new_start, new_count) = new_range
+                Ok {old_start, old_count, new_start, new_count}
+            else:
+                Err "hunk header has a bad range sign: {text}"
+        _ -> Err "malformed hunk header: {text}"
+
+_mark_no_newline: (acc_rev: []PatchLine) -> Result ([]PatchLine) String =
+    case acc_rev:
+        {} -> Err "no-newline marker has no preceding body line"
+        {Ctx l, ..rest} ->
+            if l.nl: Ok ({Ctx (l.with({nl: False}))} ++ rest) else: Err "duplicate no-newline marker"
+        {Del l, ..rest} ->
+            if l.nl: Ok ({Del (l.with({nl: False}))} ++ rest) else: Err "duplicate no-newline marker"
+        {Ins l, ..rest} ->
+            if l.nl: Ok ({Ins (l.with({nl: False}))} ++ rest) else: Err "duplicate no-newline marker"
+
+/// Consumes exactly `old_left` old-side and `new_left` new-side lines. Context
+/// lines consume both; deletions only the old side and insertions only the new
+/// side. A no-newline marker modifies the preceding line without counting.
+_parse_hunk_body: (ls: []Line, line_no: Int, old_left: Int, new_left: Int,
+                   acc_rev: []PatchLine) -> Result ([[]PatchLine, []Line]) String =
+    if old_left == 0 && new_left == 0:
+        case ls:
+            {l, ..rest} if l.text == _no_nl_marker ->
+                updated <- _mark_no_newline(acc_rev).map_err((e): "patch line {line_no}: {e}").try()
+                _parse_hunk_body(rest, line_no + 1, 0, 0, updated)
+            _ -> Ok {acc_rev.reverse(), ls}
+    else:
+        case ls:
+            {} -> Err "patch line {line_no}: hunk body ends before its header counts are met"
+            {l, ..rest} ->
+                if l.text == _no_nl_marker:
+                    updated <- _mark_no_newline(acc_rev).map_err((e): "patch line {line_no}: {e}").try()
+                    _parse_hunk_body(rest, line_no + 1, old_left, new_left, updated)
+                else:
+                    case l.text.at(0):
+                        Some ' ' ->
+                            if old_left < 1 || new_left < 1:
+                                Err "patch line {line_no}: context line exceeds the hunk counts"
+                            else:
+                                body := _line(_after(l.text, 1), True)
+                                _parse_hunk_body(rest, line_no + 1, old_left - 1, new_left - 1,
+                                                 {Ctx body} ++ acc_rev)
+                        Some '-' ->
+                            if old_left < 1:
+                                Err "patch line {line_no}: removed line exceeds the hunk counts"
+                            else:
+                                body := _line(_after(l.text, 1), True)
+                                _parse_hunk_body(rest, line_no + 1, old_left - 1, new_left,
+                                                 {Del body} ++ acc_rev)
+                        Some '+' ->
+                            if new_left < 1:
+                                Err "patch line {line_no}: added line exceeds the hunk counts"
+                            else:
+                                body := _line(_after(l.text, 1), True)
+                                _parse_hunk_body(rest, line_no + 1, old_left, new_left - 1,
+                                                 {Ins body} ++ acc_rev)
+                        _ -> Err "patch line {line_no}: expected ' ', '-', '+', or a no-newline marker"
+
+_parse_hunk: (header: Line, rest: []Line) -> Result ([Hunk, []Line]) String =
+    values <- _parse_hunk_header(header.text).try()
+    (old_start, old_count, new_start, new_count) = values
+    if old_count == 0 && new_count == 0:
+        Err "empty hunk at old line {old_start}"
+    else:
+        values <- _parse_hunk_body(rest, 0, old_count, new_count, {}).try()
+        (lines, remaining) = values
+        Ok {{old_start: old_start, old_count: old_count,
+             new_start: new_start, new_count: new_count, lines: lines}, remaining}
+
+/// Parses hunks until the next `--- ` header or the end of the patch.
+_parse_hunks: (ls: []Line, line_no: Int, acc: []Hunk) -> Result ([[]Hunk, []Line]) String =
+    case ls:
+        {} ->
+            if acc.length() == 0:
+                Err "file section has no hunks"
+            else:
+                Ok {acc.reverse(), {}}
+        {l, ..rest} ->
+            if l.text.starts_with("--- "):
+                if acc.length() == 0:
+                    Err "file section ending at patch line {line_no} has no hunks"
+                else:
+                    Ok {acc.reverse(), ls}
+            else:
+                if l.text == "":
+                    _parse_hunks(rest, line_no + 1, acc)
+                else:
+                    if l.text.starts_with("@@ "):
+                        values <- _parse_hunk(l, rest).map_err((e): "patch line {line_no}: {e}").try()
+                        (hunk, remaining) = values
+                        consumed := rest.length() - remaining.length()
+                        _parse_hunks(remaining, line_no + 1 + consumed, {hunk} ++ acc)
+                    else:
+                        Err "patch line {line_no}: expected a hunk header, got '{l.text}'"
+
+_parse_sections: (ls: []Line, line_no: Int, acc: []FilePatch) -> Result ([]FilePatch) String =
+    case ls:
+        {} ->
+            if acc.length() == 0:
+                Err "empty patch"
+            else:
+                Ok acc.reverse()
+        {l, ..rest} ->
+            if l.text == "":
+                _parse_sections(rest, line_no + 1, acc)
+            else:
+                if l.text.starts_with("--- "):
+                    case rest:
+                        {plus, ..after_plus} if plus.text.starts_with("+++ ") ->
+                            old_path := _header_path(_after(l.text, 4))
+                            new_path := _header_path(_after(plus.text, 4))
+                            if old_path == "" || new_path == "":
+                                Err "patch line {line_no}: file header has an empty path"
+                            else:
+                                values <- _parse_hunks(after_plus, line_no + 2, {}).try()
+                                (hunks, remaining) = values
+                                consumed := after_plus.length() - remaining.length()
+                                file: FilePatch = {old_path: old_path, new_path: new_path, hunks: hunks}
+                                _parse_sections(remaining, line_no + 2 + consumed,
+                                                {file} ++ acc)
+                        _ -> Err "patch line {line_no}: '--- ' header must be followed by a '+++ ' header"
+                else:
+                    Err "patch line {line_no}: expected a '--- ' file header, got '{l.text}'"
+
+/// The structural parser. Path safety is a separate pure check because it is a
+/// policy of patch application, not a property of the unified-diff grammar.
+parse_patch: (text: String) -> Result ([]FilePatch) String =
+    _parse_sections(split_text(text), 1, {})
+
+// --------------------------------------------------------------- path safety
+
+_path_is_absolute: (p: String) -> Bool =
+    p.starts_with("/") || Path.is_absolute(p)
+
+_has_parent_component: (p: String) -> Bool =
+    p.split("/").any((part): part == "..")
+
+/// Relative, non-empty, no `..` component, and not a directory spelling.
+safe_patch_path: (p: String) -> Bool =
+    p != "" && p != "." && p.ends_with("/").not() && _path_is_absolute(p).not() && _has_parent_component(p).not()
+
+/// Joins path components back with "/", keeping leading and doubled slashes
+/// intact; the fold-on-tail shape makes the first component come first even
+/// when it is empty.
+_join_components: (parts: []String) -> String =
+    case parts:
+        {} -> ""
+        {p, ..rest} ->
+            case _join_components(rest):
+                "" -> p
+                tail -> p ++ "/" ++ tail
+
+/// Removes `n` leading path components, patch(1)-style: the leading `/` of an
+/// absolute path counts as part of the first component. `None` when nothing
+/// would be left over.
+_strip_components: (p: String, n: Int) -> Option String =
+    if n <= 0:
+        Some p
+    else:
+        parts := p.split("/")
+        if parts.length() <= n:
+            None
+        else:
+            Some (_join_components(parts.drop(n)))
+
+/// One header path after `-p N` stripping. `/dev/null` is a marker, not a
+/// path, and passes through; so does a path with nothing to strip.
+_strip_side: (p: String, n: Int, side: String) -> Result String String =
+    if p == _dev_null || n <= 0:
+        Ok p
+    else:
+        _strip_components(p, n).to_result("{side} path '{p}': stripping {n} components leaves no path")
+
+/// The lexical path-safety pass, with `-p N` prefix stripping applied first so
+/// the check sees the paths the patch will actually use. Returns the sections
+/// with both header paths rewritten to their stripped forms; `/dev/null` on
+/// either side passes through untouched.
+_validate_paths: (files: []FilePatch, strip: Int, acc_rev: []FilePatch) -> Result ([]FilePatch) String =
+    case files:
+        {} -> Ok (acc_rev.reverse())
+        {f, ..rest} ->
+            old <- _strip_side(f.old_path, strip, "old").try()
+            new <- _strip_side(f.new_path, strip, "new").try()
+            if old != _dev_null && safe_patch_path(old).not():
+                Err "unsafe old path '{old}'"
+            else:
+                if new != _dev_null && safe_patch_path(new).not():
+                    Err "unsafe new path '{new}'"
+                else:
+                    if old == _dev_null && new == _dev_null:
+                        Err "a file section cannot have /dev/null on both sides"
+                    else:
+                        _validate_paths(rest, strip,
+                                        {f.with({old_path: old, new_path: new})} ++ acc_rev)
+
+validate_patch_paths: (files: []FilePatch, strip: Int) -> Result ([]FilePatch) String =
+    _validate_paths(files, strip, {})
+
+// ----------------------------------------------------- resolved-path safety
+
+/// The two file-system probes the symlink walk needs, as plain closures so
+/// the walk itself can be exercised against lookup tables in the tests.
+Probes: type = [
+    resolve: (String) !-> Result String IoError,
+    entries: (String) !-> Result ([]String) IoError]
+
+/// The real probes: path resolution through the file system.
+_fs_probes: (fs: Fs) -> Probes =
+    {resolve: (p): fs.realpath(p), entries: (p): fs.list_dir(p)}
+
+/// True when `r` is `root` itself or lies under it. The root-of-all case
+/// ("/") admits every resolution; there is nowhere outside it.
+_under_root: (r: String, root: String) -> Bool =
+    if root == "/":
+        True
+    else:
+        r == root || r.starts_with(root ++ "/")
+
+/// Walks `rel` from `root` one component at a time. Every component that
+/// exists must resolve inside `root`, so a symlink cannot redirect the path
+/// across the working directory's boundary. A final component that is listed
+/// in its parent but does not resolve is a dangling symlink, and is rejected
+/// because creating the file would follow the link outside the tree. Once a
+/// component is missing, nothing deeper can exist, so the walk stops there.
+_check_components: (probes: Probes, root: String, rel: String, cs: []String,
+                    cur: String) !-> Result _ String =
+    case cs:
+        {} -> Ok _
+        {c, ..rest} ->
+            next := Path.join(cur, c)
+            case probes.resolve(next):
+                Ok r ->
+                    if _under_root(r, root).not():
+                        Err "path '{rel}' leaves the working directory: '{c}' resolves to '{r}'"
+                    else:
+                        _check_components(probes, root, rel, rest, r)
+                Err NotFound ->
+                    case rest:
+                        {} ->
+                            case probes.entries(cur):
+                                Err e -> Err "cannot inspect '{cur}': {_io_message(e)}"
+                                Ok names ->
+                                    if names.any((n): n == c):
+                                        Err "path '{rel}': '{c}' is a dangling symlink"
+                                    else:
+                                        Ok _
+                        _ -> Ok _
+                Err e -> Err "cannot resolve path '{rel}': {_io_message(e)}"
+
+/// Every non-marker path a patch reads or writes, in header order: the old
+/// side of each section, then its new side.
+_patch_sides: (files: []FilePatch, acc: []String) -> []String =
+    case files:
+        {} -> acc.reverse()
+        {f, ..rest} ->
+            old := if f.old_path == _dev_null: _no_strings else: {f.old_path}
+            new := if f.new_path == _dev_null: _no_strings else: {f.new_path}
+            _patch_sides(rest, new ++ old ++ acc)
+
+/// The resolved-path safety pass. Runs after the lexical check and before any
+/// file is read or written, for `--check` and real applies alike. Both the
+/// source (`---`) and destination (`+++`) side are verified, whether or not
+/// the section targets them.
+_check_patch_paths: (fs: Fs, files: []FilePatch) !-> Result _ String =
+    root <- fs.realpath(".").map_err((e): "cannot resolve the working directory: {_io_message(e)}").try()
+    _check_all_paths(_fs_probes(fs), root, _patch_sides(files, _no_strings))
+
+_check_all_paths: (probes: Probes, root: String, ps: []String) !-> Result _ String =
+    case ps:
+        {} -> Ok _
+        {p, ..rest} ->
+            _ <- _check_components(probes, root, p, p.split("/"), root).try()
+            _check_all_paths(probes, root, rest)
+
+// --------------------------------------------------------- patch application
+
+_old_side_acc: (lines: []PatchLine, acc: []Line) -> []Line =
+    case lines:
+        {} -> acc.reverse()
+        {pl, ..rest} ->
+            case pl:
+                Ctx l | Del l -> _old_side_acc(rest, {l} ++ acc)
+                Ins _ -> _old_side_acc(rest, acc)
+
+/// The old-side lines a hunk expects, in source order.
+_old_side: (h: Hunk) -> []Line =
+    _old_side_acc(h.lines, {})
+
+_new_side_acc: (lines: []PatchLine, acc: []Line) -> []Line =
+    case lines:
+        {} -> acc.reverse()
+        {pl, ..rest} ->
+            case pl:
+                Ctx l | Ins l -> _new_side_acc(rest, {l} ++ acc)
+                Del _ -> _new_side_acc(rest, acc)
+
+/// The replacement lines a hunk produces, in destination order.
+_new_side: (h: Hunk) -> []Line =
+    _new_side_acc(h.lines, {})
+
+_find_at: (src: []Line, pos: Int, want: []Line) -> Bool =
+    if pos < 0 || pos > src.length():
+        False
+    else:
+        if want.length() == 0:
+            True
+        else:
+            src.slice(pos, want.length()).map((got): got.eq(want)).unwrap_or(False)
+
+/// Tries the expected position, then +1, -1, +2, -2, ... up to 100 lines.
+/// The first candidate at or after `min_pos` whose old side matches exactly
+/// wins; there is no whitespace fuzzing.
+_search_hunk: (src: []Line, expected: Int, min_pos: Int, want: []Line,
+               offset: Int) -> Option Int =
+    if offset > _max_offset:
+        None
+    else:
+        if offset == 0:
+            if expected >= min_pos && _find_at(src, expected, want):
+                Some expected
+            else:
+                _search_hunk(src, expected, min_pos, want, 1)
+        else:
+            later := expected + offset
+            earlier := expected - offset
+            if later >= min_pos && _find_at(src, later, want):
+                Some later
+            else:
+                if earlier >= min_pos && _find_at(src, earlier, want):
+                    Some earlier
+                else:
+                    _search_hunk(src, expected, min_pos, want, offset + 1)
+
+_find_hunk: (src: []Line, expected: Int, min_pos: Int, want: []Line) -> Option Int =
+    if want.length() == 0:
+        Some (_min_int(_max_int(expected, min_pos), src.length()))
+    else:
+        _search_hunk(src, expected, min_pos, want, 0)
+
+// One hunk's placement checks: header counts against its body, the start
+// line, and where the old side actually sits in the source.
+_place_hunk: (src: []Line, h: Hunk, index: Int, src_pos: Int) -> Result ([Int, []Line]) String =
+    old_side := _old_side(h)
+    if h.old_count != old_side.length() || h.new_count != _new_side(h).length():
+        Err "hunk {index + 1}: header counts do not match its body lines"
+    else:
+        if h.old_count > 0 && h.old_start < 1:
+            Err "hunk {index + 1}: a non-empty old range must start at line 1 or later"
+        else:
+            expected := if h.old_count == 0: h.old_start else: h.old_start - 1
+            case _find_hunk(src, expected, src_pos, old_side):
+                None ->
+                    Err "hunk {index + 1} at old line {expected + 1} does not apply"
+                Some pos ->
+                    if pos < src_pos:
+                        Err "hunk {index + 1} overlaps an earlier hunk"
+                    else:
+                        Ok {pos, old_side}
+
+_apply_hunks: (src: []Line, hs: []Hunk, index: Int, src_pos: Int,
+               out_rev: []Line) -> Result ([]Line) String =
+    case hs:
+        {} ->
+            tail := src.drop(src_pos).reverse()
+            Ok ((tail ++ out_rev).reverse())
+        {h, ..rest} ->
+            placed <- _place_hunk(src, h, index, src_pos).try()
+            (pos, old_side) = placed
+            before := src.slice(src_pos, pos - src_pos).unwrap_or(_no_lines)
+            out2 := _new_side(h).reverse() ++ before.reverse() ++ out_rev
+            _apply_hunks(src, rest, index + 1, pos + old_side.length(), out2)
+
+/// Applies every hunk against the original source. Hunk line numbers are
+/// original-file coordinates; each match is searched independently near its
+/// declared position, but never before the end of the previous hunk.
+apply_file_patch: (source: []Line, file: FilePatch) -> Result ([]Line) String =
+    _apply_hunks(source, file.hunks, 0, 0, {})
+
+// ----------------------------------------------------------------------- CLI
+
+/// Accumulated options before the final shape is known.
+Options: type = [
+    context: Int,
+    context_set: Bool,
+    labels: []String,
+    apply: Bool,
+    check: Bool,
+    strip: Int,
+    strip_set: Bool,
+    operands: []String]
+
+/// A completed diff invocation. `default_labels` records that no label was
+/// given and both labels mirror the operand paths, so the diff shell may
+/// relativize them against the working directory.
+DiffConfig: type = [
+    context: Int,
+    old_label: String,
+    new_label: String,
+    default_labels: Bool,
+    old_path: String,
+    new_path: String]
+
+/// A completed patch invocation. `strip` is the `-p N` prefix count.
+PatchConfig: type = [check: Bool, strip: Int, patch_path: String]
+
+/// What the argument vector denotes.
+Invocation: type = Help | Usage String | Diff DiffConfig | Patch PatchConfig
+
+_default_options: Options = {
+    context: 3,
+    context_set: False,
+    labels: {},
+    apply: False,
+    check: False,
+    strip: 0,
+    strip_set: False,
+    operands: {}}
+
+_add_context: (s: String, rest: []String, opts: Options) -> Invocation =
+    case _non_negative("context", s):
+        Err e -> Usage e
+        Ok n -> _parse_args(rest, opts.with({context: n, context_set: True}))
+
+_add_strip: (s: String, rest: []String, opts: Options) -> Invocation =
+    case _non_negative("strip", s):
+        Err e -> Usage e
+        Ok n -> _parse_args(rest, opts.with({strip: n, strip_set: True}))
+
+_add_label: (s: String, rest: []String, opts: Options) -> Invocation =
+    if s == "":
+        Usage "label must not be empty"
+    else:
+        if s.contains("\n") || s.contains("\r") || s.contains("\t"):
+            Usage "label must not contain a newline or tab"
+        else:
+            _parse_args(rest, opts.with({labels: opts.labels ++ {s}}))
+
+parse_args: (argv: []String) -> Invocation =
+    _parse_args(argv, _default_options)
+
+_parse_args: (argv: []String, opts: Options) -> Invocation =
+    case argv:
+        {} -> _finish_args(opts)
+        {a, ..rest} ->
+            case a:
+                "-h" | "--help" -> Help
+                "--" -> _finish_args(opts.with({operands: opts.operands ++ rest}))
+                "--apply" -> _parse_args(rest, opts.with({apply: True}))
+                "--check" -> _parse_args(rest, opts.with({check: True}))
+                "--context" ->
+                    case rest:
+                        {n, ..more} -> _add_context(n, more, opts)
+                        {} -> Usage "--context requires a number"
+                _ if a.starts_with("--context=") -> _add_context(_after(a, 10), rest, opts)
+                "--label" ->
+                    case rest:
+                        {l, ..more} -> _add_label(l, more, opts)
+                        {} -> Usage "--label requires a value"
+                _ if a.starts_with("--label=") -> _add_label(_after(a, 8), rest, opts)
+                _ if a.starts_with("--strip=") -> _add_strip(_after(a, 8), rest, opts)
+                _ if a.starts_with("-p") && a.length() > 2 -> _add_strip(_after(a, 2), rest, opts)
+                _ if a.starts_with("-") && a.length() > 1 -> Usage "unknown option: {a}"
+                _ -> _parse_args(rest, opts.with({operands: opts.operands ++ {a}}))
+
+// Patch mode: --apply forbids the diff-only options and wants one operand.
+_finish_apply: (opts: Options) -> Invocation =
+    if opts.context_set:
+        Usage "--context cannot be used with --apply"
+    else:
+        if opts.labels.length() > 0:
+            Usage "--label cannot be used with --apply"
+        else:
+            case opts.operands:
+                {patch_path} -> Patch {check: opts.check, strip: opts.strip,
+                                       patch_path: patch_path}
+                _ -> Usage "--apply requires exactly one patch file"
+
+// Diff mode: zero or two labels, exactly two operands.
+_finish_diff: (opts: Options) -> Invocation =
+    case opts.operands:
+        {old_path, new_path} ->
+            case opts.labels:
+                {} ->
+                    Diff {context: opts.context,
+                          old_label: old_path, new_label: new_path,
+                          default_labels: True,
+                          old_path: old_path, new_path: new_path}
+                {old_label, new_label} ->
+                    Diff {context: opts.context,
+                          old_label: old_label, new_label: new_label,
+                          default_labels: False,
+                          old_path: old_path, new_path: new_path}
+                _ -> Usage "--label may be given at most twice"
+        _ -> Usage "diff mode requires OLD and NEW paths"
+
+_finish_args: (opts: Options) -> Invocation =
+    if opts.check && opts.apply.not():
+        Usage "--check requires --apply"
+    else:
+        if opts.strip_set && opts.apply.not():
+            Usage "--strip requires --apply"
+        else:
+            if opts.apply: _finish_apply(opts) else: _finish_diff(opts)
+
+_help_lines: []String = {
+    "usage: ekodiff [--context N] [--label OLD LABEL] [--label NEW LABEL] OLD NEW",
+    "       ekodiff --apply [--check] [-p NUM] PATCHFILE",
+    "",
+    "Diff mode prints a unified diff of OLD and NEW. Default context is 3;",
+    "default labels are the two paths, and an absolute default label under",
+    "the working directory is relativized to it. Exit status is 0 for",
+    "identical inputs, 1 for different inputs, and 2 for an error.",
+    "",
+    "Patch mode applies a unified diff. --check validates the patch without",
+    "writing. -p NUM (or --strip=NUM) strips NUM leading components from",
+    "both header paths before the safety check; the default is 0. A path",
+    "that resolves through a symlink outside the working directory is",
+    "rejected. Exit status is 0 on success, 1 when a hunk does not apply,",
+    "and 2 for a malformed patch or an I/O or path-safety error.",
+    "",
+    "options:",
+    "  --context N    lines of context in diff mode (default 3)",
+    "  --label L      old label, then new label; may be given at most twice",
+    "  --apply        apply PATCHFILE instead of producing a diff",
+    "  --check        with --apply, validate but do not write",
+    "  -p NUM         strip NUM leading components from each patch path",
+    "  --strip=N      same as -p NUM; requires --apply",
+    "  -h, --help     show this help and exit",
+    "  --             end of options"}
+
+_help_status: (out: Out) !-> Int =
+    _help_lines.each((line): out.println(line))
+    0
+
+// Usage errors and diagnostics report on the error channel, so they never
+// mix into the diff or patch stream that `out` carries.
+_usage_status: (err: Out, msg: String) !-> Int =
+    err.println("ekodiff: {msg}")
+    err.println("Try 'ekodiff --help' for usage.")
+    2
+
+_error_status: (err: Out, msg: String, code: Int) !-> Int =
+    err.println(msg)
+    code
+
+_io_message: (e: IoError) -> String =
+    case e:
+        NotFound -> "no such file or directory"
+        Permission -> "permission denied"
+        Exists -> "file exists"
+        NotFile -> "not a regular file"
+        Closed -> "handle closed"
+        InvalidData d -> "invalid data: {d}"
+        Other m -> m
+
+_read_input: (fs: Fs, path: String, role: String) !-> Result String String =
+    info <- fs.stat(path).map_err((e): "{role} {path}: {_io_message(e)}").try()
+    if info.is_dir:
+        Err "{role} {path}: is a directory"
+    else:
+        fs.read(path).map_err((e): "{role} {path}: {_io_message(e)}")
+
+// ------------------------------------------------------------------ diff shell
+
+/// The default label for `path` when the working directory is `dir`: the path
+/// itself, unless it is absolute under `dir`, in which case its remainder
+/// (normalized), so a diff made from inside a directory also applies from
+/// there. Paths outside `dir` keep their absolute spelling, which the applier
+/// continues to reject; explicit labels never reach this function.
+_relative_label: (path: String, dir: String) -> String =
+    if _path_is_absolute(path).not():
+        path
+    else:
+        p := Path.normalize(path)
+        base := Path.normalize(dir)
+        if base == "/":
+            rest := _after(p, 1)
+            if rest == "": path else: rest
+        else:
+            prefix := base ++ "/"
+            if p.starts_with(prefix) && p.length() > prefix.length():
+                _after(p, prefix.length())
+            else:
+                path
+
+/// The labels the header uses: explicit labels pass through untouched; the
+/// default labels (the operand paths) are relativized against the working
+/// directory so `ekodiff OLD NEW > p.patch` followed by `ekodiff --apply
+/// p.patch` round-trips from the same directory. When the working directory
+/// cannot be resolved, the paths are used as given.
+_labels_for: (cwd: Option String, cfg: DiffConfig) -> [String, String] =
+    if cfg.default_labels.not():
+        {cfg.old_label, cfg.new_label}
+    else:
+        case cwd:
+            None -> {cfg.old_label, cfg.new_label}
+            Some dir ->
+                {_relative_label(cfg.old_path, dir),
+                 _relative_label(cfg.new_path, dir)}
+
+_diff_labels: (fs: Fs, cfg: DiffConfig) !-> [String, String] =
+    if cfg.default_labels.not():
+        {cfg.old_label, cfg.new_label}
+    else:
+        case fs.realpath("."):
+            Err _ -> _labels_for(None, cfg)
+            Ok dir -> _labels_for(Some dir, cfg)
+
+_run_diff: (out: Out, err: Out, fs: Fs, cfg: DiffConfig) !-> Int =
+    case _read_input(fs, cfg.old_path, "old"):
+        Err e -> _error_status(err, "ekodiff: {e}", 2)
+        Ok old_text ->
+            case _read_input(fs, cfg.new_path, "new"):
+                Err e -> _error_status(err, "ekodiff: {e}", 2)
+                Ok new_text ->
+                    (old_label, new_label) = _diff_labels(fs, cfg)
+                    output := diff_texts(old_label, new_label,
+                                         split_text(old_text), split_text(new_text),
+                                         cfg.context)
+                    if output == "":
+                        0
+                    else:
+                        out.print(output)
+                        1
+
+// ----------------------------------------------------------------- patch shell
+
+_source_text: (fs: Fs, f: FilePatch) !-> Result String PatchProblem =
+    if f.old_path == _dev_null:
+        Ok ""
+    else:
+        _read_input(fs, f.old_path, "source").map_err((e): IoFailed e)
+
+_prepare_files: (fs: Fs, files: []FilePatch, acc: []Prepared) !-> Result ([]Prepared) PatchProblem =
+    case files:
+        {} -> Ok acc.reverse()
+        {f, ..rest} ->
+            source <- _source_text(fs, f).try()
+            patched := apply_file_patch(split_text(source), f)
+            lines <- patched.map_err((e): ApplyFailed "file {f.old_path}: {e}").try()
+            target := patch_target(f)
+            delete := patch_deletes(f)
+            if delete && lines.length() > 0:
+                Err (ApplyFailed "deletion of {f.old_path} leaves content")
+            else:
+                prepared: Prepared = {
+                    target: target,
+                    content: render_lines(lines),
+                    delete: delete}
+                _prepare_files(fs, rest, {prepared} ++ acc)
+
+_write_prepared: (fs: Fs, items: []Prepared) !-> Result _ String =
+    case items:
+        {} -> Ok _
+        {p, ..rest} ->
+            if p.delete:
+                _ <- fs.rm(p.target).map_err((e): "delete {p.target}: {_io_message(e)}").try()
+                _write_prepared(fs, rest)
+            else:
+                _ <- fs.write(p.target, p.content).map_err((e): "write {p.target}: {_io_message(e)}").try()
+                _write_prepared(fs, rest)
+
+_run_patch: (out: Out, err: Out, fs: Fs, cfg: PatchConfig) !-> Int =
+    case _read_input(fs, cfg.patch_path, "patch"):
+        Err e -> _error_status(err, "ekodiff: {e}", 2)
+        Ok text ->
+            case parse_patch(text):
+                Err e -> _error_status(err, "ekodiff: malformed patch: {e}", 2)
+                Ok files ->
+                    case validate_patch_paths(files, cfg.strip):
+                        Err e -> _error_status(err, "ekodiff: unsafe patch: {e}", 2)
+                        Ok stripped ->
+                            case _check_patch_paths(fs, stripped):
+                                Err e -> _error_status(err, "ekodiff: unsafe patch: {e}", 2)
+                                Ok _ ->
+                                    case _prepare_files(fs, stripped, {}):
+                                        Err (ApplyFailed e) -> _error_status(err, "ekodiff: {e}", 1)
+                                        Err (IoFailed e) -> _error_status(err, "ekodiff: {e}", 2)
+                                        Ok prepared ->
+                                            if cfg.check:
+                                                0
+                                            else:
+                                                case _write_prepared(fs, prepared):
+                                                    Err e -> _error_status(err, "ekodiff: {e}", 2)
+                                                    Ok _ -> 0
+
+// -------------------------------------------------------------------- dispatch
+
+_dispatch: (out: Out, err: Out, argv: []String, fs: Fs) !-> Int =
+    case parse_args(argv):
+        Help -> _help_status(out)
+        Usage msg -> _usage_status(err, msg)
+        Diff cfg -> _run_diff(out, err, fs, cfg)
+        Patch cfg -> _run_patch(out, err, fs, cfg)
+
+// The parameter list is the authorization manifest: output, arguments, the
+// file system, and the process exit channel. There is no other I/O entrance.
+// The error channel rides the Out session as host wiring, so the manifest
+// stays as written.
+main: (out: Out, args: Args, fs: Fs, proc: Proc) ! =
+    code := _dispatch(out, Out.err(), args.all(), fs)
+    Proc.exit(proc, code)
+
+// --------------------------------------------------------------------- tests
+
+_t: (s: String) -> []Line = split_text(s)
+
+_diff: (old: String, new: String, ctx: Int) -> String =
+    diff_texts("old.txt", "new.txt", split_text(old), split_text(new), ctx)
+
+split_empty: test =
+    assert_eq(_t(""), {})
+    assert_eq(render_lines(_t("")), "")
+
+split_no_trailing: test =
+    assert_eq(_t("a\nb"), {_line("a", True), _line("b", False)})
+    assert_eq(render_lines(_t("a\nb")), "a\nb")
+
+split_trailing: test =
+    assert_eq(_t("a\nb\n"), {_line("a", True), _line("b", True)})
+    assert_eq(render_lines(_t("a\nb\n")), "a\nb\n")
+
+split_blank_lines: test =
+    assert_eq(_t("\n"), {_line("", True)})
+    assert_eq(_t("a\n\n"), {_line("a", True), _line("", True)})
+    assert_eq(_t("a\n\nb"), {_line("a", True), _line("", True), _line("b", False)})
+
+text_round_trip: test =
+    samples: []String = {"", "x", "x\n", "\n", "\n\n", "a\nb", "a\nb\n", "a\n\nb\n"}
+    samples.each((s): assert_eq(render_lines(_t(s)), s))
+
+identical_diff: test =
+    assert_eq(_diff("a\nb\n", "a\nb\n", 3), "")
+    assert_eq(_diff("", "", 3), "")
+
+empty_to_nonempty: test =
+    assert_eq(_diff("", "x\n", 3),
+        "--- old.txt\n+++ new.txt\n@@ -0,0 +1 @@\n+x\n")
+
+nonempty_to_empty: test =
+    assert_eq(_diff("x\n", "", 3),
+        "--- old.txt\n+++ new.txt\n@@ -1 +0,0 @@\n-x\n")
+
+single_replacement: test =
+    assert_eq(_diff("one\ntwo\nthree\n", "one\nTWO\nthree\n", 3),
+        "--- old.txt\n+++ new.txt\n@@ -1,3 +1,3 @@\n one\n-two\n+TWO\n three\n")
+
+replacement_context_zero: test =
+    assert_eq(_diff("one\ntwo\nthree\n", "one\nTWO\nthree\n", 0),
+        "--- old.txt\n+++ new.txt\n@@ -2 +2 @@\n-two\n+TWO\n")
+
+insert_start: test =
+    assert_eq(_diff("a\nb\n", "x\na\nb\n", 3),
+        "--- old.txt\n+++ new.txt\n@@ -1,2 +1,3 @@\n+x\n a\n b\n")
+
+insert_middle: test =
+    assert_eq(_diff("a\nb\n", "a\nx\nb\n", 3),
+        "--- old.txt\n+++ new.txt\n@@ -1,2 +1,3 @@\n a\n+x\n b\n")
+
+insert_end: test =
+    assert_eq(_diff("a\nb\n", "a\nb\nx\n", 3),
+        "--- old.txt\n+++ new.txt\n@@ -1,2 +1,3 @@\n a\n b\n+x\n")
+
+delete_start: test =
+    assert_eq(_diff("x\na\nb\n", "a\nb\n", 3),
+        "--- old.txt\n+++ new.txt\n@@ -1,3 +1,2 @@\n-x\n a\n b\n")
+
+delete_middle: test =
+    assert_eq(_diff("a\nx\nb\n", "a\nb\n", 3),
+        "--- old.txt\n+++ new.txt\n@@ -1,3 +1,2 @@\n a\n-x\n b\n")
+
+delete_end: test =
+    assert_eq(_diff("a\nb\nx\n", "a\nb\n", 3),
+        "--- old.txt\n+++ new.txt\n@@ -1,3 +1,2 @@\n a\n b\n-x\n")
+
+no_newline_old: test =
+    assert_eq(_diff("a\nb", "a\nc", 3),
+        "--- old.txt\n+++ new.txt\n@@ -1,2 +1,2 @@\n a\n-b\n\\ No newline at end of file\n+c\n\\ No newline at end of file\n")
+
+no_newline_new: test =
+    assert_eq(_diff("a\nb", "a\nc\n", 3),
+        "--- old.txt\n+++ new.txt\n@@ -1,2 +1,2 @@\n a\n-b\n\\ No newline at end of file\n+c\n")
+
+no_newline_gained: test =
+    assert_eq(_diff("a\nb\n", "a\nc", 3),
+        "--- old.txt\n+++ new.txt\n@@ -1,2 +1,2 @@\n a\n-b\n+c\n\\ No newline at end of file\n")
+
+no_newline_context: test =
+    assert_eq(_diff("a\nb", "c\nb", 3),
+        "--- old.txt\n+++ new.txt\n@@ -1,2 +1,2 @@\n-a\n+c\n b\n\\ No newline at end of file\n")
+
+multiple_hunks: test =
+    assert_eq(_diff("a\nb\nc\nd\ne\nf\n", "A\nb\nc\nd\nE\nf\n", 1),
+        "--- old.txt\n+++ new.txt\n@@ -1,2 +1,2 @@\n-a\n+A\n b\n@@ -4,3 +4,3 @@\n d\n-e\n+E\n f\n")
+
+hunks_merge_when_touching: test =
+    assert_eq(_diff("a\nb\nc\nd\ne\nf\n", "A\nb\nc\nD\ne\nf\n", 1),
+        "--- old.txt\n+++ new.txt\n@@ -1,5 +1,5 @@\n-a\n+A\n b\n c\n-d\n+D\n e\n")
+
+hunks_split_when_gap: test =
+    assert_eq(_diff("a\nb\nc\nd\ne\nf\n", "A\nb\nc\nd\nE\nf\n", 1),
+        "--- old.txt\n+++ new.txt\n@@ -1,2 +1,2 @@\n-a\n+A\n b\n@@ -4,3 +4,3 @@\n d\n-e\n+E\n f\n")
+
+context_zero_adjacent: test =
+    assert_eq(_diff("a\nb\nc\n", "A\nB\nc\n", 0),
+        "--- old.txt\n+++ new.txt\n@@ -1,2 +1,2 @@\n-a\n-b\n+A\n+B\n")
+
+context_zero_separate: test =
+    assert_eq(_diff("a\nb\nc\n", "A\nb\nC\n", 0),
+        "--- old.txt\n+++ new.txt\n@@ -1 +1 @@\n-a\n+A\n@@ -3 +3 @@\n-c\n+C\n")
+
+labels: test =
+    assert_eq(diff_texts("before", "after", _t("x\n"), _t("y\n"), 3),
+        "--- before\n+++ after\n@@ -1 +1 @@\n-x\n+y\n")
+
+// -------------------------------------------------- default label tests
+
+relative_label_cases: test =
+    assert_eq(_relative_label("/tmp/a/old.txt", "/tmp/a"), "old.txt")
+    assert_eq(_relative_label("/tmp/a/sub/new.txt", "/tmp/a"), "sub/new.txt")
+    assert_eq(_relative_label("/tmp/a/./old.txt", "/tmp/a"), "old.txt")
+    assert_eq(_relative_label("/tmp/b/../a/old.txt", "/tmp/a"), "old.txt")
+    assert_eq(_relative_label("old.txt", "/tmp/a"), "old.txt")
+    assert_eq(_relative_label("./old.txt", "/tmp/a"), "./old.txt")
+    assert_eq(_relative_label("/tmp/b/new.txt", "/tmp/a"), "/tmp/b/new.txt")
+    assert_eq(_relative_label("/tmp/ab/old.txt", "/tmp/a"), "/tmp/ab/old.txt")
+    assert_eq(_relative_label("/tmp/a", "/tmp/a"), "/tmp/a")
+    assert_eq(_relative_label("/old.txt", "/"), "old.txt")
+
+labels_for_rules: test =
+    cfg: DiffConfig = {context: 3,
+                       old_label: "/work/old.txt", new_label: "/elsewhere/new.txt",
+                       default_labels: True,
+                       old_path: "/work/old.txt", new_path: "/elsewhere/new.txt"}
+    (old_label, new_label) = _labels_for(Some "/work", cfg)
+    assert_eq(old_label, "old.txt")
+    assert_eq(new_label, "/elsewhere/new.txt")
+    (kept_old, kept_new) = _labels_for(None, cfg)
+    assert_eq(kept_old, "/work/old.txt")
+    assert_eq(kept_new, "/elsewhere/new.txt")
+    named: DiffConfig = cfg.with({old_label: "before", new_label: "after",
+                                  default_labels: False})
+    (explicit_old, explicit_new) = _labels_for(Some "/work", named)
+    assert_eq(explicit_old, "before")
+    assert_eq(explicit_new, "after")
+
+myers_classic: test =
+    a := _t("A\nB\nC\nA\nB\nB\nA\n")
+    b := _t("C\nB\nA\nB\nA\nC\n")
+    ops := myers(a, b)
+    assert_eq(_edit_count(ops), 5)
+    assert_eq(_apply_ops(ops), b)
+
+myers_larger: test =
+    a := _t("a\nb\nc\nd\ne\nf\ng\nh\ni\nj\n")
+    b := _t("a\nc\nb\nd\nf\ne\ng\ni\nh\nj\n")
+    ops := myers(a, b)
+    assert_eq(_apply_ops(ops), b)
+    assert_eq(_edit_count(ops), 6)
+
+// ------------------------------------------------------------------ patch tests
+
+_replace_patch: String =
+    "--- old.txt\n+++ new.txt\n@@ -1,3 +1,3 @@\n one\n-two\n+TWO\n three\n"
+
+_one_file: (text: String) -> FilePatch =
+    case parse_patch(text):
+        Err e -> panic("test patch should parse: {e}")
+        Ok files ->
+            case files:
+                {f} -> f
+                _ -> panic("test patch should have one file section")
+
+_apply_text: (source: String, patch: String) -> Result String String =
+    files <- parse_patch(patch).try()
+    case files:
+        {f} ->
+            lines <- apply_file_patch(split_text(source), f).try()
+            Ok (render_lines(lines))
+        _ -> Err "test patch must have one file section"
+
+_apply_ok: (source: String, patch: String) -> String =
+    _apply_text(source, patch).expect("test patch should apply")
+
+parse_basic: test =
+    f := _one_file(_replace_patch)
+    assert_eq(f.old_path, "old.txt")
+    assert_eq(f.new_path, "new.txt")
+    assert_eq(f.hunks.length(), 1)
+    h := f.hunks.get(0).unwrap()
+    assert_eq(h.old_start, 1)
+    assert_eq(h.old_count, 3)
+    assert_eq(h.new_start, 1)
+    assert_eq(h.new_count, 3)
+    assert_eq(h.lines.length(), 4)
+
+parse_omitted_count: test =
+    f := _one_file("--- a\n+++ b\n@@ -2 +2 @@\n-x\n+y\n")
+    h := f.hunks.get(0).unwrap()
+    assert_eq(h.old_start, 2)
+    assert_eq(h.old_count, 1)
+    assert_eq(h.new_start, 2)
+    assert_eq(h.new_count, 1)
+
+parse_zero_ranges: test =
+    f := _one_file("--- a\n+++ b\n@@ -0,0 +1 @@\n+x\n@@ -1 +0,0 @@\n-y\n")
+    assert_eq(f.hunks.length(), 2)
+    h0 := f.hunks.get(0).unwrap()
+    assert_eq(h0.old_start, 0)
+    assert_eq(h0.old_count, 0)
+    h1 := f.hunks.get(1).unwrap()
+    assert_eq(h1.new_start, 0)
+    assert_eq(h1.new_count, 0)
+
+parse_section_heading: test =
+    f := _one_file("--- a\n+++ b\n@@ -1 +1 @@ function name\n-x\n+y\n")
+    assert_eq(f.hunks.length(), 1)
+
+parse_multiple_files: test =
+    text := "--- a.txt\n+++ a.txt\n@@ -1 +1 @@\n-old\n+new\n--- b.txt\n+++ b.txt\n@@ -1 +1 @@\n-one\n+two\n"
+    files := _parse_ok(text)
+    assert_eq(files.length(), 2)
+    assert_eq(files.get(0).unwrap().old_path, "a.txt")
+    assert_eq(files.get(1).unwrap().new_path, "b.txt")
+
+_parse_ok: (text: String) -> []FilePatch =
+    parse_patch(text).expect("test patch should parse")
+
+malformed_patches: test =
+    bad: []String = {
+        "",
+        "--- a\n",
+        "--- a\n+++ b\n",
+        "--- a\n+++ b\n@@ bad @@\n-x\n+y\n",
+        "--- a\n+++ b\n@@ -1,2 +1,2 @@\n only-one\n",
+        "--- a\n+++ b\n@@ -1 +1 @@\n\\ No newline at end of file\n-x\n+y\n",
+        "--- a\n+++ b\n@@ -1 +1 @@\n-x\n+y\n extra\n",
+        "--- a\n+++ b\n@@ -x +1 @@\n-x\n+y\n",
+        "+++ b\n--- a\n@@ -1 +1 @@\n-x\n+y\n"}
+    bad.each((p): assert(parse_patch(p).is_err()))
+
+apply_replacement: test =
+    assert_eq(_apply_ok("one\ntwo\nthree\n", _replace_patch),
+              "one\nTWO\nthree\n")
+
+apply_uses_old_path_source: test =
+    patch := "--- source.txt\n+++ destination.txt\n@@ -1,3 +1,4 @@\n a\n-b\n+B\n c\n+d\n"
+    f := _one_file(patch)
+    assert_eq(f.old_path, "source.txt")
+    assert_eq(f.new_path, "destination.txt")
+    assert_eq(patch_target(f), "source.txt")
+    assert_eq(render_lines(apply_file_patch(split_text("a\nb\nc\n"), f).unwrap()),
+              "a\nB\nc\nd\n")
+
+diff_apply_updates_old_path: test =
+    generated := _diff("a\nb\nc\n", "a\nB\nc\nd\n", 3)
+    f := _one_file(generated)
+    assert_eq(patch_target(f), "old.txt")
+    assert_eq(render_lines(apply_file_patch(split_text("a\nb\nc\n"), f).unwrap()),
+              "a\nB\nc\nd\n")
+
+patch_target_rules: test =
+    normal := _one_file("--- old.txt\n+++ new.txt\n@@ -1 +1 @@\n-x\n+y\n")
+    created := _one_file("--- /dev/null\n+++ created.txt\n@@ -0,0 +1 @@\n+x\n")
+    removed := _one_file("--- removed.txt\n+++ /dev/null\n@@ -1 +0,0 @@\n-x\n")
+    assert_eq(patch_target(normal), "old.txt")
+    assert_eq(patch_target(created), "created.txt")
+    assert_eq(patch_target(removed), "removed.txt")
+    assert(patch_deletes(normal).not())
+    assert(patch_deletes(created).not())
+    assert(patch_deletes(removed))
+
+apply_insert_delete: test =
+    inserted := _apply_ok("a\nb\n", "--- a\n+++ b\n@@ -1,2 +1,3 @@\n a\n+x\n b\n")
+    assert_eq(inserted, "a\nx\nb\n")
+    deleted := _apply_ok("a\nx\nb\n", "--- a\n+++ b\n@@ -1,3 +1,2 @@\n a\n-x\n b\n")
+    assert_eq(deleted, "a\nb\n")
+
+apply_start_and_end: test =
+    at_start := _apply_ok("a\nb\n", "--- a\n+++ b\n@@ -0,0 +1 @@\n+x\n")
+    assert_eq(at_start, "x\na\nb\n")
+    at_end := _apply_ok("a\nb\n", "--- a\n+++ b\n@@ -2,0 +3 @@\n+x\n")
+    assert_eq(at_end, "a\nb\nx\n")
+
+apply_zero_delete: test =
+    assert_eq(_apply_ok("x\n", "--- a\n+++ b\n@@ -1 +0,0 @@\n-x\n"), "")
+
+apply_offset_after: test =
+    patch := "--- a\n+++ b\n@@ -1,2 +1,2 @@\n a\n-b\n+B\n"
+    assert_eq(_apply_ok("header\na\nb\n", patch), "header\na\nB\n")
+
+apply_offset_before: test =
+    patch := "--- a\n+++ b\n@@ -2,2 +2,2 @@\n a\n-b\n+B\n"
+    assert_eq(_apply_ok("a\nb\n", patch), "a\nB\n")
+
+apply_offset_too_far: test =
+    patch := "--- a\n+++ b\n@@ -500,2 +500,2 @@\n a\n-b\n+B\n"
+    assert(_apply_text("a\nb\n", patch).is_err())
+
+apply_context_mismatch: test =
+    patch := "--- a\n+++ b\n@@ -1,2 +1,2 @@\n a\n-b\n+B\n"
+    assert(_apply_text("a\nc\n", patch).is_err())
+
+apply_out_of_range: test =
+    patch := "--- a\n+++ b\n@@ -500,2 +500,2 @@\n a\n-b\n+B\n"
+    assert(_apply_text("a\nb\n", patch).is_err())
+
+apply_multiple_hunks: test =
+    patch := "--- a\n+++ b\n@@ -1,2 +1,2 @@\n-a\n+A\n b\n@@ -3,2 +3,2 @@\n c\n-d\n+D\n"
+    assert_eq(_apply_ok("a\nb\nc\nd\n", patch), "A\nb\nc\nD\n")
+
+apply_no_newline_marker: test =
+    patch := "--- a\n+++ b\n@@ -1,2 +1,2 @@\n a\n-b\n\\ No newline at end of file\n+c\n\\ No newline at end of file\n"
+    assert_eq(_apply_ok("a\nb", patch), "a\nc")
+
+apply_no_newline_context: test =
+    patch := "--- a\n+++ b\n@@ -1,2 +1,2 @@\n-a\n+c\n b\n\\ No newline at end of file\n"
+    assert_eq(_apply_ok("a\nb", patch), "c\nb")
+
+apply_bad_count_object: test =
+    h: Hunk = {old_start: 1, old_count: 2, new_start: 1, new_count: 1,
+               lines: {Ctx (_line("a", True)), Ins (_line("b", True))}}
+    f: FilePatch = {old_path: "a", new_path: "b", hunks: {h}}
+    assert(apply_file_patch(split_text("a\n"), f).is_err())
+
+path_safety: test =
+    assert(safe_patch_path("a.txt"))
+    assert(safe_patch_path("dir/a.txt"))
+    assert(safe_patch_path("./a.txt"))
+    assert(safe_patch_path("dir/..name"))
+    assert(safe_patch_path("../a.txt").not())
+    assert(safe_patch_path("dir/../a.txt").not())
+    assert(safe_patch_path("/etc/passwd").not())
+    assert(safe_patch_path("").not())
+    assert(safe_patch_path(".").not())
+    assert(safe_patch_path("dir/").not())
+
+path_safety_validation: test =
+    ok := _parse_ok("--- a\n+++ b\n@@ -1 +1 @@\n-x\n+y\n")
+    assert(validate_patch_paths(ok, 0).is_ok())
+    absolute := _parse_ok("--- /etc/passwd\n+++ /etc/passwd\n@@ -1 +1 @@\n-x\n+y\n")
+    assert(validate_patch_paths(absolute, 0).is_err())
+    parent := _parse_ok("--- ../a\n+++ ../b\n@@ -1 +1 @@\n-x\n+y\n")
+    assert(validate_patch_paths(parent, 0).is_err())
+    null_old := _parse_ok("--- /dev/null\n+++ new.txt\n@@ -0,0 +1 @@\n+x\n")
+    assert(validate_patch_paths(null_old, 0).is_ok())
+    null_new := _parse_ok("--- old.txt\n+++ /dev/null\n@@ -1 +0,0 @@\n-x\n")
+    assert(validate_patch_paths(null_new, 0).is_ok())
+
+// ----------------------------------------------------- prefix stripping tests
+
+strip_components: test =
+    assert_eq(_strip_components("a/b/c", 0).unwrap_or(""), "a/b/c")
+    assert_eq(_strip_components("a/b/c", 1).unwrap_or(""), "b/c")
+    assert_eq(_strip_components("a/b/c", 2).unwrap_or(""), "c")
+    assert(_strip_components("a/b/c", 3).is_none())
+    assert(_strip_components("a/b", 3).is_none())
+    assert(_strip_components("a", 1).is_none())
+    assert_eq(_strip_components("/u/howard/src/blurfl.c", 1).unwrap_or(""),
+              "u/howard/src/blurfl.c")
+    assert_eq(_strip_components("./a.txt", 1).unwrap_or(""), "a.txt")
+    assert_eq(_strip_components("", 0).unwrap_or(""), "")
+
+validate_strip_p1: test =
+    git_style := _parse_ok("--- a/foo\n+++ b/foo\n@@ -1 +1 @@\n-x\n+y\n")
+    case validate_patch_paths(git_style, 1):
+        Err e -> panic("a/foo b/foo should strip to foo: {e}")
+        Ok stripped ->
+            assert_eq(stripped.length(), 1)
+            f := stripped.get(0).unwrap()
+            assert_eq(f.old_path, "foo")
+            assert_eq(f.new_path, "foo")
+
+validate_strip_p0: test =
+    files := _parse_ok("--- dir/f.txt\n+++ dir/g.txt\n@@ -1 +1 @@\n-x\n+y\n")
+    case validate_patch_paths(files, 0):
+        Err e -> panic("-p0 should keep every path: {e}")
+        Ok stripped ->
+            f := stripped.get(0).unwrap()
+            assert_eq(f.old_path, "dir/f.txt")
+            assert_eq(f.new_path, "dir/g.txt")
+
+validate_strip_too_few: test =
+    short := _parse_ok("--- a/b\n+++ a/b\n@@ -1 +1 @@\n-x\n+y\n")
+    case validate_patch_paths(short, 3):
+        Err e -> assert(e.contains("leaves no path"))
+        Ok _ -> panic("stripping 3 from a/b should fail")
+
+validate_strip_then_safety: test =
+    // The safety check sees the stripped path, so a section that is safe only
+    // before stripping and one that is unsafe only after stripping are both
+    // caught by the post-strip check.
+    parent := _parse_ok("--- a/../b\n+++ a/../b\n@@ -1 +1 @@\n-x\n+y\n")
+    case validate_patch_paths(parent, 1):
+        Err _ -> assert(True)
+        Ok _ -> panic("../b after stripping must be rejected")
+    leading := _parse_ok("--- a/./b\n+++ a/./b\n@@ -1 +1 @@\n-x\n+y\n")
+    case validate_patch_paths(leading, 1):
+        Err e -> panic("stripping one component must leave a safe path: {e}")
+        Ok stripped -> assert_eq(stripped.get(0).unwrap().old_path, "./b")
+
+validate_strip_absolute_component: test =
+    // The leading / of an absolute path goes with the first stripped
+    // component, so -p1 turns /etc/passwd into the relative etc/passwd.
+    absolute := _parse_ok("--- /etc/passwd\n+++ /etc/passwd\n@@ -1 +1 @@\n-x\n+y\n")
+    case validate_patch_paths(absolute, 1):
+        Err e -> panic("-p1 on /etc/passwd should strip the slash: {e}")
+        Ok stripped -> assert_eq(stripped.get(0).unwrap().old_path, "etc/passwd")
+
+strip_devnull_untouched: test =
+    created := _parse_ok("--- /dev/null\n+++ a/created.txt\n@@ -0,0 +1 @@\n+x\n")
+    case validate_patch_paths(created, 1):
+        Err e -> panic("the /dev/null marker must not be stripped: {e}")
+        Ok stripped ->
+            f := stripped.get(0).unwrap()
+            assert_eq(f.old_path, "/dev/null")
+            assert_eq(f.new_path, "created.txt")
+    removed := _parse_ok("--- a/old.txt\n+++ /dev/null\n@@ -1 +0,0 @@\n-x\n")
+    case validate_patch_paths(removed, 1):
+        Err e -> panic("the /dev/null marker must not be stripped: {e}")
+        Ok stripped ->
+            f := stripped.get(0).unwrap()
+            assert_eq(f.old_path, "old.txt")
+            assert_eq(f.new_path, "/dev/null")
+
+strip_multi_file: test =
+    text := "--- a/one.txt\n+++ a/one.txt\n@@ -1 +1 @@\n-old\n+new\n--- b/two.txt\n+++ b/two.txt\n@@ -1 +1 @@\n-one\n+two\n"
+    files := _parse_ok(text)
+    case validate_patch_paths(files, 1):
+        Err e -> panic("both sections should strip: {e}")
+        Ok stripped ->
+            assert_eq(stripped.get(0).unwrap().old_path, "one.txt")
+            assert_eq(stripped.get(1).unwrap().new_path, "two.txt")
+
+// ---------------------------------------------------- resolved-path safety tests
+
+_lookup_real: (tbl: [String]String, p: String) -> Result String IoError =
+    case tbl.get(p):
+        None -> Err NotFound
+        Some r -> Ok r
+
+_lookup_entries: (tbl: [String][]String, p: String) -> Result ([]String) IoError =
+    case tbl.get(p):
+        None -> Err NotFound
+        Some names -> Ok names
+
+_table_probes: (real: [String]String, dirs: [String][]String) -> Probes =
+    {resolve: (p): _lookup_real(real, p), entries: (p): _lookup_entries(dirs, p)}
+
+_under_root_cases: test =
+    assert(_under_root("/work", "/work"))
+    assert(_under_root("/work/a.txt", "/work"))
+    assert(_under_root("/work/sub/a.txt", "/work"))
+    assert(_under_root("/tmp/x", "/work").not())
+    assert(_under_root("/workshop", "/work").not())
+    assert(_under_root("/anything", "/"))
+
+patch_sides_lists_both_headers: test =
+    files := _parse_ok("--- src.txt\n+++ dst.txt\n@@ -1 +1 @@\n-x\n+y\n")
+    sides := _patch_sides(files, _no_strings)
+    assert_eq(sides.length(), 2)
+    assert_eq(sides.get(0).unwrap(), "src.txt")
+    assert_eq(sides.get(1).unwrap(), "dst.txt")
+    marked := _parse_ok("--- /dev/null\n+++ new.txt\n@@ -0,0 +1 @@\n+x\n")
+    assert_eq(_patch_sides(marked, _no_strings), {"new.txt"})
+
+walk_rejects_escape: test =
+    probes := _table_probes({".": "/work", "/work/link.txt": "/tmp/out"},
+                            {"/work": {"link.txt"}})
+    case _check_components(probes, "/work", "link.txt", {"link.txt"}, "/work"):
+        Err e -> assert(e.contains("leaves the working directory"))
+        Ok _ -> panic("an escaping symlink must be rejected")
+
+walk_allows_inside: test =
+    probes := _table_probes({".": "/work", "/work/link.txt": "/work/real.txt"},
+                            {})
+    case _check_components(probes, "/work", "link.txt", {"link.txt"}, "/work"):
+        Err e -> panic("an in-tree symlink must pass: {e}")
+        Ok _ -> assert(True)
+
+walk_rejects_dangling: test =
+    probes := _table_probes({".": "/work"}, {"/work": {"gone.txt"}})
+    case _check_components(probes, "/work", "gone.txt", {"gone.txt"}, "/work"):
+        Err e -> assert(e.contains("dangling symlink"))
+        Ok _ -> panic("a dangling symlink must be rejected")
+
+walk_allows_missing_final: test =
+    probes := _table_probes({".": "/work"}, {"/work": {}})
+    case _check_components(probes, "/work", "new.txt", {"new.txt"}, "/work"):
+        Err e -> panic("a name to create must pass: {e}")
+        Ok _ -> assert(True)
+
+walk_allows_missing_middle: test =
+    probes := _table_probes({".": "/work"}, {})
+    case _check_components(probes, "/work", "a/b.txt", {"a", "b.txt"}, "/work"):
+        Err e -> panic("a path under a missing directory must pass the walk: {e}")
+        Ok _ -> assert(True)
+
+walk_rejects_escaping_directory: test =
+    probes := _table_probes({".": "/work", "/work/sub": "/tmp/out"},
+                            {})
+    case _check_components(probes, "/work", "sub/a.txt", {"sub", "a.txt"}, "/work"):
+        Err _ -> assert(True)
+        Ok _ -> panic("a symlinked directory must not escape the tree")
+
+multi_file_apply: test =
+    text := "--- a.txt\n+++ a.txt\n@@ -1 +1 @@\n-old\n+new\n--- b.txt\n+++ b.txt\n@@ -1 +1 @@\n-one\n+two\n"
+    files := _parse_ok(text)
+    assert_eq(files.length(), 2)
+    fa := files.get(0).unwrap()
+    fb := files.get(1).unwrap()
+    assert_eq(render_lines(apply_file_patch(split_text("old\n"), fa).unwrap()), "new\n")
+    assert_eq(render_lines(apply_file_patch(split_text("one\n"), fb).unwrap()), "two\n")
+
+_round_trips: [][String, String] = {
+    {"", ""},
+    {"", "x\n"},
+    {"x\n", ""},
+    {"a\nb\n", "a\nB\n"},
+    {"a\nb\n", "x\na\nb\n"},
+    {"a\nb\n", "a\nb\nx\n"},
+    {"a\nb", "a\nc"},
+    {"a\nb\n", "a\nc"},
+    {"a\nb", "a\nc\n"},
+    {"a\nb\nc\nd\ne\nf\n", "A\nb\nc\nd\nE\nf\n"},
+    {"one\ntwo\nthree\nfour\nfive\n", "one\nTWO\nthree\nfour\nFIVE\n"},
+    {"\n\n", "a\n\n"}}
+
+_round_trip_with: (ctx: Int) -> Bool =
+    _round_trips.each((row):
+        (old_text, new_text) = row
+        generated := _diff(old_text, new_text, ctx)
+        if generated == "":
+            assert_eq(old_text, new_text)
+        else:
+            case _apply_text(old_text, generated):
+                Err e -> panic("round-trip apply failed: {e}")
+                Ok actual -> assert_eq(actual, new_text))
+    True
+
+diff_apply_round_trip: test =
+    assert(_round_trip_with(3))
+
+diff_apply_context_zero: test =
+    assert(_round_trip_with(0))
+
+diff_apply_context_one: test =
+    assert(_round_trip_with(1))
+
+// -------------------------------------------------------------------- CLI tests
+
+_expect_diff: (argv: []String) -> DiffConfig =
+    case parse_args(argv):
+        Diff cfg -> cfg
+        Help -> panic("expected Diff but got Help")
+        Usage e -> panic("expected Diff but got usage error: {e}")
+        Patch _ -> panic("expected Diff but got Patch")
+
+_expect_patch: (argv: []String) -> PatchConfig =
+    case parse_args(argv):
+        Patch cfg -> cfg
+        Help -> panic("expected Patch but got Help")
+        Usage e -> panic("expected Patch but got usage error: {e}")
+        Diff _ -> panic("expected Patch but got Diff")
+
+_expect_usage: (argv: []String) -> String =
+    case parse_args(argv):
+        Usage e -> e
+        Help -> panic("expected Usage but got Help")
+        Diff _ -> panic("expected Usage but got Diff")
+        Patch _ -> panic("expected Usage but got Patch")
+
+_is_help: (argv: []String) -> Bool =
+    case parse_args(argv):
+        Help -> True
+        _ -> False
+
+cli_defaults: test =
+    cfg := _expect_diff({"old.txt", "new.txt"})
+    assert_eq(cfg.context, 3)
+    assert_eq(cfg.old_label, "old.txt")
+    assert_eq(cfg.new_label, "new.txt")
+    assert_eq(cfg.old_path, "old.txt")
+    assert_eq(cfg.new_path, "new.txt")
+
+cli_options: test =
+    cfg := _expect_diff({"--context", "0", "--label", "before", "--label", "after", "o", "n"})
+    assert_eq(cfg.context, 0)
+    assert_eq(cfg.old_label, "before")
+    assert_eq(cfg.new_label, "after")
+    assert_eq(cfg.old_path, "o")
+    assert_eq(cfg.new_path, "n")
+
+cli_equals_forms: test =
+    cfg := _expect_diff({"--context=2", "--label=old", "--label=new", "o", "n"})
+    assert_eq(cfg.context, 2)
+    assert_eq(cfg.old_label, "old")
+    assert_eq(cfg.new_label, "new")
+
+cli_double_dash: test =
+    cfg := _expect_diff({"--context", "1", "--", "-old", "-new"})
+    assert_eq(cfg.old_path, "-old")
+    assert_eq(cfg.new_path, "-new")
+
+cli_patch_flags: test =
+    cfg := _expect_patch({"--apply", "--check", "change.diff"})
+    assert(cfg.check)
+    assert_eq(cfg.patch_path, "change.diff")
+    plain := _expect_patch({"--apply", "change.diff"})
+    assert(plain.check.not())
+
+cli_patch_flag_order: test =
+    cfg := _expect_patch({"--check", "--apply", "change.diff"})
+    assert(cfg.check)
+
+cli_default_labels_flag: test =
+    assert(_expect_diff({"old.txt", "new.txt"}).default_labels)
+    assert(_expect_diff({"--label", "a", "--label", "b", "o", "n"}).default_labels.not())
+
+cli_strip_flags: test =
+    assert_eq(_expect_patch({"--apply", "p.diff"}).strip, 0)
+    assert_eq(_expect_patch({"--apply", "-p0", "p.diff"}).strip, 0)
+    assert_eq(_expect_patch({"--apply", "-p1", "p.diff"}).strip, 1)
+    assert_eq(_expect_patch({"--apply", "-p12", "p.diff"}).strip, 12)
+    assert_eq(_expect_patch({"--apply", "--strip=2", "p.diff"}).strip, 2)
+    last := _expect_patch({"--apply", "-p1", "--strip=2", "p.diff"})
+    assert_eq(last.strip, 2)
+
+cli_strip_usage_errors: test =
+    assert(_expect_usage({"--apply", "-p", "p.diff"}).contains("unknown option"))
+    assert(_expect_usage({"--apply", "-px", "p.diff"}).contains("non-negative"))
+    assert(_expect_usage({"--apply", "-p-1", "p.diff"}).contains("non-negative"))
+    assert(_expect_usage({"--apply", "--strip=", "p.diff"}).contains("non-negative"))
+    assert(_expect_usage({"--apply", "--strip", "1", "p.diff"}).contains("unknown option"))
+    assert(_expect_usage({"--strip=1", "a", "b"}).contains("requires --apply"))
+    assert(_expect_usage({"-p1", "a", "b"}).contains("requires --apply"))
+
+cli_help: test =
+    assert(_is_help({"--help"}))
+    assert(_is_help({"-h"}))
+    assert(_is_help({"--context", "2", "--help"}))
+
+cli_usage_errors: test =
+    assert(_expect_usage({}).contains("OLD and NEW"))
+    assert(_expect_usage({"--bogus"}).contains("unknown option"))
+    assert(_expect_usage({"--context", "-1", "a", "b"}).contains("non-negative"))
+    assert(_expect_usage({"--context", "x", "a", "b"}).contains("non-negative"))
+    assert(_expect_usage({"--context"}).contains("requires a number"))
+    assert(_expect_usage({"--label", "one", "a", "b"}).contains("at most twice"))
+    assert(_expect_usage({"--apply"}).contains("exactly one patch file"))
+    assert(_expect_usage({"--apply", "a", "b"}).contains("exactly one patch file"))
+    assert(_expect_usage({"--check"}).contains("requires --apply"))
+    assert(_expect_usage({"--apply", "--context", "1", "p"}).contains("cannot be used"))
+    assert(_expect_usage({"--apply", "--label", "x", "p"}).contains("cannot be used"))
+
+cli_labels_without_paths: test =
+    assert(_expect_usage({"--label", "a", "--label", "b"}).contains("OLD and NEW"))
+
+cli_bad_label: test =
+    assert(_expect_usage({"--label", "a\tb", "--label", "n", "o", "n"}).contains("newline or tab"))
+    assert(_expect_usage({"--label", "a\nb", "--label", "n", "o", "n"}).contains("newline or tab"))
+
+// The dispatch tests pass Out.null() for both channels: no test writes
+// through the error channel, which under the test runner is the runner's
+// own panic capture.
+dispatch_help: test =
+    assert_eq(_dispatch(Out.null(), Out.null(), {"--help"}, Fs.null()), 0)
+
+dispatch_usage_error: test =
+    assert_eq(_dispatch(Out.null(), Out.null(), {}, Fs.null()), 2)
+
+dispatch_missing_diff_input: test =
+    assert_eq(_dispatch(Out.null(), Out.null(), {"a", "b"}, Fs.null()), 2)
+
+dispatch_missing_patch_input: test =
+    assert_eq(_dispatch(Out.null(), Out.null(), {"--apply", "missing.diff"}, Fs.null()), 2)

@@ -1,0 +1,317 @@
+// Builtin functions and the initial global environment.
+//
+// Builtins never call back into user code, so this module depends only on
+// value.eko. The evaluator special-cases pairs/ipairs in for-in.
+
+import value
+
+_table_lib: [Value]Value = {VStr "insert": VBuiltin "table.insert", VStr "concat": VBuiltin "table.concat"}
+
+_string_lib: [Value]Value = {VStr "len": VBuiltin "string.len", VStr "sub": VBuiltin "string.sub", VStr "rep": VBuiltin "string.rep"}
+
+_math_lib: [Value]Value = {VStr "floor": VBuiltin "math.floor", VStr "ceil": VBuiltin "math.ceil", VStr "abs": VBuiltin "math.abs", VStr "max": VBuiltin "math.max", VStr "min": VBuiltin "math.min", VStr "sqrt": VBuiltin "math.sqrt"}
+
+_bind: (state: State, name: String, v: Value) -> State = value.bind_global(state, name, v)
+
+/// Builds the initial global environment (builtins plus table/string/math).
+initial_state: () -> State =
+    s0 := value.base_state()
+    s1 := _bind(s0, "print", VBuiltin "print")
+    s2 := _bind(s1, "type", VBuiltin "type")
+    s3 := _bind(s2, "tostring", VBuiltin "tostring")
+    s4 := _bind(s3, "tonumber", VBuiltin "tonumber")
+    s5 := _bind(s4, "assert", VBuiltin "assert")
+    s6 := _bind(s5, "error", VBuiltin "error")
+    s7 := _bind(s6, "pairs", VBuiltin "pairs")
+    s8 := _bind(s7, "ipairs", VBuiltin "ipairs")
+    (s9, table_id) = value.new_table(s8, _table_lib)
+    s10 := _bind(s9, "table", VTable table_id)
+    (s11, string_id) = value.new_table(s10, _string_lib)
+    s12 := _bind(s11, "string", VTable string_id)
+    (s13, math_id) = value.new_table(s12, _math_lib)
+    _bind(s13, "math", VTable math_id)
+
+/// Calls a builtin by name with the given arguments.
+call_builtin: (state: State, name: String, args: []Value) -> Result ([State, Value]) String =
+    case name:
+        "print" -> _builtin_print(state, args)
+        "type" -> _builtin_type(state, args)
+        "tostring" -> _builtin_tostring(state, args)
+        "tonumber" -> _builtin_tonumber(state, args)
+        "assert" -> _builtin_assert(state, args)
+        "error" -> _builtin_error(state, args)
+        "pairs" -> Err "pairs() is only supported in a for-in statement"
+        "ipairs" -> Err "ipairs() is only supported in a for-in statement"
+        "table.insert" -> _builtin_table_insert(state, args)
+        "table.concat" -> _builtin_table_concat(state, args)
+        "string.len" -> _builtin_string_len(state, args)
+        "string.sub" -> _builtin_string_sub(state, args)
+        "string.rep" -> _builtin_string_rep(state, args)
+        "math.floor" -> _builtin_math_unary(state, args, "floor")
+        "math.ceil" -> _builtin_math_unary(state, args, "ceil")
+        "math.abs" -> _builtin_math_unary(state, args, "abs")
+        "math.sqrt" -> _builtin_math_unary(state, args, "sqrt")
+        "math.max" -> _builtin_math_max(state, args)
+        "math.min" -> _builtin_math_min(state, args)
+        _ -> Err "unknown builtin: {name}"
+
+_arg: (args: []Value, i: Int) -> Value = args.get(i).unwrap_or(VNil)
+
+_as_table: (v: Value) -> Result Int String =
+    case v:
+        VTable id -> Ok id
+        _ -> Err "table expected, got {value.type_name(v)}"
+
+_as_string: (v: Value) -> Result String String =
+    case v:
+        VStr s -> Ok s
+        _ -> Err "string expected, got {value.type_name(v)}"
+
+_int_arg: (v: Value) -> Result Int String =
+    case v:
+        VNum n -> Float.to_int(n).filter((i): Int.to_float(i) == n).to_result("integer expected")
+        _ -> Err "integer expected"
+
+_builtin_print: (state: State, args: []Value) -> Result ([State, Value]) String =
+    line := args.map(value.lua_tostring).join("\t")
+    Ok {state.with({out: state.out ++ {line}}), VNil}
+
+_builtin_type: (state: State, args: []Value) -> Result ([State, Value]) String =
+    case args.get(0):
+        None -> Err "type() expects one argument"
+        Some v -> Ok {state, VStr (value.type_name(v))}
+
+_builtin_tostring: (state: State, args: []Value) -> Result ([State, Value]) String =
+    case args.get(0):
+        None -> Err "tostring() expects one argument"
+        Some v -> Ok {state, VStr (value.lua_tostring(v))}
+
+_builtin_tonumber: (state: State, args: []Value) -> Result ([State, Value]) String =
+    case args.get(0):
+        None -> Err "tonumber() expects one argument"
+        Some v ->
+            case v:
+                VNum n -> Ok {state, VNum n}
+                VStr s ->
+                    case Float.parse(s.trim()):
+                        Ok n -> Ok {state, VNum n}
+                        Err _ -> Ok {state, VNil}
+                _ -> Ok {state, VNil}
+
+_builtin_assert: (state: State, args: []Value) -> Result ([State, Value]) String =
+    case args.get(0):
+        None -> Err "assert() expects an argument"
+        Some v ->
+            if value.truthy(v):
+                Ok {state, v}
+            else:
+                case args.get(1):
+                    None -> Err "assertion failed!"
+                    Some m -> Err (value.lua_tostring(m))
+
+_builtin_error: (state: State, args: []Value) -> Result ([State, Value]) String =
+    case args.get(0):
+        None -> Err "error() expects an argument"
+        Some v -> Err (value.lua_tostring(v))
+
+_builtin_table_insert: (state: State, args: []Value) -> Result ([State, Value]) String =
+    id <- _as_table(_arg(args, 0)).try()
+    if args.length() == 2:
+        _table_insert_at(state, id, None, _arg(args, 1))
+    else:
+        if args.length() == 3:
+            pos <- _int_arg(_arg(args, 1)).try()
+            _table_insert_at(state, id, Some pos, _arg(args, 2))
+        else:
+            Err "table.insert expects 2 or 3 arguments"
+
+_table_insert_at: (state: State, id: Int, pos_opt: Option Int, v: Value) -> Result ([State, Value]) String =
+    t <- state.tables.get(id).to_result("unknown table").try()
+    _insert_into_table(state, id, t, pos_opt, v)
+
+_insert_into_table: (state: State, id: Int, t: Table, pos_opt: Option Int, v: Value) -> Result ([State, Value]) String =
+    len := value.table_length(t.fields)
+    pos := pos_opt.unwrap_or(len + 1)
+    if pos < 1 || pos > len + 1:
+        Err "table.insert position out of bounds"
+    else:
+        shifted := _shift_up(t.fields, len, pos)
+        fields := value.dict_set(shifted, VNum (Int.to_float(pos)), v)
+        Ok {state.with({tables: state.tables.insert(id, t.with({fields: fields}))}), VNil}
+
+_shift_up: (fields: [Value]Value, i: Int, pos: Int) -> [Value]Value =
+    if i < pos:
+        fields
+    else:
+        case fields.get(VNum (Int.to_float(i))):
+            None -> _shift_up(fields, i - 1, pos)
+            Some v -> _shift_up(fields.insert(VNum (Int.to_float (i + 1)), v), i - 1, pos)
+
+_builtin_table_concat: (state: State, args: []Value) -> Result ([State, Value]) String =
+    id <- _as_table(_arg(args, 0)).try()
+    t <- state.tables.get(id).to_result("unknown table").try()
+    case args.get(1):
+        None -> _table_concat_value(state, t.fields, "")
+        Some sepv -> _table_concat_with_sep(state, t.fields, sepv)
+
+_table_concat_with_sep: (state: State, fields: [Value]Value, sepv: Value) -> Result ([State, Value]) String =
+    sep <- _as_string(sepv).try()
+    _table_concat_value(state, fields, sep)
+
+_table_concat_value: (state: State, fields: [Value]Value, sep: String) -> Result ([State, Value]) String =
+    case _concat_table(fields, sep):
+        Err e -> Err e
+        Ok s -> Ok {state, VStr s}
+
+_concat_table: (fields: [Value]Value, sep: String) -> Result String String =
+    _concat_parts(fields, 1, value.table_length(fields), {}).map((parts): parts.join(sep))
+
+_concat_parts: (fields: [Value]Value, i: Int, len: Int, acc: []String) -> Result ([]String) String =
+    if i > len:
+        Ok acc
+    else:
+        v <- fields.get(VNum (Int.to_float(i))).to_result("invalid value (nil) at index {i} in table for 'concat'").try()
+        s <- value.concat_part(v).try()
+        _concat_parts(fields, i + 1, len, acc ++ {s})
+
+_builtin_string_len: (state: State, args: []Value) -> Result ([State, Value]) String =
+    s <- _as_string(_arg(args, 0)).try()
+    Ok {state, VNum (Int.to_float (s.length()))}
+
+_builtin_string_sub: (state: State, args: []Value) -> Result ([State, Value]) String =
+    s <- _as_string(_arg(args, 0)).try()
+    i <- _int_arg(_arg(args, 1)).try()
+    j <- _int_arg(args.get(2).unwrap_or(VNum (-1.0))).try()
+    Ok {state, VStr (_lua_sub(s, i, j))}
+
+_lua_sub: (s: String, i: Int, j: Int) -> String =
+    n := s.length()
+    i1 := if i < 0: n + i + 1 else: i
+    j1 := if j < 0: n + j + 1 else: j
+    i2 := if i1 < 1: 1 else: i1
+    j2 := if j1 > n: n else: j1
+    if i2 > j2:
+        ""
+    else:
+        s.slice(i2 - 1, j2 - i2 + 1).unwrap_or("")
+
+_builtin_string_rep: (state: State, args: []Value) -> Result ([State, Value]) String =
+    s <- _as_string(_arg(args, 0)).try()
+    n <- _int_arg(_arg(args, 1)).try()
+    Ok {state, VStr (_repeat_string(s, n))}
+
+_repeat_string: (s: String, n: Int) -> String =
+    _repeat_string_from(s, n, "")
+
+_repeat_string_from: (s: String, n: Int, acc: String) -> String =
+    if n <= 0:
+        acc
+    else:
+        _repeat_string_from(s, n - 1, acc ++ s)
+
+_builtin_math_unary: (state: State, args: []Value, name: String) -> Result ([State, Value]) String =
+    n <- value.as_num(_arg(args, 0)).try()
+    case name:
+        "floor" -> Ok {state, VNum (Float.floor(n))}
+        "ceil" -> Ok {state, VNum (Float.ceil(n))}
+        "abs" -> Ok {state, VNum (Float.abs(n))}
+        "sqrt" -> Ok {state, VNum (Float.sqrt(n))}
+        _ -> Err "unknown math builtin: {name}"
+
+_builtin_math_max: (state: State, args: []Value) -> Result ([State, Value]) String =
+    n <- _first_num(args, "math.max").try()
+    m <- _fold_extreme(args.drop(1), n, (a, b): a > b).try()
+    Ok {state, VNum m}
+
+_builtin_math_min: (state: State, args: []Value) -> Result ([State, Value]) String =
+    n <- _first_num(args, "math.min").try()
+    m <- _fold_extreme(args.drop(1), n, (a, b): a < b).try()
+    Ok {state, VNum m}
+
+_first_num: (args: []Value, name: String) -> Result Float String =
+    first <- args.get(0).to_result("{name} expects at least one argument").try()
+    value.as_num(first)
+
+// One walk for both extremes; `better` decides whether the next value
+// replaces the accumulator.
+_fold_extreme: (args: []Value, acc: Float, better: (Float, Float) -> Bool) -> Result Float String =
+    case args:
+        {} -> Ok acc
+        {v, ..rest} ->
+            n <- value.as_num(v).try()
+            if better(n, acc): _fold_extreme(rest, n, better) else: _fold_extreme(rest, acc, better)
+
+// --------------------------------------------------------------------- tests
+
+_bi_str: (name: String, args: []Value) -> String =
+    case call_builtin(initial_state(), name, args):
+        Ok {_, v} -> value.lua_tostring(v)
+        Err e -> panic("builtin {name} failed: {e}")
+
+_bi_err: (name: String, args: []Value) -> String =
+    case call_builtin(initial_state(), name, args):
+        Err e -> e
+        Ok _ -> panic("expected {name} to fail")
+
+// A call that returns the resulting state, for tests that inspect it.
+_bi_state: (name: String, args: []Value) -> State =
+    case call_builtin(initial_state(), name, args):
+        Ok {s, _} -> s
+        Err e -> panic("builtin {name} failed: {e}")
+
+string_sub: test =
+    assert_eq(_bi_str("string.sub", {VStr "hello", VNum 2.0, VNum 4.0}), "ell")
+    assert_eq(_bi_str("string.sub", {VStr "hello", VNum (-3.0)}), "llo")
+    assert_eq(_bi_str("string.sub", {VStr "hello", VNum (-1.0), VNum (-1.0)}), "o")
+    assert_eq(_bi_str("string.sub", {VStr "hello", VNum 4.0, VNum 2.0}), "")
+    // A start below 1 clamps; the end index stays where it is.
+    assert_eq(_bi_str("string.sub", {VStr "hello", VNum 0.0, VNum 2.0}), "he")
+
+int_arg: test =
+    assert_eq(_int_arg(VNum 3.0).unwrap_or(0), 3)
+    assert_eq(_int_arg(VNum (-2.0)).unwrap_or(0), -2)
+    assert(_int_arg(VNum 3.5).is_err())
+    assert(_int_arg(VStr "3").is_err())
+    assert(_int_arg(VNil).is_err())
+
+string_rep: test =
+    assert_eq(_bi_str("string.rep", {VStr "ab", VNum 3.0}), "ababab")
+    assert_eq(_bi_str("string.rep", {VStr "x", VNum 0.0}), "")
+    assert_eq(_bi_str("string.rep", {VStr "x", VNum 1.0}), "x")
+
+table_concat: test =
+    (s1, id) = value.new_table(initial_state(), {VNum 1.0: VStr "a", VNum 2.0: VStr "b"})
+    case call_builtin(s1, "table.concat", {VTable id, VStr ","}):
+        Ok {_, v} -> assert_eq(value.lua_tostring(v), "a,b")
+        Err e -> panic("concat failed: {e}")
+
+table_insert_bounds: test =
+    (s1, id) = value.new_table(initial_state(), {})
+    case call_builtin(s1, "table.insert", {VTable id, VNum 0.0, VNum 9.0}):
+        Err e -> assert_eq(e, "table.insert position out of bounds")
+        Ok _ -> panic("expected an out-of-bounds error")
+    case call_builtin(s1, "table.insert", {VTable id, VNum 3.0, VNum 9.0}):
+        Err e -> assert_eq(e, "table.insert position out of bounds")
+        Ok _ -> panic("expected an out-of-bounds error")
+    // The append form is always in bounds.
+    case call_builtin(s1, "table.insert", {VTable id, VNum 9.0}):
+        Ok {s2, _} ->
+            t := s2.tables.get(id).unwrap_or({fields: {}})
+            assert_eq(value.table_length(t.fields), 1)
+        Err e -> panic("append failed: {e}")
+
+math_extremes: test =
+    assert_eq(_bi_str("math.max", {VNum 1.0, VNum 5.0, VNum 3.0}), "5")
+    assert_eq(_bi_str("math.min", {VNum 1.0, VNum (-5.0), VNum 3.0}), "-5")
+    assert_eq(_bi_err("math.max", {}), "math.max expects at least one argument")
+    assert_eq(_bi_err("math.max", {VStr "x"}), "number expected, got string")
+
+error_and_assert: test =
+    assert_eq(_bi_err("error", {VStr "boom"}), "boom")
+    assert_eq(_bi_err("assert", {VBool False}), "assertion failed!")
+    assert_eq(_bi_err("assert", {VBool False, VStr "why"}), "why")
+    assert_eq(_bi_err("assert", {}), "assert() expects an argument")
+
+print_joins_with_tabs: test =
+    s1 := _bi_state("print", {VStr "a", VNum 1.0, VNil})
+    assert_eq(s1.out, {"a\t1\tnil"})

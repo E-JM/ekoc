@@ -1,0 +1,125 @@
+// Token cursor for the recursive-descent Lua parser.
+//
+// The parser position over a token stream, the lookahead tests, the expect
+// family that consumes or reports, and the pure predicates the grammar rules
+// consult. The grammar itself lives in parser.eko; this layer holds only
+// position handling. The names are public because parser.eko reaches them
+// across the import, and Eko keeps `_`-prefixed bindings private to their
+// module.
+
+import ast
+
+// The parser position: the token stream and the offset into it.
+Parser: type = [tokens: []Token, pos: Int]
+
+// The precedence record of a binary operator under the cursor.
+BinInfo: type = [op: BinOp, prec: Int, right: Bool]
+
+/// The token at the cursor; end of input past the last token.
+peek: (p: Parser) -> Token = p.tokens.get(p.pos).unwrap_or({tok: TEof, line: 0})
+
+/// The token `n` positions ahead of the cursor.
+peek_at: (p: Parser, n: Int) -> Token = p.tokens.get(p.pos + n).unwrap_or({tok: TEof, line: 0})
+
+/// The cursor one token further.
+advance: (p: Parser) -> Parser = p.with({pos: p.pos + 1})
+
+/// The spelling a diagnostic quotes for `tok`.
+tok_text: (tok: Tok) -> String =
+    case tok:
+        TName s -> s
+        TKw s -> s
+        TNum n -> show(n)
+        TStr s -> "\"" ++ s ++ "\""
+        TSym s -> s
+        TEof -> "end of input"
+
+/// True when the cursor sits on the symbol `s`.
+at_sym: (p: Parser, s: String) -> Bool =
+    case peek(p).tok:
+        TSym x -> x == s
+        _ -> False
+
+/// True when the cursor sits on the keyword `s`.
+at_kw: (p: Parser, s: String) -> Bool =
+    case peek(p).tok:
+        TKw x -> x == s
+        _ -> False
+
+/// True at the end of the token stream.
+is_eof: (p: Parser) -> Bool =
+    case peek(p).tok:
+        TEof -> True
+        _ -> False
+
+/// Consumes the symbol `s`, or reports what the cursor holds instead.
+expect_sym: (p: Parser, s: String) -> Result Parser String =
+    if at_sym(p, s):
+        Ok (advance(p))
+    else:
+        Err "line {peek(p).line}: expected '{s}', found '{tok_text(peek(p).tok)}'"
+
+/// Consumes the keyword `s`, or reports what the cursor holds instead.
+expect_kw: (p: Parser, s: String) -> Result Parser String =
+    if at_kw(p, s):
+        Ok (advance(p))
+    else:
+        Err "line {peek(p).line}: expected '{s}', found '{tok_text(peek(p).tok)}'"
+
+/// Consumes a name, or reports what the cursor holds instead.
+expect_name: (p: Parser) -> Result ([Parser, String]) String =
+    case peek(p).tok:
+        TName n -> Ok {advance(p), n}
+        _ -> Err "line {peek(p).line}: expected a name, found '{tok_text(peek(p).tok)}'"
+
+/// The binary operator at the cursor with its precedence, if any.
+bin_info: (p: Parser) -> Option BinInfo =
+    case peek(p).tok:
+        TSym "+" -> Some {op: OpAdd, prec: 5, right: False}
+        TSym "-" -> Some {op: OpSub, prec: 5, right: False}
+        TSym "*" -> Some {op: OpMul, prec: 6, right: False}
+        TSym "/" -> Some {op: OpDiv, prec: 6, right: False}
+        TSym "%" -> Some {op: OpMod, prec: 6, right: False}
+        TSym "^" -> Some {op: OpPow, prec: 8, right: True}
+        TSym ".." -> Some {op: OpConcat, prec: 4, right: True}
+        TSym "==" -> Some {op: OpEq, prec: 3, right: False}
+        TSym "~=" -> Some {op: OpNe, prec: 3, right: False}
+        TSym "<" -> Some {op: OpLt, prec: 3, right: False}
+        TSym "<=" -> Some {op: OpLe, prec: 3, right: False}
+        TSym ">" -> Some {op: OpGt, prec: 3, right: False}
+        TSym ">=" -> Some {op: OpGe, prec: 3, right: False}
+        TKw "and" -> Some {op: OpAnd, prec: 2, right: False}
+        TKw "or" -> Some {op: OpOr, prec: 1, right: False}
+        _ -> None
+
+/// True when the token can begin a call's argument list.
+starts_args: (tok: Tok) -> Bool =
+    case tok:
+        TSym "(" -> True
+        TStr _ -> True
+        TSym "\{" -> True
+        _ -> False
+
+/// True when the cursor looks like `name =`, a named table field.
+looks_named: (p: Parser) -> Bool =
+    case peek(p).tok, peek_at(p, 1).tok:
+        TName _, TSym "=" -> True
+        _, _ -> False
+
+/// True for the expressions an assignment may target.
+is_lvalue: (e: Expr) -> Bool =
+    case e:
+        EVar _ -> True
+        EIndex _ -> True
+        _ -> False
+
+/// True for the call forms that may stand as statements.
+is_call_expr: (e: Expr) -> Bool =
+    case e:
+        ECall _ -> True
+        EMethod _ -> True
+        _ -> False
+
+/// True for the tokens that close a block without being consumed.
+is_block_end: (p: Parser) -> Bool =
+    at_kw(p, "end") || at_kw(p, "else") || at_kw(p, "elseif") || at_kw(p, "until") || at_sym(p, ";") || is_eof(p)

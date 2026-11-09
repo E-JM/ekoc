@@ -1,0 +1,134 @@
+// raylib [text] example - font spritefont, written in Eko, with UTF-8 text.
+//
+// The C example loads three PNG sprite fonts and draws each with DrawTextEx.
+// Here the three fonts are one TrueType file loaded at three sizes, with an
+// explicit codepoint list, so the text can mix Chinese and English:
+//
+//     Font font1 = LoadFont("resources/custom_mecha.png");
+//     ...
+//     DrawTextEx(font1, msg1, fontPosition1, font1.baseSize, -3, WHITE);
+//
+// Two boundaries shape this file:
+//
+//   * `Font` has pointer fields (`recs`, `glyphs`), and a `ctype` cannot
+//     hold pointers, so font_shim.c owns it and Eko sees a `C.Ptr.Void`.
+//   * Machine words have no arithmetic and are not literal positions, so
+//     the layout math is done in `Float` and narrowed to `F32` only when
+//     a `Vector2` is built.
+//
+// The window loop is tail recursion: Eko has no `while`.
+
+/// raylib's `Color`: four unsigned bytes, in C field order.
+Color: ctype = [r: U8, g: U8, b: U8, a: U8]
+
+/// raylib's `Vector2`: two floats, in C field order.
+Vector2: ctype = [x: F32, y: F32]
+
+init_window: (width: I32, height: I32, title: String) ! = extern "InitWindow"
+set_target_fps: (fps: I32) ! = extern "SetTargetFPS"
+window_should_close: () !-> Bool = extern "WindowShouldClose"
+begin_drawing: () ! = extern "BeginDrawing"
+end_drawing: () ! = extern "EndDrawing"
+clear_background: (color: Color) ! = extern "ClearBackground"
+close_window: () ! = extern "CloseWindow"
+
+// The font boundary: font_shim.c keeps the raylib `Font` on the C heap.
+// `chars` lists every non-ASCII codepoint the font must contain.
+font_load: (path: String, base_size: Int, chars: String) !-> C.Ptr.Void = extern "_eko_font_load"
+font_unload: (font: C.Ptr.Void) ! = extern "_eko_font_unload"
+font_base_size: (font: C.Ptr.Void) !-> Int = extern "_eko_font_base_size"
+measure_text_ex: (font: C.Ptr.Void, text: String, size: Float, spacing: Float) !-> Vector2 = extern "_eko_measure_text_ex"
+draw_text_ex: (font: C.Ptr.Void, text: String, pos: Vector2, size: Float, spacing: Float, color: Color) ! = extern "_eko_draw_text_ex"
+
+screen_width: I32 = 800
+screen_height: I32 = 450
+screen_w: Float = 800.0
+screen_h: Float = 450.0
+
+raywhite: Color = {r: 245, g: 245, b: 245, a: 255}
+maroon: Color = {r: 190, g: 33, b: 55, a: 255}
+darkgray: Color = {r: 80, g: 80, b: 80, a: 255}
+blue: Color = {r: 0, g: 121, b: 241, a: 255}
+
+/// A subset of Noto Sans SC holding exactly the glyphs used below (see
+/// resources/README.md). Any other CJK text needs a regenerated subset.
+font_path: String = "resources/NotoSansSC-demo.ttf"
+
+msg1: String = "你好，世界！这是自定义字体：中文 + English"
+msg2: String = "第二行：LoadFontEx 直接渲染 UTF-8 文本"
+msg3: String = "第三行：中文、English、标点，全都 OK！:D"
+
+/// Every character the three fonts must be able to draw.
+glyphs: String = msg1 ++ msg2 ++ msg3
+
+/// Builds a `Vector2` from domain floats.
+v2: (x: Float, y: Float) -> Vector2 =
+    {x: x.to_f32(), y: y.to_f32()}
+
+/// Reads a `Vector2` component back into the domain.
+fx: (v: Vector2) -> Float = Float.from_f32(v.x)
+
+/// One line of the demo: a font, the text it draws, and where.
+Layer: type = [
+    font: C.Ptr.Void,
+    text: String,
+    pos: Vector2,
+    size: Float,
+    spacing: Float,
+    color: Color]
+
+/// Centres `text` horizontally, exactly like the C example:
+///   x = screenWidth/2 - MeasureTextEx(font, text, size, spacing).x/2
+///   y = screenHeight/2 - font.baseSize/2 + dy
+centered: (font: C.Ptr.Void, text: String, size: Float, spacing: Float,
+           dy: Float) !-> Vector2 =
+    width := fx(measure_text_ex(font, text, size, spacing))
+    v2(screen_w / 2.0 - width / 2.0, screen_h / 2.0 - size / 2.0 + dy)
+
+layer: (font: C.Ptr.Void, text: String, spacing: Float, dy: Float,
+        color: Color) !-> Layer =
+    size := font_base_size(font).to_float()
+    {font: font,
+     text: text,
+     pos: centered(font, text, size, spacing, dy),
+     size: size,
+     spacing: spacing,
+     color: color}
+
+/// Draw one frame: every layer, over the raylib white background.
+draw_frame: (layers: []Layer) ! =
+    begin_drawing()
+    clear_background(raywhite)
+    layers.each((l):
+        draw_text_ex(l.font, l.text, l.pos, l.size, l.spacing, l.color))
+    end_drawing()
+
+/// The game loop: draw until the close button or ESC says stop.
+game_loop: (layers: []Layer) ! =
+    if window_should_close():
+        _
+    else:
+        draw_frame(layers)
+        game_loop(layers)
+
+main: () ! =
+    init_window(screen_width, screen_height,
+                "raylib [text] example - UTF-8 font (中文 / English)")
+
+    // Fonts must be loaded after the window: the glyph atlas is a GPU texture.
+    font1 := font_load(font_path, 34, glyphs)
+    font2 := font_load(font_path, 30, glyphs)
+    font3 := font_load(font_path, 24, glyphs)
+
+    l1 := layer(font1, msg1, -3.0, -80.0, maroon)
+    l2 := layer(font2, msg2, -2.0, -10.0, darkgray)
+    l3 := layer(font3, msg3, 2.0, 50.0, blue)
+    layers: []Layer = {l1, l2, l3}
+
+    set_target_fps(60)
+    game_loop(layers)
+
+    font_unload(font1)
+    font_unload(font2)
+    font_unload(font3)
+    close_window()

@@ -1,0 +1,454 @@
+// Tree-walking evaluator for the Lua subset.
+//
+// The evaluator is pure. It threads an explicit State (cells, tables,
+// functions, output lines) and an Env (lexical scopes). Loops are written
+// as self tail recursion where it matters. Output is buffered: run_source
+// returns the lines only when the chunk finishes without a runtime error.
+
+import ast
+import parser
+import value
+import builtins
+import eval_ops
+
+/// Runs a Lua chunk, returning the buffered output lines.
+run_source: (src: String) -> Result ([]String) String =
+    stmts <- parser.parse(src).try()
+    _run_stmts(stmts)
+
+_run_stmts: (stmts: []Stmt) -> Result ([]String) String =
+    env: []Scope = {{vars: {}}}
+    r <- _eval_block(builtins.initial_state(), env, stmts).try()
+    (s1, _, flow) = r
+    case flow:
+        FNormal | FReturn _ -> Ok s1.out
+        FBreak -> Err "break outside loop"
+
+// ------------------------------------------------------------- statements
+
+_eval_block: (state: State, env: []Scope, stmts: []Stmt) -> Result ([State, []Scope, Flow]) String =
+    case stmts:
+        {} -> Ok {state, env, FNormal}
+        {s, ..rest} ->
+            case _eval_stmt(state, env, s):
+                Err e -> Err e
+                Ok {s1, e1, flow} ->
+                    case flow:
+                        FNormal -> _eval_block(s1, e1, rest)
+                        _ -> Ok {s1, e1, flow}
+
+_eval_stmt: (state: State, env: []Scope, stmt: Stmt) -> Result ([State, []Scope, Flow]) String =
+    case stmt:
+        SLocal {names, exprs} -> _eval_local(state, env, names, exprs)
+        SLocalFunc {name, params, body} -> _eval_local_func(state, env, name, params, body)
+        SAssign {targets, exprs} -> _eval_assign(state, env, targets, exprs)
+        SExpr e -> _eval_expr_stmt(state, env, e)
+        SDo body -> _keep_env(env, _eval_scoped_block(state, env, body))
+        SIf {clauses, else_body} -> _keep_env(env, _eval_if(state, env, clauses, else_body))
+        SWhile {cond, body} -> _keep_env(env, _eval_while(state, env, cond, body))
+        SRepeat {body, cond} -> _keep_env(env, _eval_repeat(state, env, body, cond))
+        SForNum {name, start, stop, step, body} ->
+            _keep_env(env, _eval_for_num_flow(state, env, name, start, stop, step, body))
+        SForIn {names, iter, body} ->
+            _keep_env(env, _eval_for_in_flow(state, env, names, iter, body))
+        SReturn opt -> _eval_return(state, env, opt)
+        SBreak -> Ok {state, env, FBreak}
+
+_eval_local: (state: State, env: []Scope, names: []String, exprs: []Expr) -> Result ([State, []Scope, Flow]) String =
+    case _eval_exprs(state, env, exprs):
+        Err e -> Err e
+        Ok {s1, vs} -> _finish_locals(s1, env, names, vs)
+
+_finish_locals: (state: State, env: []Scope, names: []String, vs: []Value) -> Result ([State, []Scope, Flow]) String =
+    (s1, env1) = value.define_locals(state, env, names, vs)
+    Ok {s1, env1, FNormal}
+
+_eval_local_func: (state: State, env: []Scope, name: String, params: []String, body: []Stmt) -> Result ([State, []Scope, Flow]) String =
+    (s1, env1) = value.define_local(state, env, name, VNil)
+    (s2, fid) = value.new_func(s1, {params: params, body: body, env: env1})
+    s3 := value.assign_var(s2, env1, name, VFunc fid)
+    Ok {s3, env1, FNormal}
+
+_eval_assign: (state: State, env: []Scope, targets: []Expr, exprs: []Expr) -> Result ([State, []Scope, Flow]) String =
+    er <- _eval_exprs(state, env, exprs).try()
+    (s1, vs) = er
+    s2 <- _assign_targets(s1, env, targets, vs).try()
+    Ok {s2, env, FNormal}
+
+_eval_expr_stmt: (state: State, env: []Scope, e: Expr) -> Result ([State, []Scope, Flow]) String =
+    case _eval_expr(state, env, e):
+        Err e2 -> Err e2
+        Ok {s1, _} -> Ok {s1, env, FNormal}
+
+// The block forms evaluate in a child scope and report [State, Flow]; the
+// statement level pairs that state with the enclosing env.
+_keep_env: (env: []Scope, r: Result ([State, Flow]) String) -> Result ([State, []Scope, Flow]) String =
+    fr <- r.try()
+    (s1, flow) = fr
+    Ok {s1, env, flow}
+
+_eval_return: (state: State, env: []Scope, opt: Option Expr) -> Result ([State, []Scope, Flow]) String =
+    case _eval_opt(state, env, opt, VNil):
+        Err e -> Err e
+        Ok {s1, v} -> Ok {s1, env, FReturn v}
+
+// ------------------------------------------------------------- expressions
+
+_eval_exprs: (state: State, env: []Scope, exprs: []Expr) -> Result ([State, []Value]) String =
+    case exprs:
+        {} -> Ok {state, {}}
+        {e, ..rest} ->
+            case _eval_expr(state, env, e):
+                Err x -> Err x
+                Ok {s1, v} ->
+                    case _eval_exprs(s1, env, rest):
+                        Err x -> Err x
+                        Ok {s2, vs} -> Ok {s2, {v} ++ vs}
+
+_eval_opt: (state: State, env: []Scope, opt: Option Expr, default: Value) -> Result ([State, Value]) String =
+    case opt:
+        None -> Ok {state, default}
+        Some e -> _eval_expr(state, env, e)
+
+_eval_expr: (state: State, env: []Scope, e: Expr) -> Result ([State, Value]) String =
+    case e:
+        ENil -> Ok {state, VNil}
+        EBool b -> Ok {state, VBool b}
+        ENum n -> Ok {state, VNum n}
+        EStr s -> Ok {state, VStr s}
+        EVar name -> Ok {state, value.lookup_value(state, env, name)}
+        EBin {op, l, r} -> _eval_bin(state, env, op, l, r)
+        EUn {op, x} -> _eval_un(state, env, op, x)
+        ECall {f, args} -> _eval_call_expr(state, env, f, args)
+        EMethod {recv, name, args} -> _eval_method(state, env, recv, name, args)
+        EIndex {obj, key} -> _eval_index(state, env, obj, key)
+        ETable fields -> _eval_table(state, env, fields)
+        EFunc {params, body} -> _eval_func_expr(state, env, params, body)
+
+_eval_bin: (state: State, env: []Scope, op: BinOp, l: Expr, r: Expr) -> Result ([State, Value]) String =
+    case op:
+        OpAnd -> _eval_and(state, env, l, r)
+        OpOr -> _eval_or(state, env, l, r)
+        _ -> _eval_bin_values(state, env, op, l, r)
+
+_eval_and: (state: State, env: []Scope, l: Expr, r: Expr) -> Result ([State, Value]) String =
+    case _eval_expr(state, env, l):
+        Err e -> Err e
+        Ok {s1, v} ->
+            if value.truthy(v): _eval_expr(s1, env, r) else: Ok {s1, v}
+
+_eval_or: (state: State, env: []Scope, l: Expr, r: Expr) -> Result ([State, Value]) String =
+    case _eval_expr(state, env, l):
+        Err e -> Err e
+        Ok {s1, v} ->
+            if value.truthy(v): Ok {s1, v} else: _eval_expr(s1, env, r)
+
+_eval_bin_values: (state: State, env: []Scope, op: BinOp, l: Expr, r: Expr) -> Result ([State, Value]) String =
+    lr <- _eval_expr(state, env, l).try()
+    (s1, a) = lr
+    rr <- _eval_expr(s1, env, r).try()
+    (s2, b) = rr
+    v <- eval_ops.apply_bin(op, a, b).try()
+    Ok {s2, v}
+
+_eval_un: (state: State, env: []Scope, op: UnOp, x: Expr) -> Result ([State, Value]) String =
+    case _eval_expr(state, env, x):
+        Err e -> Err e
+        Ok {s1, v} -> eval_ops.apply_un(s1, op, v)
+
+_eval_call_expr: (state: State, env: []Scope, f: Expr, args: []Expr) -> Result ([State, Value]) String =
+    fr <- _eval_expr(state, env, f).try()
+    (s1, fv) = fr
+    ar <- _eval_exprs(s1, env, args).try()
+    (s2, av) = ar
+    _call_value(s2, fv, av)
+
+_eval_method: (state: State, env: []Scope, recv: Expr, name: String, args: []Expr) -> Result ([State, Value]) String =
+    rr <- _eval_expr(state, env, recv).try()
+    (s1, rv) = rr
+    ir <- eval_ops.index_get(s1, rv, VStr name).try()
+    (s1_next, fv) = ir
+    ar <- _eval_exprs(s1_next, env, args).try()
+    (s2, av) = ar
+    _call_value(s2, fv, {rv} ++ av)
+
+_eval_index: (state: State, env: []Scope, obj: Expr, key: Expr) -> Result ([State, Value]) String =
+    objr <- _eval_expr(state, env, obj).try()
+    (s1, ov) = objr
+    keyr <- _eval_expr(s1, env, key).try()
+    (s2, kv) = keyr
+    eval_ops.index_get(s2, ov, kv)
+
+_eval_table: (state: State, env: []Scope, fields: []TableField) -> Result ([State, Value]) String =
+    case _eval_fields(state, env, fields, {}, 1):
+        Err e -> Err e
+        Ok {s1, d} -> _make_table(s1, d)
+
+_make_table: (state: State, fields: [Value]Value) -> Result ([State, Value]) String =
+    (s1, id) = value.new_table(state, fields)
+    Ok {s1, VTable id}
+
+_eval_fields: (state: State, env: []Scope, fields: []TableField, acc: [Value]Value, pos: Int) -> Result ([State, [Value]Value]) String =
+    case fields:
+        {} -> Ok {state, acc}
+        {f, ..rest} ->
+            case f:
+                FPos e -> _field_pos(state, env, e, rest, acc, pos)
+                FNamed {name, expr} -> _field_named(state, env, name, expr, rest, acc, pos)
+                FKeyed {key, val} -> _field_keyed(state, env, key, val, rest, acc, pos)
+
+_field_pos: (state: State, env: []Scope, e: Expr, rest: []TableField, acc: [Value]Value, pos: Int) -> Result ([State, [Value]Value]) String =
+    case _eval_expr(state, env, e):
+        Err x -> Err x
+        Ok {s1, v} -> _eval_fields(s1, env, rest, value.dict_set(acc, VNum (Int.to_float(pos)), v), pos + 1)
+
+_field_named: (state: State, env: []Scope, name: String, e: Expr, rest: []TableField, acc: [Value]Value, pos: Int) -> Result ([State, [Value]Value]) String =
+    case _eval_expr(state, env, e):
+        Err x -> Err x
+        Ok {s1, v} -> _eval_fields(s1, env, rest, value.dict_set(acc, VStr name, v), pos)
+
+_field_keyed: (state: State, env: []Scope, key: Expr, val: Expr, rest: []TableField, acc: [Value]Value, pos: Int) -> Result ([State, [Value]Value]) String =
+    kr <- _eval_expr(state, env, key).try()
+    (s1, kv) = kr
+    _ <- value.check_key(kv).try()
+    vr <- _eval_expr(s1, env, val).try()
+    (s2, v) = vr
+    _eval_fields(s2, env, rest, value.dict_set(acc, kv, v), pos)
+
+_eval_func_expr: (state: State, env: []Scope, params: []String, body: []Stmt) -> Result ([State, Value]) String =
+    (s1, id) = value.new_func(state, {params: params, body: body, env: env})
+    Ok {s1, VFunc id}
+
+// --------------------------------------------------------------- control
+
+_eval_scoped_block: (state: State, env: []Scope, body: []Stmt) -> Result ([State, Flow]) String =
+    inner: []Scope = value.scoped_env(env)
+    case _eval_block(state, inner, body):
+        Err e -> Err e
+        Ok {s1, _, flow} -> Ok {s1, flow}
+
+_eval_if: (state: State, env: []Scope, clauses: []IfClause, else_body: Option ([]Stmt)) -> Result ([State, Flow]) String =
+    case clauses:
+        {} -> _eval_else(state, env, else_body)
+        {c, ..rest} ->
+            case _eval_expr(state, env, c.cond):
+                Err e -> Err e
+                Ok {s1, v} ->
+                    if value.truthy(v): _eval_scoped_block(s1, env, c.body) else: _eval_if(s1, env, rest, else_body)
+
+_eval_else: (state: State, env: []Scope, else_body: Option ([]Stmt)) -> Result ([State, Flow]) String =
+    case else_body:
+        None -> Ok {state, FNormal}
+        Some body -> _eval_scoped_block(state, env, body)
+
+_eval_while: (state: State, env: []Scope, cond: Expr, body: []Stmt) -> Result ([State, Flow]) String =
+    case _eval_expr(state, env, cond):
+        Err e -> Err e
+        Ok {s1, v} ->
+            if value.truthy(v).not():
+                Ok {s1, FNormal}
+            else:
+                case _eval_scoped_block(s1, env, body):
+                    Err e -> Err e
+                    Ok {s2, FBreak} -> Ok {s2, FNormal}
+                    Ok {s2, FReturn rv} -> Ok {s2, FReturn rv}
+                    Ok {s2, FNormal} -> _eval_while(s2, env, cond, body)
+
+_eval_repeat: (state: State, env: []Scope, body: []Stmt, cond: Expr) -> Result ([State, Flow]) String =
+    inner: []Scope = value.scoped_env(env)
+    case _eval_block(state, inner, body):
+        Err e -> Err e
+        Ok {s1, env1, flow} ->
+            case flow:
+                FBreak -> Ok {s1, FNormal}
+                FReturn rv -> Ok {s1, FReturn rv}
+                FNormal ->
+                    case _eval_expr(s1, env1, cond):
+                        Err e -> Err e
+                        Ok {s2, v} -> if value.truthy(v): Ok {s2, FNormal} else: _eval_repeat(s2, env, body, cond)
+
+_eval_for_num_flow: (state: State, env: []Scope, name: String, start: Expr, stop: Expr, step_opt: Option Expr, body: []Stmt) -> Result ([State, Flow]) String =
+    p1 <- _eval_expr(state, env, start).try()
+    (s1, sv) = p1
+    p2 <- _eval_expr(s1, env, stop).try()
+    (s2, ev) = p2
+    p3 <- _eval_opt(s2, env, step_opt, VNum 1.0).try()
+    (s3, stepv) = p3
+    n1 <- value.as_num(sv).try()
+    n2 <- value.as_num(ev).try()
+    n3 <- value.as_num(stepv).try()
+    if n3 == 0.0:
+        Err "for step is zero"
+    else:
+        _for_num_loop(s3, env, name, n1, n2, n3, body)
+
+_for_num_loop: (state: State, env: []Scope, name: String, i: Float, stop: Float, step: Float, body: []Stmt) -> Result ([State, Flow]) String =
+    if step > 0.0 && i > stop || step < 0.0 && i < stop:
+        Ok {state, FNormal}
+    else:
+        (s1, inner) = value.define_local(state, env, name, VNum i)
+        case _eval_block(s1, inner, body):
+            Err e -> Err e
+            Ok {s2, _, flow} ->
+                case flow:
+                    FBreak -> Ok {s2, FNormal}
+                    FReturn rv -> Ok {s2, FReturn rv}
+                    FNormal -> _for_num_loop(s2, env, name, i + step, stop, step, body)
+
+_eval_for_in_flow: (state: State, env: []Scope, names: []String, iter: Expr, body: []Stmt) -> Result ([State, Flow]) String =
+    case iter:
+        ECall {f, args} -> _for_in_call(state, env, names, f, args, body)
+        _ -> Err "for-in supports only pairs(table) and ipairs(table)"
+
+_for_in_call: (state: State, env: []Scope, names: []String, f: Expr, args: []Expr, body: []Stmt) -> Result ([State, Flow]) String =
+    case f, args:
+        EVar "pairs", {arg}  -> _for_in_table(state, env, names, arg, body, False)
+        EVar "pairs", _      -> Err "pairs() takes one argument"
+        EVar "ipairs", {arg} -> _for_in_table(state, env, names, arg, body, True)
+        EVar "ipairs", _     -> Err "ipairs() takes one argument"
+        _                    -> Err "for-in supports only pairs(table) and ipairs(table)"
+
+_for_in_table: (state: State, env: []Scope, names: []String, table_expr: Expr, body: []Stmt, indexed: Bool) -> Result ([State, Flow]) String =
+    case _eval_expr(state, env, table_expr):
+        Err e -> Err e
+        Ok {s1, tv} ->
+            case tv:
+                VTable id ->
+                    case s1.tables.get(id):
+                        None -> Err "unknown table"
+                        Some t -> _for_in_fields(s1, env, names, t.fields, body, indexed)
+                _ -> Err "pairs expects a table, got {value.type_name(tv)}"
+
+_for_in_fields: (state: State, env: []Scope, names: []String, fields: [Value]Value, body: []Stmt, indexed: Bool) -> Result ([State, Flow]) String =
+    pairs := if indexed: value.ipairs_of(fields) else: value.pairs_of(fields)
+    _for_in_loop(state, env, names, pairs, body)
+
+_for_in_loop: (state: State, env: []Scope, names: []String, pairs: []Pair, body: []Stmt) -> Result ([State, Flow]) String =
+    case pairs:
+        {} -> Ok {state, FNormal}
+        {pair, ..rest} ->
+            case _for_in_step(state, env, names, pair, body):
+                Err e -> Err e
+                Ok {s1, FNormal} -> _for_in_loop(s1, env, names, rest, body)
+                Ok {s1, FReturn rv} -> Ok {s1, FReturn rv}
+                Ok {s1, FBreak} -> Ok {s1, FNormal}
+
+_for_in_step: (state: State, env: []Scope, names: []String, pair: Pair, body: []Stmt) -> Result ([State, Flow]) String =
+    (s1, vars) = value.bind_params(state, names, {pair.key, pair.value}, {})
+    inner: []Scope = value.env_with(vars, env)
+    case _eval_block(s1, inner, body):
+        Err e -> Err e
+        Ok {s2, _, flow} ->
+            case flow:
+                FNormal | FBreak -> Ok {s2, FNormal}
+                FReturn rv -> Ok {s2, FReturn rv}
+
+// ------------------------------------------------------------- assignment
+
+_assign_targets: (state: State, env: []Scope, targets: []Expr, values: []Value) -> Result State String =
+    case targets:
+        {} -> Ok state
+        {t, ..rest} -> _assign_targets_step(state, env, t, rest, values)
+
+_assign_targets_step: (state: State, env: []Scope, t: Expr, rest: []Expr, values: []Value) -> Result State String =
+    v := values.get(0).unwrap_or(VNil)
+    case _assign_one(state, env, t, v):
+        Err e -> Err e
+        Ok s1 -> _assign_targets(s1, env, rest, values.drop(1))
+
+_assign_one: (state: State, env: []Scope, target: Expr, v: Value) -> Result State String =
+    case target:
+        EVar name -> Ok (value.assign_var(state, env, name, v))
+        EIndex {obj, key} -> _assign_index(state, env, obj, key, v)
+        _ -> Err "cannot assign to this expression"
+
+_assign_index: (state: State, env: []Scope, obj: Expr, key: Expr, v: Value) -> Result State String =
+    case _eval_expr(state, env, obj):
+        Err e -> Err e
+        Ok {s1, ov} ->
+            case _eval_expr(s1, env, key):
+                Err e -> Err e
+                Ok {s2, kv} -> eval_ops.index_set(s2, ov, kv, v)
+
+// ------------------------------------------------------------------ calls
+
+_call_value: (state: State, f: Value, args: []Value) -> Result ([State, Value]) String =
+    case f:
+        VFunc id -> _call_closure(state, id, args)
+        VBuiltin name -> builtins.call_builtin(state, name, args)
+        _ -> Err "attempt to call a {value.type_name(f)} value"
+
+_call_closure: (state: State, id: Int, args: []Value) -> Result ([State, Value]) String =
+    c <- state.funcs.get(id).to_result("unknown function").try()
+    _run_closure(state, c, args)
+
+_run_closure: (state: State, c: Closure, args: []Value) -> Result ([State, Value]) String =
+    (s1, vars) = value.bind_params(state, c.params, args, {})
+    inner: []Scope = value.env_with(vars, c.env)
+    case _eval_block(s1, inner, c.body):
+        Err e -> Err e
+        Ok {s2, _, flow} ->
+            case flow:
+                FReturn v -> Ok {s2, v}
+                FNormal -> Ok {s2, VNil}
+                FBreak -> Err "break outside loop"
+
+// ------------------------------------------------------------------- tests
+
+_run_ok: (src: String) -> []String =
+    run_source(src).expect("lua run failed")
+
+arithmetic: test =
+    assert_eq(_run_ok("print(1 + 2 * 3, 2 ^ 3 ^ 2, 7 % 3)"), {"7\t512\t1"})
+
+strings: test =
+    assert_eq(_run_ok("print(\"a\" .. 1 .. 2)"), {"a12"})
+
+locals_while: test =
+    assert_eq(_run_ok("local x = 0\nwhile x < 3 do x = x + 1 end\nprint(x)"), {"3"})
+
+for_num: test =
+    assert_eq(_run_ok("local s = 0\nfor i = 1, 5 do s = s + i end\nprint(s)"), {"15"})
+
+if_break: test =
+    assert_eq(_run_ok("local n = 0\nwhile true do n = n + 1; if n == 2 then break end end\nprint(n)"), {"2"})
+
+tables: test =
+    assert_eq(_run_ok("local t = \{10, 20, name = \"x\"}\nt[2] = 25\ntable.insert(t, 30)\nprint(#t, t[2], t.name, table.concat(t, \",\"))"), {"3\t25\tx\t10,25,30"})
+
+pairs_sum: test =
+    assert_eq(_run_ok("local t = \{a = 1, b = 2, c = 3}\nlocal s = 0\nfor k, v in pairs(t) do s = s + v end\nprint(s)"), {"6"})
+
+closures: test =
+    assert_eq(_run_ok("local function counter()\n  local n = 0\n  return function() n = n + 1; return n end\nend\nlocal c = counter()\nprint(c(), c(), c())"), {"1\t2\t3"})
+
+recursion: test =
+    assert_eq(_run_ok("local function fib(n)\n  if n < 2 then return n end\n  return fib(n - 1) + fib(n - 2)\nend\nprint(fib(7))"), {"13"})
+
+repeat_loop: test =
+    assert_eq(_run_ok("local n = 0\nrepeat n = n + 1 until n == 3\nprint(n)"), {"3"})
+
+methods: test =
+    assert_eq(_run_ok("local t = \{x = 1}\nfunction t:get() return self.x end\nprint(t:get())"), {"1"})
+
+string_math: test =
+    assert_eq(_run_ok("print(string.sub(\"hello\", 2, 4), string.rep(\"x\", 3), math.floor(3.7))"), {"ell\txxx\t3"})
+
+builtin_more: test =
+    assert_eq(_run_ok("print(type(1), tostring(2), tonumber(\"3\"), math.max(1, 5, 3), string.len(\"abc\"))"), {"number\t2\t3\t5\t3"})
+
+assertions: test =
+    assert_eq(_run_ok("print(assert(42))"), {"42"})
+    assert(run_source("assert(false, \"boom\")").is_err())
+    assert(run_source("error(\"boom\")").is_err())
+
+ipairs_sum: test =
+    assert_eq(_run_ok("local t = \{10, 20, 30}\nlocal s = 0\nfor i, v in ipairs(t) do s = s + v end\nprint(s)"), {"60"})
+
+insert_at: test =
+    assert_eq(_run_ok("local t = \{1, 2}\ntable.insert(t, 2, 9)\nprint(table.concat(t, \",\"))"), {"1,9,2"})
+
+errors: test =
+    assert(run_source("local").is_err())
+    assert(run_source("print(nil + 1)").is_err())
+    assert(run_source("break").is_err())

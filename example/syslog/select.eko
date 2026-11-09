@@ -1,0 +1,129 @@
+// Selection over parsed entries: the filters, the last-N rule, and the
+// per-line step that the whole-text and streaming walks share. A
+// picked line carries both its written and its rendered form.
+
+import model
+import parse
+import format
+
+/// One selected line as it will be printed: the original text and the
+/// rendered form with the input's prefix.
+Picked: type = [raw: String, pretty: String]
+
+// True when the entry passes every filter: the severity ceiling, the
+// facility, the tag, and the message substring.
+select: (e: Entry, cfg: ShowCfg) -> Bool =
+    ok_level := e.pri.severity <= cfg.level
+    ok_fac := cfg.facility.map((f): f == e.pri.facility).unwrap_or(True)
+    ok_tag := cfg.tag.map((t): t == e.tag).unwrap_or(True)
+    ok_needle := cfg.needle.map((n): e.msg.contains(n)).unwrap_or(True)
+    ok_level && ok_fac && ok_tag && ok_needle
+
+// The last `n` items; zero or a negative count selects none, a count at
+// or above the length selects all.
+apply_last: (xs: []t, n: Option Int) -> []t =
+    case n:
+        None -> xs
+        Some k -> xs.drop(xs.length() - k)
+
+// One selected line in both of its output forms.
+_picked: (line: String, e: Entry, prefix: String) -> Picked =
+    {raw: line, pretty: prefix ++ format.render_entry(e)}
+
+// The per-line selection step the whole-text and streaming walks
+// share: parse the line, apply the filters, and classify the outcome.
+LineStep: type = Skip | Keep Picked | Drop
+
+step_line: (line: String, cfg: ShowCfg, prefix: String) -> LineStep =
+    case parse.parse_line(line):
+        None -> Skip
+        Some e ->
+            if select(e, cfg):
+                Keep (_picked(line, e, prefix))
+            else:
+                Drop
+
+// The picked lines and the unparseable-line count of a whole text.
+pick: (lines: []String, cfg: ShowCfg, prefix: String) -> [picked: []Picked, skipped: Int] =
+    _pick_loop(lines, cfg, prefix, {}, 0)
+
+_pick_loop: (lines: []String, cfg: ShowCfg, prefix: String,
+             acc: []Picked, skipped: Int) -> [picked: []Picked, skipped: Int] =
+    case lines:
+        {} -> {picked: acc, skipped: skipped}
+        {line, ..rest} ->
+            case step_line(line, cfg, prefix):
+                Skip -> _pick_loop(rest, cfg, prefix, acc, skipped + 1)
+                Keep p -> _pick_loop(rest, cfg, prefix, acc ++ {p}, skipped)
+                Drop -> _pick_loop(rest, cfg, prefix, acc, skipped)
+
+// --------------------------------------------------------------------- tests
+
+// One known entry the selection tests share.
+_sample: Entry = {
+    pri: {facility: 1, severity: 5},
+    stamp: "2026-11-05T09:17:01.250Z",
+    host: "box",
+    tag: "app",
+    msg: "hello world"}
+
+selection_filters: test =
+    debug: Entry = _sample.with({pri: {facility: 17, severity: 7}})
+    cfg: ShowCfg = model.show_default()
+    assert(select(_sample, cfg))
+    assert(select(debug, cfg))
+    err_cfg := cfg.with({level: 3})
+    assert(select(_sample.with({pri: {facility: 1, severity: 3}}), err_cfg))
+    assert(select(_sample.with({pri: {facility: 1, severity: 2}}), err_cfg))
+    assert(select(_sample.with({pri: {facility: 1, severity: 4}}), err_cfg).not())
+    fac_cfg := cfg.with({facility: Some 1})
+    assert(select(_sample, fac_cfg))
+    assert(select(debug, fac_cfg).not())
+    other: Entry = _sample.with({tag: "other", msg: "something else"})
+    tag_cfg := cfg.with({tag: Some "app"})
+    assert(select(_sample, tag_cfg))
+    assert(select(other, tag_cfg).not())
+    grep_cfg := cfg.with({needle: Some "world"})
+    assert(select(_sample, grep_cfg))
+    assert(select(other, grep_cfg).not())
+
+apply_last_cases: test =
+    xs: []Int = {1, 2, 3, 4, 5}
+    assert_eq(apply_last(xs, None), xs)
+    assert_eq(apply_last(xs, Some 2), {4, 5})
+    assert_eq(apply_last(xs, Some 5), xs)
+    assert_eq(apply_last(xs, Some 9), xs)
+    assert_eq(apply_last(xs, Some 0), {})
+    assert_eq(apply_last(xs, Some (0 - 1)), {})
+
+pick_counts_skipped: test =
+    text := "garbage\n" ++ format.format_5424(_sample) ++ "\nnoise\n" ++
+        format.format_5424(_sample.with({pri: {facility: 1, severity: 3}}))
+    res := pick(text.lines(), model.show_default(), "")
+    assert_eq(res.picked.length(), 2)
+    assert_eq(res.skipped, 2)
+    assert_eq(res.picked.get(0).map((p): p.pretty),
+              Some "2026-11-05T09:17:01.250Z user.notice app: hello world")
+    assert_eq(res.picked.get(1).map((p): p.pretty),
+              Some "2026-11-05T09:17:01.250Z user.error app: hello world")
+
+pick_prefix_and_raw: test =
+    text := format.format_5424(_sample) ++ "\n"
+    res := pick(text.lines(), model.show_default(), "a.log: ")
+    assert_eq(res.picked.get(0).map((p): p.pretty),
+              Some "a.log: 2026-11-05T09:17:01.250Z user.notice app: hello world")
+    assert_eq(res.picked.get(0).map((p): p.raw),
+              Some format.format_5424(_sample))
+
+step_line_cases: test =
+    line := format.format_5424(_sample)
+    case step_line(line, model.show_default(), ""):
+        Keep p -> assert_eq(p.pretty, "2026-11-05T09:17:01.250Z user.notice app: hello world")
+        _ -> panic("expected Keep")
+    case step_line("garbage", model.show_default(), ""):
+        Skip -> assert(True)
+        _ -> panic("expected Skip")
+    cfg := model.show_default().with({needle: Some "absent"})
+    case step_line(line, cfg, ""):
+        Drop -> assert(True)
+        _ -> panic("expected Drop")

@@ -1,0 +1,598 @@
+// ekofetch: a fastfetch-like system information summary.
+//
+//   ekofetch [options]
+//
+// The summary is assembled from the files a Linux system exposes for
+// reading: /etc/os-release, /proc/sys/kernel/hostname, /proc/sys/kernel/
+// ostype, /proc/sys/kernel/osrelease, /proc/uptime, /proc/cpuinfo, and
+// /proc/meminfo, plus a fixed set of environment variables. A source that
+// does not read simply omits its row; the summary is never wrong about
+// what it does print.
+//
+// The command layer is pure: file and environment contents go in, the
+// row list and its rendered lines come out, and arguments parse into
+// Config and Invocation. main is the only world-touching shell.
+//
+// Module: ekofetch (the file is the module).
+
+// ------------------------------------------------------------------ config
+
+/// One summary line: the label and its value.
+Row: type = [key: String, value: String]
+
+/// The file contents the shell gathered. None means the path did not read,
+/// which removes the row instead of printing a placeholder.
+Sources: type = [
+    os_release: Option String,
+    hostname: Option String,
+    ostype: Option String,
+    osrelease: Option String,
+    uptime: Option String,
+    cpuinfo: Option String,
+    meminfo: Option String]
+
+/// The parsed command line: the header text, and whether ANSI colors are on.
+Config: type = [title: Option String, color: Bool]
+
+/// What argument parsing produced: run, print help, or fail with a reason.
+Invocation: type = Run Config | Help | Fail String
+
+// -------------------------------------------------------------- parsing
+
+// Int.parse and Float.parse as Options, so a broken counter reads as an
+// absent value instead of a panic.
+_parse_int_opt: (s: String) -> Option Int =
+    case Int.parse(s):
+        Ok n -> Some n
+        Err _ -> None
+
+_parse_float_opt: (s: String) -> Option Float =
+    case Float.parse(s):
+        Ok f -> Some f
+        Err _ -> None
+
+// The text after `key=` on one KEY=VALUE line, without surrounding quotes.
+_assign_value: (line: String, key: String) -> Option String =
+    if line.starts_with(key ++ "="):
+        line.slice(key.length() + 1, line.length() - key.length() - 1).map(_unquote)
+    else:
+        None
+
+// A quoted shell value keeps its quotes; the inner text is the value.
+_unquote: (s: String) -> String =
+    if s.length() >= 2 && s.starts_with("\"") && s.ends_with("\""):
+        s.slice(1, s.length() - 2).unwrap_or("")
+    else:
+        s
+
+// The text after `key ... :` on one /proc line: the key, optional filler,
+// a colon, then the value. Used for `model name` and the meminfo keys.
+_colon_value: (line: String, key: String) -> Option String =
+    if line.starts_with(key):
+        after := line.slice(key.length(), line.length() - key.length()).unwrap_or("")
+        _after_colon(after)
+    else:
+        None
+
+// Collects the characters up to and including the first colon, then trims
+// the rest; a line with no colon yields None.
+_after_colon: (s: String) -> Option String =
+    case s.at(0):
+        None -> None
+        Some ':' -> Some (s.slice(1, s.length() - 1).unwrap_or("").trim())
+        Some _ -> _after_colon(s.slice(1, s.length() - 1).unwrap_or(""))
+
+// The PRETTY_NAME entry of an os-release file, with NAME as the fallback.
+os_name: (content: String) -> Option String =
+    lines := content.lines()
+    _find_assign(lines, "PRETTY_NAME").or_else((): _find_assign(lines, "NAME"))
+
+// The first KEY=VALUE line whose key is `key`.
+_find_assign: (lines: []String, key: String) -> Option String =
+    lines.find_map((l): _assign_value(l, key))
+
+// The whole seconds of an /proc/uptime first field.
+uptime_secs: (content: String) -> Option Int =
+    first := content.trim().split(" ").get(0)
+    whole := first.and_then((part): part.split(".").get(0))
+    whole.and_then(_parse_int_opt)
+
+// The model name of the first processor entry.
+cpu_model: (content: String) -> Option String =
+    content.lines().find_map((l): _colon_value(l, "model name"))
+
+// The highest per-processor clock rate, in MHz.
+cpu_mhz: (content: String) -> Option Float =
+    m := _max_mhz(content.lines(), 0.0)
+    if m > 0.0: Some m else: None
+
+_max_mhz: (lines: []String, best: Float) -> Float =
+    case lines:
+        {} -> best
+        {l, ..rest} ->
+            raw := _colon_value(l, "cpu MHz")
+            got := raw.and_then(_parse_float_opt).unwrap_or(0.0)
+            _max_mhz(rest, if got > best: got else: best)
+
+// The number of processor entries, which on Linux is the logical core count.
+cpu_cores: (content: String) -> Int =
+    content.lines().filter((l): l.starts_with("processor")).length()
+
+// A meminfo counter, in KiB: the key, whitespace, the number, ` kB`.
+meminfo_kib: (content: String, key: String) -> Option Int =
+    line := content.lines().find_map((l): _colon_value(l, key))
+    line.and_then((value): _parse_int_opt(value.split(" ").get(0).unwrap_or("")))
+
+// --------------------------------------------------------------- formatting
+
+// The uptime display: the nonzero units among days, hours, and minutes,
+// joined with ", "; below one minute the seconds stand alone.
+format_uptime: (total: Int) -> String =
+    days := total / 86_400
+    hours := (total % 86_400) / 3_600
+    mins := (total % 3_600) / 60
+    parts: []String = {}
+    parts := if days > 0: parts ++ {_unit(days, "day", "days")} else: parts
+    parts := if hours > 0: parts ++ {_unit(hours, "hour", "hours")} else: parts
+    parts := if mins > 0: parts ++ {_unit(mins, "min", "mins")} else: parts
+    if parts.length() > 0: parts.join(", ")
+    else: _unit(total, "sec", "secs")
+
+// One count and its unit, singular for exactly one.
+_unit: (n: Int, one: String, many: String) -> String =
+    "{n} " ++ (if n == 1: one else: many)
+
+// The two-decimal GiB display of a KiB count.
+format_gib: (kib: Int) -> String = (kib.to_float() / 1_048_576.0).to_fixed(2)
+
+// The memory display: used over total with the whole-percent share.
+format_memory: (used: Int, total: Int) -> String =
+    pct := if total > 0: used * 100 / total else: 0
+    "{format_gib(used)} GiB / {format_gib(total)} GiB ({pct}%)"
+
+// The CPU row value: model, logical core count, and clock rate.
+format_cpu: (model: String, cores: Int, mhz: Option Float) -> String =
+    case mhz:
+        None -> "{model} ({cores})"
+        Some m -> "{model} ({cores}) @ {_ghz(m)}"
+
+// The clock rate in GHz with two decimals, or in MHz below one GHz.
+_ghz: (mhz: Float) -> String =
+    if mhz >= 1000.0: "{(mhz / 1000.0).to_fixed(2)} GHz"
+    else: "{mhz.to_fixed(0)} MHz"
+
+// -------------------------------------------------------------------- rows
+
+// The summary rows, in display order. A source that did not read or a
+// variable that is not set drops its row.
+collect: (src: Sources, vars: [String]String) -> []Row =
+    rows: []Row = {}
+    rows := _push_os(rows, src.os_release)
+    rows := _push_kernel(rows, src.ostype, src.osrelease)
+    rows := _push_uptime(rows, src.uptime)
+    rows := _push_var(rows, vars, "Shell", "SHELL")
+    rows := _push_var(rows, vars, "Terminal", "TERM")
+    rows := _push_var(rows, vars, "Desktop", "XDG_CURRENT_DESKTOP")
+    rows := _push_cpu(rows, src.cpuinfo)
+    rows := _push_memory(rows, src.meminfo)
+    rows := _push_locale(rows, vars)
+    rows
+
+_push: (rows: []Row, key: String, value: String) -> []Row =
+    rows ++ {{key: key, value: value}}
+
+_push_os: (rows: []Row, os_release: Option String) -> []Row =
+    case os_release.and_then(os_name):
+        Some name -> _push(rows, "OS", name)
+        None -> rows
+
+_push_kernel: (rows: []Row, ostype: Option String, osrelease: Option String) -> []Row =
+    case ostype, osrelease:
+        Some t, Some r -> _push(rows, "Kernel", "{t.trim()} {r.trim()}")
+        Some t, None -> _push(rows, "Kernel", t.trim())
+        None, Some r -> _push(rows, "Kernel", r.trim())
+        None, None -> rows
+
+_push_uptime: (rows: []Row, uptime: Option String) -> []Row =
+    case uptime.and_then(uptime_secs):
+        Some secs -> _push(rows, "Uptime", format_uptime(secs))
+        None -> rows
+
+_push_var: (rows: []Row, vars: [String]String, key: String, name: String) -> []Row =
+    case vars.get(name):
+        Some v -> _push(rows, key, v)
+        None -> rows
+
+_push_cpu: (rows: []Row, cpuinfo: Option String) -> []Row =
+    case cpuinfo.and_then(cpu_model):
+        Some model ->
+            cores := cpuinfo.map(cpu_cores).unwrap_or(0)
+            _push(rows, "CPU", format_cpu(model, cores, cpuinfo.and_then(cpu_mhz)))
+        None -> rows
+
+_push_memory: (rows: []Row, meminfo: Option String) -> []Row =
+    total := meminfo.and_then((c): meminfo_kib(c, "MemTotal"))
+    avail := meminfo.and_then((c): meminfo_kib(c, "MemAvailable"))
+    case total, avail:
+        Some t, Some a -> _push(rows, "Memory", format_memory(t - a, t))
+        Some t, None -> _push(rows, "Memory", "{format_gib(t)} GiB")
+        None, _ -> rows
+
+// The locale is LC_ALL when set, LANG otherwise.
+_push_locale: (rows: []Row, vars: [String]String) -> []Row =
+    case vars.get("LC_ALL").or_else((): vars.get("LANG")):
+        Some l -> _push(rows, "Locale", l)
+        None -> rows
+
+// ----------------------------------------------------------------- rendering
+
+// The header text: the override when given, else user@host from the
+// environment and the hostname file, else the first present name.
+header_text: (title: Option String, vars: [String]String,
+              hostname: Option String) -> String =
+    case title:
+        Some t -> t
+        None ->
+            named := vars.get("USER").or_else((): vars.get("LOGNAME"))
+            user := named.unwrap_or("")
+            host := hostname.unwrap_or("").trim()
+            case user, host:
+                "", "" -> "ekofetch"
+                u, "" -> u
+                "", h -> h
+                u, h -> "{u}@{h}"
+
+// The key column spans the widest label; values begin two spaces later.
+key_width: (rows: []Row) -> Int =
+    rows.fold(0, (best, row): if row.key.length() > best: row.key.length()
+                              else: best)
+
+// The rendered lines: the header, then one aligned line per row. With
+// color on, the header is bold cyan and each label bold blue; the padding
+// is computed on the plain labels, so alignment never shifts.
+render: (header: String, rows: []Row, color: Bool) -> []String =
+    width := key_width(rows)
+    head := if color: "\u{1b}[1;36m{header}\u{1b}[0m" else: header
+    body := rows.map((row): _render_row(row, width, color))
+    {head} ++ body
+
+_render_row: (row: Row, width: Int, color: Bool) -> String =
+    plain := (row.key ++ ":").pad_right(width + 2, ' ')
+    label := if color: "\u{1b}[1;34m{plain}\u{1b}[0m" else: plain
+    "{label}{row.value}"
+
+// ------------------------------------------------------------- help and usage
+
+_help_lines: []String = {
+    "usage: ekofetch [options]",
+    "",
+    "Prints a system information summary. Rows whose source is missing",
+    "are omitted, never printed empty.",
+    "",
+    "Options:",
+    "  --color        use ANSI colors for the header and labels",
+    "  --plain        never use ANSI colors (default)",
+    "  --title <text> use <text> as the header instead of user@host",
+    "  -h, --help     print this help and exit",
+    "",
+    "Sources read: /etc/os-release, /proc/sys/kernel/hostname,",
+    "/proc/sys/kernel/ostype, /proc/sys/kernel/osrelease, /proc/uptime,",
+    "/proc/cpuinfo, /proc/meminfo, and the environment variables USER,",
+    "LOGNAME, SHELL, TERM, XDG_CURRENT_DESKTOP, LC_ALL, and LANG.",
+    "",
+    "Exit status: 0 normally, 2 on a usage error."}
+
+_print_help: (out: Out) ! =
+    _help_lines.each((line): out.println(line))
+
+// ---------------------------------------------------------------- arguments
+
+// One argument is one decision; --title takes the next argument or its
+// = value.
+step: (inv: Invocation, arg: String, rest: []String) -> [Invocation, []String] =
+    case inv:
+        Fail _ -> {inv, rest}
+        Help -> {inv, rest}
+        Run cfg ->
+            case arg:
+                "-h" | "--help" -> {Help, rest}
+                "--color" -> {Run cfg.with({color: True}), rest}
+                "--plain" -> {Run cfg.with({color: False}), rest}
+                "--title" -> _title_value(cfg, rest)
+                _ -> _step_other(cfg, arg, rest)
+
+_title_value: (cfg: Config, rest: []String) -> [Invocation, []String] =
+    case rest:
+        {} -> {Fail "missing value for --title", {}}
+        {v, ..tail} -> {Run cfg.with({title: Some v}), tail}
+
+_step_other: (cfg: Config, arg: String, rest: []String) -> [Invocation, []String] =
+    if arg.starts_with("--title="):
+        value := arg.split("=").get(1).unwrap_or("")
+        if value == "": {Fail "missing value for --title", rest}
+        else: {Run cfg.with({title: Some value}), rest}
+    else:
+        if arg.starts_with("-"):
+            {Fail "unknown option: {arg}", rest}
+        else:
+            {Fail "unexpected argument: {arg}", rest}
+
+// The full command line: options only, nothing else is accepted.
+parse_args: (argv: []String) -> Invocation =
+    _parse_loop(Run {title: None, color: False}, argv)
+
+_parse_loop: (inv: Invocation, argv: []String) -> Invocation =
+    case argv:
+        {} -> inv
+        {arg, ..rest} ->
+            case step(inv, arg, rest):
+                {next, tail} -> _parse_loop(next, tail)
+
+// -------------------------------------------------------------------- shell
+
+// Reads one source file; a miss of any kind becomes None.
+_read_source: (fs: Fs, path: String) !-> Option String =
+    case fs.read(path):
+        Ok text -> Some text
+        Err _ -> None
+
+// The environment variables the summary names, in a fixed table so the
+// pure layer sees one value.
+_env_snapshot: (env: Env) !-> [String]String =
+    names: []String = {
+        "USER", "LOGNAME", "SHELL", "TERM",
+        "LANG", "LC_ALL", "XDG_CURRENT_DESKTOP"}
+    empty: [String]String = {}
+    names.fold(empty, (tbl, name):
+        case Env.get(env, name):
+            Some v -> tbl.insert(name, v)
+            None -> tbl)
+
+// The parameter list is the authorization manifest: output, arguments,
+// the file system, the environment, and the process exit channel. There
+// is no other I/O entrance.
+main: (out: Out, args: Args, fs: Fs, env: Env, proc: Proc) ! =
+    code := _dispatch(out, Out.err(), args.all(), fs, env)
+    Proc.exit(proc, code)
+
+_dispatch: (out: Out, err: Out, argv: []String, fs: Fs, env: Env) !-> Int =
+    case parse_args(argv):
+        Help ->
+            _print_help(out)
+            0
+        Fail msg ->
+            err.println("ekofetch: {msg}")
+            err.println("Try 'ekofetch --help' for usage.")
+            2
+        Run cfg -> _run(out, fs, env, cfg)
+
+_run: (out: Out, fs: Fs, env: Env, cfg: Config) !-> Int =
+    src := _gather_sources(fs)
+    vars := _env_snapshot(env)
+    header := header_text(cfg.title, vars, src.hostname)
+    lines := render(header, collect(src, vars), cfg.color)
+    lines.each((line): out.println(line))
+    0
+
+// Reads every source once; a miss becomes None and its row drops out.
+_gather_sources: (fs: Fs) !-> Sources =
+    os_release := _read_source(fs, "/etc/os-release")
+    hostname := _read_source(fs, "/proc/sys/kernel/hostname")
+    ostype := _read_source(fs, "/proc/sys/kernel/ostype")
+    osrelease := _read_source(fs, "/proc/sys/kernel/osrelease")
+    uptime := _read_source(fs, "/proc/uptime")
+    cpuinfo := _read_source(fs, "/proc/cpuinfo")
+    meminfo := _read_source(fs, "/proc/meminfo")
+    src: Sources = {
+        os_release: os_release,
+        hostname: hostname,
+        ostype: ostype,
+        osrelease: osrelease,
+        uptime: uptime,
+        cpuinfo: cpuinfo,
+        meminfo: meminfo}
+    src
+
+// --------------------------------------------------------------------- tests
+
+// Canned /proc-style content the parser tests share.
+_sample_os_release: String =
+    "NAME=\"Arch Linux\"\nPRETTY_NAME=\"Arch Linux\"\nID=arch\nBUILD_ID=rolling\n"
+
+_sample_cpuinfo: String =
+    "processor\t: 0\nvendor_id\t: GenuineIntel\n" ++
+        "model name\t: Intel(R) Xeon(R) CPU E5-2680 v4 @ 2.40GHz\n" ++
+        "cpu MHz\t\t: 3400.123\n" ++
+        "processor\t: 1\n" ++
+        "model name\t: Intel(R) Xeon(R) CPU E5-2680 v4 @ 2.40GHz\n" ++
+        "cpu MHz\t\t: 2200.000\n"
+
+_sample_meminfo: String =
+    "MemTotal:       33480876 kB\nMemFree:        12345678 kB\n" ++
+        "MemAvailable:   30000000 kB\nBuffers:          456789 kB\n" ++
+        "SwapTotal:             0 kB\n"
+
+assign_value: test =
+    assert_eq(_assign_value("ID=arch", "ID"), Some "arch")
+    assert_eq(_assign_value("PRETTY_NAME=\"Arch Linux\"", "PRETTY_NAME"),
+              Some "Arch Linux")
+    assert_eq(_assign_value("NAME=", "NAME"), Some "")
+    assert_eq(_assign_value("NOPE=1", "NAME"), None)
+    assert_eq(_assign_value("NAME_LONG=x", "NAME"), None)
+
+find_assign: test =
+    assert_eq(_find_assign(_sample_os_release.lines(), "PRETTY_NAME"),
+              Some "Arch Linux")
+    assert_eq(_find_assign(_sample_os_release.lines(), "NAME"), Some "Arch Linux")
+    assert_eq(_find_assign(_sample_os_release.lines(), "ABSENT"), None)
+
+os_name_falls_back: test =
+    assert_eq(os_name(_sample_os_release), Some "Arch Linux")
+    assert_eq(os_name("NAME=\"Debian GNU/Linux\"\n"), Some "Debian GNU/Linux")
+    assert_eq(os_name("ID=fedora\n"), None)
+
+colon_value: test =
+    assert_eq(_colon_value("MemTotal:       123 kB", "MemTotal"), Some "123 kB")
+    assert_eq(_colon_value("model name\t: AMD Ryzen 9", "model name"),
+              Some "AMD Ryzen 9")
+    assert_eq(_colon_value("MemTotal:       123 kB", "MemFree"), None)
+    assert_eq(_colon_value("MemFree no colon here", "MemFree"), None)
+
+uptime_parse: test =
+    assert_eq(uptime_secs("1783495.32 6823749.1\n"), Some 1_783_495)
+    assert_eq(uptime_secs("42.0"), Some 42)
+    assert_eq(uptime_secs(""), None)
+    assert_eq(uptime_secs("garbage"), None)
+
+cpu_parsing: test =
+    assert_eq(cpu_model(_sample_cpuinfo),
+              Some "Intel(R) Xeon(R) CPU E5-2680 v4 @ 2.40GHz")
+    assert_eq(cpu_cores(_sample_cpuinfo), 2)
+    assert_eq(cpu_mhz(_sample_cpuinfo), Some 3400.123)
+    assert_eq(cpu_mhz("processor\t: 0\n"), None)
+
+meminfo_parsing: test =
+    assert_eq(meminfo_kib(_sample_meminfo, "MemTotal"), Some 33_480_876)
+    assert_eq(meminfo_kib(_sample_meminfo, "MemAvailable"), Some 30_000_000)
+    assert_eq(meminfo_kib(_sample_meminfo, "SwapTotal"), Some 0)
+    assert_eq(meminfo_kib(_sample_meminfo, "Nope"), None)
+
+uptime_format: test =
+    assert_eq(format_uptime(0), "0 secs")
+    assert_eq(format_uptime(59), "59 secs")
+    assert_eq(format_uptime(60), "1 min")
+    assert_eq(format_uptime(3599), "59 mins")
+    assert_eq(format_uptime(3600), "1 hour")
+    assert_eq(format_uptime(3661), "1 hour, 1 min")
+    assert_eq(format_uptime(86_400), "1 day")
+    assert_eq(format_uptime(900_000), "10 days, 10 hours")
+
+memory_format: test =
+    assert_eq(format_gib(1_048_576), "1.00")
+    assert_eq(format_gib(3_480_876), "3.32")
+    assert_eq(format_memory(3_480_876, 33_480_876),
+              "3.32 GiB / 31.93 GiB (10%)")
+    assert_eq(format_memory(0, 0), "0.00 GiB / 0.00 GiB (0%)")
+
+cpu_format: test =
+    assert_eq(format_cpu("AMD Ryzen 9", 16, Some 3400.123),
+              "AMD Ryzen 9 (16) @ 3.40 GHz")
+    assert_eq(format_cpu("AMD Ryzen 9", 16, Some 800.0),
+              "AMD Ryzen 9 (16) @ 800 MHz")
+    assert_eq(format_cpu("AMD Ryzen 9", 16, None), "AMD Ryzen 9 (16)")
+
+collect_omits_missing: test =
+    src: Sources = {
+        os_release: Some _sample_os_release,
+        hostname: None,
+        ostype: Some "Linux\n",
+        osrelease: Some "7.2.15-1-omarchy\n",
+        uptime: None,
+        cpuinfo: None,
+        meminfo: None}
+    vars: [String]String = {"SHELL": "/bin/zsh"}
+    rows := collect(src, vars)
+    assert_eq(rows.get(0).map((r): r.key), Some "OS")
+    assert_eq(rows.get(1).map((r): r.value), Some "Linux 7.2.15-1-omarchy")
+    assert_eq(rows.get(2).map((r): r.key), Some "Shell")
+    assert_eq(rows.length(), 3)
+
+collect_full: test =
+    src: Sources = {
+        os_release: Some _sample_os_release,
+        hostname: Some "box\n",
+        ostype: Some "Linux\n",
+        osrelease: Some "7.2.15\n",
+        uptime: Some "90061.5 100.0\n",
+        cpuinfo: Some _sample_cpuinfo,
+        meminfo: Some _sample_meminfo}
+    vars: [String]String = {
+        "SHELL": "/bin/zsh", "TERM": "foot",
+        "XDG_CURRENT_DESKTOP": "Hyprland", "LC_ALL": "en_US.UTF-8"}
+    rows := collect(src, vars)
+    keys := rows.map((r): r.key)
+    assert_eq(keys, {"OS", "Kernel", "Uptime", "Shell", "Terminal",
+                     "Desktop", "CPU", "Memory", "Locale"})
+    assert_eq(rows.get(4).map((r): r.value), Some "foot")
+    assert_eq(rows.get(6).map((r): r.value),
+              Some "Intel(R) Xeon(R) CPU E5-2680 v4 @ 2.40GHz (2) @ 3.40 GHz")
+    assert_eq(rows.get(7).map((r): r.value),
+              Some "3.32 GiB / 31.93 GiB (10%)")
+    assert_eq(rows.get(8).map((r): r.value), Some "en_US.UTF-8")
+
+locale_prefers_lc_all: test =
+    rows := _push_locale({}, {"LANG": "de_DE.UTF-8", "LC_ALL": "C"})
+    assert_eq(rows.get(0).map((r): r.value), Some "C")
+    rows2 := _push_locale({}, {"LANG": "de_DE.UTF-8"})
+    assert_eq(rows2.get(0).map((r): r.value), Some "de_DE.UTF-8")
+
+header_text_cases: test =
+    vars: [String]String = {"USER": "ada"}
+    assert_eq(header_text(None, vars, Some "box\n"), "ada@box")
+    assert_eq(header_text(None, vars, None), "ada")
+    assert_eq(header_text(None, {}, Some "box\n"), "box")
+    assert_eq(header_text(None, {}, None), "ekofetch")
+    assert_eq(header_text(Some "custom", vars, Some "box\n"), "custom")
+    logname: [String]String = {"LOGNAME": "bob"}
+    assert_eq(header_text(None, logname, Some "box\n"), "bob@box")
+
+key_width_and_render: test =
+    rows: []Row = {{key: "OS", value: "Arch"}, {key: "Kernel", value: "Linux"}}
+    assert_eq(key_width(rows), 6)
+    lines := render("ada@box", rows, False)
+    assert_eq(lines.get(0), Some "ada@box")
+    assert_eq(lines.get(1), Some "OS:     Arch")
+    assert_eq(lines.get(2), Some "Kernel: Linux")
+
+render_color_wraps_plain: test =
+    rows: []Row = {{key: "OS", value: "Arch"}}
+    lines := render("ada@box", rows, True)
+    assert_eq(lines.get(0), Some "\u{1b}[1;36mada@box\u{1b}[0m")
+    assert_eq(lines.get(1), Some "\u{1b}[1;34mOS: \u{1b}[0mArch")
+
+argument_parsing: test =
+    case parse_args({}):
+        Run cfg ->
+            assert(cfg.color.eq(False))
+            assert(cfg.title.is_none())
+        _ -> panic("expected Run")
+
+    case parse_args({"--color"}):
+        Run cfg -> assert(cfg.color.eq(True))
+        _ -> panic("expected Run --color")
+
+    case parse_args({"--plain", "--color", "--title", "my box"}):
+        Run cfg ->
+            assert(cfg.color.eq(True))
+            assert_eq(cfg.title, Some "my box")
+        _ -> panic("expected Run --title")
+
+    case parse_args({"--title=boxed"}):
+        Run cfg -> assert_eq(cfg.title, Some "boxed")
+        _ -> panic("expected Run --title=")
+
+argument_rejection: test =
+    case parse_args({"--bogus"}):
+        Fail msg -> assert(msg.contains("unknown option"))
+        _ -> panic("expected Fail")
+    case parse_args({"--title"}):
+        Fail msg -> assert(msg.contains("missing value"))
+        _ -> panic("expected Fail")
+    case parse_args({"--title="}):
+        Fail msg -> assert(msg.contains("missing value"))
+        _ -> panic("expected Fail")
+    case parse_args({"extra"}):
+        Fail msg -> assert(msg.contains("unexpected argument"))
+        _ -> panic("expected Fail")
+    case parse_args({"-x"}):
+        Fail _ -> _
+        _ -> panic("expected Fail")
+
+argument_help: test =
+    assert(parse_args({"--help"}).eq(Help))
+    assert(parse_args({"-h"}).eq(Help))
+
+stopped_options: test =
+    case step(Run {title: None, color: False}, "--bogus", {}):
+        {Fail _, _} -> _
+        _ -> panic("expected Fail from step")

@@ -1,0 +1,1294 @@
+// ekosed: a sed-like stream editor with its own small regular-expression
+// engine.
+//
+//   ekosed [options] <script> [file ...]
+//
+// The regex engine is pure: a recursive-descent parser builds an AST, the AST
+// is compiled to a Thompson NFA with explicit epsilon, assertion, and capture
+// edges, and the NFA is simulated over the Unicode scalar values of a line.
+// Groups are kept in the AST with their 1-based index, and each simulation
+// thread carries a capture-slot vector, so replacements can reference `\1`
+// through `\9`.
+//
+// Matching is leftmost-longest: the scan keeps the strongest pending match (a
+// smaller start wins, the same start wins with a later end) and commits it
+// only when no live thread can still precede or extend it. An empty match at
+// the position where the previous match ended is rejected, which is what
+// keeps `s/x*/-/g` from emitting a dash per position.
+//
+// The command layer is pure: arguments and scripts parse into Config and
+// Invocation, lines are transformed into output text, and exit status is a
+// pure function. main is the only world-touching shell.
+//
+// Module: ekosed (the file is the module).
+
+// ------------------------------------------------------------------- core
+
+/// One inclusive code-point span of a character class.
+Span: type = [lo: Int, hi: Int]
+
+/// A character class before matching: a union of spans, optionally negated.
+CharClass: type = [negated: Bool, spans: []Span]
+
+/// A group in the AST: its 1-based index and the child it wraps. The index
+/// drives the capture slots the simulator records.
+Grp: type = [g: Int, child: Node]
+
+/// The parsed regular-expression AST.
+Node: type =
+    | EmptyNode
+    | Literal Char
+    | AnyChar
+    | CharSet CharClass
+    | Sequence []Node
+    | Alternate []Node
+    | RepeatStar Node
+    | RepeatPlus Node
+    | RepeatOpt Node
+    | Group Grp
+    | LineStart
+    | LineEnd
+
+/// One consuming NFA edge; `cls` decides whether the current Char is taken.
+CEdge: type = [cls: CharClass, to: Int]
+
+/// One NFA state. `open` and `close` are zero-width capture slots written
+/// with the current position when the state is reached; `bol` and `eol` are
+/// zero-width assertion edges; `search` marks the unanchored scan state,
+/// which re-seeds the pattern start at every position.
+NState: type = [
+    eps: []Int,
+    bol: Option Int,
+    eol: Option Int,
+    open: Option Int,
+    close: Option Int,
+    search: Bool,
+    edges: []CEdge,
+    accept: Bool]
+
+/// A compiled NFA. `nslots` is the capture-slot count: slot 0 holds the
+/// whole-match start, slot 1 is reserved, and group k uses slots 2k and 2k+1.
+Regex: type = [start: Int, nslots: Int, states: []NState]
+
+/// One active simulation thread: an NFA state and the capture slots recorded
+/// on the path that reached it. An unset slot is -1.
+Thread: type = [st: Int, caps: []Int]
+
+/// One located match: the whole-match span and the capture slots.
+Match: type = [start: Int, end: Int, caps: []Int]
+
+_dead_state: NState = {
+    eps: {},
+    bol: None,
+    eol: None,
+    open: None,
+    close: None,
+    search: False,
+    edges: {},
+    accept: False}
+
+_any_class: CharClass = {negated: True, spans: {}}
+
+_singleton_class: (c: Char) -> CharClass =
+    code := Char.to_code(c)
+    {negated: False, spans: {{lo: code, hi: code}}}
+
+_perr: (pos: Int, msg: String) -> String =
+    "at position {pos + 1}: {msg}"
+
+// ------------------------------------------------------------ parser
+
+_peek: (cs: []Char, pos: Int) -> Option Char = cs.get(pos)
+
+_empty_chars: (cs: []Char) -> Bool = cs.length() == 0
+
+_alt_of: (nodes: []Node) -> Node =
+    case nodes:
+        {} -> EmptyNode
+        {n} -> n
+        _ -> Alternate nodes
+
+_seq_of: (nodes: []Node) -> Node =
+    case nodes:
+        {} -> EmptyNode
+        {n} -> n
+        _ -> Sequence nodes
+
+// The parser threads `ng`, the number of groups opened so far, so each
+// group receives its 1-based index in left-to-right opening order.
+_parse_pattern: (cs: []Char) -> Result ([Node, Int]) String =
+    parsed <- _parse_alt(cs, 0, 0).try()
+    (node, pos, ng) = parsed
+    case _peek(cs, pos):
+        None -> Ok {node, ng}
+        Some ')' -> Err (_perr(pos, "unmatched ')'"))
+        Some c -> Err (_perr(pos, "unexpected character {c}"))
+
+_parse_alt: (cs: []Char, pos: Int, ng: Int) -> Result ([Node, Int, Int]) String =
+    parsed <- _parse_seq(cs, pos, ng).try()
+    (node, next, ng2) = parsed
+    _parse_alt_rest(cs, next, {node}, ng2)
+
+_parse_alt_rest: (cs: []Char, pos: Int, acc: []Node, ng: Int) -> Result ([Node, Int, Int]) String =
+    case _peek(cs, pos):
+        Some '|' ->
+            parsed <- _parse_seq(cs, pos + 1, ng).try()
+            (node, next, ng2) = parsed
+            _parse_alt_rest(cs, next, acc ++ {node}, ng2)
+        _ -> Ok {_alt_of(acc), pos, ng}
+
+_parse_seq: (cs: []Char, pos: Int, ng: Int) -> Result ([Node, Int, Int]) String =
+    _parse_seq_rest(cs, pos, {}, ng)
+
+_parse_seq_rest: (cs: []Char, pos: Int, acc: []Node, ng: Int) -> Result ([Node, Int, Int]) String =
+    case _peek(cs, pos):
+        None -> Ok {_seq_of(acc), pos, ng}
+        Some '|' -> Ok {_seq_of(acc), pos, ng}
+        Some ')' -> Ok {_seq_of(acc), pos, ng}
+        _ ->
+            parsed <- _parse_repeat(cs, pos, ng).try()
+            (node, next, ng2) = parsed
+            _parse_seq_rest(cs, next, acc ++ {node}, ng2)
+
+_parse_repeat: (cs: []Char, pos: Int, ng: Int) -> Result ([Node, Int, Int]) String =
+    parsed <- _parse_atom(cs, pos, ng).try()
+    (node, next, ng2) = parsed
+    _parse_quantifier(cs, next, node, ng2)
+
+_parse_quantifier: (cs: []Char, pos: Int, node: Node, ng: Int) -> Result ([Node, Int, Int]) String =
+    case _peek(cs, pos):
+        Some '*' -> _after_quantifier(cs, pos + 1, RepeatStar node, ng)
+        Some '+' -> _after_quantifier(cs, pos + 1, RepeatPlus node, ng)
+        Some '?' -> _after_quantifier(cs, pos + 1, RepeatOpt node, ng)
+        _ -> Ok {node, pos, ng}
+
+// A second postfix quantifier is rejected rather than composed. In standard
+// regex syntax `a+?` means "lazy plus", so silently reading it as `(a+)?`
+// would turn a common pattern into a match-anything pattern.
+_after_quantifier: (cs: []Char, pos: Int, node: Node, ng: Int) -> Result ([Node, Int, Int]) String =
+    case _peek(cs, pos):
+        Some '*' | Some '+' | Some '?' ->
+            Err (_perr(pos, "stacked quantifier; lazy quantifiers are not supported"))
+        _ -> Ok {node, pos, ng}
+
+_parse_atom: (cs: []Char, pos: Int, ng: Int) -> Result ([Node, Int, Int]) String =
+    case _peek(cs, pos):
+        None -> Err (_perr(pos, "unexpected end of pattern"))
+        Some '(' -> _parse_group(cs, pos, ng)
+        Some '[' -> _parse_class(cs, pos, ng)
+        Some '.' -> Ok {AnyChar, pos + 1, ng}
+        Some '^' -> Ok {LineStart, pos + 1, ng}
+        Some '$' -> Ok {LineEnd, pos + 1, ng}
+        Some '\\' ->
+            escaped <- _parse_escape(cs, pos).try()
+            (c, next) = escaped
+            Ok {Literal c, next, ng}
+        Some '*' -> Err (_perr(pos, "nothing to repeat before '*'"))
+        Some '+' -> Err (_perr(pos, "nothing to repeat before '+'"))
+        Some '?' -> Err (_perr(pos, "nothing to repeat before '?'"))
+        Some '|' -> Err (_perr(pos, "unexpected '|'"))
+        Some c -> Ok {Literal c, pos + 1, ng}
+
+_parse_group: (cs: []Char, pos: Int, ng: Int) -> Result ([Node, Int, Int]) String =
+    parsed <- _parse_alt(cs, pos + 1, ng + 1).try()
+    (node, next, ng2) = parsed
+    case _peek(cs, next):
+        Some ')' -> Ok {Group {g: ng + 1, child: node}, next + 1, ng2}
+        None -> Err (_perr(pos, "unterminated group"))
+        Some c -> Err (_perr(next, "expected ')' but found {c}"))
+
+_escaped_char: (c: Char) -> Result Char String =
+    case c:
+        'n' -> Ok '\n'
+        't' -> Ok '\t'
+        'r' -> Ok '\r'
+        '\\' | '.' | '*' | '+' | '?' | '|' | '(' | ')' | '[' | ']' | '{' | '}' | '^' | '$' | '-' | '/' ->
+            Ok c
+        _ -> Err "unknown escape sequence"
+
+_parse_escape: (cs: []Char, pos: Int) -> Result ([Char, Int]) String =
+    case _peek(cs, pos + 1):
+        None -> Err (_perr(pos, "trailing backslash"))
+        Some c -> _escaped_char(c).map((d): {d, pos + 2}).map_err((e): _perr(pos, e))
+
+_parse_class: (cs: []Char, pos: Int, ng: Int) -> Result ([Node, Int, Int]) String =
+    case _peek(cs, pos + 1):
+        Some '^' -> _parse_class_items(cs, pos + 2, True, {}, ng)
+        _ -> _parse_class_items(cs, pos + 1, False, {}, ng)
+
+_parse_class_items: (cs: []Char, pos: Int, negated: Bool, spans: []Span, ng: Int) -> Result ([Node, Int, Int]) String =
+    case _peek(cs, pos):
+        None -> Err (_perr(pos, "unterminated character class"))
+        Some ']' ->
+            if spans.length() == 0:
+                Err (_perr(pos, "empty character class"))
+            else:
+                Ok {CharSet {negated: negated, spans: spans}, pos + 1, ng}
+        _ ->
+            item <- _parse_class_char(cs, pos).try()
+            (c, next) = item
+            sc: Span = {lo: Char.to_code(c), hi: Char.to_code(c)}
+            case _peek(cs, next):
+                Some '-' ->
+                    case _peek(cs, next + 1):
+                        Some d2 if d2 != ']' ->
+                            item2 <- _parse_class_char(cs, next + 1).try()
+                            (d, after) = item2
+                            hi := Char.to_code(d)
+                            if sc.lo > hi:
+                                Err (_perr(next, "invalid range {c}-{d}"))
+                            else:
+                                _parse_class_items(cs, after, negated,
+                                                   spans ++ {{lo: sc.lo, hi: hi}}, ng)
+                        _ -> _parse_class_items(cs, next, negated, spans ++ {sc}, ng)
+                _ -> _parse_class_items(cs, next, negated, spans ++ {sc}, ng)
+
+_parse_class_char: (cs: []Char, pos: Int) -> Result ([Char, Int]) String =
+    case _peek(cs, pos):
+        None -> Err (_perr(pos, "unterminated character class"))
+        Some '\\' -> _parse_escape(cs, pos)
+        Some c -> Ok {c, pos + 1}
+
+// ------------------------------------------------------------ compiler
+
+// Every compiled state begins as the dead state -- no edges, no markers,
+// no accept -- and each builder below switches on only the fields its
+// shape needs; the same record is the simulator's out-of-range fallback.
+// A fresh state's id is the length of the list at the moment it is
+// appended, so construction order fixes the state ids.
+
+_append_state: (states: []NState, st: NState) -> [Int, []NState] =
+    {states.length(), states ++ {st}}
+
+_build: (node: Node, next: Int, states: []NState) -> [Int, []NState] =
+    case node:
+        EmptyNode -> {next, states}
+        Literal c -> _build_char(c, next, states)
+        AnyChar -> _build_class(_any_class, next, states)
+        CharSet cls -> _build_class(cls, next, states)
+        Sequence nodes -> _build_sequence(nodes.reverse(), next, states)
+        Alternate nodes -> _build_alternate(nodes.reverse(), next, states)
+        RepeatStar child -> _build_star(child, next, states)
+        RepeatPlus child -> _build_plus(child, next, states)
+        RepeatOpt child -> _build_opt(child, next, states)
+        Group grp -> _build_group(grp, next, states)
+        LineStart -> _build_bol(next, states)
+        LineEnd -> _build_eol(next, states)
+
+// One consuming state: its class is taken against the current Char.
+_build_char: (c: Char, next: Int, states: []NState) -> [Int, []NState] =
+    _append_state(states,
+                  _dead_state.with({edges: {{cls: _singleton_class(c), to: next}}}))
+
+_build_class: (cls: CharClass, next: Int, states: []NState) -> [Int, []NState] =
+    _append_state(states, _dead_state.with({edges: {{cls: cls, to: next}}}))
+
+_build_bol: (next: Int, states: []NState) -> [Int, []NState] =
+    _append_state(states, _dead_state.with({bol: Some next}))
+
+_build_eol: (next: Int, states: []NState) -> [Int, []NState] =
+    _append_state(states, _dead_state.with({eol: Some next}))
+
+// One optional run: the exit and the child's entry hang off one epsilon
+// state appended after the child.
+_build_opt: (child: Node, next: Int, states: []NState) -> [Int, []NState] =
+    (child_start, child_states) = _build(child, next, states)
+    _append_state(child_states, _dead_state.with({eps: {next, child_start}}))
+
+// The closing marker is reserved before the child so the child's own ids
+// follow it; the opening marker lands after the child, and its id is the
+// group's entry.
+_build_group: (grp: Grp, next: Int, states: []NState) -> [Int, []NState] =
+    g := grp.g
+    close_id := states.length()
+    close_st: NState = _dead_state.with({eps: {next}, close: Some (2 * g + 1)})
+    (child_start, child_states) = _build(grp.child, close_id, states ++ {close_st})
+    open_st: NState = _dead_state.with({eps: {child_start}, open: Some (2 * g)})
+    _append_state(child_states, open_st)
+
+_build_sequence: (reversed: []Node, next: Int, states: []NState) -> [Int, []NState] =
+    init: [Int, []NState] = {next, states}
+    reversed.fold(init, (acc, node):
+        (start, sts) = acc
+        _build(node, start, sts))
+
+_build_alternate: (reversed: []Node, next: Int, states: []NState) -> [Int, []NState] =
+    init: [[]Int, []NState] = {{}, states}
+    (starts, sts) = reversed.fold(init, (acc, node):
+        (ss, st) = acc
+        (start, st2) = _build(node, next, st)
+        {{start} ++ ss, st2})
+    if starts.length() == 0:
+        {next, sts}
+    else:
+        _append_state(sts, _dead_state.with({eps: starts}))
+
+// The loop shape behind `*` and `+`: a placeholder is reserved before the
+// child so the child can target it, the child is built into the
+// reservation, and the placeholder is then overwritten with the loop
+// state whose epsilon offers the exit and the child's entry. Star enters
+// at the loop, so zero iterations skip the child; plus enters at the
+// child, so one iteration is mandatory.
+_build_loop: (child: Node, next: Int, states: []NState) -> [Int, Int, []NState] =
+    loop_id := states.length()
+    reserved: []NState = states ++ {_dead_state}
+    (child_start, child_states) = _build(child, loop_id, reserved)
+    loop_state: NState = _dead_state.with({eps: {next, child_start}})
+    {loop_id, child_start, _set_state(child_states, loop_id, loop_state)}
+
+_build_star: (child: Node, next: Int, states: []NState) -> [Int, []NState] =
+    (loop_id, _, sts) = _build_loop(child, next, states)
+    {loop_id, sts}
+
+_build_plus: (child: Node, next: Int, states: []NState) -> [Int, []NState] =
+    (_, child_start, sts) = _build_loop(child, next, states)
+    {child_start, sts}
+
+// The list with the element at `idx` replaced by `v`; an index outside
+// the list leaves it unchanged.
+_replace_at: (xs: []t, idx: Int, v: t) -> []t =
+    case xs:
+        {} -> {}
+        {h, ..t} ->
+            if idx == 0: {v} ++ t
+            else: {h} ++ _replace_at(t, idx - 1, v)
+
+_set_state: (states: []NState, idx: Int, st: NState) -> []NState =
+    _replace_at(states, idx, st)
+
+Regex.compile: (pattern: String) -> Result Regex String =
+    parsed <- _parse_pattern(pattern.chars()).try()
+    (node, ng) = parsed
+    accept: NState = {
+        eps: {},
+        bol: None,
+        eol: None,
+        open: None,
+        close: None,
+        search: False,
+        edges: {},
+        accept: True}
+    built = _build(node, 0, {accept})
+    (pattern_start, states) = built
+    search_id := states.length()
+    search_state: NState = {
+        eps: {pattern_start},
+        bol: None,
+        eol: None,
+        open: None,
+        close: None,
+        search: True,
+        edges: {{cls: _any_class, to: search_id}},
+        accept: False}
+    Ok {start: search_id, nslots: 2 + 2 * ng, states: states ++ {search_state}}
+
+// ------------------------------------------------------------ simulation
+
+_ascii_lower: (c: Char) -> Char =
+    code := Char.to_code(c)
+    if code >= 65 && code <= 90:
+        Char.from_code(code + 32).unwrap_or(c)
+    else:
+        c
+
+_ascii_upper: (c: Char) -> Char =
+    code := Char.to_code(c)
+    if code >= 97 && code <= 122:
+        Char.from_code(code - 32).unwrap_or(c)
+    else:
+        c
+
+_positive_match: (cls: CharClass, c: Char) -> Bool =
+    code := Char.to_code(c)
+    cls.spans.any((s): code >= s.lo && code <= s.hi)
+
+_class_matches: (cls: CharClass, c: Char, ignore_case: Bool) -> Bool =
+    inside := _positive_match(cls, c) ||
+        (ignore_case && (_positive_match(cls, _ascii_lower(c)) ||
+                         _positive_match(cls, _ascii_upper(c))))
+    if cls.negated: inside.not() else: inside
+
+_n_of: (n: Int, v: Int) -> []Int =
+    if n <= 0: {} else: {v} ++ _n_of(n - 1, v)
+
+_seed_caps: (nslots: Int, pos: Int) -> []Int =
+    {pos} ++ _n_of(nslots - 1, -1)
+
+_caps_start: (caps: []Int) -> Int = caps.get(0).unwrap_or(0)
+
+_caps_set: (caps: []Int, idx: Int, v: Int) -> []Int =
+    _replace_at(caps, idx, v)
+
+_seed_thread: (re: Regex, pos: Int) -> Thread =
+    {st: re.start, caps: _seed_caps(re.nslots, pos)}
+
+// The closure follows zero-width edges. A capture marker state writes the
+// current position into its slot; the search state re-seeds the pattern
+// start with a fresh slot vector, so each candidate start carries its own
+// begin position. The fresh seeds of a search state are queued behind the
+// existing work: when an older thread and a fresh seed reach the same
+// state, the older one -- the smaller start -- must win the dedup, or the
+// longest match from an earlier start would be cut off.
+_closure: (states: []NState, work: []Thread, pos: Int, at_bol: Bool, at_eol: Bool,
+           nslots: Int, seen: Set Int) -> []Thread =
+    case work:
+        {} -> {}
+        {th, ..rest} ->
+            if seen.contains(th.st):
+                _closure(states, rest, pos, at_bol, at_eol, nslots, seen)
+            else:
+                st := states.get(th.st).unwrap_or(_dead_state)
+                caps := st.close.map((k): _caps_set(th.caps, k, pos)).unwrap_or(th.caps)
+                caps := st.open.map((k): _caps_set(caps, k, pos)).unwrap_or(caps)
+                here: Thread = th.with({caps: caps})
+                nexts := st.eps
+                bol_nexts := st.bol.map((x): {x}).unwrap_or({})
+                eol_nexts := st.eol.map((x): {x}).unwrap_or({})
+                nexts := if at_bol: nexts ++ bol_nexts else: nexts
+                nexts := if at_eol: nexts ++ eol_nexts else: nexts
+                child_caps := if st.search: _seed_caps(nslots, pos) else: caps
+                kids := nexts.map((x): _child_thread(x, child_caps))
+                rest2 := if st.search: rest ++ kids else: kids ++ rest
+                {here} ++ _closure(states, rest2, pos, at_bol, at_eol, nslots, seen.insert(th.st))
+
+_child_thread: (x: Int, caps: []Int) -> Thread =
+    {st: x, caps: caps}
+
+_step: (states: []NState, threads: []Thread, c: Char, icase: Bool) -> []Thread =
+    threads.fold({}, (acc, th): _step_thread(states, acc, th, c, icase))
+
+_step_thread: (states: []NState, acc: []Thread, th: Thread, c: Char, icase: Bool) -> []Thread =
+    st := states.get(th.st).unwrap_or(_dead_state)
+    st.edges.fold(acc, (a, e): _step_edge(a, e, th, c, icase))
+
+_step_edge: (a: []Thread, e: CEdge, th: Thread, c: Char, icase: Bool) -> []Thread =
+    if _class_matches(e.cls, c, icase):
+        a ++ {{st: e.to, caps: th.caps}}
+    else:
+        a
+
+// Accepts update the pending best match: a smaller start wins, and the same
+// start wins with a later end, which is the longest-match rule. An empty
+// accept at the position where the previous match ended is rejected.
+_track_accepts: (states: []NState, threads: []Thread, pos: Int, last_end: Option Int,
+                 best: Option Match) -> Option Match =
+    threads.fold(best, (b, th): _accept_fold(states, b, th, pos, last_end))
+
+_accept_fold: (states: []NState, b: Option Match, th: Thread, pos: Int,
+               last_end: Option Int) -> Option Match =
+    st := states.get(th.st).unwrap_or(_dead_state)
+    if st.accept.not():
+        b
+    else:
+        start := _caps_start(th.caps)
+        if start == pos && last_end.eq(Some pos):
+            b
+        else:
+            case b:
+                None -> Some {start: start, end: pos, caps: th.caps}
+                Some prev ->
+                    if start <= prev.start:
+                        Some {start: start, end: pos, caps: th.caps}
+                    else:
+                        Some prev
+
+// A thread can still precede or extend the pending match when it started no
+// later than the match's own start. Search-state threads are scan machinery
+// and never block a commit.
+_any_blocker: (states: []NState, threads: []Thread, best: Match) -> Bool =
+    threads.any((th): _thread_blocks(states, th, best))
+
+_thread_blocks: (states: []NState, th: Thread, best: Match) -> Bool =
+    st := states.get(th.st).unwrap_or(_dead_state)
+    st.search.not() && _caps_start(th.caps) <= best.start
+
+_at_eol: (chars: []Char) -> Bool = _empty_chars(chars)
+
+// Walk the line one Char at a time. `consumed` holds the chars eaten since
+// the last commit, reversed, so a deferred commit whose end lies behind the
+// cursor can re-seed from its own end and re-walk the overlap. A self tail
+// call keeps the Eko stack constant no matter how long the line is.
+_scan: (re: Regex, chars: []Char, pos: Int, active: []Thread, last_end: Option Int,
+        best: Option Match, consumed: []Char, acc: []Match, global: Bool,
+        icase: Bool) -> []Match =
+    at_eol := _at_eol(chars)
+    tracked := _track_accepts(re.states, active, pos, last_end, best)
+    settled := tracked.map((b): _any_blocker(re.states, active, b).not()).unwrap_or(False)
+    if at_eol || settled:
+        case tracked:
+            None -> acc.reverse()
+            Some b ->
+                acc2 := {b} ++ acc
+                if global.not():
+                    acc2.reverse()
+                else:
+                    redo := List.take(consumed, pos - b.end).reverse()
+                    seeds := _closure(re.states, {_seed_thread(re, b.end)}, b.end, False,
+                                      _at_eol(redo ++ chars), re.nslots, Set.of({}))
+                    _scan(re, redo ++ chars, b.end, seeds, Some b.end, None, {}, acc2,
+                          global, icase)
+    else:
+        case chars:
+            {} -> acc.reverse()
+            {c, ..rest} ->
+                stepped := _step(re.states, active, c, icase)
+                closed := _closure(re.states, stepped, pos + 1, False, _at_eol(rest),
+                                   re.nslots, Set.of({}))
+                _scan(re, rest, pos + 1, closed, last_end, tracked, {c} ++ consumed,
+                      acc, global, icase)
+
+/// Every non-overlapping match, left to right, each the longest match from
+/// its start. With `global` False the scan stops at the first match.
+Regex.find_all: (re: Regex, line: String, global: Bool, icase: Bool) -> []Match =
+    chars := line.chars()
+    initial := _closure(re.states, {_seed_thread(re, 0)}, 0, True, _at_eol(chars),
+                        re.nslots, Set.of({}))
+    _scan(re, chars, 0, initial, None, None, {}, {}, global, icase)
+
+Regex.is_match: (re: Regex, line: String, icase: Bool) -> Bool =
+    Regex.find_all(re, line, False, icase).length() > 0
+
+// ------------------------------------------------------------ replacement
+
+/// One piece of a replacement template.
+RPart: type = Lit String | WholeMatch | GroupRef Int
+
+// The bare `&` never reaches here -- the walk takes it as the whole
+// match -- so the escaped form is the literal ampersand.
+_repl_escape: (c: Char) -> Result RPart String =
+    case c:
+        '0' -> Ok WholeMatch
+        '&' -> Ok (Lit "&")
+        '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' ->
+            Ok (GroupRef (Char.to_code(c) - 48))
+        'n' -> Ok (Lit "\n")
+        't' -> Ok (Lit "\t")
+        'r' -> Ok (Lit "\r")
+        '\\' -> Ok (Lit "\\")
+        '/' -> Ok (Lit "/")
+        _ -> Err "unknown escape in replacement"
+
+_lit_part: (cur: []Char) -> []RPart =
+    if _empty_chars(cur):
+        {}
+    else:
+        {Lit (String.from_chars(cur.reverse()))}
+
+_parse_repl: (cs: []Char) -> Result ([]RPart) String =
+    _parse_repl_walk(cs, {}, {})
+
+_parse_repl_walk: (cs: []Char, cur: []Char, acc: []RPart) -> Result ([]RPart) String =
+    case cs:
+        {} -> Ok (acc ++ _lit_part(cur))
+        {c, ..rest} ->
+            if c == '\\':
+                e <- _peek(rest, 0).to_result("trailing backslash in replacement").try()
+                part <- _repl_escape(e).try()
+                _parse_repl_walk(List.drop(rest, 1), {}, acc ++ _lit_part(cur) ++ {part})
+            else:
+                if c == '&':
+                    _parse_repl_walk(rest, {}, acc ++ _lit_part(cur) ++ {WholeMatch})
+                else:
+                    _parse_repl_walk(rest, {c} ++ cur, acc)
+
+_span_chars: (line: String, a: Int, b: Int) -> []Char =
+    String.slice(line, a, b - a).map((s): s.chars()).unwrap_or({})
+
+// An unset group renders as empty, like the reference implementations do.
+_group_chars: (line: String, m: Match, k: Int, ngroups: Int) -> []Char =
+    if k < 1 || k > ngroups:
+        {}
+    else:
+        open := m.caps.get(2 * k).unwrap_or(-1)
+        close := m.caps.get(2 * k + 1).unwrap_or(-1)
+        if open < 0 || close < 0:
+            {}
+        else:
+            _span_chars(line, open, close)
+
+_repl_chars: (line: String, m: Match, parts: []RPart, ngroups: Int) -> []Char =
+    parts.fold({}, (acc, p): _repl_part(line, acc, m, p, ngroups))
+
+_repl_part: (line: String, acc: []Char, m: Match, p: RPart, ngroups: Int) -> []Char =
+    case p:
+        Lit s -> acc ++ s.chars()
+        WholeMatch -> acc ++ _span_chars(line, m.start, m.end)
+        GroupRef k -> acc ++ _group_chars(line, m, k, ngroups)
+
+// `acc` holds the emitted chars reversed; `chars` is the not-yet-walked tail.
+_render_walk: (chars: []Char, ms: []Match, pos: Int, line: String, parts: []RPart,
+               ngroups: Int, acc: []Char) -> String =
+    case ms:
+        {} -> String.from_chars(acc.reverse() ++ chars)
+        {m, ..rest} ->
+            skip := List.take(chars, m.start - pos)
+            acc2 := _repl_chars(line, m, parts, ngroups).reverse() ++ (skip.reverse() ++ acc)
+            _render_walk(List.drop(chars, m.end - pos), rest, m.end, line, parts,
+                         ngroups, acc2)
+
+_render: (line: String, ms: []Match, parts: []RPart, ngroups: Int) -> String =
+    _render_walk(line.chars(), ms, 0, line, parts, ngroups, {})
+
+// ------------------------------------------------------------ script
+
+/// One parsed edit command. `addr` selects the lines the command applies to.
+Sub: type = [addr: Option Regex, re: Regex, parts: []RPart, global: Bool, icase: Bool]
+Del: type = [addr: Option Regex]
+
+Command: type = Substitute Sub | Delete Del
+
+// Split at the first unescaped `delim`. The segment keeps its escape
+// sequences; the returned tail starts after the delimiter.
+_split_at: (cs: []Char, delim: Char, cur: []Char) -> Result ([String, []Char]) String =
+    case cs:
+        {} -> Err "unterminated segment"
+        {c, ..rest} ->
+            if c == delim:
+                Ok {String.from_chars(cur.reverse()), rest}
+            else:
+                if c == '\\':
+                    case _peek(rest, 0):
+                        None -> Err "trailing backslash"
+                        Some d -> _split_at(List.drop(rest, 1), delim, {d} ++ {'\\'} ++ cur)
+                else:
+                    _split_at(rest, delim, {c} ++ cur)
+
+_parse_addr: (cs: []Char) -> Result ([Option Regex, []Char]) String =
+    case _peek(cs, 0):
+        Some '/' ->
+            split <- _split_at(List.drop(cs, 1), '/', {}).try()
+            (text, rest) = split
+            re <- _compile_addr(text).try()
+            Ok {Some re, rest}
+        _ -> Ok {None, cs}
+
+_compile_addr: (text: String) -> Result Regex String =
+    if text == "":
+        Err "empty address pattern"
+    else:
+        Regex.compile(text).map_err((e): "in address: {e}")
+
+// The delimiter may be any punctuation character; letters and digits are
+// excluded so `s1a1b1` cannot be confused with a group reference.
+_is_delim: (c: Char) -> Bool =
+    alphanumeric := ('0' <= c && c <= '9') || ('A' <= c && c <= 'Z') ||
+        ('a' <= c && c <= 'z')
+    alphanumeric.not() && c != '\\' && c != ' ' && c != '\t'
+
+_parse_body: (addr: Option Regex, cs: []Char) -> Result Command String =
+    case _peek(cs, 0):
+        None -> Err "missing command"
+        Some 'd' ->
+            case List.drop(cs, 1):
+                {} -> Ok (Delete {addr: addr})
+                {c, .._} -> Err ("unexpected character after 'd': {c}")
+        Some 's' ->
+            delim <- _peek(cs, 1).to_result("missing delimiter after 's'").try()
+            if _is_delim(delim).not():
+                Err "invalid delimiter"
+            else:
+                _parse_substitute(addr, List.drop(cs, 2), delim)
+        Some c -> Err ("unknown command: {c}")
+
+_parse_command: (text: String) -> Result Command String =
+    parsed <- _parse_addr(text.chars()).try()
+    (addr, rest) = parsed
+    _parse_body(addr, rest)
+
+_parse_substitute: (addr: Option Regex, cs: []Char, delim: Char) -> Result Command String =
+    split <- _split_at(cs, delim, {}).try()
+    (pat_text, rest) = split
+    _parse_sub_pattern(addr, pat_text, rest, delim)
+
+_parse_sub_pattern: (addr: Option Regex, pat_text: String, rest: []Char,
+                     delim: Char) -> Result Command String =
+    if pat_text == "":
+        Err "empty pattern"
+    else:
+        split <- _split_at(rest, delim, {}).try()
+        (repl_text, rest2) = split
+        _parse_sub_flags(addr, pat_text, repl_text, rest2)
+
+_parse_sub_flags: (addr: Option Regex, pat_text: String, repl_text: String,
+                   rest: []Char) -> Result Command String =
+    flags <- _parse_flags(rest, False, False).try()
+    (global, icase) = flags
+    _parse_sub_compile(addr, pat_text, repl_text, global, icase)
+
+_parse_sub_compile: (addr: Option Regex, pat_text: String, repl_text: String,
+                     global: Bool, icase: Bool) -> Result Command String =
+    re <- Regex.compile(pat_text).map_err((e): "in pattern: {e}").try()
+    _parse_sub_parts(addr, re, repl_text, global, icase)
+
+_parse_sub_parts: (addr: Option Regex, re: Regex, repl_text: String, global: Bool,
+                   icase: Bool) -> Result Command String =
+    ngroups := Int.quot(re.nslots - 2, 2)
+    parts <- _parse_repl(repl_text.chars()).try()
+    _ <- _check_refs(parts, ngroups).try()
+    Ok (Substitute {addr: addr, re: re, parts: parts, global: global, icase: icase})
+
+// A reference to a group the pattern does not define is rejected at parse
+// time, so a typo cannot silently render as empty text.
+_check_refs: (parts: []RPart, ngroups: Int) -> Result _ String =
+    case parts.find_by((p): _ref_is_bad(p, ngroups)):
+        Some (GroupRef k) -> Err ("invalid group reference: \\{k}")
+        Some _ -> Err "invalid group reference"
+        None -> Ok _
+
+_ref_is_bad: (p: RPart, ngroups: Int) -> Bool =
+    case p:
+        GroupRef k -> k < 1 || k > ngroups
+        _ -> False
+
+_parse_flags: (cs: []Char, global: Bool, icase: Bool) -> Result ([Bool, Bool]) String =
+    case cs:
+        {} -> Ok {global, icase}
+        {'g', ..rest} -> _parse_flags(rest, True, icase)
+        {'i', ..rest} -> _parse_flags(rest, global, True)
+        {c, .._} -> Err ("unknown flag: {c}")
+
+// ------------------------------------------------------------ line processing
+
+_addr_selects: (addr: Option Regex, line: String) -> Bool =
+    case addr:
+        None -> True
+        Some re -> Regex.is_match(re, line, False)
+
+_substitute: (s: Sub, line: String) -> String =
+    ms := Regex.find_all(s.re, line, s.global, s.icase)
+    _render(line, ms, s.parts, Int.quot(s.re.nslots - 2, 2))
+
+// Commands apply in order; a delete drops the line and skips the rest.
+_apply_one: (c: Command, line: String) -> Option String =
+    case c:
+        Delete d ->
+            if _addr_selects(d.addr, line):
+                None
+            else:
+                Some line
+        Substitute s ->
+            if _addr_selects(s.addr, line).not():
+                Some line
+            else:
+                Some (_substitute(s, line))
+
+_apply_commands: (cmds: []Command, line: String) -> Option String =
+    case cmds:
+        {} -> Some line
+        {c, ..rest} ->
+            case _apply_one(c, line):
+                None -> None
+                Some next -> _apply_commands(rest, next)
+
+// ------------------------------------------------------------ command layer
+
+/// The completed command configuration.
+Config: type = [scripts: []Command, files: []String]
+
+/// What the argument vector denotes.
+Invocation: type = Help | Fail String | Run Config
+
+/// The scan state: scripts collected so far and whether the positional
+/// script has been seen, after which every argument is a file.
+ArgScan: type = [scripts: []Command, scripting: Bool]
+
+parse_args: (argv: []String) -> Invocation =
+    _parse_options(argv, {scripts: {}, scripting: False})
+
+_parse_options: (argv: []String, st: ArgScan) -> Invocation =
+    case argv:
+        {} ->
+            if st.scripts.eq({}):
+                Fail "missing script"
+            else:
+                Run {scripts: st.scripts, files: {}}
+        {a, ..rest} ->
+            case a:
+                "--" ->
+                    if st.scripts.eq({}):
+                        Fail "missing script"
+                    else:
+                        Run {scripts: st.scripts, files: rest}
+                "-h" | "--help" -> Help
+                "-e" ->
+                    case rest:
+                        {} -> Fail "missing script after -e"
+                        {script, ..more} ->
+                            case _parse_command(script):
+                                Err e -> Fail e
+                                Ok cmd ->
+                                    _parse_options(more, st.with({scripts: st.scripts ++ {cmd},
+                                                                  scripting: True}))
+                _ ->
+                    if a.starts_with("-") && a.length() > 1:
+                        Fail "unknown option: {a}"
+                    else:
+                        if st.scripting:
+                            Run {scripts: st.scripts, files: argv}
+                        else:
+                            case _parse_command(a):
+                                Err e -> Fail e
+                                Ok cmd ->
+                                    _parse_options(rest, st.with({scripts: st.scripts ++ {cmd},
+                                                                  scripting: True}))
+
+// ----------------------------------------------------------------- I/O shell
+
+_help_lines: []String = {
+    "usage: ekosed [options] <script> [file ...]",
+    "",
+    "Apply the edit script to each line of the named files, or standard",
+    "input when no file is given. A file argument of '-' also means",
+    "standard input.",
+    "",
+    "scripts:",
+    "  s/pat/repl/flags   substitute; flags: g (all occurrences), i (case-",
+    "                     insensitive). The pattern uses the Eko regular-",
+    "                     expression subset with capture groups (README.md).",
+    "  /pat/d             delete lines matching the pattern",
+    "  d                  delete every line",
+    "",
+    "options:",
+    "  -e SCRIPT          add the script; repeatable, applied in order",
+    "  -h, --help         show this help and exit",
+    "  --                 end of options; remaining arguments are files",
+    "",
+    "A script may carry one leading address: `/pat/s/a/b/` substitutes only",
+    "on lines matching pat. The delimiter after `s` may be any punctuation",
+    "character, so `s,a,b,` works when the pattern contains slashes.",
+    "",
+    "exit status: 0 on success, 2 on usage, regex, or file error."}
+
+_print_help: (out: Out) ! =
+    _help_lines.each((line): out.println(line))
+
+_io_message: (e: IoError) -> String =
+    case e:
+        NotFound -> "no such file or directory"
+        Permission -> "permission denied"
+        Exists -> "file exists"
+        NotFile -> "not a regular file"
+        Closed -> "handle closed"
+        InvalidData d -> "invalid data: {d}"
+        Other m -> m
+
+_read_file: (fs: Fs, path: String) !-> Result String String =
+    case fs.stat(path):
+        Ok info if info.is_dir -> Err "is a directory"
+        _ -> fs.read(path).map_err(_io_message)
+
+// Stream stdin one line at a time, so large piped data is never read whole.
+_run_stdin_loop: (out: Out, inp: In, cmds: []Command, lineno: Int) !-> Result Int IoError =
+    line <- inp.read_line().try()
+    case line:
+        None -> Ok lineno
+        Some text ->
+            case _apply_commands(cmds, text):
+                None -> _run_stdin_loop(out, inp, cmds, lineno + 1)
+                Some result ->
+                    out.println(result)
+                    _run_stdin_loop(out, inp, cmds, lineno + 1)
+
+_run_stdin: (out: Out, err: Out, inp: In, cmds: []Command) !-> Int =
+    case _run_stdin_loop(out, inp, cmds, 1):
+        Err e ->
+            err.println("ekosed: <stdin>: {_io_message(e)}")
+            2
+        Ok _ -> 0
+
+_walk_file_error: (out: Out, err: Out, fs: Fs, inp: In, cmds: []Command, files: []String,
+                   path: String, msg: String) !-> Int =
+    err.println("ekosed: {path}: {msg}")
+    code := _run_files(out, err, fs, inp, cmds, files)
+    if code == 0: 2 else: code
+
+_emit_line: (out: Out, cmds: []Command, line: String) ! =
+    case _apply_commands(cmds, line):
+        Some result -> out.println(result)
+        None -> _
+
+_walk_file_ok: (out: Out, err: Out, fs: Fs, inp: In, cmds: []Command, files: []String,
+                text: String) !-> Int =
+    String.lines(text).each((line): _emit_line(out, cmds, line))
+    _run_files(out, err, fs, inp, cmds, files)
+
+_run_files: (out: Out, err: Out, fs: Fs, inp: In, cmds: []Command, files: []String) !-> Int =
+    case files:
+        {} -> 0
+        {path, ..rest} ->
+            if path == "-":
+                case _run_stdin_loop(out, inp, cmds, 1):
+                    Err e ->
+                        err.println("ekosed: <stdin>: {_io_message(e)}")
+                        code := _run_files(out, err, fs, inp, cmds, rest)
+                        if code == 0: 2 else: code
+                    Ok _ -> _run_files(out, err, fs, inp, cmds, rest)
+            else:
+                case _read_file(fs, path):
+                    Err msg -> _walk_file_error(out, err, fs, inp, cmds, rest, path, msg)
+                    Ok text -> _walk_file_ok(out, err, fs, inp, cmds, rest, text)
+
+_run_config: (out: Out, err: Out, fs: Fs, inp: In, cfg: Config) !-> Int =
+    case cfg.files:
+        {} -> _run_stdin(out, err, inp, cfg.scripts)
+        files -> _run_files(out, err, fs, inp, cfg.scripts, files)
+
+_help_status: (out: Out) !-> Int =
+    _print_help(out)
+    0
+
+_usage_failure: (err: Out, msg: String) !-> Int =
+    err.println("ekosed: {msg}")
+    err.println("Try 'ekosed --help' for usage.")
+    2
+
+_dispatch: (out: Out, err: Out, argv: []String, fs: Fs, inp: In) !-> Int =
+    case parse_args(argv):
+        Help -> _help_status(out)
+        Fail msg -> _usage_failure(err, msg)
+        Run cfg -> _run_config(out, err, fs, inp, cfg)
+
+// The parameter list is the authorization manifest: output, arguments, the
+// file system, standard input, and the process exit channel. There is no
+// other I/O entrance. The error channel rides the Out session as host wiring.
+main: (out: Out, args: Args, fs: Fs, inp: In, proc: Proc) ! =
+    code := _dispatch(out, Out.err(), args.all(), fs, inp)
+    Proc.exit(proc, code)
+
+// --------------------------------------------------------------------- tests
+
+_compile_ok: (pattern: String) -> Regex =
+    Regex.compile(pattern).expect("test pattern should compile: {pattern}")
+
+_cmd_of: (text: String) -> Command =
+    _parse_command(text).expect("command should parse")
+
+_caps_pair: (m: Match, k: Int) -> [Int, Int] =
+    open := m.caps.get(2 * k).unwrap_or(-1)
+    close := m.caps.get(2 * k + 1).unwrap_or(-1)
+    {open, close}
+
+_first: (ms: []Match) -> Match =
+    ms.get(0).expect("expected at least one match")
+
+_span: (line: String, m: Match) -> String =
+    String.slice(line, m.start, m.end - m.start).expect("match span within line")
+
+_group_text: (line: String, m: Match, k: Int) -> String =
+    (lo, hi) = _caps_pair(m, k)
+    String.slice(line, lo, hi - lo).unwrap_or("")
+
+regex_acceptance: test =
+    patterns: []String = {
+        "abc", ".", "a.c", "a|b", "(ab)*", "a(b|c)+d", "[a-z]", "[^abc]",
+        "(a)", "((a))", "(a)*b", "", "()", "a|", "\\.\\*\\\\", "λ+"}
+    patterns.each((p): assert(Regex.compile(p).is_ok()))
+
+regex_rejection: test =
+    patterns: []String = {"(", "[", "[a-", "[z-a]", "*a", "a**", "a)", "(a"}
+    patterns.each((p): assert(Regex.compile(p).is_err()))
+
+literal_matching: test =
+    re := _compile_ok("b")
+    ms := Regex.find_all(re, "abcabc", True, False)
+    assert_eq(ms.length(), 2)
+    assert_eq(_span("abcabc", _first(ms)), "b")
+
+leftmost_longest: test =
+    assert_eq(_span("ab", _first(Regex.find_all(_compile_ok("ab|a"), "ab", True, False))), "ab")
+    assert_eq(_span("xabcd", _first(Regex.find_all(_compile_ok("ab|bcd"), "xabcd", True, False))), "ab")
+    assert_eq(_span("ab", _first(Regex.find_all(_compile_ok("a|ab"), "ab", True, False))), "ab")
+
+unanchored_search: test =
+    assert_eq(_span("abc", _first(Regex.find_all(_compile_ok("b"), "abc", False, False))), "b")
+    assert_eq(Regex.find_all(_compile_ok("z"), "abc", True, False).length(), 0)
+
+capture_basic: test =
+    m := _first(Regex.find_all(_compile_ok("(a)(b)"), "ab", False, False))
+    assert_eq(m.start, 0)
+    assert_eq(m.end, 2)
+    assert_eq(_caps_pair(m, 1), {0, 1})
+    assert_eq(_caps_pair(m, 2), {1, 2})
+
+capture_nested: test =
+    m := _first(Regex.find_all(_compile_ok("(a(b))"), "ab", False, False))
+    assert_eq(_group_text("ab", m, 1), "ab")
+    assert_eq(_group_text("ab", m, 2), "b")
+
+capture_alternation: test =
+    m := _first(Regex.find_all(_compile_ok("(x)|(y)"), "y", False, False))
+    assert_eq(_caps_pair(m, 1), {-1, -1})
+    assert_eq(_caps_pair(m, 2), {0, 1})
+
+capture_quantified_last_iteration: test =
+    m := _first(Regex.find_all(_compile_ok("(a)+"), "aa", False, False))
+    assert_eq(m.end, 2)
+    assert_eq(_group_text("aa", m, 1), "a")
+
+capture_optional_unset: test =
+    m := _first(Regex.find_all(_compile_ok("a(x)?b"), "ab", False, False))
+    assert_eq(_caps_pair(m, 1), {-1, -1})
+
+empty_match_calibration_axx: test =
+    ms := Regex.find_all(_compile_ok("x*"), "axx", True, False)
+    assert_eq(ms.length(), 2)
+    assert_eq(ms.get(0).map((m): m.end), Some 0)
+    assert_eq(ms.get(1).map((m): m.end), Some 3)
+
+empty_match_calibration_ab: test =
+    ms := Regex.find_all(_compile_ok("x*"), "ab", True, False)
+    assert_eq(ms.length(), 3)
+    ends := ms.map((m): m.end)
+    assert_eq(ends, {0, 1, 2})
+
+empty_match_calibration_abc: test =
+    ms := Regex.find_all(_compile_ok("b*"), "abc", True, False)
+    assert_eq(ms.map((m): m.end), {0, 2, 3})
+
+anchor_matches: test =
+    ms := Regex.find_all(_compile_ok("^"), "ab", True, False)
+    assert_eq(ms.map((m): m.end), {0})
+    ms2 := Regex.find_all(_compile_ok("$"), "ab", True, False)
+    assert_eq(ms2.map((m): m.end), {2})
+    assert(Regex.is_match(_compile_ok("^ab$"), "ab", False))
+    assert(Regex.is_match(_compile_ok("^b"), "ab", False).not())
+
+ignore_case_matching: test =
+    ms := Regex.find_all(_compile_ok("a"), "aA", True, True)
+    assert_eq(ms.length(), 2)
+    assert(Regex.is_match(_compile_ok("A"), "a", True))
+    assert(Regex.is_match(_compile_ok("A"), "a", False).not())
+
+quantifier_matching: test =
+    assert(Regex.is_match(_compile_ok("ab*c"), "ac", False))
+    assert(Regex.is_match(_compile_ok("ab+c"), "ac", False).not())
+    assert(Regex.is_match(_compile_ok("ab?c"), "abc", False))
+    assert(Regex.is_match(_compile_ok("^(a|b)*c$"), "ababac", False))
+
+class_matching: test =
+    assert(Regex.is_match(_compile_ok("[a-z]+"), "hello", False))
+    assert(Regex.is_match(_compile_ok("[^0-9]+"), "123", False).not())
+    assert(Regex.is_match(_compile_ok("[\\]\\-]+"), "]-]", False))
+
+repl_parse_parts: test =
+    assert_eq(_parse_repl("a\\1b".chars()), Ok {Lit "a", GroupRef 1, Lit "b"})
+    assert_eq(_parse_repl("&".chars()), Ok {WholeMatch})
+    assert_eq(_parse_repl("x".chars()), Ok {Lit "x"})
+    assert_eq(_parse_repl("\\n".chars()), Ok {Lit "\n"})
+
+repl_parse_rejection: test =
+    assert(_parse_repl("\\z".chars()).is_err())
+    assert(_parse_repl("\\".chars()).is_err())
+
+render_whole_match: test =
+    re := _compile_ok("o")
+    ms := Regex.find_all(re, "foo", True, False)
+    out := _render("foo", ms, {Lit "0"}, 0)
+    assert_eq(out, "f00")
+
+render_group_refs: test =
+    re := _compile_ok("(a)(b)")
+    ms := Regex.find_all(re, "ab", False, False)
+    out := _render("ab", ms, {GroupRef 2, GroupRef 1}, 2)
+    assert_eq(out, "ba")
+
+render_unset_group_empty: test =
+    re := _compile_ok("(x)|(y)")
+    ms := Regex.find_all(re, "y", False, False)
+    out := _render("y", ms, {Lit "[", GroupRef 1, Lit "]"}, 2)
+    assert_eq(out, "[]")
+
+render_literal_only: test =
+    re := _compile_ok("a+")
+    ms := Regex.find_all(re, "baaad", True, False)
+    out := _render("baaad", ms, {Lit "-"}, 0)
+    assert_eq(out, "b-d")
+
+// Apply one parsed substitute script to one line; a delete is not expected.
+_sub_line: (script: String, line: String) -> Result String String =
+    cmd <- _parse_command(script).try()
+    case cmd:
+        Substitute s -> Ok (_substitute(s, line))
+        Delete _ -> Err "not a substitute"
+
+substitute_gnu_corpus: test =
+    assert_eq(_sub_line("s/x*/-/g", "axx"), Ok "-a-")
+    assert_eq(_sub_line("s/x*/-/", "axx"), Ok "-axx")
+    assert_eq(_sub_line("s/o/0/g", "foo"), Ok "f00")
+
+substitute_global_empty_matches: test =
+    assert_eq(_sub_line("s/a*/-/g", "aaa"), Ok "-")
+    assert_eq(_sub_line("s/b*/-/g", "abc"), Ok "-a-c-")
+    assert_eq(_sub_line("s/x*/-/g", "ab"), Ok "-a-b-")
+    assert_eq(_sub_line("s/^/X/g", "ab"), Ok "Xab")
+    assert_eq(_sub_line("s/$/X/g", "ab"), Ok "abX")
+
+substitute_group_swap: test =
+    assert_eq(_sub_line("s/(a)(b)/\\2\\1/g", "abcabc"), Ok "bacbac")
+    assert_eq(_sub_line("s/X([a-z])/[\\1]/g", "aXbXc"), Ok "a[b][c]")
+
+// `\&` is a literal ampersand, bare `&` the whole match, and `\\` a
+// literal backslash.
+substitute_repl_escapes: test =
+    assert_eq(_sub_line("s/bar/X\\&Y/", "bar"), Ok "X&Y")
+    assert_eq(_sub_line("s/bar/X&Y/", "bar"), Ok "XbarY")
+    assert_eq(_sub_line("s/bar/X\\\\Y/", "bar"), Ok "X\\Y")
+
+script_parse_substitute: test =
+    case _parse_command("s/a/b/g"):
+        Ok (Substitute s) ->
+            assert(s.global)
+            assert(s.icase.not())
+            assert(s.addr.is_none())
+        _ -> panic("expected Substitute")
+
+script_parse_flags_and_delim: test =
+    case _parse_command("s,a,b,gi"):
+        Ok (Substitute s) ->
+            assert(s.global)
+            assert(s.icase)
+        _ -> panic("expected Substitute")
+    case _parse_command("s/a\\/b/x/"):
+        Ok (Substitute s) ->
+            assert(Regex.is_match(s.re, "a/b", False))
+            assert(Regex.is_match(s.re, "axb", False).not())
+        _ -> panic("expected Substitute")
+
+script_parse_delete_and_addr: test =
+    case _parse_command("d"):
+        Ok (Delete d) -> assert(d.addr.is_none())
+        _ -> panic("expected Delete")
+    case _parse_command("/a/d"):
+        Ok (Delete d) ->
+            assert(Regex.is_match(d.addr.expect("address"), "xa", False))
+        _ -> panic("expected Delete")
+    case _parse_command("/b/s/a/X/"):
+        Ok (Substitute s) ->
+            assert(_addr_selects(s.addr, "bxx"))
+            assert(_addr_selects(s.addr, "axx").not())
+        _ -> panic("expected Substitute")
+
+script_parse_rejection: test =
+    bad: []String = {"", "x", "s", "s/", "s/a", "s/a/", "s/a/b/x", "s/a/b/z",
+                     "/a", "//d", "s//b/", "s1a1b1", "s/a/b/dx", "s a b ", "sd",
+                     "s/a/\\2/"}
+    bad.each((text): assert(_parse_command(text).is_err()))
+
+// The segment keeps its escape sequences and the tail starts after the
+// first unescaped delimiter.
+split_at_segments: test =
+    assert_eq(_split_at("a/b".chars(), '/', {}), Ok {"a", {'b'}})
+    assert_eq(_split_at("a\\/b/c".chars(), '/', {}), Ok {"a\\/b", {'c'}})
+    assert_eq(_split_at("a\\".chars(), '/', {}), Err "trailing backslash")
+
+apply_commands_order: test =
+    del_a := _cmd_of("/a/d")
+    sub := _cmd_of("s/b/X/")
+    assert_eq(_apply_commands({del_a, sub}, "abc"), None)
+    assert_eq(_apply_commands({del_a, sub}, "xbc"), Some "xXc")
+
+apply_addr_scope: test =
+    sub := _cmd_of("/a/s/b/X/")
+    assert_eq(_apply_commands({sub}, "ab"), Some "aX")
+    assert_eq(_apply_commands({sub}, "xb"), Some "xb")
+
+cli_defaults: test =
+    case parse_args({"s/a/b/"}):
+        Run cfg ->
+            assert_eq(cfg.files, {})
+            assert_eq(cfg.scripts.length(), 1)
+        _ -> panic("expected Run")
+
+cli_multiple_scripts: test =
+    case parse_args({"-e", "s/a/b/", "-e", "/x/d", "in.txt"}):
+        Run cfg ->
+            assert_eq(cfg.scripts.length(), 2)
+            assert_eq(cfg.files, {"in.txt"})
+        _ -> panic("expected Run")
+
+cli_files_after_script: test =
+    case parse_args({"s/a/b/", "f1", "f2"}):
+        Run cfg -> assert_eq(cfg.files, {"f1", "f2"})
+        _ -> panic("expected Run")
+    case parse_args({"-e", "s/a/b/", "f1", "f2"}):
+        Run cfg -> assert_eq(cfg.files, {"f1", "f2"})
+        _ -> panic("expected Run")
+
+cli_bad_script_fails: test =
+    case parse_args({"s/a/b/x"}):
+        Fail msg -> assert(msg.contains("unknown flag"))
+        _ -> panic("expected Fail")
+
+cli_usage_errors: test =
+    assert(_is_fail(parse_args({}), "missing script"))
+    assert(_is_fail(parse_args({"-e"}), "missing script after -e"))
+    assert(_is_fail(parse_args({"-x", "s/a/b/"}), "unknown option"))
+    assert(_is_fail(parse_args({"--"}), "missing script"))
+
+cli_help: test =
+    case parse_args({"-h"}):
+        Help -> assert(True)
+        _ -> panic("expected Help")
+    case parse_args({"--help"}):
+        Help -> assert(True)
+        _ -> panic("expected Help")
+
+_is_fail: (inv: Invocation, needle: String) -> Bool =
+    case inv:
+        Fail msg -> msg.contains(needle)
+        _ -> False
+
+file_line_splitting: test =
+    assert_eq("".lines(), {})
+    assert_eq("a\n".lines(), {"a"})
+    assert_eq("a\nb".lines(), {"a", "b"})
+    assert_eq("a\n\nb\n".lines(), {"a", "", "b"})
+    assert_eq("λ\né".lines(), {"λ", "é"})
+
+io_error_messages: test =
+    assert_eq(_io_message(NotFound), "no such file or directory")
+    assert_eq(_io_message(Permission), "permission denied")
+    assert_eq(_io_message(Other "boom"), "boom")
+
+dispatch_stdin_substitute: test =
+    out := Out.tee(Out.null(), (s): assert_eq(s, "aXc"))
+    status := _dispatch(out, Out.null(), {"s/b/X/"}, Fs.null(), In.from_lines({"abc"}))
+    assert_eq(status, 0)
+
+dispatch_stdin_delete: test =
+    out := Out.tee(Out.null(), (s): assert_eq(s, "b"))
+    status := _dispatch(out, Out.null(), {"/a/d"}, Fs.null(), In.from_lines({"a", "b", "aa"}))
+    assert_eq(status, 0)
+
+dispatch_stdin_two_scripts: test =
+    out := Out.tee(Out.null(), (s): assert_eq(s, "Y"))
+    status := _dispatch(out, Out.null(), {"-e", "s/a/X/", "-e", "s/X/Y/"}, Fs.null(),
+                        In.from_lines({"a"}))
+    assert_eq(status, 0)
+
+dispatch_stdin_all_deleted: test =
+    out := Out.tee(Out.null(), (s): panic("nothing should print: {s}"))
+    status := _dispatch(out, Out.null(), {"d"}, Fs.null(), In.from_lines({"a", "b"}))
+    assert_eq(status, 0)
+
+dispatch_help: test =
+    status := _dispatch(Out.null(), Out.null(), {"--help"}, Fs.null(), In.empty())
+    assert_eq(status, 0)
+
+dispatch_usage_error: test =
+    status := _dispatch(Out.null(), Out.null(), {}, Fs.null(), In.empty())
+    assert_eq(status, 2)
+
+dispatch_bad_regex: test =
+    status := _dispatch(Out.null(), Out.null(), {"s/(/x/"}, Fs.null(), In.from_lines({"a"}))
+    assert_eq(status, 2)
+
+dispatch_missing_file: test =
+    status := _dispatch(Out.null(), Out.null(), {"s/a/b/", "does-not-exist.txt"}, Fs.null(),
+                        In.empty())
+    assert_eq(status, 2)
+
+dispatch_dash_is_stdin: test =
+    out := Out.tee(Out.null(), (s): assert_eq(s, "aXc"))
+    status := _dispatch(out, Out.null(), {"s/b/X/", "-"}, Fs.null(), In.from_lines({"abc"}))
+    assert_eq(status, 0)

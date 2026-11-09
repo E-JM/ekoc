@@ -1,0 +1,248 @@
+// Hand-written lexer for the supported Lua subset.
+
+import ast
+
+// -------------------------------------------------------------------- lexer
+
+_keywords: []String = {"and", "break", "do", "else", "elseif", "end", "false", "for", "function", "if", "in", "local", "nil", "not", "or", "repeat", "return", "then", "true", "until", "while"}
+
+
+
+
+_is_digit: (c: Char) -> Bool = '0' <= c && c <= '9'
+_is_lower: (c: Char) -> Bool = 'a' <= c && c <= 'z'
+_is_upper: (c: Char) -> Bool = 'A' <= c && c <= 'Z'
+_is_alpha: (c: Char) -> Bool = _is_lower(c) || _is_upper(c) || c == '_'
+_is_alnum: (c: Char) -> Bool = _is_alpha(c) || _is_digit(c)
+
+_is_keyword: (s: String) -> Bool = _keywords.any((k): k == s)
+
+_char_is: (cs: []Char, i: Int, c: Char) -> Bool =
+    cs.get(i).map((x): x == c).unwrap_or(False)
+
+_take_digits: (cs: []Char, i: Int, acc: []Char) -> [String, Int] =
+    case cs.get(i):
+        Some c if _is_digit(c) -> _take_digits(cs, i + 1, acc ++ {c})
+        _ -> {String.from_chars(acc), i}
+
+_take_exp_digits: (cs: []Char, i: Int, sign: String) -> Result ([String, Int]) String =
+    (ds, j) = _take_digits(cs, i, {})
+    if ds == "":
+        Err "exponent has no digits"
+    else:
+        Ok {"e" ++ sign ++ ds, j}
+
+_take_exp: (cs: []Char, i: Int) -> Result ([String, Int]) String =
+    case cs.get(i + 1):
+        Some '+' -> _take_exp_digits(cs, i + 2, "+")
+        Some '-' -> _take_exp_digits(cs, i + 2, "-")
+        _ -> _take_exp_digits(cs, i + 1, "")
+
+_append_exp: (text: String, cs: []Char, i: Int) -> Result ([String, Int]) String =
+    case _take_exp(cs, i):
+        Ok {ep, j2} -> Ok {text ++ ep, j2}
+        Err e -> Err e
+
+_fraction: (cs: []Char, j0: Int) -> [String, Int] =
+    case cs.get(j0):
+        Some '.' ->
+            if _char_is(cs, j0 + 1, '.'):
+                {"", j0}
+            else:
+                (ds, j) = _take_digits(cs, j0 + 1, {})
+                {"." ++ ds, j}
+        _ -> {"", j0}
+
+_take_number: (cs: []Char, i: Int) -> Result ([String, Int]) String =
+    (ip, j0) = _take_digits(cs, i, {})
+    (fp, j1) = _fraction(cs, j0)
+    text0 := ip ++ fp
+    text1 := if text0.ends_with("."): text0 ++ "0" else: text0
+    case cs.get(j1):
+        Some 'e' | Some 'E' -> _append_exp(text1, cs, j1)
+        _ -> Ok {text1, j1}
+
+_take_name: (cs: []Char, i: Int, acc: []Char) -> [String, Int] =
+    case cs.get(i):
+        Some c if _is_alnum(c) -> _take_name(cs, i + 1, acc ++ {c})
+        _ -> {String.from_chars(acc), i}
+
+_token: (tok: Tok, line: Int) -> Token = {tok: tok, line: line}
+
+_emit: (cs: []Char, i: Int, line: Int, tok: Tok, acc: []Token) -> Result ([]Token) String =
+    _lex(cs, i, line, acc ++ {_token(tok, line)})
+
+_skip_line: (cs: []Char, i: Int, line: Int, acc: []Token) -> Result ([]Token) String =
+    case cs.get(i):
+        None -> Ok (acc ++ {_token(TEof, line)})
+        Some '\n' -> _lex(cs, i + 1, line + 1, acc)
+        Some _ -> _skip_line(cs, i + 1, line, acc)
+
+_skip_block: (cs: []Char, i: Int, line: Int, acc: []Token) -> Result ([]Token) String =
+    case cs.get(i):
+        None -> Err "line {line}: unfinished block comment"
+        Some ']' ->
+            if _char_is(cs, i + 1, ']'):
+                _lex(cs, i + 2, line, acc)
+            else:
+                _skip_block(cs, i + 1, line, acc)
+        Some '\n' -> _skip_block(cs, i + 1, line + 1, acc)
+        Some _ -> _skip_block(cs, i + 1, line, acc)
+
+_skip_comment: (cs: []Char, i: Int, line: Int, acc: []Token) -> Result ([]Token) String =
+    if _char_is(cs, i, '[') && _char_is(cs, i + 1, '['):
+        _skip_block(cs, i + 2, line, acc)
+    else:
+        _skip_line(cs, i, line, acc)
+
+_lex_number: (cs: []Char, i: Int, line: Int, acc: []Token) -> Result ([]Token) String =
+    nr <- _take_number(cs, i).map_err((e): "line {line}: {e}").try()
+    (text, j) = nr
+    n <- Float.parse(text).map_err((pe): "line {line}: bad number '{text}'").try()
+    _emit(cs, j, line, TNum n, acc)
+
+_lex_name: (cs: []Char, i: Int, line: Int, acc: []Token) -> Result ([]Token) String =
+    (name, j) = _take_name(cs, i, {})
+    tok := if _is_keyword(name): TKw name else: TName name
+    _emit(cs, j, line, tok, acc)
+
+_lex_string: (cs: []Char, i: Int, line: Int, quote: Char, chars: []Char, acc: []Token) -> Result ([]Token) String =
+    case cs.get(i):
+        None -> Err "line {line}: unfinished string"
+        Some c ->
+            case c:
+                _ if c == quote -> _emit(cs, i + 1, line, TStr (String.from_chars(chars)), acc)
+                '\\' -> _lex_escape(cs, i + 1, line, quote, chars, acc)
+                '\n' -> Err "line {line}: newline in string"
+                _ -> _lex_string(cs, i + 1, line, quote, chars ++ {c}, acc)
+
+_lex_decimal_escape: (cs: []Char, i: Int, line: Int, quote: Char, chars: []Char, acc: []Token) -> Result ([]Token) String =
+    (ds, j) = _take_digits(cs, i, {})
+    code <- Int.parse(ds).map_err((pe): "line {line}: bad decimal escape '\\{ds}'").try()
+    ch <- Char.from_code(code).to_result("line {line}: bad decimal escape '\\{ds}'").try()
+    _lex_string(cs, j, line, quote, chars ++ {ch}, acc)
+
+_lex_escape: (cs: []Char, i: Int, line: Int, quote: Char, chars: []Char, acc: []Token) -> Result ([]Token) String =
+    case cs.get(i):
+        None -> Err "line {line}: unfinished escape"
+        Some c ->
+            case c:
+                'n' -> _lex_string(cs, i + 1, line, quote, chars ++ {'\n'}, acc)
+                't' -> _lex_string(cs, i + 1, line, quote, chars ++ {'\t'}, acc)
+                'r' -> _lex_string(cs, i + 1, line, quote, chars ++ {'\r'}, acc)
+                '\\' -> _lex_string(cs, i + 1, line, quote, chars ++ {'\\'}, acc)
+                '"' -> _lex_string(cs, i + 1, line, quote, chars ++ {'"'}, acc)
+                '\'' -> _lex_string(cs, i + 1, line, quote, chars ++ {'\''}, acc)
+                '\n' -> _lex_string(cs, i + 1, line + 1, quote, chars ++ {'\n'}, acc)
+                _ if _is_digit(c) -> _lex_decimal_escape(cs, i, line, quote, chars, acc)
+                _ -> Err "line {line}: unknown escape '\\{c}'"
+
+_lex_symbol: (cs: []Char, i: Int, line: Int, acc: []Token) -> Result ([]Token) String =
+    case cs.get(i):
+        Some '=' ->
+            if _char_is(cs, i + 1, '='): _emit(cs, i + 2, line, TSym "==", acc)
+            else: _emit(cs, i + 1, line, TSym "=", acc)
+        Some '~' ->
+            if _char_is(cs, i + 1, '='): _emit(cs, i + 2, line, TSym "~=", acc)
+            else: Err "line {line}: unexpected '~'"
+        Some '<' ->
+            if _char_is(cs, i + 1, '='): _emit(cs, i + 2, line, TSym "<=", acc)
+            else: _emit(cs, i + 1, line, TSym "<", acc)
+        Some '>' ->
+            if _char_is(cs, i + 1, '='): _emit(cs, i + 2, line, TSym ">=", acc)
+            else: _emit(cs, i + 1, line, TSym ">", acc)
+        Some '.' ->
+            if _char_is(cs, i + 1, '.'):
+                if _char_is(cs, i + 2, '.'): _emit(cs, i + 3, line, TSym "...", acc)
+                else: _emit(cs, i + 2, line, TSym "..", acc)
+            else:
+                _emit(cs, i + 1, line, TSym ".", acc)
+        Some '/' ->
+            if _char_is(cs, i + 1, '/'): Err "line {line}: '//' is not supported"
+            else: _emit(cs, i + 1, line, TSym "/", acc)
+        Some c ->
+            case c:
+                '+' | '-' | '*' | '%' | '^' | '#' | '(' | ')' | '{' | '}' | '[' | ']' | ';' | ':' | ',' ->
+                    _emit(cs, i + 1, line, TSym (String.from_char(c)), acc)
+                _ -> Err "line {line}: unexpected character '{c}'"
+        None -> Ok (acc ++ {_token(TEof, line)})
+
+_lex: (cs: []Char, i: Int, line: Int, acc: []Token) -> Result ([]Token) String =
+    case cs.get(i):
+        None -> Ok (acc ++ {_token(TEof, line)})
+        Some c ->
+            case c:
+                ' ' | '\t' | '\r' -> _lex(cs, i + 1, line, acc)
+                '\n' -> _lex(cs, i + 1, line + 1, acc)
+                '-' ->
+                    if _char_is(cs, i + 1, '-'): _skip_comment(cs, i + 2, line, acc)
+                    else: _emit(cs, i + 1, line, TSym "-", acc)
+                _ if _is_digit(c) -> _lex_number(cs, i, line, acc)
+                _ if _is_alpha(c) -> _lex_name(cs, i, line, acc)
+                '"' -> _lex_string(cs, i + 1, line, '"', {}, acc)
+                '\'' -> _lex_string(cs, i + 1, line, '\'', {}, acc)
+                _ -> _lex_symbol(cs, i, line, acc)
+
+/// Tokenizes a Lua source string.
+lex: (src: String) -> Result ([]Token) String =
+    _lex(src.chars(), 0, 1, {})
+
+
+// --------------------------------------------------------------------- tests
+
+_toks: (src: String) -> []Token =
+    case lex(src):
+        Ok toks -> toks
+        Err e -> panic("lex failed: {e}")
+
+_lex_err: (src: String) -> String =
+    case lex(src):
+        Err e -> e
+        Ok _ -> panic("expected a lex error")
+
+token_stream: test =
+    assert_eq(_toks("local x = 10\nx = x + 1"),
+        {_token(TKw "local", 1), _token(TName "x", 1), _token(TSym "=", 1),
+         _token(TNum 10.0, 1), _token(TName "x", 2), _token(TSym "=", 2),
+         _token(TName "x", 2), _token(TSym "+", 2), _token(TNum 1.0, 2),
+         _token(TEof, 2)})
+
+numbers: test =
+    assert_eq(_toks("42 3.5 1e2"),
+        {_token(TNum 42.0, 1), _token(TNum 3.5, 1), _token(TNum 100.0, 1),
+         _token(TEof, 1)})
+    assert_eq(_toks("7."), {_token(TNum 7.0, 1), _token(TEof, 1)})
+    assert_eq(_toks("1e-2"), {_token(TNum 0.01, 1), _token(TEof, 1)})
+    assert_eq(_lex_err("1e"), "line 1: exponent has no digits")
+
+strings: test =
+    assert_eq(_toks("'x'"), {_token(TStr "x", 1), _token(TEof, 1)})
+    assert_eq(_toks("\"a\\\"b\""), {_token(TStr "a\"b", 1), _token(TEof, 1)})
+    assert_eq(_lex_err("\"abc"), "line 1: unfinished string")
+    assert_eq(_lex_err("\"a\nb\""), "line 1: newline in string")
+    assert_eq(_lex_err("\"\\q\""), "line 1: unknown escape '\\q'")
+
+decimal_escape: test =
+    assert_eq(_toks("\"\\65\""), {_token(TStr "A", 1), _token(TEof, 1)})
+    assert_eq(_toks("'\\9\\10'"), {_token(TStr "\t\n", 1), _token(TEof, 1)})
+    assert_eq(_lex_err("'\\9999999'"), "line 1: bad decimal escape '\\9999999'")
+
+comments: test =
+    assert_eq(_toks("-- line comment\nx = 1 -- tail\n"),
+        {_token(TName "x", 2), _token(TSym "=", 2), _token(TNum 1.0, 2),
+         _token(TEof, 3)})
+    assert_eq(_toks("--[[ block\nstill ]]\ny"),
+        {_token(TName "y", 3), _token(TEof, 3)})
+    assert_eq(_lex_err("--[[ oops"), "line 1: unfinished block comment")
+
+symbols: test =
+    assert_eq(_toks("a ..= b ... c ~= d <= e"),
+        {_token(TName "a", 1), _token(TSym "..", 1), _token(TSym "=", 1),
+         _token(TName "b", 1), _token(TSym "...", 1), _token(TName "c", 1),
+         _token(TSym "~=", 1), _token(TName "d", 1), _token(TSym "<=", 1),
+         _token(TName "e", 1), _token(TEof, 1)})
+    assert_eq(_lex_err("x ? y"), "line 1: unexpected character '?'")
+    assert_eq(_lex_err("~"), "line 1: unexpected '~'")
+
+slash_slash_error: test =
+    assert_eq(_lex_err("1 // 2"), "line 1: '//' is not supported")

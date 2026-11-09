@@ -1,0 +1,185 @@
+// Wire-format parsing: one log line, RFC 5424 or RFC 3164 by shape,
+// read back into an entry. The stamp is kept exactly as written; a
+// line that matches neither form is None.
+
+import model
+import stamp
+
+// The first index at or after `i` whose char is `c`.
+_find_from: (cs: []Char, c: Char, i: Int) -> Option Int =
+    case cs.get(i):
+        None -> None
+        Some x -> if x == c: Some i else: _find_from(cs, c, i + 1)
+
+// True when `cs` holds `pre` starting at index `i`.
+_starts_with_at: (cs: []Char, pre: []Char, i: Int) -> Bool =
+    case pre:
+        {} -> True
+        {p, ..pr} ->
+            case cs.get(i):
+                Some c if c == p -> _starts_with_at(cs, pr, i + 1)
+                _ -> False
+
+// The text before and after the first occurrence of `sep`.
+_split_once: (s: String, sep: String) -> Option ([String, String]) =
+    _split_loop(s.chars(), sep.chars(), 0)
+
+_split_loop: (cs: []Char, sep: []Char, i: Int) -> Option ([String, String]) =
+    if _starts_with_at(cs, sep, i):
+        head := String.from_chars(cs.take(i))
+        tail := String.from_chars(cs.drop(i + sep.length()))
+        pair: [String, String] = {head, tail}
+        Some pair
+    else:
+        if i + sep.length() > cs.length(): None
+        else: _split_loop(cs, sep, i + 1)
+
+// One log line as an entry, RFC 5424 or RFC 3164 by shape; anything else
+// is None.
+parse_line: (line: String) -> Option Entry =
+    cs := line.chars()
+    case cs.get(0):
+        Some '<' -> _parse_pri(line, cs)
+        _ -> None
+
+_parse_pri: (line: String, cs: []Char) -> Option Entry =
+    case _find_from(cs, '>', 1):
+        None -> None
+        Some close ->
+            digits := String.from_chars(cs.take(close).drop(1))
+            rest := String.from_chars(cs.drop(close + 1))
+            case Int.parse(digits):
+                Err _ -> None
+                Ok n ->
+                    pri: Pri = {facility: n / 8, severity: n % 8}
+                    _parse_body(pri, rest)
+
+// The body after `<PRI>`: a version of 1 names RFC 5424, anything else
+// is the legacy header.
+_parse_body: (pri: Pri, rest: String) -> Option Entry =
+    if rest.starts_with("1 "):
+        _parse_5424(pri, rest.slice(2, rest.length() - 2).unwrap_or(""))
+    else:
+        _parse_3164(pri, rest)
+
+// `<PRI>1 STAMP HOST APP PROCID MSGID SD MSG`; the structured data is
+// nil or bracket groups, and everything after it is the message.
+_parse_5424: (pri: Pri, rest: String) -> Option Entry =
+    fields := rest.split(" ")
+    case fields.get(0), fields.get(1), fields.get(2), fields.get(3),
+         fields.get(4):
+        Some stamp, Some host, Some app, Some _, Some _ ->
+            sd_start := fields.take(5).fold(0, (n, f): n + f.length() + 1)
+            tail := rest.slice(sd_start, rest.length() - sd_start).unwrap_or("")
+            case _sd_msg(tail):
+                Some msg ->
+                    entry: Entry = {
+                        pri: pri, stamp: stamp, host: host, tag: app, msg: msg}
+                    Some entry
+                None -> None
+        _, _, _, _, _ -> None
+
+// The message after the five header fields: nothing, a nil `-`, or
+// bracket groups, then one separating space.
+_sd_msg: (tail: String) -> Option String =
+    case tail:
+        "" -> Some ""
+        "-" -> Some ""
+        _ if tail.starts_with("- ") -> tail.slice(2, tail.length() - 2)
+        _ if tail.starts_with("[") -> _after_group(tail)
+        _ -> None
+
+// Scans bracket groups off the front of `rest`; the message begins after
+// the first space that follows the last group.
+_after_group: (tail: String) -> Option String =
+    cs := tail.chars()
+    case _find_from(cs, ']', 1):
+        None -> None
+        Some close ->
+            after := String.from_chars(cs.drop(close + 1))
+            case after.at(0):
+                None -> Some ""
+                Some '[' -> _after_group(after)
+                Some ' ' -> after.slice(1, after.length() - 1)
+                _ -> None
+
+// `<PRI>Mmm dd hh:mm:ss HOST TAG[PID]: MSG`; a line without `: ` is read
+// as a tagless message.
+_parse_3164: (pri: Pri, rest: String) -> Option Entry =
+    cs := rest.chars()
+    mon := String.from_chars(cs.take(3))
+    case stamp.month_index(mon):
+        None -> None
+        Some _ ->
+            stamp_text := String.from_chars(cs.take(15))
+            body := String.from_chars(cs.drop(16))
+            _parse_3164_host(pri, stamp_text, body)
+
+_parse_3164_host: (pri: Pri, stamp_text: String, body: String) -> Option Entry =
+    case _split_once(body, " "):
+        None -> None
+        Some pair ->
+            (host, after_host) = pair
+            _parse_3164_tag(pri, stamp_text, host, after_host)
+
+_parse_3164_tag: (pri: Pri, stamp_text: String, host: String,
+                  after_host: String) -> Option Entry =
+    case _split_once(after_host, ": "):
+        None ->
+            entry: Entry = {pri: pri, stamp: stamp_text, host: host, tag: "",
+                            msg: after_host}
+            Some entry
+        Some pair ->
+            (tagpart, msg) = pair
+            tag := tagpart.split("[").get(0).unwrap_or(tagpart).trim()
+            entry: Entry = {pri: pri, stamp: stamp_text, host: host, tag: tag,
+                            msg: msg}
+            Some entry
+
+// --------------------------------------------------------------------- tests
+
+parse_5424_fields: test =
+    assert_eq(parse_line("<13>1 2026-11-05T09:17:01.250Z box app - - - hello world"),
+              Some {pri: {facility: 1, severity: 5},
+                    stamp: "2026-11-05T09:17:01.250Z", host: "box", tag: "app",
+                    msg: "hello world"})
+    tagged := parse_line("<13>1 2026-11-05T09:17:01.250Z box web[42] - - - hello")
+    assert_eq(tagged.map((e): e.tag), Some "web[42]")
+    assert_eq(tagged.map((e): e.msg), Some "hello")
+    empty := parse_line("<13>1 2026-11-05T09:17:01.250Z box app - - -")
+    assert_eq(empty.map((e): e.msg), Some "")
+
+parse_3164_fields: test =
+    got := parse_line("<13>Nov  5 09:17:01 box app: boot ok")
+    assert_eq(got.map((e): e.pri), Some {facility: 1, severity: 5})
+    assert_eq(got.map((e): e.stamp), Some "Nov  5 09:17:01")
+    assert_eq(got.map((e): e.host), Some "box")
+    assert_eq(got.map((e): e.tag), Some "app")
+    assert_eq(got.map((e): e.msg), Some "boot ok")
+
+parse_3164_pid_and_tagless: test =
+    with_pid := parse_line("<13>Nov  5 09:17:01 box sshd[4242]: accepted")
+    assert_eq(with_pid.map((e): e.tag), Some "sshd")
+    assert_eq(with_pid.map((e): e.msg), Some "accepted")
+    tagless := parse_line("<13>Nov  5 09:17:01 box plain message")
+    assert_eq(tagless.map((e): e.tag), Some "")
+    assert_eq(tagless.map((e): e.msg), Some "plain message")
+
+parse_5424_structured_data: test =
+    sd := parse_line(
+        "<13>1 2026-11-05T09:17:01Z host app 1234 ID47 [x y=\"1\"] the msg")
+    assert_eq(sd.map((e): e.msg), Some "the msg")
+    assert_eq(sd.map((e): e.tag), Some "app")
+    two := parse_line(
+        "<13>1 2026-11-05T09:17:01Z host app - - [a b][c d] next")
+    assert_eq(two.map((e): e.msg), Some "next")
+
+parse_rejection: test =
+    assert_eq(parse_line(""), None)
+    assert_eq(parse_line("no angle brackets"), None)
+    assert_eq(parse_line("<>"), None)
+    assert_eq(parse_line("<13x>1 2026 host app - - m"), None)
+    assert_eq(parse_line("<13>2 2026 host app - - m"), None)
+    assert_eq(parse_line("<13>Xyz  5 09:17:01 host tag: m"), None)
+    assert_eq(parse_line("<13>Nov  5 09:17:01"), None)
+    assert_eq(parse_line("<13>1 short line"), None)

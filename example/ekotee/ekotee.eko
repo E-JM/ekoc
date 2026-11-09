@@ -1,0 +1,211 @@
+// ekotee: a pipe fitting that copies standard input to standard output and
+// to every named file.
+//
+//   ekotee [options] [file ...]
+//
+// The files open before the first line is read; a failed open reports on
+// the error channel and drops that file while the rest keep working, and a
+// failed write drops only its own file. Standard input is streamed line by
+// line, so a fitting never holds the whole flow in memory. The command
+// layer is pure; only main and its explicit helpers touch the capabilities.
+//
+// Module: ekotee (the file is the module).
+
+// ------------------------------------------------------------------- core
+
+/// The completed command configuration.
+Config: type = [append: Bool, files: []String]
+
+/// What the argument vector denotes.
+Invocation: type = Help | Fail String | Run Config
+
+parse_args: (argv: []String) -> Invocation =
+    _parse_options(argv, False, {})
+
+_parse_options: (argv: []String, append: Bool, files: []String) -> Invocation =
+    case argv:
+        {} -> Run {append: append, files: files}
+        {a, ..rest} ->
+            case a:
+                "--" -> Run {append: append, files: files ++ rest}
+                "-h" | "--help" -> Help
+                "-a" -> _parse_options(rest, True, files)
+                _ ->
+                    if a.starts_with("-") && a.length() > 1:
+                        Fail "unknown option: {a}"
+                    else:
+                        _parse_options(rest, append, files ++ {a})
+
+// ----------------------------------------------------------------- I/O shell
+
+_help_lines: []String = {
+    "usage: ekotee [options] [file ...]",
+    "",
+    "Copy standard input to standard output, and to each named file, one",
+    "line at a time. A file argument of '-' is an ordinary file name, as",
+    "in the reference implementation: the flow never loops back through",
+    "standard input.",
+    "",
+    "options:",
+    "  -a          append to the files instead of truncating them",
+    "  -h, --help  show this help and exit",
+    "  --          end of options; the remaining arguments are files",
+    "",
+    "exit status: 0 when every write succeeded, 1 when any file could not",
+    "be opened or written. A failing file is dropped; the output and the",
+    "other files keep flowing."}
+
+_print_help: (out: Out) ! =
+    _help_lines.each((line): out.println(line))
+
+_io_message: (e: IoError) -> String =
+    case e:
+        NotFound -> "no such file or directory"
+        Permission -> "permission denied"
+        Exists -> "file exists"
+        NotFile -> "not a regular file"
+        Closed -> "handle closed"
+        InvalidData d -> "invalid data: {d}"
+        Other m -> m
+
+_open_mode: (append: Bool) -> OpenMode = if append: Append else: Write
+
+// Open every file up front; a failed open drops its file but not the run.
+_open_all: (fs: Fs, mode: OpenMode, files: []String, handles: []File,
+            ok: Bool) !-> [[]File, Bool] =
+    case files:
+        {} -> {handles, ok}
+        {path, ..rest} ->
+            case fs.open(path, mode):
+                Err e ->
+                    _err_println(path, _io_message(e))
+                    _open_all(fs, mode, rest, handles, False)
+                Ok h -> _open_all(fs, mode, rest, handles ++ {h}, ok)
+
+// Diagnostics go to the error channel, away from the copied flow.
+_err_println: (path: String, msg: String) ! =
+    Out.err().println("ekotee: {path}: {msg}")
+
+_write_all: (handles: []File, line: String, ok: Bool) !-> [[]File, Bool] =
+    // The surviving handles and whether every write so far succeeded.
+    _write_walk(handles, line, {}, ok)
+
+_write_walk: (handles: []File, line: String, kept: []File, ok: Bool) !-> [[]File, Bool] =
+    case handles:
+        {} -> {kept.reverse(), ok}
+        {h, ..rest} ->
+            case File.write(h, line ++ "\n"):
+                Err e ->
+                    _err_println("<file>", _io_message(e))
+                    _write_walk(rest, line, kept, False)
+                Ok _ -> _write_walk(rest, line, {h} ++ kept, ok)
+
+// The stream loop: one line in, one line to the output and to each file.
+_flow: (out: Out, inp: In, handles: []File, ok: Bool) !-> [[]File, Bool] =
+    case inp.read_line():
+        Err e ->
+            _err_println("<stdin>", _io_message(e))
+            {handles, False}
+        Ok None -> {handles, ok}
+        Ok (Some line) ->
+            out.println(line)
+            outcome := _write_all(handles, line, ok)
+            (kept, wrote_ok) = outcome
+            _flow(out, inp, kept, wrote_ok)
+
+_run_config: (out: Out, fs: Fs, inp: In, cfg: Config) !-> Int =
+    outcome := _open_all(fs, _open_mode(cfg.append), cfg.files, {}, True)
+    (handles, open_ok) = outcome
+    flow := _flow(out, inp, handles, True)
+    (_, wrote_ok) = flow
+    if open_ok && wrote_ok: 0 else: 1
+
+_help_status: (out: Out) !-> Int =
+    _print_help(out)
+    0
+
+_usage_failure: (err: Out, msg: String) !-> Int =
+    err.println("ekotee: {msg}")
+    err.println("Try 'ekotee --help' for usage.")
+    2
+
+_dispatch: (out: Out, err: Out, argv: []String, fs: Fs, inp: In) !-> Int =
+    case parse_args(argv):
+        Help -> _help_status(out)
+        Fail msg -> _usage_failure(err, msg)
+        Run cfg -> _run_config(out, fs, inp, cfg)
+
+// The parameter list is the authorization manifest: output, arguments, the
+// file system, standard input, and the process exit channel. The error
+// channel rides the Out session as host wiring.
+main: (out: Out, args: Args, fs: Fs, inp: In, proc: Proc) ! =
+    code := _dispatch(out, Out.err(), args.all(), fs, inp)
+    Proc.exit(proc, code)
+
+// --------------------------------------------------------------------- tests
+
+_expect_run: (argv: []String) -> Config =
+    case parse_args(argv):
+        Run cfg -> cfg
+        Help -> panic("expected Run but got Help")
+        Fail e -> panic("expected Run but got: {e}")
+
+_expect_fail: (argv: []String) -> String =
+    case parse_args(argv):
+        Fail e -> e
+        Help -> panic("expected Fail but got Help")
+        Run _ -> panic("expected Fail but got Run")
+
+cli_defaults: test =
+    cfg := _expect_run({})
+    assert(cfg.append.not())
+    assert_eq(cfg.files, {})
+
+cli_append_and_files: test =
+    cfg := _expect_run({"-a", "one", "two"})
+    assert(cfg.append)
+    assert_eq(cfg.files, {"one", "two"})
+
+cli_double_dash: test =
+    cfg := _expect_run({"--", "-a"})
+    assert(cfg.append.not())
+    assert_eq(cfg.files, {"-a"})
+
+cli_usage_errors: test =
+    assert(_expect_fail({"-x"}).contains("unknown option"))
+
+cli_help: test =
+    case parse_args({"-h"}):
+        Help -> assert(True)
+        _ -> panic("expected Help")
+    case parse_args({"--help"}):
+        Help -> assert(True)
+        _ -> panic("expected Help")
+
+io_error_messages: test =
+    assert_eq(_io_message(NotFound), "no such file or directory")
+    assert_eq(_io_message(Permission), "permission denied")
+    assert_eq(_io_message(Other "boom"), "boom")
+
+open_mode: test =
+    assert_eq(_open_mode(False), Write)
+    assert_eq(_open_mode(True), Append)
+
+dispatch_stdin_passthrough: test =
+    out := Out.tee(Out.null(), (s): assert(s == "a" || s == "b"))
+    status := _dispatch(out, Out.null(), {}, Fs.null(), In.from_lines({"a", "b"}))
+    assert_eq(status, 0)
+
+dispatch_failed_open_reports: test =
+    out := Out.tee(Out.null(), (s): assert(s == "a" || s == "b"))
+    status := _dispatch(out, Out.null(), {"no-such-dir/f.txt"}, Fs.null(),
+                        In.from_lines({"a", "b"}))
+    assert_eq(status, 1)
+
+dispatch_help: test =
+    status := _dispatch(Out.null(), Out.null(), {"--help"}, Fs.null(), In.empty())
+    assert_eq(status, 0)
+
+dispatch_usage_error: test =
+    status := _dispatch(Out.null(), Out.null(), {"-x"}, Fs.null(), In.empty())
+    assert_eq(status, 2)

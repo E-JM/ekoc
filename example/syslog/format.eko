@@ -1,0 +1,55 @@
+// The wire-format writer and the viewer's rendering: an entry to its
+// RFC 5424 or RFC 3164 line, and the display form of one entry.
+
+import model
+
+// The entry's PRI value.
+_entry_pri: (e: Entry) -> Int = model.pri_of(e.pri.facility, e.pri.severity)
+
+// The RFC 5424 line: PRI, version 1, stamp, host, app, nil procid and
+// msgid, nil structured data, then the message; an empty message ends
+// the line at the structured data.
+format_5424: (e: Entry) -> String =
+    head := "<{_entry_pri(e)}>1 {e.stamp} {e.host} {e.tag} - - -"
+    if e.msg == "": head else: head ++ " " ++ e.msg
+
+// The RFC 3164 line: PRI, the header stamp, host, tag, then the message.
+format_3164: (e: Entry) -> String =
+    "<{_entry_pri(e)}>{e.stamp} {e.host} {e.tag}: {e.msg}"
+
+// The wire line of an entry in the selected format.
+format_entry: (e: Entry, rfc3164: Bool) -> String =
+    if rfc3164: format_3164(e) else: format_5424(e)
+
+// The viewer's default rendering of one entry.
+render_entry: (e: Entry) -> String =
+    "{e.stamp} {model.facility_name(e.pri.facility)}.{model.severity_name(e.pri.severity)} {e.tag}: {e.msg}"
+
+// --------------------------------------------------------------------- tests
+
+// One known entry the format tests share.
+_sample: Entry = {
+    pri: {facility: 1, severity: 5},
+    stamp: "2026-11-05T09:17:01.250Z",
+    host: "box",
+    tag: "app",
+    msg: "hello world"}
+
+format_cases: test =
+    assert_eq(format_5424(_sample),
+              "<13>1 2026-11-05T09:17:01.250Z box app - - - hello world")
+    assert_eq(format_3164(_sample),
+              "<13>2026-11-05T09:17:01.250Z box app: hello world")
+    legacy: Entry = _sample.with({
+        stamp: "Nov  5 09:17:01",
+        pri: {facility: 16, severity: 6}})
+    assert_eq(format_3164(legacy),
+              "<134>Nov  5 09:17:01 box app: hello world")
+    assert_eq(format_3164(_sample.with({msg: ""})),
+              "<13>2026-11-05T09:17:01.250Z box app: ")
+
+render_cases: test =
+    assert_eq(render_entry(_sample),
+              "2026-11-05T09:17:01.250Z user.notice app: hello world")
+    legacy: Entry = _sample.with({pri: {facility: 4, severity: 2}})
+    assert_eq(render_entry(legacy), "2026-11-05T09:17:01.250Z auth.critical app: hello world")

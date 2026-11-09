@@ -1,0 +1,429 @@
+// ekocut: a field and character position selector for lines of text.
+//
+//   ekocut [options] [file ...]
+//
+// Each line is cut through one selection list: fields under a separator
+// character, or character positions. The list is normalized (ascending,
+// merged), missing fields contribute nothing, and lines without the
+// separator are printed whole unless -s suppresses them. The command layer
+// is pure; only main and its explicit helpers touch the capabilities.
+//
+// Module: ekocut (the file is the module).
+
+// ------------------------------------------------------------------- core
+
+/// One inclusive 1-based selection range. `hi` -1 means through the end.
+Sel: type = [lo: Int, hi: Int]
+
+/// Which cut mode the list drives.
+Mode: type = Fields | Chars
+
+/// The completed command configuration.
+Config: type = [
+    mode: Mode,
+    sep: Char,
+    sels: []Sel,
+    suppress: Bool,
+    files: []String]
+
+/// What the argument vector denotes; the usage error rides `Result`.
+Invocation: type = Help | Run Config
+
+Flags: type = [
+    mode: Option Mode,
+    sep: Option Char,
+    sels: []Sel,
+    suppress: Bool]
+
+_default_flags: Flags = {mode: None, sep: None, sels: {}, suppress: False}
+
+parse_args: (argv: []String) -> Result Invocation String =
+    _parse_options(argv, _default_flags, {})
+
+_parse_options: (argv: []String, flags: Flags, files: []String) -> Result Invocation String =
+    case argv:
+        {} -> _to_invocation(flags, files)
+        {a, ..rest} ->
+            case a:
+                "--" -> _to_invocation(flags, files ++ rest)
+                "-h" | "--help" -> Ok Help
+                "-s" | "--suppress" ->
+                    _parse_options(rest, flags.with({suppress: True}), files)
+                "-d" -> _sep_option(rest, flags, files)
+                "-f" -> _list_option(rest, Fields, flags, files)
+                "-c" -> _list_option(rest, Chars, flags, files)
+                _ if a.starts_with("-d") && a.length() > 2 ->
+                    _sep_text(_after_flag(a), rest, flags, files)
+                _ if a.starts_with("-f") && a.length() > 2 ->
+                    _list_text(_after_flag(a), Fields, rest, flags, files)
+                _ if a.starts_with("-c") && a.length() > 2 ->
+                    _list_text(_after_flag(a), Chars, rest, flags, files)
+                _ if a.starts_with("-") && a.length() > 1 ->
+                    Err "unknown option: {a}"
+                _ ->
+                    _parse_options(rest, flags, files ++ {a})
+
+// The text an option carries attached to its two leading characters, as
+// in `-f2-4` or `-d,`.
+_after_flag: (a: String) -> String =
+    String.from_chars(a.chars().drop(2))
+
+_to_invocation: (flags: Flags, files: []String) -> Result Invocation String =
+    mode <- flags.mode.to_result("you must specify a list of fields or characters").try()
+    if flags.sels.eq({}):
+        Err "the list is empty"
+    else:
+        if mode.eq(Chars) && flags.sep.is_some():
+            Err "an input delimiter may be specified only for fields"
+        else:
+            Ok (Run {mode: mode, sep: flags.sep.unwrap_or('\t'),
+                     sels: _normalize(flags.sels), suppress: flags.suppress,
+                     files: files})
+
+_sep_option: (rest: []String, flags: Flags, files: []String) -> Result Invocation String =
+    case rest:
+        {} -> Err "missing delimiter after -d"
+        {s, ..more} -> _sep_text(s, more, flags, files)
+
+_sep_text: (s: String, rest: []String, flags: Flags, files: []String) -> Result Invocation String =
+    case s.chars():
+        {c} -> _parse_options(rest, flags.with({sep: Some c}), files)
+        _ -> Err "the delimiter must be one character"
+
+_list_option: (rest: []String, mode: Mode, flags: Flags, files: []String) -> Result Invocation String =
+    case rest:
+        {} -> Err "missing list"
+        {text, ..more} -> _list_text(text, mode, more, flags, files)
+
+_list_text: (text: String, mode: Mode, rest: []String, flags: Flags,
+             files: []String) -> Result Invocation String =
+    case flags.mode:
+        Some other if other.eq(mode).not() ->
+            Err "only one type of list may be specified"
+        _ ->
+            sels <- _parse_list(text).try()
+            _parse_options(rest, flags.with({mode: Some mode,
+                                             sels: flags.sels ++ sels}), files)
+
+// ------------------------------------------------------------ list parsing
+
+_parse_list: (text: String) -> Result ([]Sel) String =
+    Result.traverse(String.split(text, ",").filter((item): item != ""), _parse_item)
+
+_item_int: (s: String, item: String) -> Result Int String =
+    Int.parse(s).map_err((e): "bad list item: {item}")
+
+_parse_item: (item: String) -> Result Sel String =
+    case String.split(item, "-"):
+        {one} ->
+            n <- _item_int(one, item).try()
+            if n < 1:
+                Err "positions are numbered from 1"
+            else:
+                Ok {lo: n, hi: n}
+        {first, second} -> _parse_range(first, second, item)
+        _ -> Err ("bad list item: {item}")
+
+_parse_range: (first: String, second: String, item: String) -> Result Sel String =
+    case Int.parse(first):
+        Err _ ->
+            if first == "":
+                hi <- _item_int(second, item).try()
+                if hi < 1:
+                    Err "positions are numbered from 1"
+                else:
+                    Ok {lo: 1, hi: hi}
+            else:
+                Err ("bad list item: {item}")
+        Ok lo ->
+            if second == "":
+                if lo < 1:
+                    Err "positions are numbered from 1"
+                else:
+                    Ok {lo: lo, hi: -1}
+            else:
+                hi <- _item_int(second, item).try()
+                if lo < 1 || hi < lo:
+                    Err ("bad list item: {item}")
+                else:
+                    Ok {lo: lo, hi: hi}
+
+// Sort by the low end and merge overlapping or adjacent ranges, so a
+// repeated position cannot be emitted twice. The fold carries the merged
+// tail reversed in the accumulator; each step extends the last range or
+// opens a new one.
+_normalize: (sels: []Sel) -> []Sel =
+    sels.sort_by((a, b): a.lo < b.lo).fold({}, _merge).reverse()
+
+_merge: (acc: []Sel, s: Sel) -> []Sel =
+    case acc:
+        {} -> {s}
+        {last, ..done} ->
+            if last.hi == -1 || s.lo <= last.hi + 1:
+                {{lo: last.lo, hi: if last.hi == -1: -1 else: _int_max(last.hi, s.hi)}} ++ done
+            else:
+                {s} ++ acc
+
+_int_max: (a: Int, b: Int) -> Int = if a > b: a else: b
+
+_int_min: (a: Int, b: Int) -> Int = if a < b: a else: b
+
+// ------------------------------------------------------------ line cutting
+
+_cut_fields: (line: String, sels: []Sel, sep: Char) -> String =
+    fields := String.split(line, String.from_char(sep))
+    n := fields.length()
+    parts := sels.fold({}, (acc, s):
+        top := if s.hi == -1: n else: _int_min(s.hi, n)
+        acc ++ fields.slice(s.lo - 1, top - s.lo + 1).unwrap_or({}))
+    parts.join(String.from_char(sep))
+
+_cut_chars: (line: String, sels: []Sel) -> String =
+    len := String.length(line)
+    sels.fold("", (acc, s):
+        top := if s.hi == -1: len else: _int_min(s.hi, len)
+        acc ++ String.slice(line, s.lo - 1, top - s.lo + 1).unwrap_or(""))
+
+_cut_line: (line: String, cfg: Config) -> Option String =
+    case cfg.mode:
+        Chars -> Some (_cut_chars(line, cfg.sels))
+        Fields ->
+            if String.contains(line, String.from_char(cfg.sep)):
+                Some (_cut_fields(line, cfg.sels, cfg.sep))
+            else:
+                if cfg.suppress: None else: Some line
+
+// ----------------------------------------------------------------- I/O shell
+
+_help_lines: []String = {
+    "usage: ekocut [options] [file ...]",
+    "",
+    "Cut selected portions of each line of the named files, or standard",
+    "input when no file is given, and print them. A file argument of '-'",
+    "also means standard input.",
+    "",
+    "one of these is required:",
+    "  -f LIST     select fields under the delimiter (-d); a line without",
+    "              the delimiter is printed whole unless -s suppresses it",
+    "  -c LIST     select character positions (Unicode scalar values)",
+    "",
+    "options:",
+    "  -d SEP      use SEP (one character) as the field delimiter;",
+    "              the default is a tab",
+    "  -s          suppress lines with no delimiter (field mode only)",
+    "  -h, --help  show this help and exit",
+    "  --          end of options",
+    "",
+    "LIST is comma-separated items: N, N-, -M, or N-M; the ranges are",
+    "normalized (ascending, merged), missing fields contribute nothing,",
+    "and positions are numbered from 1.",
+    "",
+    "exit status: 0 on success, 2 on usage or file error."}
+
+_print_help: (out: Out) ! =
+    _help_lines.each((line): out.println(line))
+
+_io_message: (e: IoError) -> String =
+    case e:
+        NotFound -> "no such file or directory"
+        Permission -> "permission denied"
+        Exists -> "file exists"
+        NotFile -> "not a regular file"
+        Closed -> "handle closed"
+        InvalidData d -> "invalid data: {d}"
+        Other m -> m
+
+_read_file: (fs: Fs, path: String) !-> Result String String =
+    case fs.stat(path):
+        Ok info if info.is_dir -> Err "is a directory"
+        _ -> fs.read(path).map_err(_io_message)
+
+_read_stdin: (lines: []String, inp: In) !-> Result ([]String) IoError =
+    line <- inp.read_line().try()
+    case line:
+        None -> Ok lines
+        Some text -> _read_stdin({text} ++ lines, inp)
+
+_collect: (lines: []String, fs: Fs, inp: In, files: []String) !-> Result ([]String) String =
+    case files:
+        {} ->
+            more <- _read_stdin({}, inp).map_err(_io_message).try()
+            Ok (lines ++ List.reverse(more))
+        {path, ..rest} ->
+            if path == "-":
+                more <- _read_stdin({}, inp).map_err(_io_message).try()
+                _collect(lines ++ List.reverse(more), fs, inp, rest)
+            else:
+                text <- _read_file(fs, path).map_err((msg): "{path}: {msg}").try()
+                _collect(lines ++ String.lines(text), fs, inp, rest)
+
+_emit_line: (out: Out, cfg: Config, line: String) ! =
+    case _cut_line(line, cfg):
+        Some text -> out.println(text)
+        None -> _
+
+_run_config: (out: Out, err: Out, fs: Fs, inp: In, cfg: Config) !-> Int =
+    case _collect({}, fs, inp, cfg.files):
+        Err msg ->
+            err.println("ekocut: {msg}")
+            2
+        Ok lines ->
+            lines.each((line): _emit_line(out, cfg, line))
+            0
+
+_help_status: (out: Out) !-> Int =
+    _print_help(out)
+    0
+
+_usage_failure: (err: Out, msg: String) !-> Int =
+    err.println("ekocut: {msg}")
+    err.println("Try 'ekocut --help' for usage.")
+    2
+
+_dispatch: (out: Out, err: Out, argv: []String, fs: Fs, inp: In) !-> Int =
+    case parse_args(argv):
+        Ok Help -> _help_status(out)
+        Ok (Run cfg) -> _run_config(out, err, fs, inp, cfg)
+        Err msg -> _usage_failure(err, msg)
+
+// The parameter list is the authorization manifest: output, arguments, the
+// file system, standard input, and the process exit channel. The error
+// channel rides the Out session as host wiring.
+main: (out: Out, args: Args, fs: Fs, inp: In, proc: Proc) ! =
+    code := _dispatch(out, Out.err(), args.all(), fs, inp)
+    Proc.exit(proc, code)
+
+// --------------------------------------------------------------------- tests
+
+_expect_run: (argv: []String) -> Config =
+    case parse_args(argv):
+        Ok (Run cfg) -> cfg
+        Ok Help -> panic("expected Run but got Help")
+        Err e -> panic("expected Run but got: {e}")
+
+_expect_fail: (argv: []String) -> String =
+    case parse_args(argv):
+        Err e -> e
+        Ok Help -> panic("expected Fail but got Help")
+        Ok (Run _) -> panic("expected Fail but got Run")
+
+_cut: (line: String, argv: []String) -> String =
+    cfg := _expect_run(argv)
+    _cut_line(line, cfg).expect("the line should produce output")
+
+list_parsing: test =
+    assert_eq(_parse_list("2"), Ok {{lo: 2, hi: 2}})
+    assert_eq(_parse_list("1-3,5"), Ok {{lo: 1, hi: 3}, {lo: 5, hi: 5}})
+    assert_eq(_parse_list("2-"), Ok {{lo: 2, hi: -1}})
+    assert_eq(_parse_list("-3"), Ok {{lo: 1, hi: 3}})
+    assert(_parse_list("0").is_err())
+    assert(_parse_list("3-1").is_err())
+    assert(_parse_list("-").is_err())
+    assert(_parse_list("x").is_err())
+    assert(_parse_list("").is_ok())
+    assert(_parse_list("1,,2").is_ok())
+
+list_normalization: test =
+    assert_eq(_normalize({{lo: 3, hi: 3}, {lo: 1, hi: 1}}), {{lo: 1, hi: 1}, {lo: 3, hi: 3}})
+    assert_eq(_normalize({{lo: 1, hi: 3}, {lo: 2, hi: 2}}), {{lo: 1, hi: 3}})
+    assert_eq(_normalize({{lo: 1, hi: 1}, {lo: 2, hi: 2}}), {{lo: 1, hi: 2}})
+    assert_eq(_normalize({{lo: 5, hi: -1}, {lo: 2, hi: 3}}),
+              {{lo: 2, hi: 3}, {lo: 5, hi: -1}})
+
+field_selection: test =
+    assert_eq(_cut("a,b,c", {"-d", ",", "-f", "2"}), "b")
+    assert_eq(_cut("a,b,c", {"-d", ",", "-f", "3,1"}), "a,c")
+    assert_eq(_cut("a,b,c", {"-d", ",", "-f", "2-"}), "b,c")
+    assert_eq(_cut("a,b,c", {"-d", ",", "-f", "-2"}), "a,b")
+    assert_eq(_cut("a,b,c", {"-d", ",", "-f", "1,1,2"}), "a,b")
+    assert_eq(_cut("a,,b", {"-d", ",", "-f", "1,3"}), "a,b")
+
+field_edges: test =
+    assert_eq(_cut("a,b", {"-d", ",", "-f", "3"}), "")
+    assert_eq(_cut("a,b", {"-d", ",", "-f", "1,3"}), "a")
+    assert_eq(_cut("a\tb", {"-f", "2"}), "b")
+    assert_eq(_cut("a b", {"-d", " ", "-f", "2"}), "b")
+
+no_separator_lines: test =
+    assert_eq(_cut("x", {"-d", ",", "-f", "2"}), "x")
+    cfg := _expect_run({"-d", ",", "-f", "2", "-s"})
+    assert_eq(_cut_line("x", cfg), None)
+    assert_eq(_cut_line("a,b", cfg), Some "b")
+
+char_selection: test =
+    assert_eq(_cut("abcdef", {"-c", "2-4"}), "bcd")
+    assert_eq(_cut("ab", {"-c", "1-10"}), "ab")
+    assert_eq(_cut("a,b,c", {"-c", "1,3-"}), "ab,c")
+    assert_eq(_cut("abc", {"-c", "2,1"}), "ab")
+    assert_eq(_cut("λx", {"-c", "1-2"}), "λx")
+
+cli_defaults_and_errors: test =
+    cfg := _expect_run({"-d", ":", "-f", "1"})
+    assert_eq(cfg.sep, ':')
+    assert(cfg.suppress.not())
+    assert(_expect_fail({}).contains("must specify"))
+    assert(_expect_fail({"-d", ","}).contains("must specify"))
+    assert(_expect_fail({"-f", ""}).contains("list is empty") ||
+           _expect_fail({"-f", ""}).contains("bad list"))
+    assert(_expect_fail({"-f", "1", "-c", "2"}).contains("one type"))
+    assert(_expect_fail({"-c", "1", "-d", ","}).contains("only for fields"))
+    assert(_expect_fail({"-d", "ab", "-f", "1"}).contains("one character"))
+    assert(_expect_fail({"-x"}).contains("unknown option"))
+
+cli_attached_forms: test =
+    cfg := _expect_run({"-d,", "-f2"})
+    assert_eq(cfg.sep, ',')
+    assert_eq(cfg.sels, {{lo: 2, hi: 2}})
+
+cli_help: test =
+    case parse_args({"-h"}):
+        Ok Help -> assert(True)
+        _ -> panic("expected Help")
+    case parse_args({"--help"}):
+        Ok Help -> assert(True)
+        _ -> panic("expected Help")
+
+cli_double_dash: test =
+    cfg := _expect_run({"-f", "1", "--", "-x"})
+    assert_eq(cfg.files, {"-x"})
+
+file_line_splitting: test =
+    assert_eq("".lines(), {})
+    assert_eq("a\nb\n".lines(), {"a", "b"})
+    assert_eq("a\nb".lines(), {"a", "b"})
+    assert_eq("a\n\nb\n".lines(), {"a", "", "b"})
+
+io_error_messages: test =
+    assert_eq(_io_message(NotFound), "no such file or directory")
+    assert_eq(_io_message(Permission), "permission denied")
+    assert_eq(_io_message(Other "boom"), "boom")
+
+dispatch_stdin_fields: test =
+    out := Out.tee(Out.null(), (s): assert_eq(s, "b"))
+    status := _dispatch(out, Out.null(), {"-d", ",", "-f", "2"}, Fs.null(),
+                        In.from_lines({"a,b"}))
+    assert_eq(status, 0)
+
+dispatch_stdin_chars: test =
+    out := Out.tee(Out.null(), (s): assert_eq(s, "bc"))
+    status := _dispatch(out, Out.null(), {"-c", "2-3"}, Fs.null(), In.from_lines({"abcd"}))
+    assert_eq(status, 0)
+
+dispatch_help: test =
+    status := _dispatch(Out.null(), Out.null(), {"--help"}, Fs.null(), In.empty())
+    assert_eq(status, 0)
+
+dispatch_usage_error: test =
+    status := _dispatch(Out.null(), Out.null(), {"-f", "0"}, Fs.null(), In.empty())
+    assert_eq(status, 2)
+
+dispatch_missing_file: test =
+    status := _dispatch(Out.null(), Out.null(), {"-f", "1", "does-not-exist.txt"}, Fs.null(),
+                        In.empty())
+    assert_eq(status, 2)
+
+dispatch_dash_is_stdin: test =
+    out := Out.tee(Out.null(), (s): assert_eq(s, "b"))
+    status := _dispatch(out, Out.null(), {"-d", ",", "-f", "2", "-"}, Fs.null(),
+                        In.from_lines({"a,b"}))
+    assert_eq(status, 0)

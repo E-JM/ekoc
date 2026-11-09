@@ -1,0 +1,87 @@
+// Entry module for the Lua interpreter.
+//
+//   lua                 run the built-in sample
+//   lua path/to/file    run a Lua file
+//
+// The interpreter itself is split into modules: ast <- lexer <- cursor <-
+// parser, plus value, builtins, eval_ops, and eval. This module only handles
+// host I/O.
+//
+// Subset: nil, booleans, doubles, Unicode strings, tables, functions;
+// locals, assignment, if/elseif/else, while, repeat, numeric for, generic
+// for over pairs(t)/ipairs(t), break, return; calls and method calls;
+// table constructors, field/index access; the usual operators; a small
+// builtin set (print, type, tostring, tonumber, assert, error, table.insert,
+// table.concat, string.len/sub/rep, math.floor/ceil/abs/max/min/sqrt).
+//
+// Excluded: metatables, coroutines, varargs, multiple return values,
+// goto/labels, long strings (simple --[[ ]] comments are accepted), hex
+// numbers, bitwise operators, //, and the io/os libraries. Strings are Eko
+// Unicode text, not Lua byte strings. Generic for accepts only direct
+// pairs(t) and ipairs(t) calls. The table/cell/function stores are
+// append-only: there is no Lua garbage collector, so this is aimed at small
+// scripts rather than long-running servers.
+
+import eval
+
+_sample_lines: []String = {
+    "-- A small tour of the supported subset.",
+    "local function fact(n)",
+    "  if n <= 1 then",
+    "    return 1",
+    "  end",
+    "  return n * fact(n - 1)",
+    "end",
+    "print(\"fact(5) =\", fact(5))",
+    "",
+    "local t = \{10, 20, 30, name = \"eko\"}",
+    "table.insert(t, 40)",
+    "local sum = 0",
+    "for i = 1, #t do",
+    "  sum = sum + t[i]",
+    "end",
+    "print(\"sum =\", sum, \"name =\", t.name)",
+    "",
+    "local function counter()",
+    "  local n = 0",
+    "  return function()",
+    "    n = n + 1",
+    "    return n",
+    "  end",
+    "end",
+    "local c = counter()",
+    "print(\"closure:\", c(), c(), c())",
+    "",
+    "for k, v in pairs(t) do",
+    "  print(k, v)",
+    "end"}
+
+_sample: String = _sample_lines.join("\n")
+
+_print_run: (out: Out, r: Result ([]String) String) ! =
+    case r:
+        Ok lines -> lines.each((l): out.println(l))
+        Err e -> out.println("lua: {e}")
+
+/// Host entry: run a file argument, or the built-in sample when none.
+main: (out: Out, args: Args, fs: Fs) ! =
+    case args.all():
+        {path, .._rest} ->
+            case fs.read(path):
+                Err e -> out.println("lua: {e}")
+                Ok src -> _print_run(out, eval.run_source(src))
+        _ -> _print_run(out, eval.run_source(_sample))
+
+sample_runs: test =
+    case eval.run_source(_sample):
+        Err e -> panic("sample failed: {e}")
+        Ok lines ->
+            assert_eq(lines.length(), 8)
+            assert_eq(lines.get(0).unwrap_or(""), "fact(5) =\t120")
+            assert_eq(lines.get(1).unwrap_or(""), "sum =\t100\tname =\teko")
+            assert_eq(lines.get(2).unwrap_or(""), "closure:\t1\t2\t3")
+            assert_eq(lines.get(3).unwrap_or(""), "1\t10")
+            assert_eq(lines.get(4).unwrap_or(""), "2\t20")
+            assert_eq(lines.get(5).unwrap_or(""), "3\t30")
+            assert_eq(lines.get(6).unwrap_or(""), "name\teko")
+            assert_eq(lines.get(7).unwrap_or(""), "4\t40")

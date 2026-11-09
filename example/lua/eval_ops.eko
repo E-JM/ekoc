@@ -1,0 +1,113 @@
+// Value-level operator application for the Lua evaluator.
+//
+// The binary and unary operators, length, and table index access: these
+// operate on Values and the table store directly and never evaluate an
+// expression. eval.eko routes the operator cases here once its expression
+// evaluation has produced the operands; and/or are short-circuited at the
+// expression level and never reach apply_bin.
+
+import ast
+import value
+
+/// Applies a binary operator to two values.
+apply_bin: (op: BinOp, a: Value, b: Value) -> Result Value String =
+    case op:
+        OpAdd -> _arith2(a, b, "add")
+        OpSub -> _arith2(a, b, "sub")
+        OpMul -> _arith2(a, b, "mul")
+        OpDiv -> _arith2(a, b, "div")
+        OpMod -> _arith2(a, b, "mod")
+        OpPow -> _arith2(a, b, "pow")
+        OpConcat -> _concat(a, b)
+        OpEq -> Ok (VBool (a.eq(b)))
+        OpNe -> Ok (VBool (a.eq(b).not()))
+        OpLt -> _compare(a, b, "lt")
+        OpLe -> _compare(a, b, "le")
+        OpGt -> _compare(a, b, "gt")
+        OpGe -> _compare(a, b, "ge")
+        _ -> Err "operator has no value form"
+
+_arith2: (a: Value, b: Value, op: String) -> Result Value String =
+    x <- value.as_num(a).try()
+    y <- value.as_num(b).try()
+    _arith_op(op, x, y)
+
+_arith_op: (op: String, x: Float, y: Float) -> Result Value String =
+    case op:
+        "add" -> Ok (VNum (x + y))
+        "sub" -> Ok (VNum (x - y))
+        "mul" -> Ok (VNum (x * y))
+        "div" -> Ok (VNum (x / y))
+        "mod" -> Ok (VNum (x - Float.floor(x / y) * y))
+        "pow" -> Ok (VNum (Float.pow(x, y)))
+        _ -> Err "unknown arithmetic operator: {op}"
+
+_concat: (a: Value, b: Value) -> Result Value String =
+    x <- value.concat_part(a).try()
+    y <- value.concat_part(b).try()
+    Ok (VStr (x ++ y))
+
+_compare: (a: Value, b: Value, op: String) -> Result Value String =
+    case a:
+        VNum x ->
+            case b:
+                VNum y -> _ordered(x, y, op, (u, v): u < v)
+                _ -> Err "attempt to compare a number with a {value.type_name(b)}"
+        VStr x ->
+            case b:
+                VStr y -> _ordered(x, y, op, (u, v): u < v)
+                _ -> Err "attempt to compare a string with a {value.type_name(b)}"
+        _ -> Err "attempt to compare a {value.type_name(a)} value"
+
+// The four orderings, derived from one less-than on the operand type.
+_ordered: (x: t, y: t, op: String, lt: (t, t) -> Bool) -> Result Value String =
+    case op:
+        "lt" -> Ok (VBool lt(x, y))
+        "le" -> Ok (VBool (lt(x, y) || x.eq(y)))
+        "gt" -> Ok (VBool lt(y, x))
+        "ge" -> Ok (VBool (lt(y, x) || x.eq(y)))
+        _ -> Err "unknown comparison: {op}"
+
+/// Applies a unary operator to a value.
+apply_un: (state: State, op: UnOp, v: Value) -> Result ([State, Value]) String =
+    case op:
+        UnNeg ->
+            case value.as_num(v):
+                Err e -> Err e
+                Ok n -> Ok {state, VNum (Float.neg(n))}
+        UnNot -> Ok {state, VBool (value.truthy(v).not())}
+        UnLen -> _length_value(state, v)
+
+_length_value: (state: State, v: Value) -> Result ([State, Value]) String =
+    case v:
+        VStr s -> Ok {state, VNum (Int.to_float (s.length()))}
+        VTable id ->
+            case state.tables.get(id):
+                None -> Err "unknown table"
+                Some t -> Ok {state, VNum (Int.to_float (value.table_length(t.fields)))}
+        _ -> Err "attempt to get length of a {value.type_name(v)} value"
+
+/// Reads one table field; a non-table object or a nil/NaN key is an error.
+index_get: (state: State, obj: Value, key: Value) -> Result ([State, Value]) String =
+    case obj:
+        VTable id ->
+            case value.check_key(key):
+                Err e -> Err e
+                Ok _ ->
+                    case state.tables.get(id):
+                        None -> Err "unknown table"
+                        Some t -> Ok {state, t.fields.get(key).unwrap_or(VNil)}
+        _ -> Err "attempt to index a {value.type_name(obj)} value"
+
+/// Writes one table field; the updated table replaces the old in the store.
+index_set: (state: State, obj: Value, key: Value, v: Value) -> Result State String =
+    case obj:
+        VTable id ->
+            _ <- value.check_key(key).try()
+            t <- state.tables.get(id).to_result("unknown table").try()
+            _set_table_field(state, id, t, key, v)
+        _ -> Err "attempt to index a {value.type_name(obj)} value"
+
+_set_table_field: (state: State, id: Int, t: Table, key: Value, v: Value) -> Result State String =
+    fields := value.dict_set(t.fields, key, v)
+    Ok (state.with({tables: state.tables.insert(id, t.with({fields: fields}))}))

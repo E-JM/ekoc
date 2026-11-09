@@ -1,0 +1,763 @@
+// ekogrep: a grep-like line search over the std/regex companion.
+//
+//   ekogrep [options] <pattern> [file ...]
+//
+// The command layer is pure: arguments parse into Config and Invocation,
+// lines are processed into selected-line output, and exit status is a pure
+// function. main is the only world-touching shell.
+//
+// Supported regex subset (documented in README.md):
+//   literals, '.', character classes [abc] [a-z] [^...], escapes for
+//   metacharacters plus \n \t \r; concatenation, '|', groups; postfix
+//   '*', '+', '?'; anchors '^' and '$'. Empty alternatives and empty groups
+//   are accepted and denote the empty match. No counted repetition, lazy
+//   quantifiers, backreferences, lookaround, or named classes.
+//
+// Module: ekogrep (the file is the module).
+
+import std/regex
+
+// ------------------------------------------------------------ command layer
+
+/// The pure flag set accumulated while scanning options.
+Flags: type = [
+    ignore_case: Bool,
+    line_numbers: Bool,
+    invert: Bool,
+    count: Bool,
+    quiet: Bool]
+
+/// The completed command configuration.
+Config: type = [
+    ignore_case: Bool,
+    line_numbers: Bool,
+    invert: Bool,
+    count: Bool,
+    quiet: Bool,
+    pattern: String,
+    files: []String]
+
+/// What the argument vector denotes.
+Invocation: type = Help | Fail String | Run Config
+
+_default_flags: Flags = {
+    ignore_case: False,
+    line_numbers: False,
+    invert: False,
+    count: False,
+    quiet: False}
+
+_to_config: (flags: Flags, pattern: String, files: []String) -> Config =
+    {
+        ignore_case: flags.ignore_case,
+        line_numbers: flags.line_numbers,
+        invert: flags.invert,
+        count: flags.count,
+        quiet: flags.quiet,
+        pattern: pattern,
+        files: files}
+
+parse_args: (argv: []String) -> Invocation =
+    _parse_options(argv, _default_flags)
+
+_parse_options: (argv: []String, flags: Flags) -> Invocation =
+    case argv:
+        {} -> Fail "missing pattern"
+        {a, ..rest} ->
+            case a:
+                "--" ->
+                    case rest:
+                        {} -> Fail "missing pattern"
+                        {pattern, ..files} -> Run (_to_config(flags, pattern, files))
+                "-h" | "--help" -> Help
+                "-i" -> _parse_options(rest, flags.with({ignore_case: True}))
+                "-n" -> _parse_options(rest, flags.with({line_numbers: True}))
+                "-v" -> _parse_options(rest, flags.with({invert: True}))
+                "-c" -> _parse_options(rest, flags.with({count: True}))
+                "-q" -> _parse_options(rest, flags.with({quiet: True}))
+                _ ->
+                    if a.starts_with("--"):
+                        Fail "unknown option: {a}"
+                    else:
+                        if a.starts_with("-") && a.length() > 1:
+                            _parse_bundle(a.chars(), rest, flags)
+                        else:
+                            Run (_to_config(flags, a, rest))
+
+// Expand a bundled short option such as `-in` one character at a time.
+// A bundle is accepted as the union of its letters, as grep users expect.
+_parse_bundle: (chars: []Char, rest: []String, flags: Flags) -> Invocation =
+    case chars:
+        {} -> _parse_options(rest, flags)
+        {'-', ..more} -> _parse_bundle(more, rest, flags)
+        {'h', .._} -> Help
+        {'i', ..more} -> _parse_bundle(more, rest, flags.with({ignore_case: True}))
+        {'n', ..more} -> _parse_bundle(more, rest, flags.with({line_numbers: True}))
+        {'v', ..more} -> _parse_bundle(more, rest, flags.with({invert: True}))
+        {'c', ..more} -> _parse_bundle(more, rest, flags.with({count: True}))
+        {'q', ..more} -> _parse_bundle(more, rest, flags.with({quiet: True}))
+        {c, .._} -> Fail "unknown option: -{c}"
+
+/// One file's selected-line result. `lines` is in input order and already
+/// formatted; `selected` is the selected-line count for -c and for status.
+LineResult: type = [selected: Int, lines: []String]
+
+/// One line's disposition under the pattern and flags: not selected,
+/// selected for the count only, selected for printing, or the first
+/// selection in quiet mode, which ends the whole scan.
+LineStep: type = Skip | Tally | Print String | Stop
+
+_format_selected: (line: String, lineno: Int, prefix: String, cfg: Config) -> String =
+    number := if cfg.line_numbers: "{lineno}:" else: ""
+    "{prefix}{number}{line}"
+
+_count_line: (prefix: String, count: Int) -> String =
+    "{prefix}{count}"
+
+process_lines: (re: Regex, lines: []String, cfg: Config, prefix: String) -> LineResult =
+    walked := _walk_lines(re, lines, cfg, prefix, 1, {selected: 0, lines: {}})
+    {selected: walked.selected, lines: walked.lines.reverse()}
+
+// The per-line decision both scan paths share: match, invert, and the
+// quiet, count, and print bookkeeping.
+_decide_line: (re: Regex, line: String, cfg: Config, prefix: String, lineno: Int) -> LineStep =
+    hit := Regex.is_match(re, line, cfg.ignore_case)
+    picked := if cfg.invert: hit.not() else: hit
+    if picked.not():
+        Skip
+    else: if cfg.quiet:
+        Stop
+    else: if cfg.count:
+        Tally
+    else:
+        Print (_format_selected(line, lineno, prefix, cfg))
+
+// The file path walks the whole text at once; the streaming stdin path
+// decides each line as it is read.
+_walk_lines: (re: Regex, lines: []String, cfg: Config, prefix: String, lineno: Int, acc: LineResult) -> LineResult =
+    case lines:
+        {} -> acc
+        {line, ..rest} ->
+            case _decide_line(re, line, cfg, prefix, lineno):
+                Stop -> {selected: acc.selected + 1, lines: {}}
+                Skip -> _walk_lines(re, rest, cfg, prefix, lineno + 1, acc)
+                Tally ->
+                    next: LineResult = {selected: acc.selected + 1, lines: acc.lines}
+                    _walk_lines(re, rest, cfg, prefix, lineno + 1, next)
+                Print text ->
+                    next: LineResult = {selected: acc.selected + 1, lines: {text} ++ acc.lines}
+                    _walk_lines(re, rest, cfg, prefix, lineno + 1, next)
+
+/// 0 if a line was selected, 1 if none, 2 if an error occurred.
+exit_status: (any_selected: Bool, had_error: Bool) -> Int =
+    if had_error:
+        2
+    else:
+        if any_selected: 0 else: 1
+
+// A file's text arrives whole, so its lines come from the standard
+// library splitter.
+_file_lines: (text: String) -> []String = String.lines(text)
+
+_io_message: (e: IoError) -> String =
+    case e:
+        NotFound -> "no such file or directory"
+        Permission -> "permission denied"
+        Exists -> "file exists"
+        NotFile -> "not a regular file"
+        Closed -> "handle closed"
+        InvalidData d -> "invalid data: {d}"
+        Other m -> m
+
+// ----------------------------------------------------------------- I/O shell
+
+_help_lines: []String = {
+    "usage: ekogrep [options] <pattern> [file ...]",
+    "",
+    "Search each line of the named files, or standard input when no file is",
+    "given, and print the selected lines. A file argument of '-' also means",
+    "standard input. The pattern is an Eko regular expression (see README.md",
+    "for the supported subset).",
+    "",
+    "options:",
+    "  -i          ASCII case-insensitive matching",
+    "  -n          prefix each printed line with its 1-based line number",
+    "  -v          select non-matching lines",
+    "  -c          print only the count of selected lines per input",
+    "  -q          quiet: print no matches and stop at the first selected line",
+    "  -h, --help  show this help and exit",
+    "  --          end of options; the next argument is the pattern",
+    "",
+    "Short options may be bundled, so -in means -i -n.",
+    "",
+    "exit status: 0 if a line was selected, 1 if none, 2 on usage, regex,",
+    "or file error."}
+
+_print_help: (out: Out) ! =
+    _help_lines.each((line): out.println(line))
+
+_read_file: (fs: Fs, path: String) !-> Result String String =
+    case fs.stat(path):
+        Ok info if info.is_dir -> Err "is a directory"
+        _ ->
+            fs.read(path).map_err(_io_message)
+
+// Diagnostics report on the error channel, so they never mix into the
+// selected-line stream that `out` carries.
+_stdin_error: (err: Out, e: IoError) !-> Int =
+    err.println("ekogrep: <stdin>: {_io_message(e)}")
+    2
+
+/// One scanned input's contribution to the run: whether the scan stops
+/// here (quiet mode's first selection) and whether the input selected
+/// any line.
+InputOutcome: type = [stop: Bool, picked: Bool]
+
+// The bookkeeping once an input is fully scanned: count mode prints the
+// tally under the input's prefix and print mode prints the lines the
+// file path accumulated, while quiet mode stops the whole scan at the
+// first input that selected a line. The streaming stdin inputs pass an
+// empty `lines`, their selected lines having been printed as read.
+_finish_input: (out: Out, cfg: Config, prefix: String, result: LineResult) !-> InputOutcome =
+    picked := result.selected > 0
+    if cfg.quiet:
+        {stop: picked, picked: picked}
+    else:
+        if cfg.count:
+            out.println(_count_line(prefix, result.selected))
+        else:
+            result.lines.each((line): out.println(line))
+        {stop: False, picked: picked}
+
+// Stream stdin one line at a time. Quiet mode returns as soon as the first
+// selected line is read; count mode accumulates without printing. `prefix` is
+// empty for the implicit stdin input and non-empty when `-` names stdin among
+// several file arguments.
+_run_stdin_loop: (
+        out: Out,
+        inp: In,
+        re: Regex,
+        cfg: Config,
+        prefix: String,
+        lineno: Int,
+        selected: Int) !-> Result Int IoError =
+    line <- inp.read_line().try()
+    case line:
+        None -> Ok selected
+        Some line ->
+            case _decide_line(re, line, cfg, prefix, lineno):
+                Stop -> Ok (selected + 1)
+                Skip -> _run_stdin_loop(out, inp, re, cfg, prefix, lineno + 1, selected)
+                Tally -> _run_stdin_loop(out, inp, re, cfg, prefix, lineno + 1, selected + 1)
+                Print text ->
+                    out.println(text)
+                    _run_stdin_loop(out, inp, re, cfg, prefix, lineno + 1, selected + 1)
+
+_run_stdin: (out: Out, err: Out, inp: In, re: Regex, cfg: Config) !-> Int =
+    case _run_stdin_loop(out, inp, re, cfg, "", 1, 0):
+        Err e -> _stdin_error(err, e)
+        Ok selected ->
+            fin := _finish_input(out, cfg, "", {selected: selected, lines: {}})
+            exit_status(fin.picked, False)
+
+_walk_file_error: (
+        out: Out,
+        err: Out,
+        fs: Fs,
+        inp: In,
+        re: Regex,
+        cfg: Config,
+        files: []String,
+        multi: Bool,
+        any_selected: Bool,
+        path: String,
+        msg: String) !-> [Bool, Bool] =
+    err.println("ekogrep: {path}: {msg}")
+    _walk_files(out, err, fs, inp, re, cfg, files, multi, any_selected, True)
+
+_walk_file_ok: (
+        out: Out,
+        err: Out,
+        fs: Fs,
+        inp: In,
+        re: Regex,
+        cfg: Config,
+        files: []String,
+        multi: Bool,
+        any_selected: Bool,
+        had_error: Bool,
+        path: String,
+        text: String) !-> [Bool, Bool] =
+    prefix := if multi: "{path}:" else: ""
+    result := process_lines(re, _file_lines(text), cfg, prefix)
+    fin := _finish_input(out, cfg, prefix, result)
+    if fin.stop:
+        {True, had_error}
+    else:
+        _walk_files(out, err, fs, inp, re, cfg, files, multi, any_selected || fin.picked, had_error)
+
+// `-` as a file argument means standard input. It is handled by the same
+// streaming loop as the implicit stdin input, so large piped data is never
+// read whole. The `(stdin)` prefix appears only when more than one input was
+// named, matching the file-prefix rule.
+_walk_stdin: (
+        out: Out,
+        err: Out,
+        fs: Fs,
+        inp: In,
+        re: Regex,
+        cfg: Config,
+        files: []String,
+        multi: Bool,
+        any_selected: Bool,
+        had_error: Bool) !-> [Bool, Bool] =
+    prefix := if multi: "(stdin):" else: ""
+    case _run_stdin_loop(out, inp, re, cfg, prefix, 1, 0):
+        Err e ->
+            _stdin_error(err, e)
+            _walk_files(out, err, fs, inp, re, cfg, files, multi, any_selected, True)
+        Ok selected ->
+            fin := _finish_input(out, cfg, prefix, {selected: selected, lines: {}})
+            if fin.stop:
+                {True, had_error}
+            else:
+                _walk_files(out, err, fs, inp, re, cfg, files, multi, any_selected || fin.picked, had_error)
+
+_walk_files: (
+        out: Out,
+        err: Out,
+        fs: Fs,
+        inp: In,
+        re: Regex,
+        cfg: Config,
+        files: []String,
+        multi: Bool,
+        any_selected: Bool,
+        had_error: Bool) !-> [Bool, Bool] =
+    case files:
+        {} -> {any_selected, had_error}
+        {path, ..rest} ->
+            if path == "-":
+                _walk_stdin(out, err, fs, inp, re, cfg, rest, multi, any_selected, had_error)
+            else:
+                case _read_file(fs, path):
+                    Err msg -> _walk_file_error(out, err, fs, inp, re, cfg, rest, multi, any_selected, path, msg)
+                    Ok text -> _walk_file_ok(out, err, fs, inp, re, cfg, rest, multi, any_selected, had_error, path, text)
+
+_run_files: (out: Out, err: Out, fs: Fs, inp: In, re: Regex, cfg: Config,
+             files: []String) !-> Int =
+    multi := files.length() > 1
+    outcome := _walk_files(out, err, fs, inp, re, cfg, files, multi, False, False)
+    (any_selected, had_error) = outcome
+    exit_status(any_selected, had_error)
+
+_run_config: (out: Out, err: Out, fs: Fs, inp: In, re: Regex, cfg: Config) !-> Int =
+    case cfg.files:
+        {} -> _run_stdin(out, err, inp, re, cfg)
+        files -> _run_files(out, err, fs, inp, re, cfg, files)
+
+_help_status: (out: Out) !-> Int =
+    _print_help(out)
+    0
+
+_usage_failure: (err: Out, msg: String) !-> Int =
+    err.println("ekogrep: {msg}")
+    err.println("Try 'ekogrep --help' for usage.")
+    2
+
+_bad_pattern: (err: Out, e: String) !-> Int =
+    err.println("ekogrep: invalid pattern: {e}")
+    2
+
+_dispatch: (out: Out, err: Out, argv: []String, fs: Fs, inp: In) !-> Int =
+    case parse_args(argv):
+        Help -> _help_status(out)
+        Fail msg -> _usage_failure(err, msg)
+        Run cfg ->
+            case Regex.compile(cfg.pattern):
+                Err e -> _bad_pattern(err, e)
+                Ok re -> _run_config(out, err, fs, inp, re, cfg)
+
+// The parameter list is the authorization manifest: output, arguments, the
+// file system, standard input, and the process exit channel. There is no
+// other I/O entrance. The error channel rides the Out session as host wiring,
+// so the manifest stays as written.
+main: (out: Out, args: Args, fs: Fs, inp: In, proc: Proc) ! =
+    code := _dispatch(out, Out.err(), args.all(), fs, inp)
+    Proc.exit(proc, code)
+
+// --------------------------------------------------------------------- tests
+
+_compile_ok: (pattern: String) -> Regex =
+    Regex.compile(pattern).expect("test pattern should compile: {pattern}")
+
+_m: (pattern: String, line: String) -> Bool =
+    Regex.is_match(_compile_ok(pattern), line, False)
+
+_mi: (pattern: String, line: String) -> Bool =
+    Regex.is_match(_compile_ok(pattern), line, True)
+
+_cfg_of: (pattern: String) -> Config =
+    {
+        ignore_case: False,
+        line_numbers: False,
+        invert: False,
+        count: False,
+        quiet: False,
+        pattern: pattern,
+        files: {}}
+
+_expect_run: (argv: []String) -> Config =
+    case parse_args(argv):
+        Run cfg -> cfg
+        Help -> panic("expected Run but got Help")
+        Fail e -> panic("expected Run but got: {e}")
+
+_expect_fail: (argv: []String) -> String =
+    case parse_args(argv):
+        Fail e -> e
+        Help -> panic("expected Fail but got Help")
+        Run _ -> panic("expected Fail but got Run")
+
+_is_help: (argv: []String) -> Bool =
+    case parse_args(argv):
+        Help -> True
+        _ -> False
+
+parser_acceptance: test =
+    patterns: []String = {
+        "abc", ".", "a.c", "a|b", "(ab)*", "a(b|c)+d", "[a-z]",
+        "[^abc]", "[a-zA-Z0-9_]", "^a$", "", "()", "a|", "\\.\\*\\\\",
+        "a*", "a+", "a?", "((a|b)*c)+", "[\\]\\-]", "λ+"}
+    patterns.each((p): assert(Regex.compile(p).is_ok()))
+
+parser_rejection: test =
+    patterns: []String = {"(", "[", "[a-", "[z-a]", "*a", "+a", "?a", "\\", "[^]", "[]", "a)", "(a))",
+                          "a**", "a*?", "a+?", "a??"}
+    patterns.each((p): assert(Regex.compile(p).is_err()))
+
+stacked_quantifier_error: test =
+    case Regex.compile("a+?"):
+        Err e -> assert(e.contains("stacked quantifier"))
+        Ok _ -> panic("expected a parse error")
+    case Regex.compile("a**"):
+        Err e -> assert(e.contains("stacked quantifier"))
+        Ok _ -> panic("expected a parse error")
+
+parser_error_detail: test =
+    case Regex.compile("(a"):
+        Err e -> assert(e.contains("unterminated"))
+        Ok _ -> panic("expected a parse error")
+    case Regex.compile("[z-a]"):
+        Err e -> assert(e.contains("invalid range"))
+        Ok _ -> panic("expected a parse error")
+
+literal_matching: test =
+    assert(_m("abc", "xxabcyy"))
+    assert(_m("abc", "abc"))
+    assert(_m("abc", "ab").not())
+    assert(_m("abc", "acb").not())
+
+dot_matching: test =
+    assert(_m("a.c", "abc"))
+    assert(_m("a.c", "a c"))
+    assert(_m("a.c", "aλc"))
+    assert(_m("a.c", "ac").not())
+
+class_matching: test =
+    assert(_m("[abc]x", "ax"))
+    assert(_m("[abc]x", "cx"))
+    assert(_m("[abc]x", "dx").not())
+    assert(_m("[a-z]+", "hello"))
+    assert(_m("[a-z]+", "HELLO").not())
+    assert(_m("[^0-9]+", "abc"))
+    assert(_m("[^0-9]+", "a1"))
+    assert(_m("[^0-9]+", "123").not())
+    assert(_m("[\\]\\-]+", "]-]-"))
+
+class_edge_cases: test =
+    assert(_m("^[a-]+$", "a-a"))
+    assert(_m("^[-a]+$", "-a-"))
+    assert(_m("^[^a-c]+$", "xyz"))
+    assert(_m("^[^a-c]+$", "xbz").not())
+    assert(_m("^[.]+$", "..."))
+    assert(_m("^[\\^]+$", "^^^"))
+    assert(_m("^[\\n\\t]+$", "\n\t"))
+
+anchor_matching: test =
+    assert(_m("^abc$", "abc"))
+    assert(_m("^abc$", "xabc").not())
+    assert(_m("^abc$", "abcx").not())
+    assert(_m("^abc", "abcd"))
+    assert(_m("^abc", "xabc").not())
+    assert(_m("abc$", "xabc"))
+    assert(_m("abc$", "abcx").not())
+    assert(_m("^$", ""))
+    assert(_m("^$", "x").not())
+
+quantifier_matching: test =
+    assert(_m("ab*c", "ac"))
+    assert(_m("ab*c", "abbbc"))
+    assert(_m("ab*c", "adc").not())
+    assert(_m("ab+c", "ac").not())
+    assert(_m("ab+c", "abc"))
+    assert(_m("ab+c", "abbc"))
+    assert(_m("ab?c", "ac"))
+    assert(_m("ab?c", "abc"))
+    assert(_m("ab?c", "abbc").not())
+    assert(_m("^a*$", ""))
+    assert(_m("^a*$", "aaaa"))
+    assert(_m("^a+$", "").not())
+
+alternation_grouping: test =
+    assert(_m("h(a|e)llo", "hallo"))
+    assert(_m("h(a|e)llo", "hello"))
+    assert(_m("h(a|e)llo", "hillo").not())
+    assert(_m("(ab)+", "abab"))
+    assert(_m("(ab)+", "aba"))
+    assert(_m("^(ab)+$", "aba").not())
+    assert(_m("^(a|b)*c$", "ababac"))
+    assert(_m("^(a|b)*c$", "ababad").not())
+
+escape_matching: test =
+    assert(_m("\\.\\*", ".*"))
+    assert(_m("\\.\\*", "ab").not())
+    assert(_m("a\\+b", "a+b"))
+    assert(_m("a\\+b", "aab").not())
+    assert(_m("\\\\", "x\\y"))
+    assert(_m("\\n", "a\nb"))
+    assert(_m("\\t", "a\tb"))
+
+empty_pattern: test =
+    assert(_m("", ""))
+    assert(_m("", "anything"))
+    assert(_m("()", "x"))
+    assert(_m("a|", "zzz"))
+    assert(_m("(|a)", "zzz"))
+
+ignore_case_literals: test =
+    assert(_mi("hello", "HeLLo"))
+    assert(_mi("HeLLo", "hello"))
+    assert(_m("hello", "HeLLo").not())
+
+ignore_case_classes: test =
+    assert(_mi("[a-z]+", "ABC"))
+    assert(_mi("[A-Z]+", "abc"))
+    assert(_mi("[^a]", "b"))
+    assert(_mi("[^a]", "A").not())
+    assert(_mi("[^a]", "a").not())
+
+unicode_matching: test =
+    assert(_m("λ", "aλb"))
+    assert(_m("a.b", "aλb"))
+    assert(_m("[α-ω]+", "xλy"))
+    assert(_m("^[α-ω]+$", "αβγ"))
+
+search_vs_anchors: test =
+    assert(_m("cat", "the cat sat"))
+    assert(_m("^cat", "the cat sat").not())
+    assert(_m("sat$", "the cat sat"))
+    assert(_m("^the", "the cat sat"))
+    assert(_m("^cat$", "the cat sat").not())
+    assert(_m("a|^b", "xb").not())
+    assert(_m("^b|x", "xb"))
+    assert(_m("^(cat|dog)$", "dog"))
+    assert(_m("^(cat|dog)$", "hotdog").not())
+
+nfa_stress: test =
+    line := "a".pad_left(20000, 'a')
+    assert(_m("(a*)*b", line).not())
+    assert(_m("(a*)*b", line ++ "b"))
+    assert(_m("(a|aa)*b", line).not())
+    assert(_m("(a|aa)*b", line ++ "b"))
+
+cli_defaults: test =
+    cfg := _expect_run({"foo"})
+    assert_eq(cfg.pattern, "foo")
+    assert_eq(cfg.files, {})
+    assert(cfg.ignore_case.not())
+    assert(cfg.line_numbers.not())
+    assert(cfg.invert.not())
+    assert(cfg.count.not())
+    assert(cfg.quiet.not())
+
+cli_flags_and_files: test =
+    cfg := _expect_run({"-i", "-n", "-v", "-c", "-q", "pat", "a.txt", "b.txt"})
+    assert(cfg.ignore_case)
+    assert(cfg.line_numbers)
+    assert(cfg.invert)
+    assert(cfg.count)
+    assert(cfg.quiet)
+    assert_eq(cfg.pattern, "pat")
+    assert_eq(cfg.files, {"a.txt", "b.txt"})
+
+cli_bundled_shorts: test =
+    cfg := _expect_run({"-in", "pat", "a.txt"})
+    assert(cfg.ignore_case)
+    assert(cfg.line_numbers)
+    assert_eq(cfg.pattern, "pat")
+    assert_eq(cfg.files, {"a.txt"})
+    cfg2 := _expect_run({"-vn", "-c", "pat"})
+    assert(cfg2.invert)
+    assert(cfg2.line_numbers)
+    assert(cfg2.count)
+    assert(_is_help({"-nh"}))
+    assert(_expect_fail({"-ix"}).contains("unknown option: -x"))
+    assert_eq(_expect_run({"-", "f"}).pattern, "-")
+
+cli_double_dash: test =
+    cfg := _expect_run({"-n", "--", "-i"})
+    assert(cfg.line_numbers)
+    assert_eq(cfg.pattern, "-i")
+    assert_eq(cfg.files, {})
+    cfg2 := _expect_run({"--", "-x", "f"})
+    assert_eq(cfg2.pattern, "-x")
+    assert_eq(cfg2.files, {"f"})
+
+cli_help: test =
+    assert(_is_help({"-h"}))
+    assert(_is_help({"--help"}))
+    assert(_is_help({"-n", "--help"}))
+
+cli_usage_errors: test =
+    assert(_expect_fail({}).contains("missing pattern"))
+    assert(_expect_fail({"-x"}).contains("unknown option"))
+    assert(_expect_fail({"--bogus"}).contains("unknown option"))
+    assert(_expect_fail({"--"}).contains("missing pattern"))
+
+cli_pattern_may_start_with_dash: test =
+    cfg := _expect_run({"--", "-pat", "file"})
+    assert_eq(cfg.pattern, "-pat")
+    assert_eq(cfg.files, {"file"})
+
+format_line_output: test =
+    cfg := _cfg_of("a").with({line_numbers: True})
+    res := process_lines(_compile_ok("a"), {"no", "abc", "a"}, cfg, "f.txt:")
+    assert_eq(res.selected, 2)
+    assert_eq(res.lines, {"f.txt:2:abc", "f.txt:3:a"})
+
+invert_selection: test =
+    cfg := _cfg_of("a").with({invert: True})
+    res := process_lines(_compile_ok("a"), {"abc", "xyz", "aaa"}, cfg, "")
+    assert_eq(res.selected, 1)
+    assert_eq(res.lines, {"xyz"})
+
+count_selection: test =
+    cfg := _cfg_of("a").with({count: True})
+    res := process_lines(_compile_ok("a"), {"a", "b", "a"}, cfg, "f:")
+    assert_eq(res.selected, 2)
+    assert_eq(res.lines, {})
+    assert_eq(_count_line("f:", res.selected), "f:2")
+
+quiet_selection: test =
+    cfg := _cfg_of("a").with({quiet: True})
+    res := process_lines(_compile_ok("a"), {"a", "a"}, cfg, "")
+    assert_eq(res.selected, 1)
+    assert_eq(res.lines, {})
+    none := process_lines(_compile_ok("a"), {"b", "c"}, cfg, "")
+    assert_eq(none.selected, 0)
+
+multi_file_naming: test =
+    res := process_lines(_compile_ok("x"), {"ax", "no", "bx"}, _cfg_of("x"), "one.txt:")
+    assert_eq(res.lines, {"one.txt:ax", "one.txt:bx"})
+    single := process_lines(_compile_ok("x"), {"ax"}, _cfg_of("x"), "")
+    assert_eq(single.lines, {"ax"})
+
+file_line_splitting: test =
+    assert_eq(_file_lines(""), {})
+    assert_eq(_file_lines("a"), {"a"})
+    assert_eq(_file_lines("a\n"), {"a"})
+    assert_eq(_file_lines("a\nb"), {"a", "b"})
+    assert_eq(_file_lines("a\n\n"), {"a", ""})
+    assert_eq(_file_lines("\n"), {""})
+    assert_eq(_file_lines("\n\n"), {"", ""})
+    assert_eq(_file_lines("a\nb\n"), {"a", "b"})
+    assert_eq(_file_lines("a\n\nb\n"), {"a", "", "b"})
+    assert_eq(_file_lines("λ\néλ"), {"λ", "éλ"})
+
+long_line_splitting: test =
+    line := "x".pad_left(50000, 'x')
+    lines := _file_lines(line ++ "\n" ++ line ++ "\n")
+    assert_eq(lines.length(), 2)
+    assert_eq(lines.get(0).map((s): s.length()), Some 50000)
+    assert_eq(lines.get(1).map((s): s.length()), Some 50000)
+    assert(_m("^x+$", line))
+
+exit_status_cases: test =
+    assert_eq(exit_status(True, False), 0)
+    assert_eq(exit_status(False, False), 1)
+    assert_eq(exit_status(True, True), 2)
+    assert_eq(exit_status(False, True), 2)
+
+io_error_messages: test =
+    assert_eq(_io_message(NotFound), "no such file or directory")
+    assert_eq(_io_message(Permission), "permission denied")
+    assert_eq(_io_message(NotFile), "not a regular file")
+    assert_eq(_io_message(Other "boom"), "boom")
+
+dispatch_stdin_match: test =
+    status := _dispatch(Out.null(), Out.null(), {"abc"}, Fs.null(), In.from_lines({"xxabcxx", "nope"}))
+    assert_eq(status, 0)
+
+dispatch_stdin_no_match: test =
+    status := _dispatch(Out.null(), Out.null(), {"zzz"}, Fs.null(), In.from_lines({"abc"}))
+    assert_eq(status, 1)
+
+dispatch_stdin_line_numbers: test =
+    out := Out.tee(Out.null(), (s): assert_eq(s, "2:abc"))
+    status := _dispatch(out, Out.null(), {"-n", "a"}, Fs.null(), In.from_lines({"no", "abc"}))
+    assert_eq(status, 0)
+
+dispatch_stdin_ignore_case: test =
+    status := _dispatch(Out.null(), Out.null(), {"-i", "hello"}, Fs.null(), In.from_lines({"HeLLo"}))
+    assert_eq(status, 0)
+
+dispatch_stdin_invert: test =
+    out := Out.tee(Out.null(), (s): assert_eq(s, "b"))
+    status := _dispatch(out, Out.null(), {"-v", "a"}, Fs.null(), In.from_lines({"a", "b"}))
+    assert_eq(status, 0)
+
+dispatch_stdin_count: test =
+    out := Out.tee(Out.null(), (s): assert_eq(s, "2"))
+    status := _dispatch(out, Out.null(), {"-c", "a"}, Fs.null(), In.from_lines({"a", "b", "a"}))
+    assert_eq(status, 0)
+
+dispatch_stdin_quiet: test =
+    out := Out.tee(Out.null(), (s): panic("quiet mode printed: {s}"))
+    status := _dispatch(out, Out.null(), {"-q", "a"}, Fs.null(), In.from_lines({"a", "a"}))
+    assert_eq(status, 0)
+
+dispatch_dash_is_stdin: test =
+    status := _dispatch(Out.null(), Out.null(), {"abc", "-"}, Fs.null(), In.from_lines({"xxabcxx"}))
+    assert_eq(status, 0)
+
+dispatch_dash_line_numbers: test =
+    out := Out.tee(Out.null(), (s): assert_eq(s, "2:abc"))
+    status := _dispatch(out, Out.null(), {"-n", "a", "-"}, Fs.null(), In.from_lines({"no", "abc"}))
+    assert_eq(status, 0)
+
+dispatch_dash_named_among_files: test =
+    out := Out.tee(Out.null(), (s): assert_eq(s, "(stdin):1:abc"))
+    status := _dispatch(out, Out.null(), {"-n", "a", "-", "-"}, Fs.null(), In.from_lines({"abc"}))
+    assert_eq(status, 0)
+
+dispatch_bundled_shorts: test =
+    out := Out.tee(Out.null(), (s): assert_eq(s, "2:ABC"))
+    status := _dispatch(out, Out.null(), {"-in", "abc"}, Fs.null(), In.from_lines({"no", "ABC"}))
+    assert_eq(status, 0)
+
+dispatch_help: test =
+    status := _dispatch(Out.null(), Out.null(), {"--help"}, Fs.null(), In.empty())
+    assert_eq(status, 0)
+
+dispatch_usage_error: test =
+    status := _dispatch(Out.null(), Out.null(), {}, Fs.null(), In.empty())
+    assert_eq(status, 2)
+
+dispatch_invalid_regex: test =
+    status := _dispatch(Out.null(), Out.null(), {"("}, Fs.null(), In.from_lines({"abc"}))
+    assert_eq(status, 2)
+
+dispatch_missing_file: test =
+    status := _dispatch(Out.null(), Out.null(), {"a", "does-not-exist.txt"}, Fs.null(), In.empty())
+    assert_eq(status, 2)

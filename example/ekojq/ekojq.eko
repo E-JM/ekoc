@@ -1,0 +1,2200 @@
+// ekojq — a jq-like filter for JSON, written against the Eko reference manual.
+//
+//   ekojq [options] <program> [file ...]
+//   ekojq -h | --help
+//
+// Reads one or more JSON documents (from files, or standard input when no
+// file is given), applies the program to each document, and prints every
+// result. Multiple documents per input are separated by whitespace.
+//
+// The supported program language is a subset of jq 1.7: identity, field
+// access, indexing, iteration, the optional operator, pipe, comma, `as`
+// bindings with $var, if/elif/else/end, and/or/not, comparisons and
+// arithmetic with jq's total value order, array and object construction,
+// and about forty builtins. Everything else (def, reduce, try/catch,
+// regex builtins, string interpolation, @formats, assignment, paths) is
+// out of scope; see the README.
+//
+// Structure follows the house style: the lexer, parser, evaluator, stream
+// splitter, pretty-printer, and option parser are pure and directly tested;
+// only the I/O shell (main, input gathering, printing) holds capabilities.
+// main's parameter list is the authorization manifest: every world contact
+// rides one of its capabilities and there is no other I/O entrance.
+// Module: ekojq (the file is the module).
+//
+// Numbers: JSON integers stay Int and floats stay Float. Arithmetic that
+// produces an integral float normalizes it back to Int; NaN and the
+// infinities render as null, like jq. Int arithmetic panics on overflow
+// rather than wrapping: jq numbers are doubles and never reach the limit
+// in practice, so an overflow means a nonsense input, not a value to
+// wrap quietly.
+//
+// Equality and ordering follow jq's total order
+// (null < false < true < numbers < strings < arrays < objects), with
+// numbers compared numerically across Int and Float. The `==` of the
+// filter language is this order's equality, which is wider than Eko's
+// structural `Json.eq` (1 == 1.0 is true here).
+
+// ------------------------------------------------------------- expression AST
+
+ObjEntry: type = [key: String, value: Expr]
+
+// Parser and scanner steps return records rather than bare tuples: a tuple
+// type cannot appear as a type-application argument, so a value-plus-rest
+// pair needs a record to sit inside `Result _ String`.
+Parsed: type = [expr: Expr, rest: []Token]
+EntryParsed: type = [entry: ObjEntry, rest: []Token]
+EntriesParsed: type = [entries: []ObjEntry, rest: []Token]
+VarTaken: type = [name: String, rest: []Token]
+ScanOut: type = [text: String, rest: []Char]
+HexTake: type = [value: Int, rest: []Char]
+
+Expr: type =
+    | EIdentity
+    | EField [Expr, String]
+    | EIndex [Expr, Expr]
+    | EIterate Expr
+    | EOpt Expr
+    | EPipe [Expr, Expr]
+    | EComma [Expr, Expr]
+    | EAs [Expr, String, Expr]
+    | EIf [Expr, Expr, Expr]
+    | EAnd [Expr, Expr]
+    | EOr [Expr, Expr]
+    | ECmp [String, Expr, Expr]
+    | EArith [String, Expr, Expr]
+    | ENeg Expr
+    | ELit Json
+    | EArr (Option Expr)
+    | EObj []ObjEntry
+    | EVar String
+    | ECall [String, []Expr]
+
+// -------------------------------------------------------------------- lexer
+
+Tok: type =
+    | TSym String
+    | TName String
+    | TInt Int
+    | TFloat Float
+    | TStr String
+    | TEof
+
+Token: type = [tok: Tok, pos: Int]
+
+_is_digit: (c: Char) -> Bool = '0' <= c && c <= '9'
+_is_alpha: (c: Char) -> Bool = ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') || c == '_'
+_is_alnum: (c: Char) -> Bool = _is_alpha(c) || _is_digit(c)
+_is_space: (c: Char) -> Bool = c == ' ' || c == '\t' || c == '\n' || c == '\r'
+
+_is_kw: (s: String) -> Bool =
+    s == "as" || s == "and" || s == "or" || s == "if" || s == "then" ||
+        s == "elif" || s == "else" || s == "end"
+
+// O(1) lookahead by walking the cons list; n is always 0 or 1 here.
+_peek: (cs: []Char, n: Int) -> Option Char =
+    case cs:
+        {c, ..rest} -> if n == 0: Some c else: _peek(rest, n - 1)
+        {} -> None
+
+_drop1: (cs: []Char) -> []Char =
+    case cs:
+        {_, ..rest} -> rest
+        {} -> {}
+
+_take_digits: (cs: []Char, acc: []Char) -> [[]Char, []Char] =
+    case cs:
+        {c, ..rest} if _is_digit(c) -> _take_digits(rest, {c} ++ acc)
+        _ -> {acc.reverse(), cs}
+
+_take_frac: (cs: []Char) -> [String, []Char] =
+    case _peek(cs, 1):
+        Some d if _is_digit(d) ->
+            (ds, rest2) = _take_digits(_drop1(cs), {})
+            {"." ++ String.from_chars(ds), rest2}
+        _ -> {"", cs}
+
+_take_exp: (cs: []Char) -> [String, []Char] =
+    case _peek(cs, 0):
+        Some c if c == 'e' || c == 'E' ->
+            case _peek(cs, 1):
+                Some s if s == '+' || s == '-' ->
+                    (ds, rest2) = _take_digits(_drop1(_drop1(cs)), {})
+                    if ds.length() == 0:
+                        {"", cs}
+                    else:
+                        {"e" ++ String.from_char(s) ++ String.from_chars(ds), rest2}
+                _ ->
+                    (ds, rest1) = _take_digits(_drop1(cs), {})
+                    if ds.length() == 0:
+                        {"", cs}
+                    else:
+                        {"e" ++ String.from_chars(ds), rest1}
+        _ -> {"", cs}
+
+_take_name: (cs: []Char, acc: []Char) -> [String, []Char] =
+    case cs:
+        {c, ..rest} if _is_alnum(c) -> _take_name(rest, {c} ++ acc)
+        _ -> {String.from_chars(acc.reverse()), cs}
+
+_hex_digit: (c: Char) -> Option Int =
+    code := c.to_code()
+    if '0' <= c && c <= '9':
+        Some (code - 48)
+    else:
+        if 'a' <= c && c <= 'f':
+            Some (code - 87)
+        else:
+            if 'A' <= c && c <= 'F':
+                Some (code - 55)
+            else:
+                None
+
+_hex4: (cs: []Char, n: Int, v: Int) -> Result HexTake String =
+    if n == 4:
+        Ok {value: v, rest: cs}
+    else:
+        case cs:
+            {c, ..rest} ->
+                case _hex_digit(c):
+                    Some d -> _hex4(rest, n + 1, v * 16 + d)
+                    None -> Err "bad \\u escape"
+            {} -> Err "unfinished \\u escape"
+
+_ctrl: (code: Int) -> Char = Char.from_code(code).unwrap_or(' ')
+
+_lex_string: (cs: []Char, i: Int, acc_ch: []Char, acc: []Token) -> Result ([]Token) String =
+    case cs:
+        {} -> Err "unfinished string at offset {i}"
+        {c, ..rest} ->
+            case c:
+                '"' -> _tok(rest, i, 1, TStr (String.from_chars(acc_ch.reverse())), acc)
+                '\\' -> _lex_escape(rest, i + 1, acc_ch, acc)
+                _ -> _lex_string(rest, i + 1, {c} ++ acc_ch, acc)
+
+_lex_escape: (cs: []Char, i: Int, acc_ch: []Char, acc: []Token) -> Result ([]Token) String =
+    case cs:
+        {} -> Err "unfinished escape at offset {i}"
+        {c, ..rest} ->
+            case c:
+                '"' -> _lex_string(rest, i + 1, {'"'} ++ acc_ch, acc)
+                '\\' -> _lex_string(rest, i + 1, {'\\'} ++ acc_ch, acc)
+                '/' -> _lex_string(rest, i + 1, {'/'} ++ acc_ch, acc)
+                'b' -> _lex_string(rest, i + 1, {_ctrl(8)} ++ acc_ch, acc)
+                'f' -> _lex_string(rest, i + 1, {_ctrl(12)} ++ acc_ch, acc)
+                'n' -> _lex_string(rest, i + 1, {'\n'} ++ acc_ch, acc)
+                'r' -> _lex_string(rest, i + 1, {'\r'} ++ acc_ch, acc)
+                't' -> _lex_string(rest, i + 1, {'\t'} ++ acc_ch, acc)
+                'u' -> _lex_uesc(rest, i + 1, acc_ch, acc)
+                _ -> Err "unknown escape at offset {i}"
+
+_lex_uesc: (cs: []Char, i: Int, acc_ch: []Char, acc: []Token) -> Result ([]Token) String =
+    case _hex4(cs, 0, 0):
+        Err e -> Err "{e} at offset {i}"
+        Ok h ->
+            v := h.value
+            rest := h.rest
+            if v >= 0xD800 && v < 0xDC00:
+                case _peek(rest, 0), _peek(rest, 1):
+                    Some '\\', Some 'u' ->
+                        case _hex4(_drop1(_drop1(rest)), 0, 0):
+                            Err e2 -> Err "{e2} at offset {i}"
+                            Ok h2 ->
+                                v2 := h2.value
+                                rest2 := h2.rest
+                                if v2 >= 0xDC00 && v2 < 0xE000:
+                                    cp := 0x10000 + (v - 0xD800) * 0x400 + (v2 - 0xDC00)
+                                    case Char.from_code(cp):
+                                        Some ch -> _lex_string(rest2, i + 12, {ch} ++ acc_ch, acc)
+                                        None -> Err "bad surrogate pair at offset {i}"
+                                else:
+                                    Err "invalid low surrogate at offset {i}"
+                    _, _ -> Err "lone high surrogate at offset {i}"
+            else:
+                if v >= 0xDC00 && v < 0xE000:
+                    Err "lone low surrogate at offset {i}"
+                else:
+                    case Char.from_code(v):
+                        Some ch -> _lex_string(rest, i + 6, {ch} ++ acc_ch, acc)
+                        None -> Err "bad unicode escape at offset {i}"
+
+_lex_number: (cs: []Char, i: Int, acc: []Token) -> Result ([]Token) String =
+    (int_chs, cs1) = _take_digits(cs, {})
+    (frac, cs2) = _take_frac(cs1)
+    (exp, cs3) = _take_exp(cs2)
+    text := String.from_chars(int_chs) ++ frac ++ exp
+    width := int_chs.length() + frac.length() + exp.length()
+    if frac == "" && exp == "":
+        n <- Int.parse(text).map_err((e): "integer literal out of range at offset {i}").try()
+        _tok(cs3, i, width, TInt n, acc)
+    else:
+        f <- Float.parse(text).map_err((e): "bad number '{text}' at offset {i}").try()
+        _tok(cs3, i, width, TFloat f, acc)
+
+_lex_name: (cs: []Char, i: Int, acc: []Token) -> Result ([]Token) String =
+    (chs, rest) = _take_name(cs, {})
+    _tok(rest, i, chs.length(), TName chs, acc)
+
+_tok: (cs: []Char, i: Int, w: Int, t: Tok, acc: []Token) -> Result ([]Token) String =
+    tk: Token = {tok: t, pos: i}
+    _lex_run(cs, i + w, {tk} ++ acc)
+
+_sym_two: (c: Char, c2: Char, rest2: []Char, i: Int, acc: []Token) -> Result ([]Token) String =
+    case c, c2:
+        '=', '=' -> _tok(rest2, i, 2, TSym "==", acc)
+        '!', '=' -> _tok(rest2, i, 2, TSym "!=", acc)
+        '<', '=' -> _tok(rest2, i, 2, TSym "<=", acc)
+        '>', '=' -> _tok(rest2, i, 2, TSym ">=", acc)
+        _, _ -> _sym_one(c, {c2} ++ rest2, i, acc)
+
+_sym_one: (c: Char, rest: []Char, i: Int, acc: []Token) -> Result ([]Token) String =
+    case c:
+        '|' | ',' | '(' | ')' | '[' | ']' | '{' | '}' | ':' | ';' | '?' | '$' | '+' | '-' | '*' | '/' | '%' | '<' | '>' | '.' ->
+            _tok(rest, i, 1, TSym (String.from_char(c)), acc)
+        _ -> Err "unexpected character '{c}' at offset {i}"
+
+_lex_run: (cs: []Char, i: Int, acc: []Token) -> Result ([]Token) String =
+    case cs:
+        {} ->
+            eof: Token = {tok: TEof, pos: i}
+            Ok ({eof} ++ acc).reverse()
+        {c, ..rest} ->
+            case True:
+                _ if _is_space(c) -> _lex_run(rest, i + 1, acc)
+                _ if _is_digit(c) -> _lex_number(cs, i, acc)
+                _ if _is_alpha(c) -> _lex_name(cs, i, acc)
+                _ if c == '"' -> _lex_string(rest, i + 1, {}, acc)
+                _ ->
+                    case rest:
+                        {c2, ..rest2} -> _sym_two(c, c2, rest2, i, acc)
+                        {} -> _sym_one(c, {}, i, acc)
+
+_lex: (src: String) -> Result ([]Token) String =
+    _lex_run(src.chars(), 0, {})
+
+// ------------------------------------------------------------------- parser
+
+// Every parser step returns a Parsed record: the value and the remaining
+// tokens. Mutual recursion needs no forward declarations; module scope is
+// order-independent.
+
+_expect_sym: (s: String, toks: []Token) -> Result ([]Token) String =
+    case toks:
+        {t, ..rest} ->
+            case t.tok:
+                TSym got if got == s -> Ok rest
+                _ -> Err "expected '{s}' at offset {t.pos}"
+        {} -> Err "expected '{s}' at end of program"
+
+_expect_name: (s: String, toks: []Token) -> Result ([]Token) String =
+    case toks:
+        {t, ..rest} ->
+            case t.tok:
+                TName got if got == s -> Ok rest
+                _ -> Err "expected '{s}' at offset {t.pos}"
+        {} -> Err "expected '{s}' at end of program"
+
+_expect_var: (toks: []Token) -> Result VarTaken String =
+    case toks:
+        {t, ..rest} ->
+            case t.tok:
+                TSym "$" ->
+                    case rest:
+                        {t2, ..rest2} ->
+                            case t2.tok:
+                                TName n -> Ok {name: n, rest: rest2}
+                                _ -> Err "expected variable name after '$' at offset {t2.pos}"
+                        {} -> Err "expected variable name after '$' at end of program"
+                _ -> Err "expected '$name' at offset {t.pos}"
+        {} -> Err "expected '$name' at end of program"
+
+_pipe_rest: (first: Expr, toks: []Token) -> Result Parsed String =
+    case toks:
+        {t, ..rest} ->
+            case t.tok:
+                TSym "|" ->
+                    _parse_pipe(rest).map((p): {expr: EPipe {first, p.expr}, rest: p.rest})
+                TName "as" ->
+                    vt <- _expect_var(rest).try()
+                    pb <- _pipe_body(vt.rest).try()
+                    Ok {expr: EAs {first, vt.name, pb.expr}, rest: pb.rest}
+                _ -> Ok {expr: first, rest: toks}
+        {} -> Ok {expr: first, rest: toks}
+
+_pipe_body: (toks: []Token) -> Result Parsed String =
+    case toks:
+        {t, ..rest} ->
+            case t.tok:
+                TSym "|" -> _parse_pipe(rest)
+                _ -> Err "expected '|' after 'as' at offset {t.pos}"
+        {} -> Err "expected '|' after 'as' at end of program"
+
+_parse_pipe: (toks: []Token) -> Result Parsed String =
+    p <- _parse_comma(toks).try()
+    _pipe_rest(p.expr, p.rest)
+
+_comma_rest: (first: Expr, toks: []Token) -> Result Parsed String =
+    case toks:
+        {t, ..rest} ->
+            case t.tok:
+                TSym "," ->
+                    p <- _parse_comma(rest).try()
+                    _comma_rest(EComma {first, p.expr}, p.rest)
+                _ -> Ok {expr: first, rest: toks}
+        {} -> Ok {expr: first, rest: toks}
+
+_parse_comma: (toks: []Token) -> Result Parsed String =
+    p <- _parse_or(toks).try()
+    _comma_rest(p.expr, p.rest)
+
+_or_rest: (first: Expr, toks: []Token) -> Result Parsed String =
+    case toks:
+        {t, ..rest} ->
+            case t.tok:
+                TName "or" ->
+                    p <- _parse_and(rest).try()
+                    _or_rest(EOr {first, p.expr}, p.rest)
+                _ -> Ok {expr: first, rest: toks}
+        {} -> Ok {expr: first, rest: toks}
+
+_parse_or: (toks: []Token) -> Result Parsed String =
+    p <- _parse_and(toks).try()
+    _or_rest(p.expr, p.rest)
+
+_and_rest: (first: Expr, toks: []Token) -> Result Parsed String =
+    case toks:
+        {t, ..rest} ->
+            case t.tok:
+                TName "and" ->
+                    p <- _parse_cmp(rest).try()
+                    _and_rest(EAnd {first, p.expr}, p.rest)
+                _ -> Ok {expr: first, rest: toks}
+        {} -> Ok {expr: first, rest: toks}
+
+_parse_and: (toks: []Token) -> Result Parsed String =
+    p <- _parse_cmp(toks).try()
+    _and_rest(p.expr, p.rest)
+
+_parse_cmp: (toks: []Token) -> Result Parsed String =
+    p <- _parse_add(toks).try()
+    case p.rest:
+        {t, ..rest} ->
+            case t.tok:
+                TSym op if op == "==" || op == "!=" || op == "<" || op == "<=" || op == ">" || op == ">=" ->
+                    _parse_add(rest).map((q): {expr: ECmp {op, p.expr, q.expr}, rest: q.rest})
+                _ -> Ok p
+        {} -> Ok p
+
+_add_rest: (l: Expr, toks: []Token) -> Result Parsed String =
+    case toks:
+        {t, ..rest} ->
+            case t.tok:
+                TSym "+" ->
+                    p <- _parse_mul(rest).try()
+                    _add_rest(EArith {"+", l, p.expr}, p.rest)
+                TSym "-" ->
+                    p <- _parse_mul(rest).try()
+                    _add_rest(EArith {"-", l, p.expr}, p.rest)
+                _ -> Ok {expr: l, rest: toks}
+        {} -> Ok {expr: l, rest: toks}
+
+_parse_add: (toks: []Token) -> Result Parsed String =
+    p <- _parse_mul(toks).try()
+    _add_rest(p.expr, p.rest)
+
+_mul_rest: (l: Expr, toks: []Token) -> Result Parsed String =
+    case toks:
+        {t, ..rest} ->
+            case t.tok:
+                TSym "*" ->
+                    p <- _parse_unary(rest).try()
+                    _mul_rest(EArith {"*", l, p.expr}, p.rest)
+                TSym "/" ->
+                    p <- _parse_unary(rest).try()
+                    _mul_rest(EArith {"/", l, p.expr}, p.rest)
+                TSym "%" ->
+                    p <- _parse_unary(rest).try()
+                    _mul_rest(EArith {"%", l, p.expr}, p.rest)
+                _ -> Ok {expr: l, rest: toks}
+        {} -> Ok {expr: l, rest: toks}
+
+_parse_mul: (toks: []Token) -> Result Parsed String =
+    p <- _parse_unary(toks).try()
+    _mul_rest(p.expr, p.rest)
+
+_parse_unary: (toks: []Token) -> Result Parsed String =
+    case toks:
+        {t, ..rest} ->
+            case t.tok:
+                TSym "-" ->
+                    _parse_postfix(rest).map((p): {expr: ENeg p.expr, rest: p.rest})
+                _ -> _parse_postfix(toks)
+        {} -> Err "unexpected end of program"
+
+_postfix_rest: (e: Expr, toks: []Token) -> Result Parsed String =
+    case toks:
+        {t, ..rest} ->
+            case t.tok:
+                TSym "?" -> _postfix_rest(EOpt e, rest)
+                TSym "[" -> _bracket_tail(e, rest)
+                TSym "." ->
+                    case rest:
+                        {t2, ..rest2} ->
+                            case t2.tok:
+                                TName name if _is_kw(name).not() -> _postfix_rest(EField {e, name}, rest2)
+                                TSym "[" -> _bracket_tail(e, rest2)
+                                _ -> Ok {expr: e, rest: toks}
+                        {} -> Ok {expr: e, rest: toks}
+                _ -> Ok {expr: e, rest: toks}
+        {} -> Ok {expr: e, rest: toks}
+
+_bracket_tail: (e: Expr, toks: []Token) -> Result Parsed String =
+    case toks:
+        {t, ..rest} ->
+            case t.tok:
+                TSym "]" -> _postfix_rest(EIterate e, rest)
+                _ ->
+                    p <- _parse_pipe(toks).try()
+                    r3 <- _expect_sym("]", p.rest).try()
+                    _postfix_rest(EIndex {e, p.expr}, r3)
+        {} -> Err "unexpected end in subscript"
+
+_parse_postfix: (toks: []Token) -> Result Parsed String =
+    p <- _parse_primary(toks).try()
+    _postfix_rest(p.expr, p.rest)
+
+_after_then: (toks: []Token) -> Result Parsed String =
+    r1 <- _expect_name("then", toks).try()
+    _parse_pipe(r1)
+
+_if_tail: (toks: []Token) -> Result Parsed String =
+    case toks:
+        {t, ..rest} ->
+            case t.tok:
+                TName "elif" ->
+                    p1 <- _parse_pipe(rest).try()
+                    p2 <- _after_then(p1.rest).try()
+                    p3 <- _if_tail(p2.rest).try()
+                    Ok {expr: EIf {p1.expr, p2.expr, p3.expr}, rest: p3.rest}
+                TName "else" ->
+                    p1 <- _parse_pipe(rest).try()
+                    r2 <- _expect_name("end", p1.rest).try()
+                    Ok {expr: p1.expr, rest: r2}
+                TName "end" -> Ok {expr: EIdentity, rest: rest}
+                _ -> Err "expected 'elif', 'else', or 'end' at offset {t.pos}"
+        {} -> Err "unfinished 'if' at end of program"
+
+_parse_if: (toks: []Token) -> Result Parsed String =
+    p1 <- _parse_pipe(toks).try()
+    p2 <- _after_then(p1.rest).try()
+    p3 <- _if_tail(p2.rest).try()
+    Ok {expr: EIf {p1.expr, p2.expr, p3.expr}, rest: p3.rest}
+
+_parse_array: (toks: []Token) -> Result Parsed String =
+    case toks:
+        {t, ..rest} ->
+            case t.tok:
+                TSym "]" -> Ok {expr: EArr None, rest: rest}
+                _ ->
+                    p <- _parse_pipe(toks).try()
+                    r3 <- _expect_sym("]", p.rest).try()
+                    Ok {expr: EArr (Some p.expr), rest: r3}
+        {} -> Err "unfinished array construction"
+
+_obj_val: (k: String, toks: []Token) -> Result EntryParsed String =
+    case toks:
+        {t, ..rest} ->
+            case t.tok:
+                TSym ":" ->
+                    _parse_or(rest).map((p): {entry: {key: k, value: p.expr}, rest: p.rest})
+                _ -> Ok {entry: {key: k, value: EField {EIdentity, k}}, rest: toks}
+        {} -> Err "unfinished object entry"
+
+_obj_entry: (toks: []Token) -> Result EntryParsed String =
+    case toks:
+        {t, ..rest} ->
+            case t.tok:
+                TName k -> _obj_val(k, rest)
+                TStr k -> _obj_val(k, rest)
+                _ -> Err "bad object key at offset {t.pos}"
+        {} -> Err "unfinished object"
+
+_obj_entries: (toks: []Token) -> Result EntriesParsed String =
+    p1 <- _obj_entry(toks).try()
+    case p1.rest:
+        {t, ..rest} ->
+            case t.tok:
+                TSym "," ->
+                    _obj_entries(rest).map((p2): {entries: {p1.entry} ++ p2.entries, rest: p2.rest})
+                TSym "}" -> Ok {entries: {p1.entry}, rest: rest}
+                _ -> Err "expected ',' or '}' at offset {t.pos}"
+        {} -> Err "unfinished object"
+
+_parse_object: (toks: []Token) -> Result Parsed String =
+    case toks:
+        {t, ..rest} ->
+            case t.tok:
+                TSym "}" -> Ok {expr: EObj {}, rest: rest}
+                _ ->
+                    _obj_entries(toks).map((p): {expr: EObj p.entries, rest: p.rest})
+        {} -> Err "unfinished object"
+
+_parse_call: (name: String, toks: []Token) -> Result Parsed String =
+    acc0: []Expr = {}
+    case toks:
+        {t, ..rest} ->
+            case t.tok:
+                TSym ")" -> Ok {expr: ECall {name, {}}, rest: rest}
+                _ ->
+                    p <- _parse_pipe(toks).try()
+                    _args_rest(name, {p.expr} ++ acc0, p.rest)
+        {} -> Err "unfinished call to {name}"
+
+_args_rest: (name: String, acc: []Expr, toks: []Token) -> Result Parsed String =
+    case toks:
+        {t, ..rest} ->
+            case t.tok:
+                TSym ")" -> Ok {expr: ECall {name, acc.reverse()}, rest: rest}
+                TSym ";" ->
+                    p <- _parse_pipe(rest).try()
+                    _args_rest(name, {p.expr} ++ acc, p.rest)
+                _ -> Err "expected ';' or ')' in argument list at offset {t.pos}"
+        {} -> Err "unfinished call to {name}"
+
+_parse_primary: (toks: []Token) -> Result Parsed String =
+    case toks:
+        {t, ..rest} ->
+            case t.tok:
+                TSym "." ->
+                    case rest:
+                        {t2, ..rest2} ->
+                            case t2.tok:
+                                TName name if _is_kw(name).not() -> _postfix_rest(EField {EIdentity, name}, rest2)
+                                TSym "[" -> _bracket_tail(EIdentity, rest2)
+                                _ -> Ok {expr: EIdentity, rest: rest}
+                        {} -> Ok {expr: EIdentity, rest: rest}
+                TInt n -> Ok {expr: ELit (Int n), rest: rest}
+                TFloat f -> Ok {expr: ELit (Float f), rest: rest}
+                TStr s -> Ok {expr: ELit (Str s), rest: rest}
+                TName "true" -> Ok {expr: ELit (Bool True), rest: rest}
+                TName "false" -> Ok {expr: ELit (Bool False), rest: rest}
+                TName "null" -> Ok {expr: ELit Null, rest: rest}
+                TName "if" -> _parse_if(rest)
+                TSym "$" ->
+                    case rest:
+                        {t2, ..rest2} ->
+                            case t2.tok:
+                                TName n -> Ok {expr: EVar n, rest: rest2}
+                                _ -> Err "expected variable name after '$' at offset {t2.pos}"
+                        {} -> Err "expected variable name after '$' at end of program"
+                TSym "(" ->
+                    p <- _parse_pipe(rest).try()
+                    r3 <- _expect_sym(")", p.rest).try()
+                    Ok {expr: p.expr, rest: r3}
+                TSym "[" -> _parse_array(rest)
+                TSym "\{" -> _parse_object(rest)
+                TName name ->
+                    case rest:
+                        {t2, ..rest2} ->
+                            case t2.tok:
+                                TSym "(" -> _parse_call(name, rest2)
+                                _ -> Ok {expr: ECall {name, {}}, rest: rest}
+                        {} -> Ok {expr: ECall {name, {}}, rest: rest}
+                _ -> Err "unexpected token at offset {t.pos}"
+        {} -> Err "unexpected end of program"
+
+_parse_program: (src: String) -> Result Expr String =
+    toks <- _lex(src).try()
+    p <- _parse_pipe(toks).try()
+    case p.rest.get(0):
+        Some t ->
+            case t.tok:
+                TEof -> Ok p.expr
+                _ -> Err "unexpected token at offset {t.pos}"
+        None -> Ok p.expr
+
+// -------------------------------------------------------- value foundations
+
+_truthy: (v: Json) -> Bool =
+    case v:
+        Null -> False
+        Bool b -> b
+        _ -> True
+
+_jtype: (v: Json) -> String =
+    case v:
+        Null -> "null"
+        Bool _ -> "boolean"
+        Int _ -> "number"
+        Float _ -> "number"
+        Str _ -> "string"
+        Arr _ -> "array"
+        Obj _ -> "object"
+
+_rank: (v: Json) -> Int =
+    case v:
+        Null -> 0
+        Bool _ -> 1
+        Int _ -> 2
+        Float _ -> 2
+        Str _ -> 3
+        Arr _ -> 4
+        Obj _ -> 5
+
+_fcmp: (x: Float, y: Float) -> Int =
+    case x.is_nan(), y.is_nan():
+        True, True -> 0
+        True, _ -> -1
+        _, True -> 1
+        _, _ -> if x < y: -1 else: if y < x: 1 else: 0
+
+_cmp_list: (xs: []Json, ys: []Json) -> Int =
+    case xs, ys:
+        {}, {} -> 0
+        {}, _ -> -1
+        _, {} -> 1
+        {x, ..xr}, {y, ..yr} ->
+            c := _cmp(x, y)
+            if c != 0: c else: _cmp_list(xr, yr)
+
+_dict_keys_sorted: (d: [String]Json) -> []String =
+    empty: []String = {}
+    d.fold(empty, (acc, k, _): {k} ++ acc).sort()
+
+_cmp_str_list: (xs: []String, ys: []String) -> Int =
+    case xs, ys:
+        {}, {} -> 0
+        {}, _ -> -1
+        _, {} -> 1
+        {x, ..xr}, {y, ..yr} ->
+            if x < y: -1 else: if y < x: 1 else: _cmp_str_list(xr, yr)
+
+_cmp_dict_values: (keys: []String, a: [String]Json, b: [String]Json) -> Int =
+    case keys:
+        {} -> 0
+        {k, ..rest} ->
+            c := _cmp(a.get(k).unwrap_or(Null), b.get(k).unwrap_or(Null))
+            if c != 0: c else: _cmp_dict_values(rest, a, b)
+
+_cmp_dict: (a: [String]Json, b: [String]Json) -> Int =
+    c := _cmp_str_list(_dict_keys_sorted(a), _dict_keys_sorted(b))
+    if c != 0:
+        c
+    else:
+        _cmp_dict_values(_dict_keys_sorted(a), a, b)
+
+/// jq's total order: -1 when a < b, 0 when equal, 1 when a > b.
+_cmp: (a: Json, b: Json) -> Int =
+    ra := _rank(a)
+    rb := _rank(b)
+    if ra != rb:
+        if ra < rb: -1 else: 1
+    else:
+        case a, b:
+            Null, Null -> 0
+            Bool x, Bool y -> if x == y: 0 else: if x: 1 else: -1
+            Int x, Int y -> if x < y: -1 else: if y < x: 1 else: 0
+            Int x, Float y -> _fcmp(Int.to_float(x), y)
+            Float x, Int y -> _fcmp(x, Int.to_float(y))
+            Float x, Float y -> _fcmp(x, y)
+            Str x, Str y -> if x < y: -1 else: if y < x: 1 else: 0
+            Arr xs, Arr ys -> _cmp_list(xs, ys)
+            Obj da, Obj db -> _cmp_dict(da, db)
+            _, _ -> 0
+
+_jeq: (a: Json, b: Json) -> Bool = _cmp(a, b) == 0
+
+/// Arithmetic results normalize back to Int when the float is integral.
+_normf: (f: Float) -> Json =
+    if f.is_nan() || f.is_inf():
+        Null
+    else:
+        case Float.to_int(f):
+            Some i if Int.to_float(i) == f -> Int i
+            _ -> Float f
+
+_as_int: (v: Json) -> Option Int =
+    case v:
+        Int i -> Some i
+        Float f -> Float.to_int(f)
+        _ -> None
+
+_add: (a: Json, b: Json) -> Result Json String =
+    case a, b:
+        Null, _ -> Ok b
+        _, Null -> Ok a
+        Int x, Int y -> Ok (Int (x + y))
+        Int x, Float y -> Ok (_normf(Int.to_float(x) + y))
+        Float x, Int y -> Ok (_normf(x + Int.to_float(y)))
+        Float x, Float y -> Ok (_normf(x + y))
+        Str x, Str y -> Ok (Str (x ++ y))
+        Arr xs, Arr ys -> Ok (Arr (xs ++ ys))
+        Obj da, Obj db -> Ok (Obj (da ++ db))
+        _, _ -> Err "{_jtype(a)} and {_jtype(b)} cannot be added"
+
+_list_diff: (xs: []Json, ys: []Json) -> []Json =
+    case xs:
+        {} -> {}
+        {x, ..rest} ->
+            if ys.any((y): _jeq(y, x)):
+                _list_diff(rest, ys)
+            else:
+                {x} ++ _list_diff(rest, ys)
+
+_sub: (a: Json, b: Json) -> Result Json String =
+    case a, b:
+        Int x, Int y -> Ok (Int (x - y))
+        Int x, Float y -> Ok (_normf(Int.to_float(x) - y))
+        Float x, Int y -> Ok (_normf(x - Int.to_float(y)))
+        Float x, Float y -> Ok (_normf(x - y))
+        Arr xs, Arr ys -> Ok (Arr _list_diff(xs, ys))
+        _, _ -> Err "{_jtype(a)} and {_jtype(b)} cannot be subtracted"
+
+_str_repeat: (s: String, n: Int) -> String =
+    if n <= 0:
+        ""
+    else:
+        s ++ _str_repeat(s, n - 1)
+
+_as_int_of: (v: Json) -> Int = _as_int(v).unwrap_or(0)
+
+_mul: (a: Json, b: Json) -> Result Json String =
+    case a, b:
+        Int x, Int y -> Ok (Int (x * y))
+        Int x, Float y -> Ok (_normf(Int.to_float(x) * y))
+        Float x, Int y -> Ok (_normf(x * Int.to_float(y)))
+        Float x, Float y -> Ok (_normf(x * y))
+        Str s, Int n -> Ok (Str _str_repeat(s, n))
+        Int n, Str s -> Ok (Str _str_repeat(s, n))
+        Str s, Float f ->
+            case _as_int(Float f):
+                Some n -> Ok (Str _str_repeat(s, n))
+                None -> Err "cannot multiply string with non-integer number"
+        Float f, Str s ->
+            case _as_int(Float f):
+                Some n -> Ok (Str _str_repeat(s, n))
+                None -> Err "cannot multiply string with non-integer number"
+        _, _ -> Err "{_jtype(a)} and {_jtype(b)} cannot be multiplied"
+
+_div: (a: Json, b: Json) -> Result Json String =
+    case a, b:
+        Int x, Int y ->
+            if y == 0:
+                Err "cannot be divided because the divisor is zero"
+            else:
+                if x.rem(y) == 0:
+                    Ok (Int x.quot(y))
+                else:
+                    Ok (_normf(Int.to_float(x) / Int.to_float(y)))
+        Int _, Float y ->
+            if y == 0.0:
+                Err "cannot be divided because the divisor is zero"
+            else:
+                Ok (_normf(Int.to_float(_as_int_of(a)) / y))
+        Float x, Int y ->
+            if Int.to_float(y) == 0.0:
+                Err "cannot be divided because the divisor is zero"
+            else:
+                Ok (_normf(x / Int.to_float(y)))
+        Float x, Float y ->
+            if y == 0.0:
+                Err "cannot be divided because the divisor is zero"
+            else:
+                Ok (_normf(x / y))
+        Str x, Str y ->
+            if y == "":
+                Err "cannot be divided because the separator is empty"
+            else:
+                Ok (Arr (x.split(y).map((p): Str p)))
+        _, _ -> Err "{_jtype(a)} and {_jtype(b)} cannot be divided"
+
+_mod: (a: Json, b: Json) -> Result Json String =
+    case a, b:
+        Int x, Int y ->
+            if y == 0:
+                Err "cannot be divided because the divisor is zero"
+            else:
+                Ok (Int x.rem(y))
+        _, _ -> Err "{_jtype(a)} and {_jtype(b)} cannot be divided"
+
+_arith: (op: String, a: Json, b: Json) -> Result Json String =
+    case op:
+        "+" -> _add(a, b)
+        "-" -> _sub(a, b)
+        "*" -> _mul(a, b)
+        "/" -> _div(a, b)
+        _ -> _mod(a, b)
+
+// ---------------------------------------------------------------- evaluator
+
+// The shared stream walker: each element contributes the list its step
+// returns, in order, and the first error stops the walk.
+_concat_all: (xs: []t, f: (t) -> Result ([]u) e) -> Result ([]u) e =
+    Result.traverse(xs, f).map((parts): parts.fold({}, (acc, p): acc ++ p))
+
+_dict_values: (d: [String]Json) -> []Json =
+    empty: []Json = {}
+    d.fold(empty, (acc, _k, v): {v} ++ acc).reverse()
+
+_field_one: (v: Json, name: String) -> Result Json String =
+    case v:
+        Obj d -> Ok d.get(name).unwrap_or(Null)
+        Null -> Ok Null
+        _ -> Err "Cannot index {_jtype(v)} with \"{name}\""
+
+_index_one: (v: Json, ix: Json) -> Result Json String =
+    case ix:
+        Str s -> _field_one(v, s)
+        Int i ->
+            case v:
+                Arr xs ->
+                    idx := if i < 0: i + xs.length() else: i
+                    Ok xs.get(idx).unwrap_or(Null)
+                Null -> Ok Null
+                _ -> Err "Cannot index {_jtype(v)} with number"
+        _ -> Err "Cannot index {_jtype(v)} with {_jtype(ix)}"
+
+_iterate_one: (v: Json) -> Result ([]Json) String =
+    case v:
+        Arr xs -> Ok xs
+        Obj d -> Ok _dict_values(d)
+        _ -> Err "Cannot iterate over {_jtype(v)} ({v})"
+
+_pipe_onto: (vs: []Json, b: Expr, env: [String]Json) -> Result ([]Json) String =
+    _concat_all(vs, (v): eval(b, v, env))
+
+_as_all: (sv: []Json, name: String, body: Expr, input: Json, env: [String]Json) -> Result ([]Json) String =
+    _concat_all(sv, (v): eval(body, input, env.insert(name, v)))
+
+_if_all: (cv: []Json, t: Expr, e: Expr, input: Json, env: [String]Json) -> Result ([]Json) String =
+    _concat_all(cv, (c): eval((if _truthy(c): t else: e), input, env))
+
+_and_all: (av: []Json, b: Expr, input: Json, env: [String]Json) -> Result ([]Json) String =
+    _concat_all(av, (a): _bool_step(a, False, b, input, env))
+
+_or_all: (av: []Json, b: Expr, input: Json, env: [String]Json) -> Result ([]Json) String =
+    _concat_all(av, (a): _bool_step(a, True, b, input, env))
+
+// One and/or operand's contribution: when the operand's truthiness equals
+// `short`, its bool is the whole answer and the right side never runs;
+// otherwise the right side's outputs pass through truthified.
+_bool_step: (a: Json, short: Bool, b: Expr, input: Json, env: [String]Json) -> Result ([]Json) String =
+    if _truthy(a) == short:
+        Ok {Bool short}
+    else:
+        eval(b, input, env).map((bv): bv.map((v): Bool _truthy(v)))
+
+_pair_cart: (lv: []Json, rv: []Json, f: (Json, Json) -> Result Json String) -> Result ([]Json) String =
+    _concat_all(lv, (l): _pair_inner(l, rv, f))
+
+_pair_inner: (l: Json, rv: []Json, f: (Json, Json) -> Result Json String) -> Result ([]Json) String =
+    Result.traverse(rv, (r): f(l, r))
+
+_obj_eval: (entries: []ObjEntry, acc: [String]Json, input: Json, env: [String]Json) -> Result ([][String]Json) String =
+    case entries:
+        {} -> Ok {acc}
+        {entry, ..rest} ->
+            vs <- eval(entry.value, input, env).try()
+            _obj_spread(vs, entry.key, rest, acc, input, env)
+
+_obj_spread: (vs: []Json, key: String, rest_entries: []ObjEntry, acc: [String]Json, input: Json, env: [String]Json) -> Result ([][String]Json) String =
+    _concat_all(vs, (v): _obj_eval(rest_entries, acc.insert(key, v), input, env))
+
+/// The evaluator. Pure; a stream of results per input value. The operator
+/// and control forms report to _eval_ops below.
+eval: (e: Expr, input: Json, env: [String]Json) -> Result ([]Json) String =
+    case e:
+        EIdentity -> Ok {input}
+        EField {b, name} ->
+            bs <- eval(b, input, env).try()
+            _field_cart(bs, name)
+        EIndex {b, ix} ->
+            bs <- eval(b, input, env).try()
+            ivs <- eval(ix, input, env).try()
+            _index_cart(bs, ivs)
+        EIterate b ->
+            bs <- eval(b, input, env).try()
+            _iterate_cart(bs)
+        EOpt b -> Ok (eval(b, input, env).unwrap_or({}))
+        EPipe {a, b} ->
+            av <- eval(a, input, env).try()
+            _pipe_onto(av, b, env)
+        EComma {a, b} ->
+            av <- eval(a, input, env).try()
+            bv <- eval(b, input, env).try()
+            Ok (av ++ bv)
+        EAs {src, name, body} ->
+            sv <- eval(src, input, env).try()
+            _as_all(sv, name, body, input, env)
+        ELit j -> Ok {j}
+        EArr None -> Ok {Arr {}}
+        EArr (Some body) ->
+            vs <- eval(body, input, env).try()
+            Ok {Arr vs}
+        EObj entries ->
+            empty: [String]Json = {}
+            ds <- _obj_eval(entries, empty, input, env).try()
+            Ok ds.map((d): Obj d)
+        EVar name -> env.get(name).to_result("${name} is not defined").map((v): {v})
+        ECall {name, args} -> _call(name, args, input, env)
+        _ -> _eval_ops(e, input, env)
+
+// The operator and control forms: comparisons and arithmetic cross the
+// two operand streams; if/and/or distribute over the condition stream.
+_eval_ops: (e: Expr, input: Json, env: [String]Json) -> Result ([]Json) String =
+    case e:
+        ECmp {op, l, r} ->
+            lv <- eval(l, input, env).try()
+            rv <- eval(r, input, env).try()
+            _cmp_cart(op, lv, rv)
+        EArith {op, l, r} ->
+            lv <- eval(l, input, env).try()
+            rv <- eval(r, input, env).try()
+            _arith_cart(op, lv, rv)
+        ENeg v ->
+            vs <- eval(v, input, env).try()
+            _neg_all(vs)
+        EIf {c, t, e} ->
+            cv <- eval(c, input, env).try()
+            _if_all(cv, t, e, input, env)
+        EAnd {a, b} ->
+            av <- eval(a, input, env).try()
+            _and_all(av, b, input, env)
+        EOr {a, b} ->
+            av <- eval(a, input, env).try()
+            _or_all(av, b, input, env)
+        _ -> Err "internal: unhandled expression form"
+
+_field_cart: (bs: []Json, name: String) -> Result ([]Json) String =
+    Result.traverse(bs, (b): _field_one(b, name))
+
+_index_cart: (bs: []Json, ivs: []Json) -> Result ([]Json) String =
+    _concat_all(bs, (b): _index_inner(b, ivs))
+
+_index_inner: (b: Json, ivs: []Json) -> Result ([]Json) String =
+    Result.traverse(ivs, (iv): _index_one(b, iv))
+
+_iterate_cart: (bs: []Json) -> Result ([]Json) String =
+    _concat_all(bs, (b): _iterate_one(b))
+
+_cmp_cart: (op: String, lv: []Json, rv: []Json) -> Result ([]Json) String =
+    _pair_cart(lv, rv, (a, b): Ok (Bool _cmp_op(op, a, b)))
+
+_arith_cart: (op: String, lv: []Json, rv: []Json) -> Result ([]Json) String =
+    _pair_cart(lv, rv, (a, b): _arith(op, a, b))
+
+_neg_all: (vs: []Json) -> Result ([]Json) String =
+    Result.traverse(vs, (v): _neg_one(v))
+
+_neg_one: (v: Json) -> Result Json String =
+    case v:
+        Int i -> Ok (Int (0 - i))
+        Float f -> Ok (Float (-f))
+        _ -> Err "{_jtype(v)} cannot be negated"
+
+_cmp_op: (op: String, a: Json, b: Json) -> Bool =
+    c := _cmp(a, b)
+    case op:
+        "==" -> c == 0
+        "!=" -> c != 0
+        "<" -> c < 0
+        "<=" -> c <= 0
+        ">" -> c > 0
+        _ -> c >= 0
+
+// ----------------------------------------------------------------- builtins
+
+_arg_expr: (args: []Expr) -> Result Expr String =
+    args.get(0).to_result("internal: missing argument")
+
+_one: (input: Json, f: (Json) -> Result Json String) -> Result ([]Json) String =
+    f(input).map((v): {v})
+
+_arg1: (args: []Expr, input: Json, env: [String]Json, f: (Json, Json) -> Result Json String) -> Result ([]Json) String =
+    a <- _arg_expr(args).try()
+    av <- eval(a, input, env).try()
+    _pair_map(input, av, f)
+
+_pair_map: (input: Json, vs: []Json, f: (Json, Json) -> Result Json String) -> Result ([]Json) String =
+    Result.traverse(vs, (v): f(input, v))
+
+_b_length: (v: Json) -> Result Json String =
+    case v:
+        Null -> Ok (Int 0)
+        Str s -> Ok (Int s.length())
+        Arr xs -> Ok (Int xs.length())
+        Obj d -> Ok (Int d.length())
+        Int n -> Ok (Int (if n < 0: 0 - n else: n))
+        Float f -> Ok (_normf(f.abs()))
+        _ -> Err "boolean ({v}) has no length"
+
+// An array's keys are its indices.
+_arr_keys: (xs: []Json) -> Json =
+    Arr ((0..xs.length()).to_list().map((i): Int i))
+
+_b_keys_sorted: (v: Json) -> Result Json String =
+    case v:
+        Obj d -> Ok (Arr (_dict_keys_sorted(d).map((k): Str k)))
+        Arr xs -> Ok _arr_keys(xs)
+        _ -> Err "{_jtype(v)} ({v}) has no keys"
+
+_b_keys_unsorted: (v: Json) -> Result Json String =
+    case v:
+        Obj d ->
+            empty: []String = {}
+            Ok (Arr (d.fold(empty, (acc, k, _): {k} ++ acc).reverse().map((k): Str k)))
+        Arr xs -> Ok _arr_keys(xs)
+        _ -> Err "{_jtype(v)} ({v}) has no keys"
+
+_add_all: (xs: []Json) -> Result Json String =
+    case xs:
+        {} -> Ok Null
+        {x, ..rest} ->
+            tail <- _add_all(rest).try()
+            _add(x, tail)
+
+_b_add: (v: Json) -> Result Json String =
+    case v:
+        Arr xs -> _add_all(xs)
+        Obj d -> _add_all(_dict_values(d))
+        _ -> Err "Cannot iterate over {_jtype(v)} ({v})"
+
+_b_has: (v: Json, k: Json) -> Result Json String =
+    case v, k:
+        Obj d, Str s -> Ok (Bool d.get(s).is_some())
+        Arr xs, Int i -> Ok (Bool (i >= 0 && i < xs.length()))
+        Obj _, _ -> Err "Cannot check whether object has a key of type {_jtype(k)}"
+        Arr _, _ -> Err "A number cannot be used as an array index here"
+        _, _ -> Err "Cannot check whether {_jtype(v)} has a key"
+
+_b_type: (v: Json) -> Result Json String =
+    Ok (Str _jtype(v))
+
+_b_floor: (v: Json) -> Result Json String =
+    case v:
+        Int _ -> Ok v
+        Float f -> Ok (_normf(f.floor()))
+        _ -> Err "{_jtype(v)} ({v}) number required"
+
+_b_ceil: (v: Json) -> Result Json String =
+    case v:
+        Int _ -> Ok v
+        Float f -> Ok (_normf(f.ceil()))
+        _ -> Err "{_jtype(v)} ({v}) number required"
+
+_b_round: (v: Json) -> Result Json String =
+    case v:
+        Int _ -> Ok v
+        Float f -> Ok (_normf(f.round()))
+        _ -> Err "{_jtype(v)} ({v}) number required"
+
+_b_sqrt: (v: Json) -> Result Json String =
+    case v:
+        Int i -> Ok (_normf(Int.to_float(i).sqrt()))
+        Float f -> Ok (_normf(f.sqrt()))
+        _ -> Err "{_jtype(v)} ({v}) number required"
+
+_b_fabs: (v: Json) -> Result Json String =
+    case v:
+        Int n -> Ok (Int (if n < 0: 0 - n else: n))
+        Float f -> Ok (_normf(f.abs()))
+        _ -> Err "{_jtype(v)} ({v}) number required"
+
+_b_tostring: (v: Json) -> Result Json String =
+    case v:
+        Str s -> Ok (Str s)
+        _ -> Ok (Str (Json.show(v)))
+
+_b_tonumber: (v: Json) -> Result Json String =
+    case v:
+        Int _ -> Ok v
+        Float _ -> Ok v
+        Str s ->
+            case Int.parse(s):
+                Ok n -> Ok (Int n)
+                Err _ -> Float.parse(s).map((f): _normf(f)).map_err((e): "Cannot parse '{s}' as number")
+        _ -> Err "{_jtype(v)} ({v}) cannot be parsed as a number"
+
+_down_char: (c: Char) -> Char =
+    code := c.to_code()
+    if 'A' <= c && c <= 'Z':
+        Char.from_code(code + 32).unwrap_or(c)
+    else:
+        c
+
+_up_char: (c: Char) -> Char =
+    code := c.to_code()
+    if 'a' <= c && c <= 'z':
+        Char.from_code(code - 32).unwrap_or(c)
+    else:
+        c
+
+_b_ascii_downcase: (v: Json) -> Result Json String =
+    case v:
+        Str s -> Ok (Str (String.from_chars(s.chars().map((c): _down_char(c)))))
+        _ -> Err "{_jtype(v)} ({v}) cannot be case-mapped"
+
+_b_ascii_upcase: (v: Json) -> Result Json String =
+    case v:
+        Str s -> Ok (Str (String.from_chars(s.chars().map((c): _up_char(c)))))
+        _ -> Err "{_jtype(v)} ({v}) cannot be case-mapped"
+
+_b_ltrimstr: (v: Json, p: Json) -> Result Json String =
+    case v, p:
+        Str s, Str pre ->
+            if s.starts_with(pre):
+                Ok (Str s.slice(pre.length(), s.length() - pre.length()).unwrap_or(s))
+            else:
+                Ok (Str s)
+        Str _, _ -> Ok v
+        _, _ -> Err "{_jtype(v)} ({v}) cannot be trimmed"
+
+_b_rtrimstr: (v: Json, p: Json) -> Result Json String =
+    case v, p:
+        Str s, Str suf ->
+            if s.ends_with(suf):
+                Ok (Str s.slice(0, s.length() - suf.length()).unwrap_or(s))
+            else:
+                Ok (Str s)
+        Str _, _ -> Ok v
+        _, _ -> Err "{_jtype(v)} ({v}) cannot be trimmed"
+
+_b_startswith: (v: Json, p: Json) -> Result Json String =
+    case v, p:
+        Str s, Str pre -> Ok (Bool s.starts_with(pre))
+        _, _ -> Err "startswith() requires string inputs"
+
+_b_endswith: (v: Json, p: Json) -> Result Json String =
+    case v, p:
+        Str s, Str suf -> Ok (Bool s.ends_with(suf))
+        _, _ -> Err "endswith() requires string inputs"
+
+_b_split: (v: Json, sep: Json) -> Result Json String =
+    case v, sep:
+        Str s, Str sp ->
+            if sp == "":
+                Err "split separator must not be empty"
+            else:
+                Ok (Arr (s.split(sp).map((p): Str p)))
+        _, _ -> Err "split input and separator must be strings"
+
+_join_part: (v: Json) -> Result String String =
+    case v:
+        Str s -> Ok s
+        Null -> Ok ""
+        Int _ -> Ok (Json.show(v))
+        Float _ -> Ok (Json.show(v))
+        Bool _ -> Ok (Json.show(v))
+        _ -> Err "Cannot join with {_jtype(v)}"
+
+_b_join: (v: Json, sep: Json) -> Result Json String =
+    case v, sep:
+        Arr xs, Str sp ->
+            Result.traverse(xs, (x): _join_part(x)).map((parts): Str parts.join(sp))
+        _, _ -> Err "join() requires an array and a string separator"
+
+_b_tojson: (v: Json) -> Result Json String =
+    Ok (Str (Json.show(v)))
+
+_b_fromjson: (v: Json) -> Result Json String =
+    case v:
+        Str s -> Json.parse(s).map_err((e): "{e}")
+        _ -> Err "{_jtype(v)} ({v}) cannot be parsed as JSON"
+
+_b_to_entries: (v: Json) -> Result Json String =
+    case v:
+        Obj d ->
+            empty: []Json = {}
+            Ok (Arr (d.fold(empty, (acc, k, val): {Obj {"key": Str k, "value": val}} ++ acc).reverse()))
+        _ -> Err "Cannot turn {_jtype(v)} into entries"
+
+_entry_key: (e: Json) -> Result String String =
+    case e:
+        Obj d ->
+            kd := d.get("key").or_else((): d.get("k")).or_else((): d.get("name"))
+            case kd:
+                Some Str s -> Ok s
+                Some Int n -> Ok (show(n))
+                Some Float f -> Ok (show(f))
+                Some Bool b -> Ok (show(b))
+                _ -> Err "Cannot use as object key; expected a string under \"key\""
+        _ -> Err "Cannot use {_jtype(e)} as object key; expected an object with a \"key\" field"
+
+_entry_value: (e: Json) -> Json =
+    case e:
+        Obj d -> d.get("value").or_else((): d.get("v")).unwrap_or(Null)
+        _ -> Null
+
+_from_entries_all: (xs: []Json, acc: [String]Json) -> Result Json String =
+    case xs:
+        {} -> Ok (Obj acc)
+        {e, ..rest} ->
+            k <- _entry_key(e).try()
+            _from_entries_all(rest, acc.insert(k, _entry_value(e)))
+
+_b_from_entries: (v: Json) -> Result Json String =
+    case v:
+        Arr xs ->
+            empty: [String]Json = {}
+            _from_entries_all(xs, empty)
+        _ -> Err "Cannot iterate over {_jtype(v)} ({v})"
+
+// The extreme of a list by jq's total order: sign 1 finds the minimum,
+// sign -1 the maximum. A tie keeps the earlier element.
+_extreme_rest: (best: Json, xs: []Json, sign: Int) -> Json =
+    case xs:
+        {} -> best
+        {x, ..rest} ->
+            if sign * _cmp(x, best) < 0:
+                _extreme_rest(x, rest, sign)
+            else:
+                _extreme_rest(best, rest, sign)
+
+_extreme: (xs: []Json, sign: Int) -> Option Json =
+    case xs:
+        {} -> None
+        {x, ..rest} -> Some _extreme_rest(x, rest, sign)
+
+_b_min: (v: Json) -> Result Json String =
+    case v:
+        Arr xs -> Ok (_extreme(xs, 1).unwrap_or(Null))
+        _ -> Err "Cannot compute min of {_jtype(v)} ({v})"
+
+_b_max: (v: Json) -> Result Json String =
+    case v:
+        Arr xs -> Ok (_extreme(xs, 0 - 1).unwrap_or(Null))
+        _ -> Err "Cannot compute max of {_jtype(v)} ({v})"
+
+_sort_json: (xs: []Json) -> []Json =
+    n := xs.length()
+    if n <= 1:
+        xs
+    else:
+        left := _sort_json(xs.take(n.quot(2)))
+        right := _sort_json(xs.drop(n.quot(2)))
+        _merge(left, right)
+
+_merge: (xs: []Json, ys: []Json) -> []Json =
+    case xs, ys:
+        {x, ..xr}, {y, ..yr} ->
+            if _cmp(x, y) <= 0:
+                {x} ++ _merge(xr, ys)
+            else:
+                {y} ++ _merge(xs, yr)
+        {}, _ -> ys
+        _, {} -> xs
+
+_b_sort: (v: Json) -> Result Json String =
+    case v:
+        Arr xs -> Ok (Arr _sort_json(xs))
+        _ -> Err "{_jtype(v)} ({v}) cannot be sorted, as it is not an array"
+
+_uniq_adj: (xs: []Json) -> []Json =
+    case xs:
+        {} -> {}
+        {x, ..rest} ->
+            tail := _uniq_adj(rest)
+            if tail.length() > 0 && _jeq(x, tail.get(0).unwrap_or(x)):
+                tail
+            else:
+                {x} ++ tail
+
+_b_unique: (v: Json) -> Result Json String =
+    case v:
+        Arr xs -> Ok (Arr _uniq_adj(_sort_json(xs)))
+        _ -> Err "{_jtype(v)} ({v}) cannot be sorted, as it is not an array"
+
+_b_reverse: (v: Json) -> Result Json String =
+    case v:
+        Arr xs -> Ok (Arr xs.reverse())
+        Str s -> Ok (Str (String.from_chars(s.chars().reverse())))
+        _ -> Err "Cannot reverse {_jtype(v)}"
+
+_flatten_step: (x: Json, acc: []Json) -> []Json =
+    case x:
+        Arr inner -> _flatten_all(inner, acc)
+        _ -> {x} ++ acc
+
+_flatten_all: (xs: []Json, acc: []Json) -> []Json =
+    case xs:
+        {} -> acc.reverse()
+        {x, ..rest} -> _flatten_all(rest, _flatten_step(x, acc))
+
+_b_flatten: (v: Json) -> Result Json String =
+    case v:
+        Arr xs -> Ok (Arr _flatten_all(xs, {}))
+        _ -> Err "Cannot flatten {_jtype(v)}"
+
+_b_first: (v: Json) -> Result ([]Json) String =
+    _index_one(v, Int 0).map((j): {j})
+
+_b_last: (v: Json) -> Result ([]Json) String =
+    _index_one(v, Int (-1)).map((j): {j})
+
+_b_not: (v: Json) -> Result Json String =
+    Ok (Bool _truthy(v).not())
+
+_select_f: (f: Expr, input: Json, env: [String]Json) -> Result ([]Json) String =
+    fvs <- eval(f, input, env).try()
+    _select_all(fvs, input)
+
+_select_all: (fvs: []Json, input: Json) -> Result ([]Json) String =
+    _concat_all(fvs, (fv): Ok (if _truthy(fv): {input} else: {}))
+
+_map_all: (f: Expr, xs: []Json, env: [String]Json) -> Result ([]Json) String =
+    _concat_all(xs, (x): eval(f, x, env))
+
+_map_f: (f: Expr, input: Json, env: [String]Json) -> Result ([]Json) String =
+    case input:
+        Arr xs ->
+            vs <- _map_all(f, xs, env).try()
+            Ok {Arr vs}
+        _ -> Err "Cannot iterate over {_jtype(input)} ({Json.show(input)})"
+
+_first_or_none: (vs: []Json) -> Option Json =
+    vs.get(0)
+
+// The keep-one walker: map_values keeps one output per element and drops
+// the element whose filter yields none, so the plain stream walker does
+// not fit.
+_map_values_list: (f: Expr, xs: []Json, env: [String]Json) -> Result ([]Json) String =
+    case xs:
+        {} -> Ok {}
+        {x, ..rest} ->
+            vs <- eval(f, x, env).try()
+            tail <- _map_values_list(f, rest, env).try()
+            case _first_or_none(vs):
+                Some v -> Ok ({v} ++ tail)
+                None -> Ok tail
+
+_dict_keys: (d: [String]Json) -> []String =
+    empty: []String = {}
+    d.fold(empty, (acc, k, _): {k} ++ acc).reverse()
+
+// The dict-threading variant: each key's outcome updates the running
+// object, so the walk carries state the stream walker cannot.
+_map_values_dict: (f: Expr, keys: []String, d: [String]Json, env: [String]Json) -> Result ([String]Json) String =
+    case keys:
+        {} -> Ok d
+        {k, ..rest} ->
+            vs <- eval(f, d.get(k).unwrap_or(Null), env).try()
+            nd := case _first_or_none(vs):
+                Some nv -> d.insert(k, nv)
+                None -> d.remove(k)
+            _map_values_dict(f, rest, nd, env)
+
+_mapv_f: (f: Expr, input: Json, env: [String]Json) -> Result ([]Json) String =
+    case input:
+        Arr xs ->
+            vs <- _map_values_list(f, xs, env).try()
+            Ok {Arr vs}
+        Obj d ->
+            nd <- _map_values_dict(f, _dict_keys(d), d, env).try()
+            Ok {Obj nd}
+        _ -> Err "Cannot iterate over {_jtype(input)}"
+
+_with_entries_f: (f: Expr, input: Json, env: [String]Json) -> Result ([]Json) String =
+    entries <- _b_to_entries(input).try()
+    case entries:
+        Arr xs ->
+            mapped <- _map_all(f, xs, env).try()
+            _b_from_entries(Arr mapped).map((j): {j})
+        _ -> Err "internal: entries must be an array"
+
+_range_one: (n: Json) -> Result ([]Json) String =
+    case _as_int(n):
+        Some i -> Ok ((0..i).to_list().map((k): Int k))
+        None -> Err "Range bounds must be numeric"
+
+_range_all: (ns: []Json) -> Result ([]Json) String =
+    _concat_all(ns, (n): _range_one(n))
+
+_first_val: (e: Expr, input: Json, env: [String]Json) -> Result Json String =
+    vs <- eval(e, input, env).try()
+    vs.get(0).to_result("empty argument")
+
+_range_step: (cur: Int, b: Int, step: Int, acc: []Json) -> []Json =
+    done := if step > 0: cur >= b else: cur <= b
+    if done:
+        acc.reverse()
+    else:
+        _range_step(cur + step, b, step, {Int cur} ++ acc)
+
+_range_bound: (v: Json) -> Result Int String =
+    case _as_int(v):
+        Some i -> Ok i
+        None -> Err "Range bounds must be numeric"
+
+_range3: (x: Json, y: Json, z: Json) -> Result ([]Json) String =
+    ia <- _range_bound(x).try()
+    ib <- _range_bound(y).try()
+    ic <- _range_bound(z).try()
+    if ic == 0:
+        Err "range step cannot be 0"
+    else:
+        Ok _range_step(ia, ib, ic, {})
+
+_b_range: (args: []Expr, input: Json, env: [String]Json) -> Result ([]Json) String =
+    case args:
+        {a} ->
+            av <- eval(a, input, env).try()
+            _range_all(av)
+        {a, b} ->
+            x <- _first_val(a, input, env).try()
+            y <- _first_val(b, input, env).try()
+            ia <- _range_bound(x).try()
+            ib <- _range_bound(y).try()
+            Ok ((ia..ib).to_list().map((k): Int k))
+        {a, b, c} ->
+            x <- _first_val(a, input, env).try()
+            y <- _first_val(b, input, env).try()
+            z <- _first_val(c, input, env).try()
+            _range3(x, y, z)
+        _ -> Err "range/{args.length()} is not defined"
+
+_error_msg: (v: Json) -> String =
+    case v:
+        Str s -> s
+        _ -> Json.show(v)
+
+_type_filter: (v: Json, wanted: String) -> Result ([]Json) String =
+    t := _jtype(v)
+    match := t == wanted ||
+        (wanted == "iterable" && (t == "array" || t == "object")) ||
+        (wanted == "scalar" && t != "array" && t != "object")
+    if match:
+        Ok {v}
+    else:
+        Ok {}
+
+_stream_first: (f: Expr, input: Json, env: [String]Json) -> Result ([]Json) String =
+    eval(f, input, env).map((vs): vs.take(1))
+
+_stream_last: (f: Expr, input: Json, env: [String]Json) -> Result ([]Json) String =
+    vs <- eval(f, input, env).try()
+    Ok vs.reverse().get(0).map((v): {v}).unwrap_or({})
+
+/// Builtin dispatch. Unknown names and wrong arities report here; each
+/// family helper owns its arity check and its group of names.
+_call: (name: String, args: []Expr, input: Json, env: [String]Json) -> Result ([]Json) String =
+    n := args.length()
+    case name:
+        "empty" -> Ok {}
+        "error" -> _call_error(args, input, env)
+        "range" -> _b_range(args, input, env)
+        "not" | "length" | "keys" | "keys_unsorted" | "add" | "values" | "type" ->
+            _call_zero(name, n, input)
+        "floor" | "ceil" | "round" | "sqrt" | "fabs" | "tostring" | "tonumber" ->
+            _call_zero(name, n, input)
+        "ascii_downcase" | "ascii_upcase" | "tojson" | "fromjson" | "to_entries" | "from_entries" ->
+            _call_zero(name, n, input)
+        "min" | "max" | "sort" | "unique" | "reverse" | "flatten" ->
+            _call_zero(name, n, input)
+        "any" | "all" ->
+            _call_any_all(name, n, input)
+        "arrays" | "objects" | "iterables" | "booleans" ->
+            _call_typed(name, n, input)
+        "numbers" | "strings" | "nulls" | "scalars" ->
+            _call_typed(name, n, input)
+        "first" if n == 0 -> _b_first(input)
+        "first" if n == 1 ->
+            f <- _arg_expr(args).try()
+            _stream_first(f, input, env)
+        "last" if n == 0 -> _b_last(input)
+        "last" if n == 1 ->
+            f <- _arg_expr(args).try()
+            _stream_last(f, input, env)
+        "has" | "ltrimstr" | "rtrimstr" | "startswith" | "endswith" | "split" | "join" ->
+            _call_arg1(name, n, args, input, env)
+        "select" | "map" | "map_values" | "with_entries" ->
+            _call_filter(name, n, args, input, env)
+        _ -> Err "{name}/{n} is not defined"
+
+// error raises its argument's message, or the input's when bare.
+_call_error: (args: []Expr, input: Json, env: [String]Json) -> Result ([]Json) String =
+    case args:
+        {} -> Err _error_msg(input)
+        _ ->
+            a <- _arg_expr(args).try()
+            v <- _first_val(a, input, env).try()
+            Err _error_msg(v)
+
+// The zero-argument value builtins: each maps the input to one result.
+_call_zero: (name: String, n: Int, input: Json) -> Result ([]Json) String =
+    if n != 0:
+        Err "{name}/{n} is not defined"
+    else:
+        case name:
+            "not" -> _one(input, _b_not)
+            "length" -> _one(input, _b_length)
+            "keys" -> _one(input, _b_keys_sorted)
+            "keys_unsorted" -> _one(input, _b_keys_unsorted)
+            "add" -> _one(input, _b_add)
+            "values" -> if _jeq(input, Null): Ok {} else: Ok {input}
+            "type" -> _one(input, _b_type)
+            "floor" -> _one(input, _b_floor)
+            "ceil" -> _one(input, _b_ceil)
+            "round" -> _one(input, _b_round)
+            "sqrt" -> _one(input, _b_sqrt)
+            "fabs" -> _one(input, _b_fabs)
+            "tostring" -> _one(input, _b_tostring)
+            "tonumber" -> _one(input, _b_tonumber)
+            "ascii_downcase" -> _one(input, _b_ascii_downcase)
+            "ascii_upcase" -> _one(input, _b_ascii_upcase)
+            "tojson" -> _one(input, _b_tojson)
+            "fromjson" -> _one(input, _b_fromjson)
+            "to_entries" -> _one(input, _b_to_entries)
+            "from_entries" -> _one(input, _b_from_entries)
+            "min" -> _one(input, _b_min)
+            "max" -> _one(input, _b_max)
+            "sort" -> _one(input, _b_sort)
+            "unique" -> _one(input, _b_unique)
+            "reverse" -> _one(input, _b_reverse)
+            "flatten" -> _one(input, _b_flatten)
+            _ -> Err "{name}/0 is not defined"
+
+// any and all scan an array's elements for truthiness.
+_call_any_all: (name: String, n: Int, input: Json) -> Result ([]Json) String =
+    if n != 0:
+        Err "{name}/{n} is not defined"
+    else:
+        case input:
+            Arr xs ->
+                if name == "any":
+                    Ok {Bool xs.any((x): _truthy(x))}
+                else:
+                    Ok {Bool xs.all((x): _truthy(x))}
+            _ -> Err "Cannot iterate over {_jtype(input)} ({input})"
+
+// The type filters keep the values of one JSON type (or family).
+_call_typed: (name: String, n: Int, input: Json) -> Result ([]Json) String =
+    if n != 0:
+        Err "{name}/{n} is not defined"
+    else:
+        wanted := case name:
+            "arrays" -> "array"
+            "objects" -> "object"
+            "iterables" -> "iterable"
+            "booleans" -> "boolean"
+            "numbers" -> "number"
+            "strings" -> "string"
+            "nulls" -> "null"
+            _ -> "scalar"
+        _type_filter(input, wanted)
+
+// The one-argument builtins: the argument evaluates against the input,
+// then the builtin folds the input with each of the argument's values.
+_call_arg1: (name: String, n: Int, args: []Expr, input: Json, env: [String]Json) -> Result ([]Json) String =
+    if n != 1:
+        Err "{name}/{n} is not defined"
+    else:
+        case name:
+            "has" -> _arg1(args, input, env, _b_has)
+            "ltrimstr" -> _arg1(args, input, env, _b_ltrimstr)
+            "rtrimstr" -> _arg1(args, input, env, _b_rtrimstr)
+            "startswith" -> _arg1(args, input, env, _b_startswith)
+            "endswith" -> _arg1(args, input, env, _b_endswith)
+            "split" -> _arg1(args, input, env, _b_split)
+            "join" -> _arg1(args, input, env, _b_join)
+            _ -> Err "{name}/1 is not defined"
+
+// The one-argument filter builtins: their argument is a subprogram run
+// against the input's pieces.
+_call_filter: (name: String, n: Int, args: []Expr, input: Json, env: [String]Json) -> Result ([]Json) String =
+    if n != 1:
+        Err "{name}/{n} is not defined"
+    else:
+        f <- _arg_expr(args).try()
+        case name:
+            "select" -> _select_f(f, input, env)
+            "map" -> _map_f(f, input, env)
+            "map_values" -> _mapv_f(f, input, env)
+            "with_entries" -> _with_entries_f(f, input, env)
+            _ -> Err "{name}/1 is not defined"
+
+// -------------------------------------------------------- JSON stream input
+
+_skip_ws: (cs: []Char) -> []Char =
+    case cs:
+        {c, ..rest} if _is_space(c) -> _skip_ws(rest)
+        _ -> cs
+
+_scan_value: (cs: []Char, depth: Int, in_str: Bool, esc: Bool, acc: []Char) -> Result ScanOut String =
+    case cs:
+        {} ->
+            if depth == 0 && in_str.not():
+                Ok {text: String.from_chars(acc.reverse()), rest: {}}
+            else:
+                Err "unexpected end of JSON input"
+        {c, ..rest} ->
+            if esc:
+                _scan_value(rest, depth, in_str, False, {c} ++ acc)
+            else:
+                if in_str:
+                    case c:
+                        '\\' -> _scan_value(rest, depth, True, True, {c} ++ acc)
+                        _ -> _scan_value(rest, depth, in_str && c != '"', False, {c} ++ acc)
+                else:
+                    case True:
+                        _ if c == '"' -> _scan_value(rest, depth, True, False, {c} ++ acc)
+                        _ if c == '{' -> _scan_value(rest, depth + 1, False, False, {c} ++ acc)
+                        _ if c == '[' -> _scan_value(rest, depth + 1, False, False, {c} ++ acc)
+                        _ if c == '}' && depth == 1 ->
+                            Ok {text: String.from_chars(({c} ++ acc).reverse()), rest: rest}
+                        _ if c == ']' && depth == 1 ->
+                            Ok {text: String.from_chars(({c} ++ acc).reverse()), rest: rest}
+                        _ if c == '}' -> _scan_value(rest, depth - 1, False, False, {c} ++ acc)
+                        _ if c == ']' -> _scan_value(rest, depth - 1, False, False, {c} ++ acc)
+                        _ if depth == 0 && (c == ',' || _is_space(c)) ->
+                            Ok {text: String.from_chars(acc.reverse()), rest: rest}
+                        _ -> _scan_value(rest, depth, False, False, {c} ++ acc)
+
+/// Splits whitespace-separated JSON documents in one pass over the chars.
+_split_stream: (text: String) -> Result ([]Json) String =
+    _docs(_skip_ws(text.chars()), {})
+
+_docs: (cs: []Char, acc: []Json) -> Result ([]Json) String =
+    case cs:
+        {} -> Ok acc.reverse()
+        _ ->
+            sv <- _scan_value(cs, 0, False, False, {}).try()
+            doc <- Json.parse(sv.text).map_err((e): "{e}").try()
+            _docs(_skip_ws(sv.rest), {doc} ++ acc)
+
+// ----------------------------------------------------------- pretty printer
+
+_indent: (depth: Int) -> String =
+    if depth <= 0:
+        ""
+    else:
+        "  " ++ _indent(depth - 1)
+
+/// Appends the comma to the last line of a rendered value group.
+_group: (prefix: String, vl: []String, comma: String) -> []String =
+    head := vl.get(0).unwrap_or("")
+    rest := vl.drop(1)
+    case rest:
+        {} -> {prefix ++ head ++ comma}
+        _ ->
+            last := rest.get(rest.length() - 1).unwrap_or("")
+            {prefix ++ head} ++ rest.take(rest.length() - 1) ++ {last ++ comma}
+
+// One child value's rendered lines with the first line unindented by one
+// level, so the parent can prepend its own prefix to it.
+_child_lines: (v: Json, depth: Int) -> []String =
+    vl := _pretty_lines(v, depth + 1)
+    head0 := vl.get(0).unwrap_or("")
+    padv := _indent(depth + 1)
+    head := if head0.starts_with(padv):
+        String.slice(head0, padv.length(), head0.length() - padv.length()).unwrap_or(head0)
+    else:
+        head0
+    {head} ++ vl.drop(1)
+
+_obj_lines: (entries: [][String, Json], depth: Int, inner: String, acc: []String) -> []String =
+    case entries:
+        {} -> acc.reverse()
+        {kv, ..rest} ->
+            (k, v) = kv
+            vl := _child_lines(v, depth)
+            g := _group(inner ++ Json.show(Str k) ++ ": ", vl, if rest.length() > 0: "," else: "")
+            _obj_lines(rest, depth, inner, g.reverse() ++ acc)
+
+_arr_lines: (xs: []Json, depth: Int, inner: String, acc: []String) -> []String =
+    case xs:
+        {} -> acc.reverse()
+        {v, ..rest} ->
+            vl := _child_lines(v, depth)
+            g := _group(inner, vl, if rest.length() > 0: "," else: "")
+            _arr_lines(rest, depth, inner, g.reverse() ++ acc)
+
+_dict_pairs: (d: [String]Json) -> [][String, Json] =
+    empty: [][String, Json] = {}
+    d.fold(empty, (acc, k, v): {{k, v}} ++ acc).reverse()
+
+_pretty_lines: (j: Json, depth: Int) -> []String =
+    pad := _indent(depth)
+    inner := _indent(depth + 1)
+    case j:
+        Obj d ->
+            entries := _dict_pairs(d)
+            if entries.length() == 0:
+                {"\{}"}
+            else:
+                {pad ++ "\{"} ++ _obj_lines(entries, depth, inner, {}) ++ {pad ++ "}"}
+        Arr xs ->
+            if xs.length() == 0:
+                {"[]"}
+            else:
+                {pad ++ "["} ++ _arr_lines(xs, depth, inner, {}) ++ {pad ++ "]"}
+        _ -> {Json.show(j)}
+
+_pretty: (j: Json) -> String =
+    _pretty_lines(j, 0).join("\n")
+
+// ------------------------------------------------------------------ options
+
+Options: type = [compact: Bool, raw: Bool, null_input: Bool, exit_status: Bool, slurp: Bool, help: Bool, prog: String, files: []String, env: [String]Json]
+
+_base_options: Options =
+    {compact: False, raw: False, null_input: False, exit_status: False,
+     slurp: False, help: False, prog: "", files: {}, env: {}}
+
+_opts: (argv: []String, o: Options) -> Result Options String =
+    case argv:
+        {} ->
+            if o.help:
+                Ok o
+            else:
+                if o.prog == "":
+                    Err "no program given"
+                else:
+                    Ok o
+        {a, ..rest} ->
+            case a:
+                "--" ->
+                    if o.prog == "":
+                        Err "no program before '--'"
+                    else:
+                        Ok o.with({files: o.files ++ rest})
+                "--arg" -> _opt_arg(rest, o, True)
+                "--argjson" -> _opt_arg(rest, o, False)
+                "-h" -> _opts(rest, o.with({help: True}))
+                "--help" -> _opts(rest, o.with({help: True}))
+                "-" -> Err "the '-' stdin marker is not supported; use no files to read stdin"
+                _ if a.starts_with("--") -> Err "unknown option: {a}"
+                _ if a.starts_with("-") -> _short_flags(a, rest, o)
+                _ -> _positional(a, rest, o)
+
+_positional: (a: String, rest: []String, o: Options) -> Result Options String =
+    if o.prog == "":
+        _opts(rest, o.with({prog: a}))
+    else:
+        _opts(rest, o.with({files: o.files ++ {a}}))
+
+_opt_arg: (rest: []String, o: Options, is_str: Bool) -> Result Options String =
+    case rest:
+        {k, ..rest2} ->
+            case rest2:
+                {v, ..tail} ->
+                    if is_str:
+                        _opts(tail, o.with({env: o.env.insert(k, Str v)}))
+                    else:
+                        j <- Json.parse(v).map_err((e): "invalid JSON for --argjson {k}: {v}").try()
+                        _opts(tail, o.with({env: o.env.insert(k, j)}))
+                {} -> Err "--arg requires two arguments: name and value"
+        {} -> Err "--arg requires two arguments: name and value"
+
+_short_flags: (a: String, rest: []String, o: Options) -> Result Options String =
+    _shorts(a.chars().drop(1), rest, o)
+
+_shorts: (chs: []Char, rest: []String, o: Options) -> Result Options String =
+    case chs:
+        {} -> _opts(rest, o)
+        {c, ..tail} ->
+            case c:
+                'c' -> _shorts(tail, rest, o.with({compact: True}))
+                'r' -> _shorts(tail, rest, o.with({raw: True}))
+                'n' -> _shorts(tail, rest, o.with({null_input: True}))
+                'e' -> _shorts(tail, rest, o.with({exit_status: True}))
+                's' -> _shorts(tail, rest, o.with({slurp: True}))
+                _ -> Err "unknown option: -{c}"
+
+_parse_options: (argv: []String) -> Result Options String =
+    _opts(argv, _base_options)
+
+// --------------------------------------------------------------- I/O shell
+
+_help_lines: []String = {
+    "usage: ekojq [options] <program> [file ...]",
+    "",
+    "A jq-like filter for JSON. Reads JSON documents from the given files",
+    "(or standard input when no file is given), applies the program to each",
+    "document, and prints every result.",
+    "",
+    "Options:",
+    "  -c             compact output (default is pretty-printed)",
+    "  -r             raw output for top-level strings",
+    "  -n             do not read input; run the program once on null",
+    "  -e             exit 1 when the last output is false or null, 4 when none",
+    "  -s             slurp all inputs into a single array",
+    "  --arg k v      set $k to the string v",
+    "  --argjson k v  set $k to the JSON value v",
+    "  -h, --help     show this help",
+    "  --             treat all remaining arguments as files",
+    "",
+    "Short flags may be clustered: -rc. Exit codes: 0 ok, 1 and 4 for -e,",
+    "2 for usage and input errors, 3 for program compile errors, 5 for",
+    "runtime errors."}
+
+_read_stdin: (inp: In, acc: []String) !-> Result String String =
+    line <- inp.read_line().map_err((e): "read stdin: {e}").try()
+    case line:
+        None -> Ok acc.reverse().join("\n")
+        Some text -> _read_stdin(inp, {text} ++ acc)
+
+_read_texts: (fs: Fs, inp: In, files: []String, acc: []String) !-> Result ([]String) String =
+    case files:
+        {f, ..rest} ->
+            t <- fs.read(f).map_err((e): "read {f}: {e}").try()
+            _read_texts(fs, inp, rest, {t} ++ acc)
+        {} ->
+            if acc.length() == 0:
+                text <- _read_stdin(inp, {}).try()
+                Ok {text}
+            else:
+                Ok acc.reverse()
+
+_docs_all: (texts: []String, acc: []Json) -> Result ([]Json) String =
+    case texts:
+        {} -> Ok acc.reverse()
+        {t, ..rest} ->
+            ds <- _split_stream(t).try()
+            _docs_all(rest, ds ++ acc)
+
+_gather: (fs: Fs, inp: In, o: Options) !-> Result ([]Json) String =
+    if o.null_input:
+        Ok {Null}
+    else:
+        texts <- _read_texts(fs, inp, o.files, {}).try()
+        _docs_all(texts, {})
+
+_render: (v: Json, o: Options) -> String =
+    if o.compact:
+        Json.show(v)
+    else:
+        _pretty(v)
+
+_print_one: (out: Out, v: Json, o: Options) ! =
+    if o.raw:
+        case v:
+            Str s -> out.println(s)
+            _ -> out.println(_render(v, o))
+    else:
+        out.println(_render(v, o))
+
+_print_stream: (out: Out, vs: []Json, o: Options) ! =
+    vs.each((v): _print_one(out, v, o))
+
+_last_of: (vs: []Json, fallback: Json) -> Json =
+    case vs:
+        {} -> fallback
+        {v, ..rest} -> _last_of(rest, v)
+
+_run_all: (out: Out, errout: Out, expr: Expr, inputs: []Json, o: Options, produced: Bool, last: Json) !-> Int =
+    case inputs:
+        {} ->
+            if o.exit_status:
+                if produced.not():
+                    4
+                else:
+                    if _jeq(last, Null) || _jeq(last, Bool False):
+                        1
+                    else:
+                        0
+            else:
+                0
+        {v, ..rest} ->
+            case eval(expr, v, o.env):
+                Err m ->
+                    errout.println("ekojq: error: {m}")
+                    5
+                Ok vs ->
+                    _print_stream(out, vs, o)
+                    p2 := produced || vs.length() > 0
+                    l2 := _last_of(vs, last)
+                    _run_all(out, errout, expr, rest, o, p2, l2)
+
+_run: (out: Out, errout: Out, expr: Expr, inputs: []Json, o: Options) !-> Int =
+    _run_all(out, errout, expr, inputs, o, False, Null)
+
+_dispatch: (out: Out, errout: Out, argv: []String, fs: Fs, inp: In) !-> Int =
+    case _parse_options(argv):
+        Err m ->
+            errout.println("ekojq: {m}")
+            errout.println("usage: ekojq [options] <program> [file ...] (--help for details)")
+            2
+        Ok o ->
+            if o.help:
+                _help_lines.each((l): out.println(l))
+                0
+            else:
+                case _parse_program(o.prog):
+                    Err m ->
+                        errout.println("ekojq: compile error: {m}")
+                        3
+                    Ok expr ->
+                        case _gather(fs, inp, o):
+                            Err m ->
+                                errout.println("ekojq: {m}")
+                                2
+                            Ok docs ->
+                                inputs: []Json = if o.slurp: {Arr docs} else: docs
+                                _run(out, errout, expr, inputs, o)
+
+// The parameter list is the authorization manifest: output, arguments, the
+// file system, standard input, and the process. There is no other I/O entrance.
+main: (out: Out, args: Args, fs: Fs, inp: In, proc: Proc) ! =
+    code := _dispatch(out, Out.err(), args.all(), fs, inp)
+    Proc.exit(proc, code)
+
+// --------------------------------------------------------------------- tests
+
+_eval_docs: (e: Expr, docs: []Json, env: [String]Json) -> Result ([]Json) String =
+    _concat_all(docs, (d): eval(e, d, env))
+
+_run_q: (prog: String, json_text: String) -> Result ([]Json) String =
+    e <- _parse_program(prog).try()
+    docs <- _split_stream(json_text).try()
+    empty: [String]Json = {}
+    _eval_docs(e, docs, empty)
+
+_run_q_env: (prog: String, json_text: String, env: [String]Json) -> Result ([]Json) String =
+    e <- _parse_program(prog).try()
+    docs <- _split_stream(json_text).try()
+    _eval_docs(e, docs, env)
+
+lexing: test =
+    assert_eq(_lex(".a"), Ok {{tok: TSym ".", pos: 0}, {tok: TName "a", pos: 1}, {tok: TEof, pos: 2}})
+    assert(_lex("\"unterminated").is_err())
+    assert(_lex("@base64").is_err())
+    assert_eq(_lex("1.5e3"), Ok {{tok: TFloat 1500.0, pos: 0}, {tok: TEof, pos: 5}})
+
+parsing: test =
+    assert_eq(_run_q("1 + 2 * 3", "null"), Ok {Int 7})
+    assert_eq(_run_q("(1 + 2) * 3", "null"), Ok {Int 9})
+    assert_eq(_run_q("1, 2 | . + 1", "null"), Ok {Int 2, Int 3})
+    assert(_parse_program(".a..").is_err())
+    assert(_parse_program("if . then").is_err())
+    assert(_parse_program("\{a: 1").is_err())
+
+fields_and_index: test =
+    assert_eq(_run_q(".a", "\{\"a\": \{\"b\": 2}}"), Ok {Obj {"b": Int 2}})
+    assert_eq(_run_q(".a.b", "\{\"a\": \{\"b\": 2}}"), Ok {Int 2})
+    assert_eq(_run_q(".a.missing", "\{\"a\": \{\"b\": 2}}"), Ok {Null})
+    assert_eq(_run_q(".missing", "\{\"a\": 1}"), Ok {Null})
+    assert(_run_q(".a", "5").is_err())
+    assert_eq(_run_q(".[1]", "[1, 2, 3]"), Ok {Int 2})
+    assert_eq(_run_q(".[-1]", "[1, 2, 3]"), Ok {Int 3})
+    assert_eq(_run_q(".[5]", "[1, 2, 3]"), Ok {Null})
+    assert_eq(_run_q(".[0]", "[]"), Ok {Null})
+    assert_eq(_run_q(".[\"k\"]", "\{\"k\": 9}"), Ok {Int 9})
+    assert_eq(_run_q(".[]", "[1, 2]"), Ok {Int 1, Int 2})
+    assert_eq(_run_q(".[]", "\{\"a\": 1}"), Ok {Int 1})
+    assert(_run_q(".[]", "null").is_err())
+    assert_eq(_run_q(".[]?", "null"), Ok {})
+    assert_eq(_run_q(".a?", "3"), Ok {})
+
+streams_and_bind: test =
+    assert_eq(_run_q(". as $x | $x + 1", "2"), Ok {Int 3})
+    assert_eq(_run_q(".[] as $n | $n * 2", "[1, 2]"), Ok {Int 2, Int 4})
+    assert(_run_q("$nope", "1").is_err())
+    assert_eq(_run_q("1 as $a | 2 as $b | $a + $b", "null"), Ok {Int 3})
+
+conditionals: test =
+    assert_eq(_run_q("if . < 0 then \"neg\" elif . == 0 then \"zero\" else \"pos\" end", "-3"), Ok {Str "neg"})
+    assert_eq(_run_q("if . < 0 then \"neg\" elif . == 0 then \"zero\" else \"pos\" end", "0"), Ok {Str "zero"})
+    assert_eq(_run_q("if . then 1 else 2 end", "null"), Ok {Int 2})
+    assert_eq(_run_q("if false then 1 end", "5"), Ok {Int 5})
+
+boolean_ops: test =
+    assert_eq(_run_q("null and true", "null"), Ok {Bool False})
+    assert_eq(_run_q("true and false", "null"), Ok {Bool False})
+    assert_eq(_run_q("false or 1", "null"), Ok {Bool True})
+    assert_eq(_run_q("1 or error(\"x\")", "null"), Ok {Bool True})
+    assert_eq(_run_q("true | not", "null"), Ok {Bool False})
+
+comparisons: test =
+    assert_eq(_run_q("1 == 1.0", "null"), Ok {Bool True})
+    assert_eq(_run_q("null < false", "null"), Ok {Bool True})
+    assert_eq(_run_q("false < true", "null"), Ok {Bool True})
+    assert_eq(_run_q("2 < \"2\"", "null"), Ok {Bool True})
+    assert_eq(_run_q("\"a\" < [1]", "null"), Ok {Bool True})
+    assert_eq(_run_q("[1, 2] < [1, 3]", "null"), Ok {Bool True})
+    assert_eq(_run_q("[1] < \{\"a\": 1}", "null"), Ok {Bool True})
+    assert_eq(_run_q(".a < 5", "\{\"a\": 3}"), Ok {Bool True})
+
+arithmetic: test =
+    assert_eq(_run_q("1 + 2.0", "null"), Ok {Int 3})
+    assert_eq(_run_q("\"a\" + \"b\"", "null"), Ok {Str "ab"})
+    assert_eq(_run_q("[1] + [2]", "null"), Ok {Arr {Int 1, Int 2}})
+    assert_eq(_run_q("\{\"a\": 1} + \{\"a\": 2, \"b\": 3}", "null"), Ok {Obj {"a": Int 2, "b": Int 3}})
+    assert_eq(_run_q("null + 3", "null"), Ok {Int 3})
+    assert_eq(_run_q("7 / 2", "null"), Ok {Float 3.5})
+    assert_eq(_run_q("6 / 3", "null"), Ok {Int 2})
+    assert_eq(_run_q("\"a,b\" / \",\"", "null"), Ok {Arr {Str "a", Str "b"}})
+    assert_eq(_run_q("7 % 3", "null"), Ok {Int 1})
+    assert_eq(_run_q("2 * \"ab\"", "null"), Ok {Str "abab"})
+    assert_eq(_run_q("- 3", "null"), Ok {Int (-3)})
+    assert(_run_q("1 / 0", "null").is_err())
+    assert(_run_q("\"a\" + 1", "null").is_err())
+
+construction: test =
+    assert_eq(_run_q("[.[] | . + 1]", "[1, 2]"), Ok {Arr {Int 2, Int 3}})
+    assert_eq(_run_q("[]", "5"), Ok {Arr {}})
+    assert_eq(_run_q("\{a: ., b: 2}", "7"), Ok {Obj {"a": Int 7, "b": Int 2}})
+    assert_eq(_run_q("\{a}", "\{\"a\": 5}"), Ok {Obj {"a": Int 5}})
+    assert_eq(_run_q("\{x: (1, 2)}", "null"), Ok {Obj {"x": Int 1}, Obj {"x": Int 2}})
+
+builtins_value: test =
+    assert_eq(_run_q("length", "\"abc\""), Ok {Int 3})
+    assert_eq(_run_q("length", "null"), Ok {Int 0})
+    assert_eq(_run_q("length", "-5"), Ok {Int 5})
+    assert_eq(_run_q("keys", "\{\"b\": 1, \"a\": 2}"), Ok {Arr {Str "a", Str "b"}})
+    assert_eq(_run_q("keys", "[7, 8]"), Ok {Arr {Int 0, Int 1}})
+    assert_eq(_run_q("add", "[1, 2, 3]"), Ok {Int 6})
+    assert_eq(_run_q("add", "[]"), Ok {Null})
+    assert_eq(_run_q("type", "3"), Ok {Str "number"})
+    assert_eq(_run_q("tonumber", "\"42\""), Ok {Int 42})
+    assert_eq(_run_q("tostring", "42"), Ok {Str "42"})
+    assert_eq(_run_q("floor", "2.7"), Ok {Int 2})
+    assert_eq(_run_q("has(\"a\")", "\{\"a\": 1}"), Ok {Bool True})
+    assert_eq(_run_q("has(2)", "[1, 2, 3]"), Ok {Bool True})
+    assert_eq(_run_q("values", "null"), Ok {})
+    assert_eq(_run_q("values", "5"), Ok {Int 5})
+    assert_eq(_run_q("strings", "5"), Ok {})
+    assert_eq(_run_q("scalars", "[1]"), Ok {})
+    assert_eq(_run_q("tojson | fromjson", "\{\"x\": 1}"), Ok {Obj {"x": Int 1}})
+
+builtins_coll: test =
+    assert_eq(_run_q("[.[] | select(. > 1)]", "[1, 2, 3]"), Ok {Arr {Int 2, Int 3}})
+    assert_eq(_run_q("map(. * 2)", "[1, 2]"), Ok {Arr {Int 2, Int 4}})
+    assert_eq(_run_q("map_values(. + 1)", "\{\"a\": 1, \"b\": 2}"), Ok {Obj {"a": Int 2, "b": Int 3}})
+    assert_eq(_run_q("to_entries", "\{\"a\": 1}"), Ok {Arr {Obj {"key": Str "a", "value": Int 1}}})
+    assert_eq(_run_q("from_entries", "[\{\"key\": \"a\", \"value\": 1}]"), Ok {Obj {"a": Int 1}})
+    assert_eq(_run_q("with_entries(. as $e | \{key: $e.key, value: ($e.value + 1)})", "\{\"a\": 1}"), Ok {Obj {"a": Int 2}})
+    assert_eq(_run_q("unique", "[2, 1, 2, 3, 1]"), Ok {Arr {Int 1, Int 2, Int 3}})
+    assert_eq(_run_q("sort", "[3, 1, 2]"), Ok {Arr {Int 1, Int 2, Int 3}})
+    assert_eq(_run_q("min", "[3, 1, 2]"), Ok {Int 1})
+    assert_eq(_run_q("max", "[3, 1, 2]"), Ok {Int 3})
+    assert_eq(_run_q("min", "[]"), Ok {Null})
+    assert_eq(_run_q("reverse", "[1, 2]"), Ok {Arr {Int 2, Int 1}})
+    assert_eq(_run_q("flatten", "[1, [2, [3]], 4]"), Ok {Arr {Int 1, Int 2, Int 3, Int 4}})
+    assert_eq(_run_q("[range(3)]", "null"), Ok {Arr {Int 0, Int 1, Int 2}})
+    assert_eq(_run_q("[range(1; 4)]", "null"), Ok {Arr {Int 1, Int 2, Int 3}})
+    assert_eq(_run_q("[range(0; 10; 4)]", "null"), Ok {Arr {Int 0, Int 4, Int 8}})
+    assert_eq(_run_q("first", "[7, 8]"), Ok {Int 7})
+    assert_eq(_run_q("last", "[7, 8]"), Ok {Int 8})
+    assert_eq(_run_q("first(empty)", "5"), Ok {})
+    assert_eq(_run_q("join(\"-\")", "[\"a\", \"b\", null, 3]"), Ok {Str "a-b--3"})
+    assert_eq(_run_q("split(\",\")", "\"a,b\""), Ok {Arr {Str "a", Str "b"}})
+    assert_eq(_run_q("ascii_downcase", "\"AbC\""), Ok {Str "abc"})
+    assert_eq(_run_q("ltrimstr(\"ab\")", "\"abc\""), Ok {Str "c"})
+    assert_eq(_run_q("startswith(\"ab\")", "\"abc\""), Ok {Bool True})
+    assert_eq(_run_q("endswith(\"bc\")", "\"abc\""), Ok {Bool True})
+    assert_eq(_run_q("empty", "5"), Ok {})
+
+errors: test =
+    assert(_run_q("error(\"boom\")", "null").is_err())
+    assert(_run_q("error", "42").is_err())
+    assert(_run_q("length(1)", "null").is_err())
+    assert(_run_q("frobnicate", "null").is_err())
+    assert_eq(_run_q("-1 | sqrt", "null"), Ok {Null})
+
+stream_splitting: test =
+    assert_eq(_split_stream("1 \{\"a\": 2} [3]"), Ok {Int 1, Obj {"a": Int 2}, Arr {Int 3}})
+    assert_eq(_split_stream(""), Ok {})
+    assert_eq(_split_stream("  \n"), Ok {})
+    assert_eq(_split_stream("\"a}b\" 2"), Ok {Str "a}b", Int 2})
+    assert_eq(_split_stream("\{\"x\": \"[\"} null"), Ok {Obj {"x": Str "["}, Null})
+    assert(_split_stream("1 2 3x").is_err())
+    assert(_split_stream("\{\"a\":}").is_err())
+
+pretty_printing: test =
+    assert_eq(_pretty(Obj {"a": Arr {Int 1, Obj {"b": Null}}, "c": Obj {}}),
+        "\{\n  \"a\": [\n    1,\n    \{\n      \"b\": null\n    }\n  ],\n  \"c\": \{}\n}")
+    assert_eq(_pretty(Int 3), "3")
+    assert_eq(_pretty(Obj {}), "\{}")
+    assert_eq(_pretty(Arr {}), "[]")
+    assert_eq(Json.show(Str "a\"b"), "\"a\\\"b\"")
+
+number_normalization: test =
+    assert_eq(_split_stream("2.0"), Ok {Float 2.0})
+    assert(_split_stream("1e2").is_ok())
+    assert_eq(_split_stream("-7"), Ok {Int (-7)})
+    assert_eq(_split_stream("1.5"), Ok {Float 1.5})
+    assert_eq(_run_q("2.0 + 1", "null"), Ok {Int 3})
+
+options: test =
+    assert_eq(_parse_options({".", "a.json"}).map((o): o.prog), Ok ".")
+    assert(_parse_options({}).is_err())
+    o := _parse_options({"-rc", ".", "f.json"}).unwrap()
+    assert(o.compact && o.raw && o.files.eq({"f.json"}))
+    o2 := _parse_options({".", "--arg", "k", "v"}).unwrap()
+    assert_eq(o2.env.get("k"), Some (Str "v"))
+    o3 := _parse_options({".", "--argjson", "k", "[1]"}).unwrap()
+    assert_eq(o3.env.get("k"), Some (Arr {Int 1}))
+    assert(_parse_options({".", "--argjson", "k", "not json"}).is_err())
+    assert(_parse_options({".", "--arg", "k"}).is_err())
+    assert(_parse_options({".", "-z"}).is_err())
+    assert(_parse_options({"--", "x.json"}).is_err())
+    oh := _parse_options({"-h"}).unwrap()
+    assert(oh.help)
+    o4 := _parse_options({".", "--", "-weird.json"}).unwrap()
+    assert(o4.files.eq({"-weird.json"}))
+
+env_vars: test =
+    env: [String]Json = {"who": Str "eko"}
+    assert_eq(_run_q_env("$who", "null", env), Ok {Str "eko"})
+
+// The lexer's token kinds, with the positions stripped: string escapes
+// drift the recorded offset, and these tests pin the decode, not the drift.
+_lex_toks: (src: String) -> Result ([]Tok) String =
+    _lex(src).map((ts): ts.map((t): t.tok))
+
+unicode_escapes: test =
+    assert_eq(_lex_toks("\"\\uD83D\\uDE00\""), Ok {TStr "\u{1F600}", TEof})
+    assert_eq(_run_q("length", "\"\\uD83D\\uDE00\""), Ok {Int 1})
+    assert_eq(_lex_toks("\"\\u00E9\""), Ok {TStr "\u{e9}", TEof})
+    assert_eq(_lex_toks("\"\\u00e9\""), Ok {TStr "\u{e9}", TEof})
+    assert_eq(_lex("\"\\uD83D\""), Err "lone high surrogate at offset 3")
+    assert_eq(_lex("\"\\uDE00\""), Err "lone low surrogate at offset 3")
+    assert_eq(_lex("\"\\uD83D\\u0041\""), Err "invalid low surrogate at offset 3")
+    assert_eq(_lex("\"\\u12\""), Err "bad \\u escape at offset 3")
+    assert_eq(_lex("\"\\u12"), Err "unfinished \\u escape at offset 3")
+
+raw_output_string: test =
+    out := Out.tee(Out.null(), (s): assert_eq(s, "hello"))
+    status := _dispatch(out, Out.null(), {"-r", "."}, Fs.null(), In.from_lines({"\"hello\""}))
+    assert_eq(status, 0)
+
+raw_output_leaves_non_strings: test =
+    out := Out.tee(Out.null(), (s): assert_eq(s, "[1,2]"))
+    status := _dispatch(out, Out.null(), {"-r", "-c", "."}, Fs.null(), In.from_lines({"[1, 2]"}))
+    assert_eq(status, 0)
+
+raw_output_quotes_nested_strings: test =
+    out := Out.tee(Out.null(), (s): assert_eq(s, "\{\"a\":\"b\"}"))
+    status := _dispatch(out, Out.null(), {"-r", "-c", "."}, Fs.null(), In.from_lines({"\{\"a\": \"b\"}"}))
+    assert_eq(status, 0)
+
+// The -e rule from _run_all: 0 when the last output is neither false nor
+// null, 1 when it is, 4 when nothing was produced, 5 on a runtime error.
+// One dispatch per test: the runtime does not reliably take several
+// dispatch calls in one process.
+exit_status_ok: test =
+    assert_eq(_dispatch(Out.null(), Out.null(), {"-e", "."}, Fs.null(), In.from_lines({"5"})), 0)
+
+exit_status_ok_true: test =
+    assert_eq(_dispatch(Out.null(), Out.null(), {"-e", "."}, Fs.null(), In.from_lines({"true"})), 0)
+
+exit_status_one_null: test =
+    assert_eq(_dispatch(Out.null(), Out.null(), {"-e", "."}, Fs.null(), In.from_lines({"null"})), 1)
+
+exit_status_one_false: test =
+    assert_eq(_dispatch(Out.null(), Out.null(), {"-e", "."}, Fs.null(), In.from_lines({"false"})), 1)
+
+exit_status_last_of_stream: test =
+    assert_eq(_dispatch(Out.null(), Out.null(), {"-e", "1, null"}, Fs.null(), In.from_lines({"0"})), 1)
+
+exit_status_last_not_null: test =
+    assert_eq(_dispatch(Out.null(), Out.null(), {"-e", "null, 1"}, Fs.null(), In.from_lines({"7"})), 0)
+
+exit_status_none_produced: test =
+    assert_eq(_dispatch(Out.null(), Out.null(), {"-e", "empty"}, Fs.null(), In.from_lines({"9"})), 4)
+
+exit_status_without_flag: test =
+    assert_eq(_dispatch(Out.null(), Out.null(), {"."}, Fs.null(), In.from_lines({"8"})), 0)
+
+exit_status_runtime_error: test =
+    assert_eq(_dispatch(Out.null(), Out.null(), {"-e", "error(\"boom\")"}, Fs.null(), In.from_lines({"6"})), 5)

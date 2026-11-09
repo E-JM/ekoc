@@ -1,0 +1,483 @@
+// ekowc: a line, word, and byte/character counter for text streams.
+//
+//   ekowc [options] [file ...]
+//
+// Every input contributes one counts line; columns follow the fixed order
+// lines, words, characters, bytes, and each is right-aligned in seven
+// columns. Words are runs of non-White_Space characters. Files are read
+// whole, so their byte counts are exact; standard input is streamed line by
+// line, which assumes every line is newline-terminated. The command layer
+// is pure; only main and its explicit helpers touch the capabilities.
+//
+// Module: ekowc (the file is the module).
+
+// ------------------------------------------------------------------- core
+
+/// One input's tallies.
+Counts: type = [lines: Int, words: Int, chars: Int, bytes: Int]
+
+_zero_counts: Counts = {lines: 0, words: 0, chars: 0, bytes: 0}
+
+/// The completed command configuration.
+Config: type = [
+    show_lines: Bool,
+    show_words: Bool,
+    show_chars: Bool,
+    show_bytes: Bool,
+    files: []String]
+
+/// What the argument vector denotes.
+Invocation: type = Help | Fail String | Run Config
+
+Flags: type = [any: Bool, lines: Bool, words: Bool, chars: Bool, bytes: Bool]
+
+_default_flags: Flags = {any: False, lines: False, words: False, chars: False,
+                         bytes: False}
+
+parse_args: (argv: []String) -> Invocation =
+    _parse_options(argv, _default_flags, {})
+
+_parse_options: (argv: []String, flags: Flags, files: []String) -> Invocation =
+    case argv:
+        {} -> Run _to_config(flags, files)
+        {a, ..rest} ->
+            case a:
+                "--" -> Run _to_config(flags, files ++ rest)
+                "-h" | "--help" -> Help
+                "-l" -> _parse_options(rest, flags.with({any: True, lines: True}), files)
+                "-w" -> _parse_options(rest, flags.with({any: True, words: True}), files)
+                "-m" -> _parse_options(rest, flags.with({any: True, chars: True}), files)
+                "-c" -> _parse_options(rest, flags.with({any: True, bytes: True}), files)
+                _ ->
+                    if a.starts_with("-") && a.length() > 1:
+                        _bundle(a, rest, flags, files)
+                    else:
+                        _parse_options(rest, flags, files ++ {a})
+
+// Bundled short flags such as -lw select the union.
+_bundle: (a: String, rest: []String, flags: Flags, files: []String) -> Invocation =
+    case a.chars().drop(1):
+        {} -> Fail "unknown option: {a}"
+        chars ->
+            case _bundle_flags(chars, flags):
+                Err c -> Fail "unknown option: -{c}"
+                Ok next -> _parse_options(rest, next, files)
+
+_bundle_flags: (chars: []Char, flags: Flags) -> Result Flags String =
+    case chars:
+        {} -> Ok flags
+        {'l', ..rest} -> _bundle_flags(rest, flags.with({any: True, lines: True}))
+        {'w', ..rest} -> _bundle_flags(rest, flags.with({any: True, words: True}))
+        {'m', ..rest} -> _bundle_flags(rest, flags.with({any: True, chars: True}))
+        {'c', ..rest} -> _bundle_flags(rest, flags.with({any: True, bytes: True}))
+        {c, .._} -> Err "{c}"
+
+_to_config: (flags: Flags, files: []String) -> Config =
+    if flags.any:
+        {show_lines: flags.lines, show_words: flags.words, show_chars: flags.chars,
+         show_bytes: flags.bytes, files: files}
+    else:
+        {show_lines: True, show_words: True, show_chars: False, show_bytes: True,
+         files: files}
+
+// ------------------------------------------------------------ counting
+
+// Words are separated by the Unicode White_Space property.
+_is_space: (c: Char) -> Bool = c.is_space()
+
+// Words are maximal runs of non-space characters.
+_count_words: (cs: []Char) -> Int =
+    _words_walk(cs, False, 0)
+
+_words_walk: (cs: []Char, in_word: Bool, acc: Int) -> Int =
+    case cs:
+        {} -> acc
+        {c, ..rest} ->
+            if _is_space(c):
+                _words_walk(rest, False, acc)
+            else:
+                _words_walk(rest, True, if in_word: acc else: acc + 1)
+
+// Files are read whole, so the byte count is the file's own byte length and
+// the newline count is the number of '\n' characters.
+_count_text: (text: String) -> Counts =
+    chars := text.chars()
+    {lines: chars.filter((cc): cc == '\n').length(),
+     words: _count_words(chars),
+     chars: chars.length(),
+     bytes: String.to_bytes(text).length()}
+
+// Standard input arrives one stripped line at a time; every line counts as
+// one newline and len + 1 bytes, which is exact for newline-terminated
+// input.
+_add_line: (acc: Counts, line: String) -> Counts = {
+    lines: acc.lines + 1,
+    words: acc.words + _count_words(line.chars()),
+    chars: acc.chars + String.length(line) + 1,
+    bytes: acc.bytes + String.to_bytes(line).length() + 1}
+
+_counts_add: (a: Counts, b: Counts) -> Counts = {
+    lines: a.lines + b.lines,
+    words: a.words + b.words,
+    chars: a.chars + b.chars,
+    bytes: a.bytes + b.bytes}
+
+// ------------------------------------------------------------ rendering
+
+// Columns follow the fixed order lines, words, characters, bytes.
+_column_of: (c: Counts, cfg: Config) -> []Int =
+    picked: []Int = {}
+    picked := if cfg.show_lines: picked ++ {c.lines} else: picked
+    picked := if cfg.show_words: picked ++ {c.words} else: picked
+    picked := if cfg.show_chars: picked ++ {c.chars} else: picked
+    picked := if cfg.show_bytes: picked ++ {c.bytes} else: picked
+    picked
+
+_digits_of: (n: Int) -> Int = "{n}".length()
+
+// The column width follows the reference implementation: a lone column
+// prints bare; a lone row with several columns pads its values; several
+// rows pad to the widest total count, and standard input anywhere in the
+// input list widens the columns to at least seven.
+_width_of: (rows: []Row, stdin_used: Bool, cfg: Config) -> Int =
+    if rows.length() <= 1:
+        if stdin_used:
+            7
+        else:
+            c := rows.get(0).map((r): r.counts).unwrap_or(_zero_counts)
+            _max_digits(_column_of(c, cfg), 1)
+    else:
+        // The width covers every counter's total, printed or not: the
+        // reference implementation sizes its columns from the whole
+        // tallies, so a -l run still widens for the byte total.
+        t := _row_total(rows)
+        all: []Int = {t.lines, t.words, t.chars, t.bytes}
+        if stdin_used: 7 else: _max_digits(all, 1)
+
+_max_digits: (vals: []Int, acc: Int) -> Int =
+    case vals:
+        {} -> acc
+        {v, ..rest} -> _max_digits(rest, _int_max(acc, _digits_of(v)))
+
+_int_max: (a: Int, b: Int) -> Int = if a > b: a else: b
+
+// The bare form is the lone single-column line: one input, one column.
+_is_bare: (rows: []Row, stdin_used: Bool, cfg: Config) -> Bool =
+    if rows.length() <= 1:
+        c := rows.get(0).map((r): r.counts).unwrap_or(_zero_counts)
+        _column_of(c, cfg).length() == 1
+    else:
+        False
+
+_row_total: (rows: []Row) -> Counts =
+    rows.fold(_zero_counts, (acc, r): _counts_add(acc, r.counts))
+
+_render_row: (r: Row, cfg: Config, width: Int, bare: Bool) -> String =
+    cols := _column_of(r.counts, cfg)
+    body := if bare:
+        _bare_count(cols.get(0).unwrap_or(0))
+    else:
+        _render_cols(cols, width)
+    body ++ r.name.map((path): " {path}").unwrap_or("")
+
+// A lone column prints without padding.
+_bare_count: (n: Int) -> String = "{n}"
+
+_render_cols: (cols: []Int, width: Int) -> String =
+    case cols:
+        {} -> ""
+        {v} -> "{v}".pad_left(width, ' ')
+        {h, ..t} -> "{h}".pad_left(width, ' ') ++ " " ++ _render_cols(t, width)
+
+// ----------------------------------------------------------------- I/O shell
+
+_help_lines: []String = {
+    "usage: ekowc [options] [file ...]",
+    "",
+    "Count lines, words, characters, and bytes of the named files, or",
+    "standard input when no file is given, and print the tallies. A file",
+    "argument of '-' also means standard input. With several inputs, a",
+    "total line follows the per-input lines.",
+    "",
+    "options:",
+    "  -l          print the line count",
+    "  -w          print the word count",
+    "  -m          print the character count (Unicode scalar values)",
+    "  -c          print the byte count",
+    "  -lw         short flags bundle, as in -lwm",
+    "  -h, --help  show this help and exit",
+    "  --          end of options",
+    "",
+    "Without a selection the default is lines, words, and bytes. Columns",
+    "keep the fixed order lines, words, characters, bytes.",
+    "",
+    "exit status: 0 on success, 2 on usage or file error."}
+
+_print_help: (out: Out) ! =
+    _help_lines.each((line): out.println(line))
+
+_io_message: (e: IoError) -> String =
+    case e:
+        NotFound -> "no such file or directory"
+        Permission -> "permission denied"
+        Exists -> "file exists"
+        NotFile -> "not a regular file"
+        Closed -> "handle closed"
+        InvalidData d -> "invalid data: {d}"
+        Other m -> m
+
+_read_file: (fs: Fs, path: String) !-> Result String String =
+    case fs.stat(path):
+        Ok info if info.is_dir -> Err "is a directory"
+        _ -> fs.read(path).map_err(_io_message)
+
+_count_stdin: (acc: Counts, inp: In) !-> Result Counts IoError =
+    line <- inp.read_line().try()
+    case line:
+        None -> Ok acc
+        Some text -> _count_stdin(_add_line(acc, text), inp)
+
+// One gathered input: its tally and the name it prints under. Rows are
+// collected before printing because the column width depends on every
+// value, including the total's.
+Row: type = [counts: Counts, name: Option String]
+
+_gather: (out: Out, err: Out, fs: Fs, inp: In, cfg: Config, files: []String,
+          rows: []Row, stdin_used: Bool, clean: Bool) !-> [[]Row, Bool, Bool] =
+    case files:
+        {} -> {rows, stdin_used, clean}
+        {path, ..rest} ->
+            if path == "-":
+                case _count_stdin(_zero_counts, inp):
+                    Err e ->
+                        err.println("ekowc: <stdin>: {_io_message(e)}")
+                        _gather(out, err, fs, inp, cfg, rest, rows, stdin_used, False)
+                    Ok c ->
+                        r: Row = {counts: c, name: Some path}
+                        _gather(out, err, fs, inp, cfg, rest, rows ++ {r}, True, clean)
+            else:
+                case _read_file(fs, path):
+                    Err msg ->
+                        err.println("ekowc: {path}: {msg}")
+                        _gather(out, err, fs, inp, cfg, rest, rows, stdin_used, False)
+                    Ok text ->
+                        r: Row = {counts: _count_text(text), name: Some path}
+                        _gather(out, err, fs, inp, cfg, rest, rows ++ {r}, stdin_used, clean)
+
+_run_config: (out: Out, err: Out, fs: Fs, inp: In, cfg: Config) !-> Int =
+    if cfg.files.eq({}):
+        _count_stdin_only(out, err, inp, cfg)
+    else:
+        outcome := _gather(out, err, fs, inp, cfg, cfg.files, {}, False, True)
+        (rows, stdin_used, clean) = outcome
+        if clean:
+            width := _width_of(rows, stdin_used, cfg)
+            bare := _is_bare(rows, stdin_used, cfg)
+            rows.each((r): out.println(_render_row(r, cfg, width, bare)))
+            if rows.length() > 1:
+                t: Row = {counts: _row_total(rows), name: Some "total"}
+                out.println(_render_row(t, cfg, width, bare))
+            0
+        else:
+            2
+
+// The implicit input: standard input, printed without a name.
+_count_stdin_only: (out: Out, err: Out, inp: In, cfg: Config) !-> Int =
+    case _count_stdin(_zero_counts, inp):
+        Err e ->
+            err.println("ekowc: <stdin>: {_io_message(e)}")
+            2
+        Ok c ->
+            r: Row = {counts: c, name: None}
+            width := _width_of({r}, True, cfg)
+            out.println(_render_row(r, cfg, width, _is_bare({r}, True, cfg)))
+            0
+
+_help_status: (out: Out) !-> Int =
+    _print_help(out)
+    0
+
+_usage_failure: (err: Out, msg: String) !-> Int =
+    err.println("ekowc: {msg}")
+    err.println("Try 'ekowc --help' for usage.")
+    2
+
+_dispatch: (out: Out, err: Out, argv: []String, fs: Fs, inp: In) !-> Int =
+    case parse_args(argv):
+        Help -> _help_status(out)
+        Fail msg -> _usage_failure(err, msg)
+        Run cfg -> _run_config(out, err, fs, inp, cfg)
+
+// The parameter list is the authorization manifest: output, arguments, the
+// file system, standard input, and the process exit channel. The error
+// channel rides the Out session as host wiring.
+main: (out: Out, args: Args, fs: Fs, inp: In, proc: Proc) ! =
+    code := _dispatch(out, Out.err(), args.all(), fs, inp)
+    Proc.exit(proc, code)
+
+// --------------------------------------------------------------------- tests
+
+_expect_run: (argv: []String) -> Config =
+    case parse_args(argv):
+        Run cfg -> cfg
+        Help -> panic("expected Run but got Help")
+        Fail e -> panic("expected Run but got: {e}")
+
+_expect_fail: (argv: []String) -> String =
+    case parse_args(argv):
+        Fail e -> e
+        Help -> panic("expected Fail but got Help")
+        Run _ -> panic("expected Fail but got Run")
+
+_count_of: (text: String) -> Counts = _count_text(text)
+
+word_counting: test =
+    assert_eq(_count_words("hello world".chars()), 2)
+    assert_eq(_count_words("  a  b ".chars()), 2)
+    assert_eq(_count_words("".chars()), 0)
+    assert_eq(_count_words("x".chars()), 1)
+    assert_eq(_count_words("a\tb\nc".chars()), 3)
+
+unicode_words: test =
+    assert_eq(_count_words("λx éy".chars()), 2)
+    assert_eq(_count_words("café\u{a0}au_lait".chars()), 2)
+
+text_counts: test =
+    c := _count_of("hello  world\n")
+    assert_eq(c.lines, 1)
+    assert_eq(c.words, 2)
+    assert_eq(c.chars, 13)
+    assert_eq(c.bytes, 13)
+
+text_counts_multiline: test =
+    c := _count_of("a\nbb\n")
+    assert_eq(c.lines, 2)
+    assert_eq(c.words, 2)
+    assert_eq(c.chars, 5)
+    assert_eq(c.bytes, 5)
+
+text_counts_unicode: test =
+    c := _count_of("λ\n")
+    assert_eq(c.lines, 1)
+    assert_eq(c.chars, 2)
+    assert_eq(c.bytes, 3)
+
+text_counts_no_trailing_newline: test =
+    c := _count_of("a\nb")
+    assert_eq(c.lines, 1)
+    assert_eq(c.chars, 3)
+
+empty_text: test =
+    c := _count_of("")
+    assert_eq(c.lines, 0)
+    assert_eq(c.words, 0)
+    assert_eq(c.chars, 0)
+    assert_eq(c.bytes, 0)
+
+counts_add: test =
+    sum := _counts_add(_count_of("a\n"), _count_of("bb\n"))
+    assert_eq(sum.lines, 2)
+    assert_eq(sum.bytes, 5)
+
+render_default: test =
+    cfg := _expect_run({})
+    r: Row = {counts: _count_of("hello  world\n"), name: Some "f.txt"}
+    assert_eq(_render_row(r, cfg, 7, False), "      1       2      13 f.txt")
+    r2: Row = {counts: _count_of("hello  world\n"), name: None}
+    assert_eq(_render_row(r2, cfg, 7, False), "      1       2      13")
+
+render_selection: test =
+    cfg := _expect_run({"-l"})
+    r: Row = {counts: _count_of("a\nbb\n"), name: None}
+    assert_eq(_render_row(r, cfg, 7, True), "2")
+    cfg2 := _expect_run({"-w", "-c"})
+    r2: Row = {counts: _count_of("a\nbb\n"), name: None}
+    assert_eq(_render_row(r2, cfg2, 7, False), "      2       5")
+    cfg3 := _expect_run({"-m"})
+    r3: Row = {counts: _count_of("λ\n"), name: None}
+    assert_eq(_render_row(r3, cfg3, 7, True), "2")
+
+width_rules: test =
+    cfg := _expect_run({})
+    r: Row = {counts: _count_of("a\nbb\n"), name: None}
+    assert_eq(_width_of({r}, True, cfg), 7)
+    assert_eq(_width_of({r}, False, cfg), 1)
+    big: Row = {counts: _count_of("a".pad_left(100000, 'a') ++ "\n"), name: None}
+    assert_eq(_width_of({big}, False, cfg), 6)
+    two: []Row = {r, big}
+    assert_eq(_width_of(two, False, cfg), 6)
+    assert_eq(_width_of(two, True, cfg), 7)
+
+cli_defaults: test =
+    cfg := _expect_run({})
+    assert(cfg.show_lines)
+    assert(cfg.show_words)
+    assert(cfg.show_chars.not())
+    assert(cfg.show_bytes)
+    assert_eq(cfg.files, {})
+
+cli_flags: test =
+    cfg := _expect_run({"-l"})
+    assert(cfg.show_lines)
+    assert(cfg.show_words.not())
+    assert(cfg.show_bytes.not())
+    cfg2 := _expect_run({"-lw"})
+    assert(cfg2.show_lines)
+    assert(cfg2.show_words)
+    assert(cfg2.show_chars.not())
+    cfg3 := _expect_run({"-lwm"})
+    assert(cfg3.show_chars)
+    assert(cfg3.show_bytes.not())
+
+cli_files_and_dash: test =
+    cfg := _expect_run({"f1", "-", "f2"})
+    assert_eq(cfg.files, {"f1", "-", "f2"})
+
+cli_usage_errors: test =
+    assert(_expect_fail({"-x"}).contains("unknown option"))
+    assert(_expect_fail({"-lx"}).contains("unknown option"))
+
+cli_help: test =
+    case parse_args({"-h"}):
+        Help -> assert(True)
+        _ -> panic("expected Help")
+    case parse_args({"--help"}):
+        Help -> assert(True)
+        _ -> panic("expected Help")
+
+cli_double_dash: test =
+    cfg := _expect_run({"--", "-l"})
+    assert_eq(cfg.files, {"-l"})
+
+io_error_messages: test =
+    assert_eq(_io_message(NotFound), "no such file or directory")
+    assert_eq(_io_message(Permission), "permission denied")
+    assert_eq(_io_message(Other "boom"), "boom")
+
+dispatch_stdin_default: test =
+    out := Out.tee(Out.null(), (s): assert_eq(s, "      1       2      13"))
+    status := _dispatch(out, Out.null(), {}, Fs.null(), In.from_lines({"hello  world"}))
+    assert_eq(status, 0)
+
+dispatch_stdin_lines_only: test =
+    out := Out.tee(Out.null(), (s): assert_eq(s, "2"))
+    status := _dispatch(out, Out.null(), {"-l"}, Fs.null(), In.from_lines({"a", "b"}))
+    assert_eq(status, 0)
+
+dispatch_help: test =
+    status := _dispatch(Out.null(), Out.null(), {"--help"}, Fs.null(), In.empty())
+    assert_eq(status, 0)
+
+dispatch_usage_error: test =
+    status := _dispatch(Out.null(), Out.null(), {"-x"}, Fs.null(), In.empty())
+    assert_eq(status, 2)
+
+dispatch_missing_file: test =
+    status := _dispatch(Out.null(), Out.null(), {"does-not-exist.txt"}, Fs.null(),
+                        In.empty())
+    assert_eq(status, 2)
+
+dispatch_dash_is_stdin: test =
+    out := Out.tee(Out.null(), (s): assert_eq(s, "      1       1       2 -"))
+    status := _dispatch(out, Out.null(), {"-"}, Fs.null(), In.from_lines({"x"}))
+    assert_eq(status, 0)

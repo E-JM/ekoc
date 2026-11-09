@@ -1,0 +1,69 @@
+// Token and AST types for the Lua interpreter.
+// This module holds data only: no functions, no capabilities, no imports.
+
+// ---------------------------------------------------------------- AST types
+
+Tok: type =
+    | TName String
+    | TKw String
+    | TNum Float
+    | TStr String
+    | TSym String
+    | TEof
+
+Token: type = [tok: Tok, line: Int]
+
+BinOp: type =
+    |OpAdd
+    |OpSub
+    |OpMul
+    |OpDiv
+    |OpMod
+    |OpPow
+    |OpConcat
+    |OpEq
+    |OpNe
+    |OpLt
+    |OpLe
+    |OpGt
+    |OpGe
+    |OpAnd
+    |OpOr
+
+UnOp: type = UnNeg | UnNot | UnLen
+
+Expr: type =
+    |ENil
+    |EBool Bool
+    |ENum Float
+    |EStr String
+    |EVar String
+    |EBin [BinOp, Expr, Expr]
+    |EUn [UnOp, Expr]
+    |ECall [Expr, []Expr]
+    |EMethod [Expr, String, []Expr]
+    |EIndex [Expr, Expr]
+    |ETable []TableField
+    |EFunc [ []String, []Stmt ]
+
+TableField: type =
+    |FPos Expr
+    |FNamed [String, Expr]
+    |FKeyed [Expr, Expr]
+
+Stmt: type =
+    |SLocal [ []String, []Expr ]
+    |SLocalFunc [String, []String, []Stmt]
+    |SAssign [ []Expr, []Expr ]
+    |SExpr Expr
+    |SDo []Stmt
+    |SIf [ []IfClause, Option ([]Stmt) ]
+    |SWhile [Expr, []Stmt]
+    |SRepeat [ []Stmt, Expr ]
+    |SForNum [String, Expr, Expr, Option Expr, []Stmt]
+    |SForIn [ []String, Expr, []Stmt ]
+    |SReturn (Option Expr)
+    |SBreak
+
+IfClause: type = [cond: Expr, body: []Stmt]
+

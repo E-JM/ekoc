@@ -1,0 +1,281 @@
+// A small persistent todo list, written against the Eko reference manual.
+//
+//   todo list
+//   todo add write the docs
+//   todo done 1
+//   todo undone 1
+//   todo remove 1
+//   todo clear
+//   todo help
+//
+// Storage is JSON at the path in TODO_FILE, or "todos.json". The command
+// logic is pure; only the I/O shell (main, load/save, printing) holds
+// capabilities. The pure core takes and returns plain values, so every
+// command is testable without touching the world, and every world contact
+// is authorized by main's parameter list.
+//
+// Module: todo (the file is the module).
+
+/// One todo item. The id is stable for the life of the item.
+Todo: type = [id: Int, title: String, done: Bool]
+
+/// The display channel for one todo; inspect stays structural.
+Todo.show: (t: Todo) -> String =
+    mark := if t.done: "x" else: " "
+    "[{mark}] {t.title}"
+
+/// The persisted document: the whole list plus the next id to allocate.
+Store: type = [next_id: Int, todos: []Todo]
+
+/// A command's answer: an optional new store (None means "nothing changed")
+/// plus the lines to print. "No change" is a domain check, so it is Option;
+/// malformed input is validation, so the command itself returns Result.
+Outcome: type = [store: Option Store, lines: []String]
+
+_default_path: String = "todos.json"
+
+empty_store: Store = {next_id: 1, todos: {}}
+
+_help_lines: []String = {
+    "usage: todo <command> [args]",
+    "  list            show all todos",
+    "  add <title>     add a todo",
+    "  done <id>       mark a todo done",
+    "  undone <id>     mark a todo open",
+    "  remove <id>     delete a todo",
+    "  clear           remove all completed todos",
+    "  help            show this help"}
+
+// ---------------------------------------------------------------- pure core
+
+/// Appends one todo and allocates its id.
+add_todo: (store: Store, title: String) -> Store =
+    todo: Todo = {id: store.next_id, title: title, done: False}
+    {next_id: store.next_id + 1, todos: store.todos ++ {todo}}
+
+_set_one: (t: Todo, id: Int, done: Bool) -> Todo =
+    if t.id == id: t.with({done: done}) else: t
+
+/// Marks a todo; None means no todo has that id (a domain check).
+mark_todo: (store: Store, id: Int, done: Bool) -> Option Store =
+    case store.todos.find_by((t): t.id == id):
+        None -> None
+        Some _ -> Some (store.with({todos: store.todos.map((t): _set_one(t, id, done))}))
+
+// The interpolation uses Todo.show; inspect remains available for tests.
+_todo_line: (t: Todo) -> String =
+    "{t.id}. {t}"
+
+list_lines: (store: Store) -> []String =
+    header: []String = {"todos:"}
+    if store.todos.length() == 0:
+        header ++ {"  (none)"}
+    else:
+        header ++ store.todos.map((t): "  {_todo_line(t)}")
+
+_title: (rest: []String) -> Result String String =
+    title := rest.join(" ").trim()
+    case title:
+        "" -> Err "usage: add <title>"
+        _ -> Ok title
+
+_id_of: (rest: []String) -> Result Int String =
+    case rest:
+        {h, ..t} if t.length() == 0 -> Int.parse(h).map_err((e): "invalid id '{h}': {e}")
+        _ -> Err "usage: <id>"
+
+// External JSON is untrusted: ids must be unique and below next_id.
+_valid_store: (store: Store) -> Bool =
+    ids := Set.of(store.todos.map((t): t.id))
+    ids.length() == store.todos.length() && store.todos.all((t): t.id < store.next_id)
+
+_check_store: (store: Store) -> Result Store String =
+    if _valid_store(store):
+        Ok store
+    else:
+        Err "store: ids must be unique and below next_id {store.next_id}"
+
+// ------------------------------------------------------------ command layer
+
+_add_cmd: (store: Store, rest: []String) -> Result Outcome String =
+    title <- _title(rest).try()
+    new_id := store.next_id
+    updated := add_todo(store, title)
+    Ok {store: Some updated, lines: {"added {new_id}: {title}"}}
+
+_done_cmd: (store: Store, rest: []String, done: Bool) -> Result Outcome String =
+    id <- _id_of(rest).try()
+    state: String = if done: "done" else: "open"
+    updated <- mark_todo(store, id, done).to_result("no todo with id {id}").try()
+    Ok {store: Some updated, lines: {"{id} is now {state}"}}
+
+_remove_cmd: (store: Store, rest: []String) -> Result Outcome String =
+    id <- _id_of(rest).try()
+    remaining := store.todos.filter((t): t.id != id)
+    if remaining.length() == store.todos.length():
+        Err "no todo with id {id}"
+    else:
+        Ok {store: Some (store.with({todos: remaining})), lines: {"removed {id}"}}
+
+_clear_cmd: (store: Store) -> Result Outcome String =
+    remaining := store.todos.filter((t): t.done.not())
+    removed := store.todos.length() - remaining.length()
+    if removed == 0:
+        Ok {store: None, lines: {"no completed todos"}}
+    else:
+        Ok {store: Some (store.with({todos: remaining})), lines: {"removed {removed} completed"}}
+
+_route: (store: Store, cmd: String, rest: []String) -> Result Outcome String =
+    case cmd:
+        "list" -> Ok {store: None, lines: list_lines(store)}
+        "add" -> _add_cmd(store, rest)
+        "done" -> _done_cmd(store, rest, True)
+        "undone" -> _done_cmd(store, rest, False)
+        "remove" -> _remove_cmd(store, rest)
+        "clear" -> _clear_cmd(store)
+        "help" | "--help" | "-h" -> Ok {store: None, lines: _help_lines}
+        _ -> Err "unknown command: {cmd}"
+
+/// The whole command language, with no capability and no world bit.
+run_command: (store: Store, argv: []String) -> Result Outcome String =
+    case argv:
+        {cmd, ..rest} -> _route(store, cmd, rest)
+        _ -> Ok {store: None, lines: list_lines(store)}
+
+// ----------------------------------------------------------------- I/O shell
+
+load_store: (fs: Fs, path: String) !-> Result Store String =
+    case fs.read(path):
+        Err NotFound -> Ok empty_store
+        Err e -> Err "read {path}: {e}"
+        Ok text -> _parse_store(path, text)
+
+// Parse and validate the JSON text; pure, so tests can call it directly.
+_parse_store: (path: String, text: String) -> Result Store String =
+    j <- Json.parse(text).map_err((e): "parse {path}: {e}").try()
+    store <- Store.from_json(j).map_err((e): "decode {path}: {e}").try()
+    _check_store(store).map_err((e): "{path}: {e}")
+
+save_store: (fs: Fs, path: String, store: Store) !-> Result _ String =
+    fs.write(path, Json.show(store.to_json())).map_err((e): "write {path}: {e}")
+
+_save_change: (fs: Fs, path: String, changed: Option Store) !-> Result _ String =
+    case changed:
+        None -> Ok _
+        Some store -> save_store(fs, path, store)
+
+_print_lines: (out: Out, lines: []String) ! =
+    lines.each((l): out.println(l))
+
+_run: (fs: Fs, env: Env, argv: []String) !-> Result ([]String) String =
+    path    := env.get("TODO_FILE").unwrap_or(_default_path)
+    store   <- load_store(fs, path).try()
+    outcome <- run_command(store, argv).try()
+    _       <- _save_change(fs, path, outcome.store).try()
+    Ok outcome.lines
+
+// The parameter list is the authorization manifest: output, arguments, the
+// file system, and the environment. There is no other I/O entrance.
+main: (out: Out, args: Args, fs: Fs, env: Env) ! =
+    case _run(fs, env, args.all()):
+        Ok lines -> _print_lines(out, lines)
+        Err e -> _print_lines(out, {"error: {e}"})
+
+// --------------------------------------------------------------------- tests
+
+// Test-only helper: run a command and resolve "no change" to the old store.
+_apply_command: (store: Store, argv: []String) -> [Store, []String] =
+    outcome := run_command(store, argv).expect("test command failed: {argv}")
+    {outcome.store.unwrap_or(store), outcome.lines}
+
+empty_list: test =
+    (s0, lines) = _apply_command(empty_store, {})
+    assert_eq(s0, empty_store)
+    assert_eq(lines, {"todos:", "  (none)"})
+
+adding: test =
+    (s1, lines) = _apply_command(empty_store, {"add", "write docs"})
+    assert_eq(lines, {"added 1: write docs"})
+    assert_eq(s1.todos, {{id: 1, title: "write docs", done: False}})
+
+rendering: test =
+    assert_eq(list_lines(empty_store), {"todos:", "  (none)"})
+    (s1, _) = _apply_command(empty_store, {"add", "write docs"})
+    assert_eq(list_lines(s1), {"todos:", "  1. [ ] write docs"})
+    s2 := mark_todo(s1, 1, True).expect("todo 1 exists")
+    assert_eq(list_lines(s2), {"todos:", "  1. [x] write docs"})
+
+marking: test =
+    (s1, _) = _apply_command(empty_store, {"add", "ship it"})
+    (s2, lines) = _apply_command(s1, {"done", "1"})
+    assert_eq(lines, {"1 is now done"})
+    assert_eq(s2.todos.get(0).map((t): t.done), Some True)
+    (s3, lines3) = _apply_command(s2, {"undone", "1"})
+    assert_eq(lines3, {"1 is now open"})
+    assert_eq(s3.todos.get(0).map((t): t.done), Some False)
+
+immutability: test =
+    s1 := add_todo(empty_store, "a")
+    s2 := mark_todo(s1, 1, True).expect("todo 1 exists")
+    assert_eq(s1.todos.get(0).map((t): t.done), Some False)
+    assert_eq(s2.todos.get(0).map((t): t.done), Some True)
+
+removal: test =
+    (s1, _) = _apply_command(empty_store, {"add", "keep"})
+    (s2, _) = _apply_command(s1, {"add", "drop"})
+    (s3, lines) = _apply_command(s2, {"remove", "2"})
+    assert_eq(lines, {"removed 2"})
+    assert_eq(s3.todos, {{id: 1, title: "keep", done: False}})
+
+clearing: test =
+    (s1, _) = _apply_command(empty_store, {"add", "one"})
+    (s2, _) = _apply_command(s1, {"add", "two"})
+    s3 := mark_todo(s2, 1, True).expect("todo 1 exists")
+    (s4, lines) = _apply_command(s3, {"clear"})
+    assert_eq(lines, {"removed 1 completed"})
+    assert_eq(s4.todos, {{id: 2, title: "two", done: False}})
+
+unknown_command: test =
+    assert(run_command(empty_store, {"frobnicate"}).is_err())
+
+bad_id: test =
+    assert(run_command(empty_store, {"done", "x"}).is_err())
+    assert(run_command(empty_store, {"done", "1"}).is_err())
+
+json_round_trip: test =
+    store := add_todo(empty_store, "persist me")
+    assert_eq(Store.from_json(store.to_json()), Ok store)
+
+parsing: test =
+    assert(_parse_store("x", "not json").is_err())
+    assert(_parse_store("x", "\{}").is_err())
+    store := add_todo(empty_store, "persist me")
+    assert(_parse_store("x", Json.show(store.to_json())).is_ok())
+
+parse_helpers: test =
+    assert_eq(_title({"hello"}), Ok "hello")
+    assert_eq(_title({}), Err "usage: add <title>")
+    assert_eq(_title({"  "}), Err "usage: add <title>")
+    assert_eq(_id_of({"7"}), Ok 7)
+    assert_eq(_id_of({}), Err "usage: <id>")
+    assert(_id_of({"1", "2"}).is_err())
+    assert(_id_of({"x"}).is_err())
+
+store_invariant: test =
+    bad: Store = {next_id: 1, todos: {{id: 1, title: "x", done: False}}}
+    assert(_check_store(bad).is_err())
+    dupes: Store = {next_id: 3, todos: {{id: 1, title: "a", done: False}, {id: 1, title: "b", done: False}}}
+    assert(_check_store(dupes).is_err())
+    good: Store = {next_id: 2, todos: {{id: 1, title: "x", done: False}}}
+    assert(_check_store(good).is_ok())
+
+show_channels: test =
+    t: Todo = {id: 1, title: "ship", done: True}
+    assert_eq(show(t), "[x] ship")
+    assert_eq(t.inspect(), "\{id: 1, title: \"ship\", done: True}")
+
+printing: test =
+    line := _todo_line({id: 1, title: "ship", done: True})
+    assert_eq(line, "1. [x] ship")
+    out := Out.tee(Out.null(), (s): assert_eq(s, line))
+    _print_lines(out, {line})

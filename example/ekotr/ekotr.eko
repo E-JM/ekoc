@@ -1,0 +1,439 @@
+// ekotr: a character translator, squeezes, and deleter for text streams.
+//
+//   ekotr [options] SET1 [SET2]
+//
+// Characters of SET1 are translated to the characters of SET2 at the same
+// position (a short SET2 repeats its last character), or deleted with -d.
+// -s squeezes repeats of the last specified set. Sets understand ranges,
+// the escapes \n \t \r \a \f \v \\, and the [:upper:] / [:lower:] classes,
+// whose equal lengths line up positionally. The command layer is pure;
+// only main and its explicit helpers touch the capabilities.
+//
+// Module: ekotr (the file is the module).
+
+// ------------------------------------------------------------------- core
+
+/// One parsed set token: a single char, or a class expansion.
+Tok: type = One Char | Many []Char
+
+/// The completed command configuration.
+Config: type = [
+    set1: []Char,
+    set2: []Char,
+    delete: Bool,
+    squeeze: Bool,
+    files: []String]
+
+/// What the argument vector denotes.
+Invocation: type = Help | Fail String | Run Config
+
+parse_args: (argv: []String) -> Invocation =
+    _parse_options(argv, False, False, {}, {})
+
+_parse_options: (argv: []String, delete: Bool, squeeze: Bool, sets: []String,
+                 files: []String) -> Invocation =
+    case argv:
+        {} -> _build_config(sets, delete, squeeze, files)
+        {a, ..rest} ->
+            case a:
+                "--" -> _collect_operands(rest, delete, squeeze, sets, files)
+                "-h" | "--help" -> Help
+                "-d" -> _parse_options(rest, True, squeeze, sets, files)
+                "-s" -> _parse_options(rest, delete, True, sets, files)
+                "-ds" | "-sd" -> _parse_options(rest, True, True, sets, files)
+                _ ->
+                    if a.starts_with("-") && a.length() > 1:
+                        Fail "unknown option: {a}"
+                    else:
+                        _collect_operands(argv, delete, squeeze, sets, files)
+
+// The first two positional operands are SET1 and SET2; every later one is a
+// file, where '-' also names standard input.
+_collect_operands: (argv: []String, delete: Bool, squeeze: Bool, sets: []String,
+                    files: []String) -> Invocation =
+    case argv:
+        {} -> _build_config(sets, delete, squeeze, files)
+        {a, ..rest} ->
+            if a.starts_with("-") && a.length() > 1:
+                _parse_options(argv, delete, squeeze, sets, files)
+            else:
+                if sets.length() < 2:
+                    _collect_operands(rest, delete, squeeze, sets ++ {a}, files)
+                else:
+                    _collect_operands(rest, delete, squeeze, sets, files ++ {a})
+
+_build_config: (sets: []String, delete: Bool, squeeze: Bool,
+                files: []String) -> Invocation =
+    if sets.eq({}):
+        Fail "missing operand"
+    else:
+        case _build_sets(sets, delete, squeeze, files):
+            Err e -> Fail e
+            Ok cfg -> Run cfg
+
+_build_sets: (sets: []String, delete: Bool, squeeze: Bool,
+              files: []String) -> Result Config String =
+    set1 <- _parse_set(sets.get(0).unwrap_or("")).try()
+    set2 <- _set2_of(sets, delete, squeeze).try()
+    Ok {set1: set1, set2: set2, delete: delete, squeeze: squeeze, files: files}
+
+// SET2 when given: parsed and validated against the -d/-s flags; without
+// SET2 the table repeats SET1's last character and no check applies.
+_set2_of: (sets: []String, delete: Bool, squeeze: Bool) -> Result ([]Char) String =
+    case sets.get(1):
+        None -> Ok {}
+        Some text ->
+            set2 <- _parse_set(text).try()
+            _ <- _check_set2(set2, delete, squeeze).try()
+            Ok set2
+
+_check_set2: (set2: []Char, delete: Bool, squeeze: Bool) -> Result _ String =
+    if delete && squeeze.not():
+        Err "when deleting, SET2 requires -s"
+    else:
+        if set2.eq({}) && delete.not():
+            Err "when not deleting, SET2 must not be empty"
+        else:
+            Ok _
+
+// ------------------------------------------------------------ set parsing
+
+_escape_char: (c: Char) -> Char =
+    case c:
+        'n' -> '\n'
+        't' -> '\t'
+        'r' -> '\r'
+        'a' -> '\u{7}'
+        'f' -> '\u{c}'
+        'v' -> '\u{b}'
+        _ -> c
+
+_upper: []Char = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".chars()
+_lower: []Char = "abcdefghijklmnopqrstuvwxyz".chars()
+
+_parse_set: (text: String) -> Result ([]Char) String =
+    _parse_toks(text.chars(), {}).try((toks): _expand_toks(toks, 0, {}))
+
+_parse_toks: (cs: []Char, acc: []Tok) -> Result ([]Tok) String =
+    case cs:
+        {} -> Ok acc.reverse()
+        {'\\', ..rest} ->
+            case rest:
+                {} -> Err "trailing backslash in set"
+                {c, ..more} -> _parse_toks(more, {One (_escape_char(c))} ++ acc)
+        {'[', ..rest} ->
+            if _starts_upper(rest):
+                _parse_toks(rest.drop(9), {Many _upper} ++ acc)
+            else:
+                if _starts_lower(rest):
+                    _parse_toks(rest.drop(9), {Many _lower} ++ acc)
+                else:
+                    _parse_toks(rest, {One '['} ++ acc)
+        {c, ..rest} -> _parse_toks(rest, {One c} ++ acc)
+
+_starts_upper: (cs: []Char) -> Bool = _prefix_of(cs, ":upper:]".chars())
+_starts_lower: (cs: []Char) -> Bool = _prefix_of(cs, ":lower:]".chars())
+
+_prefix_of: (cs: []Char, prefix: []Char) -> Bool =
+    cs.take(prefix.length()).eq(prefix)
+
+// A `-` between two single characters is a range; at either end of the set,
+// or beside a class, it is a literal.
+_expand_toks: (toks: []Tok, i: Int, acc: []Char) -> Result ([]Char) String =
+    case toks.get(i):
+        None -> Ok acc.reverse()
+        Some (One c) ->
+            case toks.get(i + 1):
+                Some (One '-') ->
+                    case toks.get(i + 2):
+                        Some (One d) -> _expand_range(c, d, toks, i, acc)
+                        _ -> _expand_toks(toks, i + 1, {c} ++ acc)
+                _ -> _expand_toks(toks, i + 1, {c} ++ acc)
+        Some (Many cs) -> _expand_toks(toks, i + 1, cs.reverse() ++ acc)
+
+_expand_range: (c: Char, d: Char, toks: []Tok, i: Int, acc: []Char) -> Result ([]Char) String =
+    if Char.to_code(d) < Char.to_code(c):
+        Err "range endpoints are in reverse order"
+    else:
+        span := _char_span(c, d)
+        _expand_toks(toks, i + 3, span ++ acc)
+
+_char_span: (c: Char, d: Char) -> []Char =
+    _char_span_walk(Char.to_code(c), Char.to_code(d), {})
+
+_char_span_walk: (lo: Int, hi: Int, acc: []Char) -> []Char =
+    if lo > hi:
+        acc
+    else:
+        case Char.from_code(lo):
+            None -> acc
+            Some c -> _char_span_walk(lo + 1, hi, {c} ++ acc)
+
+// ------------------------------------------------------------ translation
+
+// First occurrence wins when SET1 repeats a character.
+_map_of: (set1: []Char, set2: []Char) -> [Char]Char =
+    _map_walk(set1, set2, 0, {})
+
+_map_walk: (set1: []Char, set2: []Char, i: Int, acc: [Char]Char) -> [Char]Char =
+    case set1.get(i):
+        None -> acc
+        Some c ->
+            next := case acc.get(c):
+                Some _ -> acc
+                None ->
+                    target := set2.get(i).or_else(((): _last_of(set2))).unwrap_or(c)
+                    acc.insert(c, target)
+            _map_walk(set1, set2, i + 1, next)
+
+_last_of: (cs: []Char) -> Option Char = cs.get(cs.length() - 1)
+
+// Squeeze runs: a char in the squeeze set is emitted only when it differs
+// from the previously emitted char.
+_squeeze_walk: (cs: []Char, squeeze_set: Set Char, prev: Option Char,
+                acc: []Char) -> []Char =
+    case cs:
+        {} -> acc.reverse()
+        {c, ..rest} ->
+            repeated := squeeze_set.contains(c) && prev.map((p): p == c).unwrap_or(False)
+            if repeated:
+                _squeeze_walk(rest, squeeze_set, prev, acc)
+            else:
+                _squeeze_walk(rest, squeeze_set, Some c, {c} ++ acc)
+
+_line_chars: (line: String, set1: []Char, set2: []Char, delete: Bool,
+              squeeze: Bool) -> String =
+    from := Set.of(set1)
+    squeezed := _squeeze_set_of(set1, set2)
+    stepped := if delete:
+        line.chars().filter((c): from.contains(c).not())
+    else:
+        table := _map_of(set1, set2)
+        line.chars().map((c): table.get(c).unwrap_or(c))
+    if squeeze:
+        String.from_chars(_squeeze_walk(stepped, squeezed, None, {}))
+    else:
+        String.from_chars(stepped)
+
+// The squeezed set is the last specified set: SET2 when present, else SET1.
+_squeeze_set_of: (set1: []Char, set2: []Char) -> Set Char =
+    Set.of(if set2.eq({}): set1 else: set2)
+
+// ----------------------------------------------------------------- I/O shell
+
+_help_lines: []String = {
+    "usage: ekotr [options] SET1 [SET2]",
+    "",
+    "Translate, squeeze, or delete characters of the named files, or",
+    "standard input when no file is given, and print the result. A file",
+    "argument of '-' also means standard input.",
+    "",
+    "options:",
+    "  -d          delete the characters of SET1",
+    "  -s          squeeze repeats of the last specified set into one",
+    "  -h, --help  show this help and exit",
+    "  --          end of options; the operands follow",
+    "",
+    "sets: ranges like a-z, the escapes \\n \\t \\r \\a \\f \\v \\\\, and the",
+    "[:upper:] and [:lower:] classes, which line up positionally. A SET2",
+    "shorter than SET1 repeats its last character; a longer one is cut.",
+    "",
+    "exit status: 0 on success, 2 on usage or file error."}
+
+_print_help: (out: Out) ! =
+    _help_lines.each((line): out.println(line))
+
+_io_message: (e: IoError) -> String =
+    case e:
+        NotFound -> "no such file or directory"
+        Permission -> "permission denied"
+        Exists -> "file exists"
+        NotFile -> "not a regular file"
+        Closed -> "handle closed"
+        InvalidData d -> "invalid data: {d}"
+        Other m -> m
+
+_read_file: (fs: Fs, path: String) !-> Result String String =
+    case fs.stat(path):
+        Ok info if info.is_dir -> Err "is a directory"
+        _ -> fs.read(path).map_err(_io_message)
+
+_read_stdin: (lines: []String, inp: In) !-> Result ([]String) IoError =
+    line <- inp.read_line().try()
+    case line:
+        None -> Ok lines
+        Some text -> _read_stdin({text} ++ lines, inp)
+
+_collect: (lines: []String, fs: Fs, inp: In, files: []String) !-> Result ([]String) String =
+    case files:
+        {} ->
+            more <- _read_stdin({}, inp).map_err(_io_message).try()
+            Ok (lines ++ List.reverse(more))
+        {path, ..rest} ->
+            if path == "-":
+                more <- _read_stdin({}, inp).map_err(_io_message).try()
+                _collect(lines ++ List.reverse(more), fs, inp, rest)
+            else:
+                text <- _read_file(fs, path).map_err((msg): "{path}: {msg}").try()
+                _collect(lines ++ String.lines(text), fs, inp, rest)
+
+_run_config: (out: Out, err: Out, fs: Fs, inp: In, cfg: Config) !-> Int =
+    case _collect({}, fs, inp, cfg.files):
+        Err msg ->
+            err.println("ekotr: {msg}")
+            2
+        Ok lines ->
+            lines.each((line): out.println(_line_chars(line, cfg.set1, cfg.set2,
+                                                    cfg.delete, cfg.squeeze)))
+            0
+
+_help_status: (out: Out) !-> Int =
+    _print_help(out)
+    0
+
+_usage_failure: (err: Out, msg: String) !-> Int =
+    err.println("ekotr: {msg}")
+    err.println("Try 'ekotr --help' for usage.")
+    2
+
+_dispatch: (out: Out, err: Out, argv: []String, fs: Fs, inp: In) !-> Int =
+    case parse_args(argv):
+        Help -> _help_status(out)
+        Fail msg -> _usage_failure(err, msg)
+        Run cfg -> _run_config(out, err, fs, inp, cfg)
+
+// The parameter list is the authorization manifest: output, arguments, the
+// file system, standard input, and the process exit channel. The error
+// channel rides the Out session as host wiring.
+main: (out: Out, args: Args, fs: Fs, inp: In, proc: Proc) ! =
+    code := _dispatch(out, Out.err(), args.all(), fs, inp)
+    Proc.exit(proc, code)
+
+// --------------------------------------------------------------------- tests
+
+_build: (argv: []String) -> Config =
+    case parse_args(argv):
+        Run cfg -> cfg
+        Help -> panic("expected Run but got Help")
+        Fail e -> panic("expected Run but got: {e}")
+
+_expect_fail: (argv: []String) -> String =
+    case parse_args(argv):
+        Fail e -> e
+        Help -> panic("expected Fail but got Help")
+        Run _ -> panic("expected Fail but got Run")
+
+_tr: (line: String, argv: []String) -> String =
+    cfg := _build(argv)
+    _line_chars(line, cfg.set1, cfg.set2, cfg.delete, cfg.squeeze)
+
+set_parsing: test =
+    cfg := _build({"a-c", "x"})
+    assert_eq(cfg.set1, {'a', 'b', 'c'})
+    dash_ends := _build({"-", "x"})
+    assert_eq(dash_ends.set1, {'-'})
+    escapes := _build({"a\\nb", "x"})
+    assert_eq(escapes.set1, {'a', '\n', 'b'})
+    classes := _build({"[:lower:]", "[:upper:]"})
+    assert_eq(classes.set1, _lower)
+    assert_eq(classes.set2, _upper)
+    literal_bracket := _build({"[", "x"})
+    assert_eq(literal_bracket.set1, {'['})
+
+set_parsing_errors: test =
+    assert(_expect_fail({"z-a", "x"}).contains("reverse"))
+    assert(_expect_fail({"a\\", "x"}).contains("backslash"))
+
+translation: test =
+    assert_eq(_tr("abc", {"abc", "xyz"}), "xyz")
+    assert_eq(_tr("hello", {"a-y", "A-Y"}), "HELLO")
+    assert_eq(_tr("a\tb", {"\\t", " "}), "a b")
+    assert_eq(_tr("abc", {"abc", "x"}), "xxx")
+    assert_eq(_tr("abc", {"a", "XY"}), "Xbc")
+    assert_eq(_tr("abc", {"ab", "ba"}), "bac")
+    assert_eq(_tr("aaa", {"a", "b"}), "bbb")
+
+class_translation: test =
+    assert_eq(_tr("Hello", {"[:lower:]", "[:upper:]"}), "HELLO")
+    assert_eq(_tr("WORLD", {"[:upper:]", "[:lower:]"}), "world")
+
+delete: test =
+    assert_eq(_tr("aabbcc", {"b", "-d"}), "aacc")
+    assert_eq(_tr("a*b", {"a", "-d"}), "*b")
+    assert_eq(_tr("aabbcc", {"a", "-ds", "b"}), "bcc")
+    assert_eq(_tr("aab", {"a", "-d"}), "b")
+
+squeeze: test =
+    assert_eq(_tr("aaa bbb", {"ab", "-s"}), "a b")
+    assert_eq(_tr("aa", {"a", "b", "-s"}), "b")
+    assert_eq(_tr("aabbaa", {"ab", "-s"}), "aba")
+    assert_eq(_tr("a  b", {" ", "-s"}), "a b")
+    assert_eq(_tr("aab", {"a", "b", "-s"}), "b")
+
+arg_parsing: test =
+    cfg := _build({"abc", "xyz"})
+    assert_eq(cfg.set1.length(), 3)
+    assert_eq(cfg.set2.length(), 3)
+    assert(cfg.delete.not())
+    ds := _build({"-d", "abc"})
+    assert(ds.delete)
+    ds2 := _build({"-ds", "abc"})
+    assert(ds2.delete)
+    assert(ds2.squeeze)
+    permuted := _build({"abc", "-d"})
+    assert(permuted.delete)
+    permuted2 := _build({"a", "b", "-s"})
+    assert(permuted2.squeeze)
+
+arg_errors: test =
+    assert(_expect_fail({}).contains("missing operand"))
+    assert(_expect_fail({"a", "b", "-x"}).contains("unknown option"))
+    assert(_expect_fail({"-x", "a"}).contains("unknown option"))
+    assert(_expect_fail({"-d", "a", "b"}).contains("requires -s"))
+    assert(_expect_fail({"a", ""}).contains("must not be empty"))
+
+cli_help: test =
+    case parse_args({"-h"}):
+        Help -> assert(True)
+        _ -> panic("expected Help")
+    case parse_args({"--help"}):
+        Help -> assert(True)
+        _ -> panic("expected Help")
+
+file_line_splitting: test =
+    assert_eq("".lines(), {})
+    assert_eq("a\nb\n".lines(), {"a", "b"})
+    assert_eq("a\nb".lines(), {"a", "b"})
+
+io_error_messages: test =
+    assert_eq(_io_message(NotFound), "no such file or directory")
+    assert_eq(_io_message(Other "boom"), "boom")
+
+dispatch_stdin_translate: test =
+    out := Out.tee(Out.null(), (s): assert_eq(s, "Xbc"))
+    status := _dispatch(out, Out.null(), {"a", "X"}, Fs.null(), In.from_lines({"abc"}))
+    assert_eq(status, 0)
+
+dispatch_stdin_delete: test =
+    out := Out.tee(Out.null(), (s): assert_eq(s, "bcc"))
+    status := _dispatch(out, Out.null(), {"-ds", "a", "b"}, Fs.null(),
+                        In.from_lines({"aabbcc"}))
+    assert_eq(status, 0)
+
+dispatch_help: test =
+    status := _dispatch(Out.null(), Out.null(), {"--help"}, Fs.null(), In.empty())
+    assert_eq(status, 0)
+
+dispatch_usage_error: test =
+    status := _dispatch(Out.null(), Out.null(), {}, Fs.null(), In.empty())
+    assert_eq(status, 2)
+
+dispatch_missing_file: test =
+    status := _dispatch(Out.null(), Out.null(), {"a", "b", "does-not-exist.txt"}, Fs.null(),
+                        In.empty())
+    assert_eq(status, 2)
+
+dispatch_dash_is_stdin: test =
+    out := Out.tee(Out.null(), (s): assert_eq(s, "Xbc"))
+    status := _dispatch(out, Out.null(), {"a", "X", "-"}, Fs.null(), In.from_lines({"abc"}))
+    assert_eq(status, 0)

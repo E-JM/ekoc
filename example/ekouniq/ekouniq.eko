@@ -1,0 +1,392 @@
+// ekouniq: an adjacent-line filter that reports, drops, or counts repeated
+// lines under a configurable comparison key.
+//
+//   ekouniq [options] [file ...]
+//
+// Consecutive lines whose keys are equal form one group; each group is
+// reported once, through its first line. The command layer is pure:
+// arguments parse into Config and Invocation, the grouping runs over the
+// line list, and only main and its explicit helpers touch the capabilities.
+//
+// Module: ekouniq (the file is the module).
+
+// ------------------------------------------------------------------- core
+
+/// The completed command configuration.
+Config: type = [
+    count: Bool,
+    repeated: Bool,
+    uniques: Bool,
+    fold: Bool,
+    skip: Int,
+    width: Int,
+    files: []String]
+
+/// What the argument vector denotes.
+Invocation: type = Help | Fail String | Run Config
+
+Flags: type = [
+    count: Bool,
+    repeated: Bool,
+    uniques: Bool,
+    fold: Bool,
+    skip: Int,
+    width: Int]
+
+_default_flags: Flags = {
+    count: False,
+    repeated: False,
+    uniques: False,
+    fold: False,
+    skip: 0,
+    width: 0}
+
+parse_args: (argv: []String) -> Invocation =
+    _parse_options(argv, _default_flags, {})
+
+_parse_options: (argv: []String, flags: Flags, files: []String) -> Invocation =
+    case argv:
+        {} -> Run _to_config(flags, files)
+        {a, ..rest} ->
+            case a:
+                "--" -> Run _to_config(flags, files ++ rest)
+                "-h" | "--help" -> Help
+                "-c" -> _parse_options(rest, flags.with({count: True}), files)
+                "-d" -> _parse_options(rest, flags.with({repeated: True}), files)
+                "-u" -> _parse_options(rest, flags.with({uniques: True}), files)
+                "-i" -> _parse_options(rest, flags.with({fold: True}), files)
+                "-s" -> _skip_option(rest, flags, files)
+                "-w" -> _width_option(rest, flags, files)
+                _ if a.starts_with("-s") && a.length() > 2 ->
+                    _skip_text(_after_flag(a), rest, flags, files)
+                _ if a.starts_with("-w") && a.length() > 2 ->
+                    _width_text(_after_flag(a), rest, flags, files)
+                _ if a.starts_with("-") && a.length() > 1 ->
+                    Fail "unknown option: {a}"
+                _ ->
+                    _parse_options(rest, flags, files ++ {a})
+
+// The text an option carries attached to its two leading characters, as
+// in `-s2`.
+_after_flag: (a: String) -> String =
+    String.from_chars(a.chars().drop(2))
+
+_to_config: (flags: Flags, files: []String) -> Config = {
+    count: flags.count,
+    repeated: flags.repeated,
+    uniques: flags.uniques,
+    fold: flags.fold,
+    skip: flags.skip,
+    width: flags.width,
+    files: files}
+
+_skip_option: (rest: []String, flags: Flags, files: []String) -> Invocation =
+    case rest:
+        {} -> Fail "missing count after -s"
+        {n, ..more} -> _skip_text(n, more, flags, files)
+
+_width_option: (rest: []String, flags: Flags, files: []String) -> Invocation =
+    case rest:
+        {} -> Fail "missing count after -w"
+        {n, ..more} -> _width_text(n, more, flags, files)
+
+_skip_text: (n: String, rest: []String, flags: Flags, files: []String) -> Invocation =
+    case Int.parse(n):
+        Err _ -> Fail "not a number: {n}"
+        Ok v -> _parse_options(rest, flags.with({skip: v}), files)
+
+_width_text: (n: String, rest: []String, flags: Flags, files: []String) -> Invocation =
+    case Int.parse(n):
+        Err _ -> Fail "not a number: {n}"
+        Ok v ->
+            if v < 0:
+                Fail "width must not be negative"
+            else:
+                _parse_options(rest, flags.with({width: v}), files)
+
+// ------------------------------------------------------------ grouping
+
+_ascii_lower: (c: Char) -> Char =
+    code := Char.to_code(c)
+    if code >= 65 && code <= 90:
+        Char.from_code(code + 32).unwrap_or(c)
+    else:
+        c
+
+// The comparison key: the line's chars after the skipped prefix, cut to the
+// compared width, folded when -i asked for it.
+_key_of: (line: String, cfg: Config) -> String =
+    chars := line.chars().drop(cfg.skip)
+    cut := if cfg.width > 0: chars.take(cfg.width) else: chars
+    if cfg.fold:
+        String.from_chars(cut.map((c): _ascii_lower(c)))
+    else:
+        String.from_chars(cut)
+
+// One adjacent group: its first line and how many lines share the key.
+Group: type = [first: String, size: Int]
+
+_groups: (lines: []String, cfg: Config) -> []Group =
+    _groups_walk(lines, None, 0, cfg, {})
+
+_groups_walk: (lines: []String, open: Option String, size: Int, cfg: Config,
+               acc: []Group) -> []Group =
+    case lines:
+        {} -> _close_group(open, size, acc)
+        {line, ..rest} ->
+            case open:
+                None -> _groups_walk(rest, Some line, 1, cfg, acc)
+                Some first ->
+                    if _key_of(first, cfg) == _key_of(line, cfg):
+                        _groups_walk(rest, open, size + 1, cfg, acc)
+                    else:
+                        _groups_walk(rest, Some line, 1, cfg, _close_group(open, size, acc))
+
+_close_group: (open: Option String, size: Int, acc: []Group) -> []Group =
+    case open:
+        None -> acc.reverse()
+        Some first -> acc ++ {{first: first, size: size}}
+
+// The reference implementation right-aligns the count in seven columns.
+_count_prefix: (n: Int) -> String =
+    "{n}".pad_left(7, ' ') ++ " "
+
+// -d and -u are independent filters; both given, a group must satisfy each.
+_shown: (g: Group, cfg: Config) -> Bool =
+    repeated_ok := if cfg.repeated: g.size > 1 else: True
+    unique_ok := if cfg.uniques: g.size == 1 else: True
+    repeated_ok && unique_ok
+
+_line_of: (g: Group, cfg: Config) -> String =
+    if cfg.count: _count_prefix(g.size) ++ g.first else: g.first
+
+_run: (lines: []String, cfg: Config) -> []String =
+    _groups(lines, cfg).filter((g): _shown(g, cfg)).map((g): _line_of(g, cfg))
+
+// ----------------------------------------------------------------- I/O shell
+
+_help_lines: []String = {
+    "usage: ekouniq [options] [file ...]",
+    "",
+    "Filter adjacent lines of the named files, or standard input when no",
+    "file is given, comparing only the configured key. Consecutive lines",
+    "with equal keys form one group and are reported through the group's",
+    "first line. A file argument of '-' also means standard input.",
+    "",
+    "options:",
+    "  -c          prefix each output line with the group's line count,",
+    "              right-aligned in seven columns",
+    "  -d          print only groups with more than one line",
+    "  -u          print only groups with exactly one line",
+    "  -i          fold ASCII letters to lowercase before comparing",
+    "  -s N        skip the first N characters of every line",
+    "  -w N        compare at most N characters after the skip (0: no limit)",
+    "  -h, --help  show this help and exit",
+    "  --          end of options",
+    "",
+    "exit status: 0 on success, 2 on usage or file error."}
+
+_print_help: (out: Out) ! =
+    _help_lines.each((line): out.println(line))
+
+_io_message: (e: IoError) -> String =
+    case e:
+        NotFound -> "no such file or directory"
+        Permission -> "permission denied"
+        Exists -> "file exists"
+        NotFile -> "not a regular file"
+        Closed -> "handle closed"
+        InvalidData d -> "invalid data: {d}"
+        Other m -> m
+
+_read_file: (fs: Fs, path: String) !-> Result String String =
+    case fs.stat(path):
+        Ok info if info.is_dir -> Err "is a directory"
+        _ -> fs.read(path).map_err(_io_message)
+
+_read_stdin: (lines: []String, inp: In) !-> Result ([]String) IoError =
+    line <- inp.read_line().try()
+    case line:
+        None -> Ok lines
+        Some text -> _read_stdin({text} ++ lines, inp)
+
+_collect: (lines: []String, fs: Fs, inp: In, files: []String) !-> Result ([]String) String =
+    case files:
+        {} ->
+            more <- _read_stdin({}, inp).map_err(_io_message).try()
+            Ok (lines ++ List.reverse(more))
+        {path, ..rest} ->
+            if path == "-":
+                more <- _read_stdin({}, inp).map_err(_io_message).try()
+                _collect(lines ++ List.reverse(more), fs, inp, rest)
+            else:
+                text <- _read_file(fs, path).map_err((msg): "{path}: {msg}").try()
+                _collect(lines ++ String.lines(text), fs, inp, rest)
+
+_run_config: (out: Out, err: Out, fs: Fs, inp: In, cfg: Config) !-> Int =
+    case _collect({}, fs, inp, cfg.files):
+        Err msg ->
+            err.println("ekouniq: {msg}")
+            2
+        Ok lines ->
+            _run(lines, cfg).each((line): out.println(line))
+            0
+
+_help_status: (out: Out) !-> Int =
+    _print_help(out)
+    0
+
+_usage_failure: (err: Out, msg: String) !-> Int =
+    err.println("ekouniq: {msg}")
+    err.println("Try 'ekouniq --help' for usage.")
+    2
+
+_dispatch: (out: Out, err: Out, argv: []String, fs: Fs, inp: In) !-> Int =
+    case parse_args(argv):
+        Help -> _help_status(out)
+        Fail msg -> _usage_failure(err, msg)
+        Run cfg -> _run_config(out, err, fs, inp, cfg)
+
+// The parameter list is the authorization manifest: output, arguments, the
+// file system, standard input, and the process exit channel. The error
+// channel rides the Out session as host wiring.
+main: (out: Out, args: Args, fs: Fs, inp: In, proc: Proc) ! =
+    code := _dispatch(out, Out.err(), args.all(), fs, inp)
+    Proc.exit(proc, code)
+
+// --------------------------------------------------------------------- tests
+
+_expect_run: (argv: []String) -> Config =
+    case parse_args(argv):
+        Run cfg -> cfg
+        Help -> panic("expected Run but got Help")
+        Fail e -> panic("expected Run but got: {e}")
+
+_expect_fail: (argv: []String) -> String =
+    case parse_args(argv):
+        Fail e -> e
+        Help -> panic("expected Fail but got Help")
+        Run _ -> panic("expected Fail but got Run")
+
+_run_lines: (lines: []String, argv: []String) -> []String =
+    _run(lines, _expect_run(argv))
+
+key_of: test =
+    cfg := _expect_run({})
+    assert_eq(_key_of("abc", cfg), "abc")
+    icase := _expect_run({"-i"})
+    assert_eq(_key_of("AbC", icase), "abc")
+    skip := _expect_run({"-s", "2"})
+    assert_eq(_key_of("abcdef", skip), "cdef")
+    width := _expect_run({"-w", "2"})
+    assert_eq(_key_of("abcdef", width), "ab")
+    both := _expect_run({"-s", "1", "-w", "2", "-i"})
+    assert_eq(_key_of("xAbC", both), "ab")
+
+basic_groups: test =
+    assert_eq(_run_lines({"a", "a", "b"}, {}), {"a", "b"})
+    assert_eq(_run_lines({"a", "b", "a"}, {}), {"a", "b", "a"})
+
+count_format: test =
+    assert_eq(_run_lines({"a", "a", "b"}, {"-c"}), {"      2 a", "      1 b"})
+    assert_eq(_run_lines({"aaaa"}, {"-c"}), {"      1 aaaa"})
+
+repeated_and_uniques: test =
+    assert_eq(_run_lines({"a", "a", "b"}, {"-d"}), {"a"})
+    assert_eq(_run_lines({"a", "a", "b"}, {"-u"}), {"b"})
+    assert_eq(_run_lines({"a", "b", "a"}, {"-d"}), {})
+    assert_eq(_run_lines({"a", "a"}, {"-d", "-c"}), {"      2 a"})
+    // Both filters together: nothing is both repeated and unique.
+    assert_eq(_run_lines({"a", "a", "b"}, {"-d", "-u"}), {})
+
+fold_groups: test =
+    assert_eq(_run_lines({"A", "a", "B"}, {"-i"}), {"A", "B"})
+    assert_eq(_run_lines({"A", "a", "B"}, {"-i", "-c"}), {"      2 A", "      1 B"})
+    assert_eq(_run_lines({"A", "a"}, {}), {"A", "a"})
+
+skip_and_width: test =
+    assert_eq(_run_lines({"xay", "xbz"}, {"-s1", "-w1", "-c"}), {"      1 xay", "      1 xbz"})
+    assert_eq(_run_lines({"1 apple", "2 apple"}, {"-s2", "-c"}), {"      2 1 apple"})
+    assert_eq(_run_lines({"ab", "ax"}, {"-w1"}), {"ab"})
+
+cli_defaults: test =
+    cfg := _expect_run({})
+    assert_eq(cfg.files, {})
+    assert(cfg.count.not())
+    assert(cfg.repeated.not())
+    assert(cfg.uniques.not())
+    assert(cfg.fold.not())
+    assert_eq(cfg.skip, 0)
+    assert_eq(cfg.width, 0)
+
+cli_flags_and_files: test =
+    cfg := _expect_run({"-c", "-d", "-i", "-s", "3", "-w", "4", "f.txt"})
+    assert(cfg.count)
+    assert(cfg.repeated)
+    assert(cfg.fold)
+    assert_eq(cfg.skip, 3)
+    assert_eq(cfg.width, 4)
+    assert_eq(cfg.files, {"f.txt"})
+
+cli_attached_forms: test =
+    cfg := _expect_run({"-s2", "-w3"})
+    assert_eq(cfg.skip, 2)
+    assert_eq(cfg.width, 3)
+
+cli_usage_errors: test =
+    assert(_expect_fail({"-x"}).contains("unknown option"))
+    assert(_expect_fail({"-s"}).contains("missing count"))
+    assert(_expect_fail({"-w"}).contains("missing count"))
+    assert(_expect_fail({"-s", "x"}).contains("not a number"))
+    assert(_expect_fail({"-w", "-1"}).contains("negative"))
+
+cli_help: test =
+    case parse_args({"-h"}):
+        Help -> assert(True)
+        _ -> panic("expected Help")
+    case parse_args({"--help"}):
+        Help -> assert(True)
+        _ -> panic("expected Help")
+
+cli_double_dash: test =
+    cfg := _expect_run({"--", "-d"})
+    assert_eq(cfg.files, {"-d"})
+
+file_line_splitting: test =
+    assert_eq("".lines(), {})
+    assert_eq("a\nb\n".lines(), {"a", "b"})
+    assert_eq("a\nb".lines(), {"a", "b"})
+    assert_eq("a\n\nb\n".lines(), {"a", "", "b"})
+
+io_error_messages: test =
+    assert_eq(_io_message(NotFound), "no such file or directory")
+    assert_eq(_io_message(Permission), "permission denied")
+    assert_eq(_io_message(Other "boom"), "boom")
+
+dispatch_stdin_uniq: test =
+    out := Out.tee(Out.null(), (s): assert(s == "a" || s == "b"))
+    status := _dispatch(out, Out.null(), {}, Fs.null(), In.from_lines({"a", "a", "b"}))
+    assert_eq(status, 0)
+
+dispatch_stdin_count: test =
+    out := Out.tee(Out.null(), (s): assert(s == "      2 x" || s == "      1 y"))
+    status := _dispatch(out, Out.null(), {"-c"}, Fs.null(), In.from_lines({"x", "x", "y"}))
+    assert_eq(status, 0)
+
+dispatch_help: test =
+    status := _dispatch(Out.null(), Out.null(), {"--help"}, Fs.null(), In.empty())
+    assert_eq(status, 0)
+
+dispatch_usage_error: test =
+    status := _dispatch(Out.null(), Out.null(), {"-x"}, Fs.null(), In.empty())
+    assert_eq(status, 2)
+
+dispatch_missing_file: test =
+    status := _dispatch(Out.null(), Out.null(), {"does-not-exist.txt"}, Fs.null(),
+                        In.empty())
+    assert_eq(status, 2)
+
+dispatch_dash_is_stdin: test =
+    out := Out.tee(Out.null(), (s): assert(s == "p" || s == "q"))
+    status := _dispatch(out, Out.null(), {"-"}, Fs.null(), In.from_lines({"p", "p", "q"}))
+    assert_eq(status, 0)
