@@ -38,6 +38,18 @@ main: (out: Out, fs: Fs) ! =
 An arm is always `PATTERN -> EXPRESSION`. A bare expression is not an arm. A
 guard is written `PATTERN if CONDITION -> EXPRESSION` (Clause 6.7.3).
 
+When the whole `case` stands inside a bracket group, its line breaks are free
+formatting like any other (Clause 5.3.3): the arms may sit in the group on
+their own lines, one arm per line, and the group's closing bracket ends the
+last arm. The inline `;` form and this multi-line form are the same arm run.
+
+```eko
+r := apply((n):
+    case n:
+        1 -> 10
+        _ -> 0)
+```
+
 A `case` that contains a guarded arm MUST end with an unguarded arm. The
 unguarded arm closes the match. Exhaustiveness is specified in Clause 7.7.2;
 the closing arm is the price of decidability — coverage over an arbitrary

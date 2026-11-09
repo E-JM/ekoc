@@ -80,7 +80,10 @@ static void arm_lines(p_ctx *c, ek_node *n)
 }
 
 /* The inline arm run after ':': `;` separates arms, and they run to
-   the end of the member. */
+   the end of the member. Inside a bracket group the line breaks are
+   free formatting (Clause 5.3.3), so an arm's end is also a following
+   token that can start a pattern -- the arms of a case written over
+   several lines inside an argument group. */
 static void arm_inline(p_ctx *c, ek_node *n)
 {
     while (!c->oom) {
@@ -90,9 +93,13 @@ static void arm_inline(p_ctx *c, ek_node *n)
         if (!a || c->oom) {
             return;
         }
-        if (!p_got(c, EK_TOK_SEMI)) {
-            return;
+        if (p_got(c, EK_TOK_SEMI)) {
+            continue;
         }
+        if (p_pattern_start(p_src_kind(p_peek(c)))) {
+            continue;
+        }
+        return;
     }
 }
 

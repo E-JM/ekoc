@@ -105,3 +105,17 @@ case_value: test =
             0 -> "zero"
             _ -> "nonzero"
     assert_eq(msg, "nonzero")
+
+apply_twice: (f: (Int) ?-> Int, n: Int) ?-> Int = f(n)
+
+apply1: (f: (Int) ?-> Int) ?-> Int = f(3)
+
+case_in_group: test =
+    // The whole case stands inside the argument group; the arms sit on
+    // their own lines and the closing bracket ends the last arm
+    // (Clauses 5.3.3, 6.7.1).
+    r := apply1((n):
+        case n:
+            1 -> 10
+            _ -> 0)
+    assert_eq(r, 0)
