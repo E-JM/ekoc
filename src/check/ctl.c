@@ -110,7 +110,23 @@ static const ek_type *case_result(ck_ctx *c, const ek_node *e,
                      ck_type_name(c, t));
         }
     }
-    return expected ? expected : (seen ? seen : ck_never(c));
+    /* The arms' own type is the case's result, as at `if` (Clause
+       7.7.4): the expectation anchored the arm bodies, and the
+       residual conform here is what an argument or binding would
+       repeat -- without it, an arm the expectation cannot take reads
+       as the expected type and the call site crashes. */
+    if (expected && seen) {
+        ck_conform k = ck_conforms(c, seen, expected, 1);
+
+        if (k != CK_OK) {
+            ck_error(c, e, ck_conform_code(k),
+                     "the arms of the case are %s, the expected type is "
+                     "%s (Clause 7.7.4)", ck_type_name(c, seen),
+                     ck_type_name(c, expected));
+            return expected;
+        }
+    }
+    return seen ? seen : (expected ? expected : ck_never(c));
 }
 
 const ek_type *ck_case(ck_ctx *c, const ek_node *e, const ek_type *expected)
