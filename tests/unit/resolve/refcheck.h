@@ -170,7 +170,7 @@ static inline void rfk_walk(const ek_node *n, int suppress,
         rfk_walk(n->u.pair.b, suppress, counts, sites, nsites, cap);
         return;
     case EK_N_COMPOSITE_ITEM:
-        rfk_walk(n->u.pair.a, 1, counts, sites, nsites, cap);
+        rfk_walk(n->u.pair.a, suppress, counts, sites, nsites, cap);
         rfk_walk(n->u.pair.b, suppress, counts, sites, nsites, cap);
         return;
     case EK_N_PAREN:

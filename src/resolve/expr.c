@@ -182,7 +182,10 @@ static void r_apply(r_ctx *c, r_file *f, const ek_node *e)
    key is a record field or a dictionary key expression, and the
    expected type decides, so a bare name stays unread here -- check
    reads the fields. A key that is not a bare name can only be a
-   dictionary key expression, and it resolves here. */
+   dictionary key expression, and it resolves here. A bare name that a
+   local or a top-level binding carries resolves as that value: a
+   record field spelling survives untouched (the field path reads the
+   name, never the ref), and a dictionary over a runtime key lowers. */
 static void r_items(r_ctx *c, r_file *f, const ek_node *e)
 {
     size_t i;
@@ -197,6 +200,27 @@ static void r_items(r_ctx *c, r_file *f, const ek_node *e)
         if (item->u.pair.a && (item->u.pair.a->kind != EK_N_NAME
                                || item->u.pair.a->u.path.count != 1)) {
             r_expr(c, f, item->u.pair.a);
+        } else if (item->u.pair.a) {
+            const char *name = item->u.pair.a->u.path.data[0];
+            const ek_symbol *sym;
+
+            if (strcmp(name, "_") != 0) {
+                if ((sym = r_lookup_local(f, name)) != NULL) {
+                    r_add_ref(c, item->u.pair.a, sym->kind,
+                              EK_ST_HEAD_LOCAL, sym);
+                } else if ((sym = r_lookup_top(f, name)) != NULL) {
+                    r_add_ref(c, item->u.pair.a,
+                              r_is_placeholder(sym) ? EK_SYM_EXTERNAL
+                                                    : sym->kind,
+                              EK_ST_EXTERNAL, sym);
+                } else {
+                    /* No binding carries the name: the record-field
+                       reading or the checker's own report answers. The
+                       ref keeps the table covering every key site. */
+                    r_add_ref(c, item->u.pair.a, EK_SYM_EXTERNAL,
+                              EK_ST_EXTERNAL, NULL);
+                }
+            }
         }
     }
 }
