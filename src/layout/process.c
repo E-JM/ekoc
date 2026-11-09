@@ -282,6 +282,25 @@ static void line_terminator(layout_ctx *c, const line_run *lines,
     if (c->depth > 0 || next_is_splice(c, lines, count, idx)) {
         return;
     }
+    /* License 5 (Clause 6.2.4): a line whose last significant token is
+       a binary operator or separator continues on a deeper line. A
+       following line it cannot continue is the writer's repair point
+       -- the column they move -- so the report names it, not the
+       operator that merely reveals the miss. */
+    {
+        size_t j = next_sig(lines, count, idx);
+
+        if (j < count && continues_member(sig_last(l)->kind)
+            && sig_first(&lines[j])->col - 1 <= sig_first(l)->col - 1) {
+            const ek_token *t = sig_first(&lines[j]);
+
+            ek_diag_emit(c->diag, EK_SEV_ERROR, "E-syntax", c->file,
+                         t->line, t->col,
+                         "the line ends in an operator; its continuation "
+                         "must be indented deeper (Clause 6.2.4)");
+            return;
+        }
+    }
     at = l->nl ? l->nl : c->eof;
     lo_emit(c, EK_LTOK_NEWLINE, at->line, at->col);
     c->after_break = 1;
