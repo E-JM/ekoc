@@ -108,15 +108,19 @@ lower_val c_ns_call(lower_ctx *c, lower_scope *scope,
         return (lower_val){ r, 1 };
     }
     /* `C.Size.to_uint(v)`: the head form of the receiver reading; the
-       written argument is the size. */
+       conversion is total, the payload riding out as the unsigned
+       word it marshals as. */
     if (strcmp(name, "to_uint") == 0
         && strcmp(recv->u.field.name, "Size") == 0
         && e->u.call.args.count == 1 && !form->extra && !form->has_recv) {
         lower_val a = lower_sub(c, scope, e->u.call.args.data[0]);
         const char *at = lower_as_temp(c, scope, &a);
+        const char *r = lower_temp(c, scope);
 
-        return lower_wrap_option(c, scope, e, "ek_try_to_uint", at,
-                                 EK_OUT_U64);
+        lower_pad(c);
+        lower_emitf(c, "ek_val %s = ek_val_uint((uint64_t)%s.as.i);\n",
+                    r, at);
+        return (lower_val){ r, 1 };
     }
     lower_error(c, e, "the member `C.%s` has no lowering", name);
     return lower_discard_call(c, scope, e, form);

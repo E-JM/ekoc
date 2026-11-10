@@ -316,17 +316,11 @@ static const ek_type *c_head_call(ck_ctx *c, const ek_node *e,
         ret = ck_opaque(c);
     } else if (recv->kind == EK_N_FIELD && strcmp(name, "to_uint") == 0) {
         /* C.Size has no checked type: the written annotation carries
-           it to the marshalling layer. The conversion reads the
-           Option the runtime answers with. */
-        const ek_type *oargs[1];
-        const ek_type *uint_t = ck_std_type(c, "UInt");
-        const ek_symbol *opt = uint_t ? ck_std_symbol(c, "Option") : NULL;
-
+           it to the marshalling layer. The conversion is total: the
+           size rides out as the unsigned word it marshals as
+           (Clause 10.3.2). */
         param = ck_opaque(c);
-        if (opt && uint_t) {
-            oargs[0] = uint_t;
-            ret = ck_nominal(c, opt, oargs, 1);
-        }
+        ret = ck_std_type(c, "UInt");
     }
     if (!ret) {
         ck_error(c, e, "E-unbound-member",
