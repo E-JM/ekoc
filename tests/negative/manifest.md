@@ -543,3 +543,32 @@ x: U32 = rand_next()
 ```
 
 Expected: `E-world-bit`.
+
+## N41 — a payload constructor read as a value
+
+A constructor that carries a payload is not a value: it reads only under
+application, and the juxtaposition form belongs to the bare spelling
+(Clause 6.5.2).
+
+```eko
+main: (out: Out) ! =
+    x: Option Int = Some
+    out.println(show(x))
+```
+
+Expected: `E-ctor-value`. A zero-payload constructor such as `None` still
+reads as the value of its type.
+
+## N42 — a dotted head followed by a juxtaposed operand
+
+The module-qualified constructor applies as a call on its dotted head
+(Clause 6.5.2); a dotted chain followed by an operand on the same line
+is not a form, and the operand is not silently dropped.
+
+```eko
+main: (out: Out) ! =
+    x := p.f 1
+    _
+```
+
+Expected: parse error, `E-syntax` naming Clause 6.5.2.

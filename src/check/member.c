@@ -68,11 +68,31 @@ const ek_type *ck_field(ck_ctx *c, const ek_node *e)
     ek_reading rd = EK_RD_NONE;
 
     if (ck_ref_at(c, e, 0, &ref) && ref->station == EK_ST_QUALIFIED
-        && ref->symbol
-        && (ref->kind == EK_SYM_FUNC || ref->kind == EK_SYM_NAMESPACE
-            || ref->kind == EK_SYM_EXTERN)) {
-        (void)ck_expr(c, e->u.field.recv, NULL);
-        return ck_type_of(c, ref->symbol);
+        && ref->symbol) {
+        if (ref->kind == EK_SYM_FUNC || ref->kind == EK_SYM_NAMESPACE
+            || ref->kind == EK_SYM_EXTERN) {
+            (void)ck_expr(c, e->u.field.recv, NULL);
+            return ck_type_of(c, ref->symbol);
+        }
+        if (ref->kind == EK_SYM_CONSTRUCTOR) {
+            /* A qualified constructor read: a zero payload is the
+               value of its type, a payload constructor reads only
+               under application (Clause 6.5.2). */
+            const ck_ctor *ct = ck_ctor_of(c, ref->symbol);
+
+            (void)ck_expr(c, e->u.field.recv, NULL);
+            if (ct && ct->payload) {
+                ck_error(c, e, "E-ctor-value",
+                         "the constructor `%s` takes a payload and is "
+                         "not a value; apply it to its payload "
+                         "(Clause 6.5.2)", ref->symbol->name);
+                return ck_opaque(c);
+            }
+            if (ct && ct->owner) {
+                return ck_nominal(c, ct->owner, NULL, 0);
+            }
+            return ck_opaque(c);
+        }
     }
     recv = ck_expr(c, e->u.field.recv, NULL);
     return ck_link(c, e, recv, e->u.field.name, &rd);

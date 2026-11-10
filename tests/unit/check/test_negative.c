@@ -405,8 +405,33 @@ static void n33(void)
     cfx_end(&f);
 }
 
+/* N41 — a payload constructor read as a value. */
+static void n40(void)
+{
+    cfx f;
+
+    cfx_begin(&f,
+              "main: () -> _ =\n"
+              "    x: Option Int = Some\n"
+              "    _\n");
+    EK_CHECK(cfx_errors(&f) >= 1);
+    EK_CHECK(cfx_has_code(&f, "E-ctor-value"));
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "Nt: type = Nt Int\n"
+              "\n"
+              "main: () -> _ =\n"
+              "    x: Nt = Nt\n"
+              "    _\n");
+    EK_CHECK(cfx_errors(&f) >= 1);
+    EK_CHECK(cfx_has_code(&f, "E-ctor-value"));
+    cfx_end(&f);
+}
+
 int main(void)
 {
+    n40();
     n01();
     n02();
     n03();

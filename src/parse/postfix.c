@@ -108,6 +108,16 @@ ek_node *p_postfix(p_ctx *c)
                 e = apply_ctor(c, e);
                 continue;
             }
+            if (p_apply_start(p_src_kind(t)) && e->kind == EK_N_FIELD) {
+                /* A dotted chain takes its arguments in parentheses;
+                   the juxtaposition form belongs to the bare
+                   constructor spelling (Clause 6.5.2). */
+                p_error_tok(c, "E-syntax", t,
+                            "a dotted head takes its arguments in "
+                            "parentheses (Clause 6.5.2)");
+                p_sync(c);
+                return e;
+            }
             return e;
         }
         e = dot_link(c, e);

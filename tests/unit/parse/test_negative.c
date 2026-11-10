@@ -139,8 +139,26 @@ static void paren_comma_group(void)
     pfx_end(&f);
 }
 
+/* N42 — a dotted head takes its arguments in parentheses; the
+   juxtaposition form belongs to the bare constructor spelling. */
+static void n41_dotted_head_juxtaposition(void)
+{
+    parse_fixture f;
+
+    pfx_begin(&f,
+        "main: () -> _ =\n"
+        "    x := p.f 1\n"
+        "    _\n");
+    EK_CHECK(pfx_errors(&f) >= 1);
+    EK_CHECK(pfx_has_code(&f, "E-syntax"));
+    EK_CHECK(pfx_msg_has(&f, "6.5.2"));
+    EK_CHECK(f.ast.module != NULL);
+    pfx_end(&f);
+}
+
 int main(void)
 {
+    n41_dotted_head_juxtaposition();
     n04_bare_panic_arm();
     n16_chained_comparison();
     n17_index_syntax();
