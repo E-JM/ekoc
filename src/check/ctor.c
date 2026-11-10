@@ -261,7 +261,7 @@ const ek_type *ck_ctor_type(ck_ctx *c, const ek_node *n,
     ct = ck_ctor_of(c, sel.sym);
     if (ct && ct->payload) {
         /* A payload constructor is not a value: it reads only under
-           application (Clause 6.5.2). */
+           application. */
         ck_error(c, n, "E-ctor-value",
                  "the constructor `%s` takes a payload and is not a "
                  "value; apply it to its payload (Clause 6.5.2)",

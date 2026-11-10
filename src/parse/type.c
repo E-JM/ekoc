@@ -139,8 +139,8 @@ ek_node *p_type_atom(p_ctx *c)
 }
 
 /* A composite slot's type atom: a parenthesized group that carries no
-   arrow and no bit suffix groups its type (Clause 6.9.2); the elided
-   parameter-group reading belongs to the complete-type position. */
+   arrow and no bit suffix groups its type; the elided parameter-group
+   reading belongs to the complete-type position. */
 static ek_node *atom_type(p_ctx *c)
 {
     ek_node *t = p_type(c);

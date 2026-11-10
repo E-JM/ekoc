@@ -77,7 +77,7 @@ const ek_type *ck_field(ck_ctx *c, const ek_node *e)
         if (ref->kind == EK_SYM_CONSTRUCTOR) {
             /* A qualified constructor read: a zero payload is the
                value of its type, a payload constructor reads only
-               under application (Clause 6.5.2). */
+               under application. */
             const ck_ctor *ct = ck_ctor_of(c, ref->symbol);
 
             (void)ck_expr(c, e->u.field.recv, NULL);

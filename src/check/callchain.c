@@ -317,8 +317,7 @@ static const ek_type *c_head_call(ck_ctx *c, const ek_node *e,
     } else if (recv->kind == EK_N_FIELD && strcmp(name, "to_uint") == 0) {
         /* C.Size has no checked type: the written annotation carries
            it to the marshalling layer. The conversion is total: the
-           size rides out as the unsigned word it marshals as
-           (Clause 10.3.2). */
+           size rides out as the unsigned word it marshals as. */
         param = ck_opaque(c);
         ret = ck_std_type(c, "UInt");
     }
