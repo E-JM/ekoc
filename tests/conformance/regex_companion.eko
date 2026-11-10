@@ -75,3 +75,19 @@ linear_on_a_long_line: test =
     text := "a".rep(10_000)
     assert(_m("(a*)*b", text).not())
     assert(_m("a+$", text))
+
+counted_repetitions: test =
+    counted: []String = {"a\{2,3}", "a\{2}", "a\{2,}", "a\{,3}"}
+    counted.each((p): assert(Regex.compile(p).is_err()))
+    case Regex.compile("a\{2,3}"):
+        Err e -> assert(e.contains("counted repetition"))
+        Ok _ -> panic("a counted repetition is not a form")
+    assert(_m("a\{b}", "xa\{b}y"))
+    assert(_m("a\{", "a\{"))
+
+named_classes: test =
+    assert(Regex.compile("[:alpha:]+").is_err())
+    case Regex.compile("[:alpha:]"):
+        Err e -> assert(e.contains("named class"))
+        Ok _ -> panic("a named class is not a form")
+    assert(_m("[:a]", ":"))

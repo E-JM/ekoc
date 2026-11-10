@@ -161,7 +161,38 @@ _parse_atom: (cs: []Char, pos: Int) -> Result ([_Node, Int]) String =
         Some '+' -> Err (_perr(pos, "nothing to repeat before '+'"))
         Some '?' -> Err (_perr(pos, "nothing to repeat before '?'"))
         Some '|' -> Err (_perr(pos, "unexpected '|'"))
+        Some '{' ->
+            if _counted_shape(cs, pos):
+                Err (_perr(pos, "a counted repetition is not a form of the language"))
+            else:
+                Ok {Literal '{', pos + 1}
         Some c -> Ok {Literal c, pos + 1}
+
+// A digit run from pos; its length, 0 when none stands there.
+_digits: (cs: []Char, pos: Int) -> Int =
+    case _peek(cs, pos):
+        Some c ->
+            n := Char.to_code(c)
+            if n >= Char.to_code('0') && n <= Char.to_code('9'):
+                1 + _digits(cs, pos + 1)
+            else:
+                0
+        None -> 0
+
+// Whether the braces at pos carry a counted-repetition shape: a digit
+// before the closer on each side, in `{m}`, `{m,}`, `{m,n}`, or
+// `{,n}`. A bare brace without digits stays a literal.
+_counted_shape: (cs: []Char, pos: Int) -> Bool =
+    d := _digits(cs, pos + 1)
+    after := pos + 1 + d
+    case _peek(cs, after):
+        Some '}' -> d > 0
+        Some ',' ->
+            e := _digits(cs, after + 1)
+            case _peek(cs, after + 1 + e):
+                Some '}' -> d > 0 || e > 0
+                _ -> False
+        _ -> False
 
 _parse_group: (cs: []Char, pos: Int) -> Result ([_Node, Int]) String =
     parsed <- _parse_alt(cs, pos + 1).try()
@@ -189,6 +220,11 @@ _parse_escape: (cs: []Char, pos: Int) -> Result ([Char, Int]) String =
 _parse_class: (cs: []Char, pos: Int) -> Result ([_Node, Int]) String =
     case _peek(cs, pos + 1):
         Some '^' -> _parse_class_items(cs, pos + 2, True, {})
+        Some ':' ->
+            if _named_close(cs, pos + 2):
+                Err (_perr(pos, "named classes are not a form of the language"))
+            else:
+                _parse_class_items(cs, pos + 1, False, {})
         _ -> _parse_class_items(cs, pos + 1, False, {})
 
 _parse_class_items: (cs: []Char, pos: Int, negated: Bool, spans: []_Span) -> Result ([_Node, Int]) String =
@@ -225,7 +261,28 @@ _parse_class_char: (cs: []Char, pos: Int) -> Result ([Char, Int]) String =
     case _peek(cs, pos):
         None -> Err (_perr(pos, "unterminated character class"))
         Some '\\' -> _parse_escape(cs, pos)
+        Some '[' ->
+            if _named_class(cs, pos):
+                Err (_perr(pos, "named classes are not a form of the language"))
+            else:
+                Ok {'[', pos + 1}
         Some c -> Ok {c, pos + 1}
+
+// Whether a POSIX named class opens at the bracket: a colon follows
+// and a `:]` closes the name.
+_named_class: (cs: []Char, pos: Int) -> Bool =
+    case _peek(cs, pos + 1):
+        Some ':' -> _named_close(cs, pos + 2)
+        _ -> False
+
+_named_close: (cs: []Char, pos: Int) -> Bool =
+    case _peek(cs, pos):
+        Some ':' ->
+            case _peek(cs, pos + 1):
+                Some ']' -> True
+                _ -> _named_close(cs, pos + 1)
+        Some _ -> _named_close(cs, pos + 1)
+        None -> False
 
 // ------------------------------------------------------------ compiler
 
