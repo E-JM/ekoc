@@ -103,3 +103,14 @@ qualified_ctor_calls: test =
     assert_eq(j, Int 5)
     assert_eq(n, Null)
     assert_eq(b, Bool True)
+
+// Parentheses group a type in a composite slot: a list element or a
+// dictionary value reads the group as a type, not as a parameter
+// group (Clause 6.9.2, Clause 7.5.3).
+nested_group_types: test =
+    rows: []([String]Int) = {{"a": 1}, {"b": 2}}
+    d: [String]Int = {"c": 3}
+    one: []([String]Int) = {d}
+    assert_eq(rows.length(), 2)
+    assert_eq(one.length(), 1)
+    assert_eq(one.get(0), Some d)

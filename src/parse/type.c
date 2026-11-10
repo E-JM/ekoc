@@ -5,6 +5,7 @@
    possibly elided; where an atom is expected, it is a grouped type. */
 
 static ek_node *applied_type(p_ctx *c);
+static ek_node *atom_type(p_ctx *c);
 static ek_node *bracket_tail(p_ctx *c, const ek_layout_token *open,
                              ek_node *key);
 static ek_node *bracket_type(p_ctx *c, const ek_layout_token *open);
@@ -137,6 +138,33 @@ ek_node *p_type_atom(p_ctx *c)
     }
 }
 
+/* A composite slot's type atom: a parenthesized group that carries no
+   arrow and no bit suffix groups its type (Clause 6.9.2); the elided
+   parameter-group reading belongs to the complete-type position. */
+static ek_node *atom_type(p_ctx *c)
+{
+    ek_node *t = p_type(c);
+    ek_node *inner;
+    ek_node *n;
+
+    if (!t || t->kind != EK_N_T_FN || t->u.t_fn.result
+        || t->u.t_fn.arrow != EK_ARROW_PURE
+        || t->u.t_fn.params.count != 1
+        || t->u.t_fn.params.data[0]->u.t_field.name) {
+        return t;
+    }
+    inner = t->u.t_fn.params.data[0]->u.t_field.type;
+    n = p_node(c, EK_N_T_PAREN, t->line, t->col);
+    if (!n) {
+        return NULL;
+    }
+    n->u.wrap.inner = p_adopt(c, n, inner);
+    if (!n->u.wrap.inner) {
+        return NULL;
+    }
+    return n;
+}
+
 /* The bracket forms: a list, a dictionary, a tuple, or a record. They
    are told apart by what follows the first type: `]` plus an atom is a
    dictionary, `,` a tuple, `name :` a record. */
@@ -148,7 +176,7 @@ static ek_node *bracket_type(p_ctx *c, const ek_layout_token *open)
     p_take(c); /* '[' */
     p_skip_newlines(c);
     if (p_got(c, EK_TOK_RBRACKET)) {
-        ek_node *element = p_type(c);
+        ek_node *element = atom_type(c);
 
         if (!element) {
             return NULL;
@@ -199,7 +227,7 @@ static ek_node *bracket_tail(p_ctx *c, const ek_layout_token *open,
                 "elements (Clause 6.9.2)");
         return NULL;
     }
-    value = p_type(c);
+    value = atom_type(c);
     if (!value) {
         return NULL;
     }
