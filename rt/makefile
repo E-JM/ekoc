@@ -10,9 +10,9 @@ RT_SRC := rt/value.c rt/rc.c rt/num.c rt/numbits.c rt/nummath.c rt/panic.c \
 	rt/closure.c \
 	rt/fmt.c rt/parse.c rt/convert.c rt/strops.c rt/charops.c \
 	rt/chartype.c rt/xid_tables.c rt/bytesops.c \
-	rt/cap.c rt/bundle.c rt/env.c rt/args.c rt/genval.c rt/genio.c \
+	rt/cap.c rt/bundle.c rt/env.c rt/args.c rt/genword.c rt/genval.c rt/genio.c \
 	rt/conc.c rt/worldcall.c \
-	rt/gentime.c rt/geninfo.c rt/in.c rt/clock.c rt/rand.c \
+	rt/gentime.c rt/genmono.c rt/genduration.c rt/geninfo.c rt/in.c rt/clock.c rt/rand.c \
 	rt/file.c rt/fs.c rt/fsdir.c rt/path.c rt/range.c rt/ptr.c \
 	rt/set.c rt/vector.c rt/jsontext.c rt/json.c rt/timeparse.c
 

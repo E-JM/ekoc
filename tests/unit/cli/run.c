@@ -28,6 +28,18 @@ static const char *prog_bad =
     "    q = nothing_here\n"
     "    _\n";
 
+static const char *prog_time =
+    "import std/time\n"
+    "\n"
+    "main: (out: Out) ! =\n"
+    "    case time.Time.parse(\"2026-10-22T01:29:00Z\"):\n"
+    "        Ok t -> out.println(time.Time.show(t))\n"
+    "        Err _ -> out.println(\"parse failed\")\n";
+
+static const char *prog_clock =
+    "main: (clk: Clock, out: Out) ! =\n"
+    "    out.println(show(clk.mono()))\n";
+
 /* Runs one ekoc command line; standard output and standard error land
    in the two files. Returns the wait status. */
 static int run_cli(const char *args, const char *out_path,
@@ -118,6 +130,37 @@ static void prints_through_the_capability(void)
     EK_CHECK(exited(status, 0));
     EK_CHECK(read_file("build/cli_print.run", buf, sizeof buf) == 10);
     EK_CHECK_STR(buf, "greetings\n");
+}
+
+/* The time companion through the build path: the parse family and the
+   clock family link against a unit that names only the families it
+   uses, and the built program runs. The test driver's own emission
+   cannot see a missing family typeinfo, so this coverage lives on the
+   build path. */
+static void time_family_links_and_runs(void)
+{
+    char buf[256];
+    int status;
+
+    EK_CHECK(write_file("build/cli_time.eko", prog_time));
+    status = run_cli("build build/cli_time.eko -o build/cli_time",
+                     "build/cli_time.out", "build/cli_time.err");
+    EK_CHECK(exited(status, 0));
+    EK_CHECK(read_file("build/cli_time.err", buf, sizeof buf) == 0);
+    status = run_prog_out("./build/cli_time", "build/cli_time.run");
+    EK_CHECK(exited(status, 0));
+    EK_CHECK(read_file("build/cli_time.run", buf, sizeof buf) > 0);
+    EK_CHECK_STR(buf, "2026-10-22T01:29:00Z\n");
+
+    EK_CHECK(write_file("build/cli_clock.eko", prog_clock));
+    status = run_cli("build build/cli_clock.eko -o build/cli_clock",
+                     "build/cli_clock.out", "build/cli_clock.err");
+    EK_CHECK(exited(status, 0));
+    EK_CHECK(read_file("build/cli_clock.err", buf, sizeof buf) == 0);
+    status = run_prog_out("./build/cli_clock", "build/cli_clock.run");
+    EK_CHECK(exited(status, 0));
+    EK_CHECK(read_file("build/cli_clock.run", buf, sizeof buf) > 0);
+    EK_CHECK(strstr(buf, "Mono ") == buf);
 }
 
 static void good_build(void)
@@ -307,6 +350,7 @@ int main(void)
     good_build();
     default_output_name();
     prints_through_the_capability();
+    time_family_links_and_runs();
     builds_from_foreign_cwd();
     compile_error();
     missing_file();
