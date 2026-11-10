@@ -97,12 +97,16 @@ ek_node *p_binding_after_pattern(p_ctx *c, ek_node *pat, int top_level)
    carries no written source, so its position is the value's. */
 static ek_node *fn_body_desugar(p_ctx *c, ek_node *ann, ek_node *v)
 {
+    const ek_node *inner = v;
     ek_node *params;
     ek_node *lam;
     size_t i;
 
-    if (!ann || ann->kind != EK_N_T_FN || !v || v->kind == EK_N_LAMBDA
-        || v->kind == EK_N_NAME) {
+    while (inner && inner->kind == EK_N_PAREN) {
+        inner = inner->u.wrap.inner;
+    }
+    if (!ann || ann->kind != EK_N_T_FN || !inner
+        || inner->kind == EK_N_LAMBDA || inner->kind == EK_N_NAME) {
         return v;
     }
     params = p_node(c, EK_N_LAMBDA_PARAMS, v->line, v->col);

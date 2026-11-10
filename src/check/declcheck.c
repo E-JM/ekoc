@@ -63,11 +63,16 @@ void annotated_fn_body(ck_ctx *c, const ek_node *ann, const ek_node *val,
             ck_scope_bind(c, p->u.t_field.name, bound->u.fn.params[k]);
         }
     }
-    if (val->kind == EK_N_LAMBDA) {
-        const ek_type *vt = ck_expr(c, val, bound);
+    const ek_node *lam = val;
+
+    while (lam && lam->kind == EK_N_PAREN) {
+        lam = lam->u.wrap.inner;
+    }
+    if (lam && lam->kind == EK_N_LAMBDA) {
+        const ek_type *vt = ck_expr(c, lam, bound);
 
         if (ck_conforms(c, vt, bound, 1) != CK_OK) {
-            ck_error(c, val, "E-type-mismatch",
+            ck_error(c, lam, "E-type-mismatch",
                      "the binding is %s, the annotation is %s "
                      "(Clause 7.5.7)", ck_type_name(c, vt),
                      ck_type_name(c, bound));
