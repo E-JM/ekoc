@@ -406,7 +406,7 @@ static void n33(void)
 }
 
 /* N41 — a payload constructor read as a value. */
-static void n40(void)
+static void n41(void)
 {
     cfx f;
 
@@ -431,7 +431,7 @@ static void n40(void)
 
 int main(void)
 {
-    n40();
+    n41();
     n01();
     n02();
     n03();
