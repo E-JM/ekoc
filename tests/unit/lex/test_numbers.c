@@ -124,8 +124,9 @@ static void test_dot_and_exponent_backtracking(void)
     FX_KINDS("1e", EK_TOK_INT, EK_TOK_IDENT, EK_TOK_EOF);
     FX_KINDS("1e+", EK_TOK_INT, EK_TOK_IDENT, EK_TOK_PLUS, EK_TOK_EOF);
     FX_KINDS("1e-", EK_TOK_INT, EK_TOK_IDENT, EK_TOK_MINUS, EK_TOK_EOF);
-    /* the exponent admits no grouping */
-    FX_KINDS("1e1_0", EK_TOK_FLOAT, EK_TOK_IDENT, EK_TOK_EOF);
+    /* the exponent admits no grouping: the underscore diagnoses and
+       the literal continues over it */
+    FX_KINDS("1e1_0", EK_TOK_FLOAT, EK_TOK_EOF);
     /* a trailing 'e' that starts no exponent stays an identifier */
     FX_KINDS("1.5e", EK_TOK_FLOAT, EK_TOK_IDENT, EK_TOK_EOF);
     FX_KINDS("1.5e-", EK_TOK_FLOAT, EK_TOK_IDENT, EK_TOK_MINUS, EK_TOK_EOF);
@@ -187,6 +188,11 @@ static void test_grouping_violations(void)
 
     fx_begin(&f, "0x_FF");
     EK_CHECK(fx_has_error(&f, "E-digit-grouping"));
+    fx_end(&f);
+
+    fx_begin(&f, "1.5e1_0");
+    EK_CHECK(fx_has_error(&f, "E-digit-grouping"));
+    EK_CHECK_U64(fx_tok(&f, 0).kind, EK_TOK_FLOAT);
     fx_end(&f);
 
     fx_begin(&f, "0b_1");

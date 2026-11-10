@@ -76,7 +76,6 @@ static void scan_digits(lex_ctx *c, int base, unsigned long long *mag,
 static int scan_exponent(lex_ctx *c)
 {
     int s1 = ctx_byte(c, 1), s2 = ctx_byte(c, 2);
-    int b;
 
     if (!(s1 >= '0' && s1 <= '9')
         && !((s1 == '+' || s1 == '-') && s2 >= '0' && s2 <= '9')) {
@@ -88,7 +87,16 @@ static int scan_exponent(lex_ctx *c)
         c->pos++;
         c->col++;
     }
-    while ((b = ctx_byte(c, 0)) >= '0' && b <= '9') {
+    for (;;) {
+        if (ctx_byte(c, 0) == '_') {
+            ctx_error(c, "E-digit-grouping", c->line, c->col,
+                      "the exponent carries no grouping");
+            c->pos++;
+            c->col++;
+        }
+        if (ctx_byte(c, 0) < '0' || ctx_byte(c, 0) > '9') {
+            break;
+        }
         c->pos++;
         c->col++;
     }

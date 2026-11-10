@@ -572,3 +572,31 @@ main: (out: Out) ! =
 ```
 
 Expected: parse error, `E-syntax` naming Clause 6.5.2.
+
+## N43 — a grouped exponent
+
+The exponent part of a floating literal carries no grouping (Clause 5.7.3);
+an underscore there is a diagnosed lexical defect, and the literal
+continues over it rather than splitting into a name.
+
+```eko
+main: (out: Out) ! =
+    x := 1.5e1_0
+    out.println(show(x))
+```
+
+Expected: `E-digit-grouping`.
+
+## N44 — a trailing comma in a composite literal
+
+The grammar has no trailing-comma production: after a separator an item
+follows, and the closing brace is not one (Clause 6.2.4). The diagnostic
+names the comma.
+
+```eko
+main: (out: Out) ! =
+    xs: []Int = {1, 2,}
+    out.println(show(xs))
+```
+
+Expected: parse error, `E-syntax` at the comma.

@@ -142,8 +142,20 @@ ek_node *p_composite(p_ctx *c)
             return n;
         }
         p_skip_newlines(c);
-        if (p_got(c, EK_TOK_COMMA)) {
+        if (p_at(c, EK_TOK_COMMA)) {
+            const ek_layout_token *comma = p_peek(c);
+
+            p_take(c);
             p_skip_newlines(c);
+            if (p_at(c, EK_TOK_RBRACE)) {
+                /* The grammar has no trailing-comma production: the
+                   list ends without the separator (Clause 6.2.4). */
+                p_error(c, "E-syntax", comma->line, comma->col,
+                        "expected an item after this comma, not the "
+                        "closing brace");
+                p_take(c);
+                return n;
+            }
             continue;
         }
         if (p_got(c, EK_TOK_RBRACE)) {
