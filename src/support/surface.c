@@ -755,9 +755,30 @@ const ek_surface_row ek_surface_rows[] = {
                                 SIG_STD("U64")), .wrap = EK_WRAP_KEEP,
      .out = EK_OUT_U64},
 
-    /* The machine words ferry, compare, show, and pad: the padding
-       row is the only namespace member they carry; eq, the ordering
-       family, and show derive. */
+    /* The machine words ferry, compare, show, pad, and widen: the
+       widening rows are total -- the scalar slots already hold the
+       widened value, so the identity keeps the argument -- and eq,
+       the ordering family, and show derive. */
+    {"I8", "to_int", SIG_FN(EK_ARROW_PURE, SIG_STD("Int"),
+                            SIG_STD("I8")), .wrap = EK_WRAP_KEEP},
+    {"I16", "to_int", SIG_FN(EK_ARROW_PURE, SIG_STD("Int"),
+                             SIG_STD("I16")), .wrap = EK_WRAP_KEEP},
+    {"I32", "to_int", SIG_FN(EK_ARROW_PURE, SIG_STD("Int"),
+                             SIG_STD("I32")), .wrap = EK_WRAP_KEEP},
+    {"I64", "to_int", SIG_FN(EK_ARROW_PURE, SIG_STD("Int"),
+                             SIG_STD("I64")), .wrap = EK_WRAP_KEEP},
+    {"U8", "to_uint", SIG_FN(EK_ARROW_PURE, SIG_STD("UInt"),
+                             SIG_STD("U8")), .wrap = EK_WRAP_KEEP},
+    {"U16", "to_uint", SIG_FN(EK_ARROW_PURE, SIG_STD("UInt"),
+                              SIG_STD("U16")), .wrap = EK_WRAP_KEEP},
+    {"U32", "to_uint", SIG_FN(EK_ARROW_PURE, SIG_STD("UInt"),
+                              SIG_STD("U32")), .wrap = EK_WRAP_KEEP},
+    {"U64", "to_uint", SIG_FN(EK_ARROW_PURE, SIG_STD("UInt"),
+                              SIG_STD("U64")), .wrap = EK_WRAP_KEEP},
+    {"F32", "to_float", SIG_FN(EK_ARROW_PURE, SIG_STD("Float"),
+                               SIG_STD("F32")), .wrap = EK_WRAP_KEEP},
+    {"F64", "to_float", SIG_FN(EK_ARROW_PURE, SIG_STD("Float"),
+                               SIG_STD("F64")), .wrap = EK_WRAP_KEEP},
     {"I8", "to_hex_pad", SIG_FN(EK_ARROW_PURE, SIG_STD("String"),
                                 SIG_STD("I8"), SIG_STD("UInt")),
      .sym = "ek_show_hex_pad", .args = "vv", .wrap = EK_WRAP_SHOW},
