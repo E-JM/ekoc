@@ -277,6 +277,35 @@ int lower_binding_destructure(lower_ctx *c, lower_scope *scope,
     return ok;
 }
 
+/* One top-level pattern binding: the initializer lowers and the
+   pattern's names bind as the caller scope's locals, so the binding's
+   own symbol reads its component from them. Returns 0 when the walk
+   has no lowering. */
+int lower_value_destructure(lower_ctx *c, lower_scope *scope,
+                            const ek_node *m, const ek_node *pat,
+                            const char *name)
+{
+    const ek_type *vt = lower_row_type(c, m->u.bind.value);
+    lower_val v;
+    const char *t;
+    int ok;
+
+    v = lower_expr(c, scope, m->u.bind.value);
+    if (m->u.bind.type) {
+        const ek_ck_row *arow = lower_row(c, m->u.bind.type);
+
+        v = lower_shape_adapt(c, scope, v, m,
+                              lower_row_type(c, m->u.bind.value),
+                              arow ? arow->type : NULL);
+        vt = arow ? arow->type : vt;
+    }
+    t = lower_as_temp(c, scope, &v);
+    ok = destructure_pat(c, scope, pat, t, vt, 0);
+    lower_pad(c);
+    lower_emitf(c, "ek_release(%s);\n", t);
+    return ok && scope_find_local(scope, name) != NULL;
+}
+
 /* A destructuring rebind: the same walk with the rebind's name
    reading, and no annotation adaptation -- the rebind carries no
    annotation of its own. */

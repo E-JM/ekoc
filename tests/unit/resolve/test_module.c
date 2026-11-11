@@ -148,6 +148,20 @@ static void import_opens(void)
     rfx_end(&f);
 }
 
+/* A top-level pattern binding registers the names its pattern binds. */
+static void top_pattern_names(void)
+{
+    rfx f;
+
+    run_in(&f,
+        "pair: [Int, Int] = {1, 2}\n"
+        "(a, x): [Int, Int] = pair\n", "pat.eko");
+    EK_CHECK_U64(rfx_errors(&f), 0);
+    EK_CHECK(rfx_surface_sym(&f, "pat", "a") != NULL);
+    EK_CHECK(rfx_surface_sym(&f, "pat", "x") != NULL);
+    rfx_end(&f);
+}
+
 /* x.Mod.f(args) names an imported module through the module-path
    reading. */
 static void ufcs_station(void)
@@ -563,6 +577,7 @@ static void broken_import_file(void)
 
 int main(void)
 {
+    top_pattern_names();
     put_fixtures();
     import_opens();
     ufcs_station();

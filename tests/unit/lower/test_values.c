@@ -118,6 +118,31 @@ static void tuple_let_binds_components(void)
     EK_CHECK(lfx_has(&f, "ek_release(a);\n"));
     EK_CHECK(lfx_has(&f, "a = ek_keep(((ekS_tup_2 *)"));
     lfx_end(&f);
+
+    /* a top-level pattern binding gives each name its own slot, read
+       out of the pattern's component */
+    lfx_begin(&f,
+              "pair: [Int, Int] = {1, 2}\n"
+              "(a, x): [Int, Int] = pair\n"
+              "main: (out: Out) ! =\n"
+              "    out.println(a.show())\n"
+              "    out.println(x.show())\n");
+    EK_CHECK(lfx_check_clean(&f));
+    EK_CHECK(lfx_lower_clean(&f));
+    EK_CHECK(lfx_has(&f, "ekv_test$a = ek_keep(a);\n"));
+    EK_CHECK(lfx_has(&f, "ekv_test$x = ek_keep(x);\n"));
+    lfx_end(&f);
+
+    /* an unannotated top-level binding takes the type its right-hand
+       side read */
+    lfx_begin(&f,
+              "x = 5\n"
+              "main: (out: Out) ! =\n"
+              "    out.println(x.show())\n");
+    EK_CHECK(lfx_check_clean(&f));
+    EK_CHECK(lfx_lower_clean(&f));
+    EK_CHECK(lfx_has(&f, "ekv_test$x = "));
+    lfx_end(&f);
 }
 
 static void capture_descends_into_lambda(void)

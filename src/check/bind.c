@@ -31,6 +31,132 @@ static const ek_node *as_lambda(const ek_node *v)
     return v && v->kind == EK_N_LAMBDA ? v : NULL;
 }
 
+/* The surface symbol one top-level pattern name binds: the FUNC row
+   the surface pass registered for this binding. */
+static const ek_symbol *top_sym_of(ck_ctx *c, const ek_node *m,
+                                   const char *name)
+{
+    size_t i;
+
+    for (i = 0; i < c->cur->count; i++) {
+        const ek_symbol *sym = &c->cur->syms[i];
+
+        if (sym->kind == EK_SYM_FUNC && sym->decl == m
+            && strcmp(sym->name, name) == 0) {
+            return sym;
+        }
+    }
+    return NULL;
+}
+
+/* One top-level name takes the scheme its component read. */
+static void top_scheme(ck_ctx *c, const ek_node *m, const char *name,
+                       const ek_type *t)
+{
+    const ek_symbol *sym;
+    ck_scheme *s;
+
+    if (!t || c->oom) {
+        return;
+    }
+    sym = top_sym_of(c, m, name);
+    if (!sym) {
+        return;
+    }
+    s = ek_arena_alloc(c->arena, sizeof *s);
+    if (!s) {
+        c->oom = 1;
+        return;
+    }
+    memset(s, 0, sizeof *s);
+    *s = ck_generalize(c, t);
+    ck_map_put(c, &c->schemes, sym, s);
+}
+
+/* The names one pattern binds, walked for the surface install. */
+static void top_names(ck_ctx *c, const ek_node *pat, const ek_node *m)
+{
+    size_t i;
+
+    if (!pat || c->oom) {
+        return;
+    }
+    switch (pat->kind) {
+    case EK_N_P_VAR:
+        if (pat->u.path.count == 1
+            && strcmp(pat->u.path.data[0], "_") != 0) {
+            top_scheme(c, m, pat->u.path.data[0],
+                       ck_scope_get(c, pat->u.path.data[0]));
+        }
+        return;
+    case EK_N_P_PAREN:
+        for (i = 0; i < pat->u.kids.count; i++) {
+            top_names(c, pat->u.kids.data[i], m);
+        }
+        return;
+    case EK_N_P_BRACE:
+        for (i = 0; i < pat->u.p_brace.items.count; i++) {
+            const ek_node *item = pat->u.p_brace.items.data[i];
+
+            if (item->kind == EK_N_P_FIELD) {
+                top_names(c, item->u.p_field.pattern, m);
+            } else {
+                top_names(c, item, m);
+            }
+        }
+        return;
+    case EK_N_P_CONS:
+        top_names(c, pat->u.cons.payload, m);
+        return;
+    default:
+        return;
+    }
+}
+
+/* A top-level pattern binding: the names are the module surface's own
+   rows. A single name takes the bound type; a group names its
+   components; the structured families walk in a temporary scope whose
+   reads the install harvests (Clauses 6.3.1, 7.3.1). */
+static void bind_top_pattern(ck_ctx *c, const ek_node *pat,
+                             const ek_node *m, const ek_type *bound)
+{
+    const ek_type *p;
+    size_t i;
+
+    if (!pat || c->oom) {
+        return;
+    }
+    if (pat->kind == EK_N_P_WILDCARD) {
+        return;
+    }
+    if (pat->kind == EK_N_P_VAR) {
+        if (pat->u.path.count == 1
+            && strcmp(pat->u.path.data[0], "_") != 0) {
+            top_scheme(c, m, pat->u.path.data[0], bound);
+        }
+        return;
+    }
+    if (pat->kind == EK_N_P_PAREN && pat->u.kids.count == 1) {
+        bind_top_pattern(c, pat->u.kids.data[0], m, bound);
+        return;
+    }
+    if (pat->kind == EK_N_P_PAREN) {
+        p = ck_prune(bound);
+        for (i = 0; i < pat->u.kids.count; i++) {
+            const ek_type *ct = p && p->kind == EK_T_TUPLE
+                                    && i < p->u.tuple.count
+                                ? p->u.tuple.items[i] : ck_opaque(c);
+
+            bind_top_pattern(c, pat->u.kids.data[i], m, ct);
+        }
+        return;
+    }
+    ck_scope_push(c);
+    ck_pattern(c, pat, bound);
+    top_names(c, pat, m);
+    ck_scope_pop(c);
+}
+
 /* Binds an irrefutable pattern's names. */
 static void bind_pattern(ck_ctx *c, const ek_node *pat, const ek_type *t,
                          ck_scheme *gen)
@@ -129,6 +255,11 @@ static const ek_type *ck_binding(ck_ctx *c, const ek_node *m, int top)
     }
     if (!top) {
         bind_pattern(c, pat, bound, gen);
+    } else if (pat && (pat->kind != EK_N_P_VAR || !m->u.bind.type)) {
+        /* A top-level pattern names the module surface's own rows, and
+           an unannotated name takes the type its right-hand side read
+           (Clauses 6.3.1, 7.3.1). */
+        bind_top_pattern(c, pat, m, bound);
     }
     if (top) {
         c->inst_body = 0;

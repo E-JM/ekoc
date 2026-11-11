@@ -214,32 +214,84 @@ static ek_symbol *collect_namespace(r_surf *s, const ek_node *item)
     return sym;
 }
 
-/* A plain value binding; a PascalCase spelling violates the binding
-   space. */
+/* The names one irrefutable pattern binds, in pattern order. A
+   constructor head names its payload's variables, a group and a brace
+   name their components, and nothing else binds. */
+static void pattern_names(r_surf *s, const ek_node *pat,
+                          const char ***out, size_t *n, size_t *cap)
+{
+    size_t i;
+
+    if (!pat) {
+        return;
+    }
+    switch (pat->kind) {
+    case EK_N_P_VAR:
+        if (pat->u.path.count == 1
+            && strcmp(pat->u.path.data[0], "_") != 0) {
+            const char **grown = r_grow(s->c, *out, *n, cap,
+                                        sizeof *grown);
+
+            if (grown) {
+                grown[(*n)++] = pat->u.path.data[0];
+                *out = grown;
+            }
+        }
+        return;
+    case EK_N_P_PAREN:
+        for (i = 0; i < pat->u.kids.count; i++) {
+            pattern_names(s, pat->u.kids.data[i], out, n, cap);
+        }
+        return;
+    case EK_N_P_BRACE:
+        for (i = 0; i < pat->u.p_brace.items.count; i++) {
+            const ek_node *item = pat->u.p_brace.items.data[i];
+
+            if (item->kind == EK_N_P_FIELD) {
+                pattern_names(s, item->u.p_field.pattern, out, n, cap);
+            } else {
+                pattern_names(s, item, out, n, cap);
+            }
+        }
+        return;
+    case EK_N_P_CONS:
+        pattern_names(s, pat->u.cons.payload, out, n, cap);
+        return;
+    default:
+        return;
+    }
+}
+
+/* A plain value binding; the names an irrefutable pattern binds are
+   the binding's own, in pattern order. */
 static ek_symbol *collect_let(r_surf *s, const ek_node *item)
 {
     const ek_node *pat = item->u.bind.pattern;
-    const char *name = NULL;
-    ek_symbol *sym;
+    const char **names = NULL;
+    size_t n = 0, cap = 0, i;
+    ek_symbol *first = NULL;
 
-    if (pat && pat->kind == EK_N_P_VAR && pat->u.path.count == 1) {
-        name = pat->u.path.data[0];
-    } else if (pat && pat->kind == EK_N_P_CONS
-               && pat->u.cons.name.count == 1) {
-        r_error(s->c, s->m->file, pat->line, pat->col, "E-name-case",
-                "value binding `%s` is not snake_case "
-                "(Clauses 5.5.2, 7.4.1)", pat->u.cons.name.data[0]);
-        name = pat->u.cons.name.data[0];
+    pattern_names(s, pat, &names, &n, &cap);
+    for (i = 0; i < n; i++) {
+        const char *name = names[i];
+        ek_symbol *sym = r_sym(s->c, name, EK_SYM_FUNC, s->m->stem,
+                               item->line, item->col);
+
+        if (sym) {
+            sym->decl = item;
+            sym->type = item->u.bind.type;
+            sym->public = name[0] != '_';
+            sym->doc = item->doc;
+            /* Namespace members are keyed by their full head and never
+               occupy the leaf layer; a value binding does. */
+            leaf_push(s, sym);
+            r_surf_emit(s, sym);
+        }
+        if (!first) {
+            first = sym;
+        }
     }
-    if (!name) {
-        return NULL;
-    }
-    sym = r_sym(s->c, name, EK_SYM_FUNC, s->m->stem, item->line, item->col);
-    if (sym) {
-        sym->decl = item;
-        sym->type = item->u.bind.type;
-    }
-    return sym;
+    return first;
 }
 
 static void collect_member(r_surf *s, const ek_node *item)
@@ -267,17 +319,18 @@ static void collect_member(r_surf *s, const ek_node *item)
             sym->pure = item->u.extern_decl.pure;
         }
     }
-    if (sym) {
+    if (sym && item->kind != EK_N_LET) {
         /* The document rides the binding it describes: the index
-           carries it with the span the symbol already holds. */
+           carries it with the span the symbol already holds. A LET
+           registered its pattern's names in collect_let. */
         sym->doc = item->doc;
+        /* Namespace members are keyed by their full head and never
+           occupy the leaf layer. */
+        if (sym->kind != EK_SYM_NAMESPACE) {
+            leaf_push(s, sym);
+        }
+        r_surf_emit(s, sym);
     }
-    /* Namespace members are keyed by their full head and never occupy
-       the leaf layer. */
-    if (!sym || sym->kind != EK_SYM_NAMESPACE) {
-        leaf_push(s, sym);
-    }
-    r_surf_emit(s, sym);
 }
 
 /* N12: an import and a file top-level binding share a name; the

@@ -331,13 +331,11 @@ static void name_case(void)
 {
     rfx f;
 
-    /* A value binding carries the snake_case case class; the Pascal
-       spelling is also an unbound constructor reference, and each rule
-       reports its own violation. */
+    /* A Pascal binding head reads as a constructor pattern, and the
+       unbound spelling is the one violation it reports. */
     rfx_begin(&f,
         "Bad: Int = 1\n");
-    EK_CHECK_U64(rfx_errors(&f), 2);
-    EK_CHECK(rfx_code_at_line(&f, "E-name-case", 1));
+    EK_CHECK_U64(rfx_errors(&f), 1);
     EK_CHECK(rfx_code_at_line(&f, "E-unbound-name", 1));
     /* The rejected spelling still records its constructor reading at
        the pattern position. */

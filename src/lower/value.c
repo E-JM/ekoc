@@ -11,17 +11,34 @@
    pull their definitions into the unit. */
 
 /* True when the symbol is a top-level value binding: a plain or
-   namespace binding whose annotation is not a function type. A
-   generic one keeps the value false and is diagnosed at its
-   emission. */
+   namespace binding whose annotation is not a function type. An
+   unannotated binding is a value unless its right-hand side is a
+   lambda, which names a function. */
 int lower_is_value(const ek_symbol *sym)
 {
-    return sym && (sym->kind == EK_SYM_FUNC
-                   || sym->kind == EK_SYM_NAMESPACE)
-        && sym->decl
-        && (sym->decl->kind == EK_N_LET
-            || sym->decl->kind == EK_N_NAMESPACE)
-        && sym->type && sym->type->kind != EK_N_T_FN;
+    const ek_node *ann;
+    const ek_node *v;
+
+    if (!(sym && (sym->kind == EK_SYM_FUNC
+                  || sym->kind == EK_SYM_NAMESPACE)
+          && sym->decl
+          && (sym->decl->kind == EK_N_LET
+              || sym->decl->kind == EK_N_NAMESPACE))) {
+        return 0;
+    }
+    ann = sym->decl->kind == EK_N_NAMESPACE ? sym->decl->u.namespace.type
+                                            : sym->decl->u.bind.type;
+    if (ann) {
+        return ann->kind != EK_N_T_FN;
+    }
+    if (sym->decl->kind != EK_N_LET) {
+        return 1;
+    }
+    v = sym->decl->u.bind.value;
+    while (v && v->kind == EK_N_PAREN) {
+        v = v->u.wrap.inner;
+    }
+    return !(v && v->kind == EK_N_LAMBDA);
 }
 
 /* The C name pieces of one value binding: the kind letter joins the
@@ -71,9 +88,14 @@ static void emit_slot_head(lower_ctx *c, const ek_symbol *sym)
 void lower_value_binding(lower_ctx *c, const lower_item *item)
 {
     const ek_symbol *sym = item->sym;
-    const ek_node *value = sym->decl->kind == EK_N_NAMESPACE
-                               ? sym->decl->u.namespace.value
-                               : sym->decl->u.bind.value;
+    const ek_node *decl = sym->decl;
+    const ek_node *value = decl->kind == EK_N_NAMESPACE
+                               ? decl->u.namespace.value
+                               : decl->u.bind.value;
+    const ek_node *pat = decl->kind == EK_N_LET
+                             ? decl->u.bind.pattern : NULL;
+    int pattern_head = pat && pat->kind != EK_N_P_VAR
+                       && pat->kind != EK_N_P_WILDCARD;
     const ek_ck_row *row = lower_row(c, sym->type);
     const char *slot = value_slot(c, sym);
     const char *flag = lower_str(c, "%s_on", slot);
@@ -97,14 +119,31 @@ void lower_value_binding(lower_ctx *c, const lower_item *item)
     c->tce_label = NULL;
     c->in_tail = 1;
     memset(&top, 0, sizeof top);
-    v = lower_block_value(c, &top, value);
-    c->in_tail = 0;
-    if (!v.text) {
-        v = lower_val_unit(); /* a jumped tail falls back to the unit */
+    if (pattern_head) {
+        /* The pattern's names bind as locals; this symbol's slot takes
+           its own component, and the rest die with the scope. */
+        if (!lower_value_destructure(c, &top, decl, pat, sym->name)) {
+            lower_error(c, decl, "the destructuring pattern is not "
+                                 "supported by this lowerer");
+        }
+        {
+            const lower_local *loc = scope_find_local(&top, sym->name);
+
+            if (loc) {
+                lower_pad(c);
+                lower_emitf(c, "%s = ek_keep(%s);\n", slot, loc->cname);
+            }
+        }
+    } else {
+        v = lower_block_value(c, &top, value);
+        if (!v.text) {
+            v = lower_val_unit(); /* a jumped tail falls back to the unit */
+        }
+        t = lower_as_temp(c, &top, &v);
+        lower_pad(c);
+        lower_emitf(c, "%s = %s;\n", slot, t);
     }
-    t = lower_as_temp(c, &top, &v);
-    lower_pad(c);
-    lower_emitf(c, "%s = %s;\n", slot, t);
+    c->in_tail = 0;
     lower_pad(c);
     lower_emitf(c, "%s = 1;\n", flag);
     lower_release_scope(c, &top);

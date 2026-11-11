@@ -932,6 +932,9 @@ int lower_binding_destructure(lower_ctx *c, lower_scope *scope,
                               const ek_node *m, const ek_node *pat);
 int lower_rebind_destructure(lower_ctx *c, lower_scope *scope,
                              const ek_node *m, const ek_node *pat);
+int lower_value_destructure(lower_ctx *c, lower_scope *scope,
+                            const ek_node *m, const ek_node *pat,
+                            const char *name);
 
 /* extctype.c: the frozen C struct of a ctype and the walks between
    its two shapes. lower_ctype_of_node names the declaration a written
