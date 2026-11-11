@@ -683,6 +683,8 @@ order (`Clause 7.4.4`).
 
 ```eko
 // with tests/conformance/geolib.eko on the module path
+import geolib
+
 s: geolib.Shape = geolib.Circle(2.0)
 ```
 
@@ -696,6 +698,8 @@ type's own name, never the module-side pair.
 
 ```eko
 // with tests/conformance/geolib.eko on the module path
+import geolib
+
 area_of: (s: geolib.Shape) -> Float =
     case s:
         geolib.Circle r -> 3.14 * r * r

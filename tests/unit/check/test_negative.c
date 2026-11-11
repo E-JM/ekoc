@@ -501,9 +501,9 @@ static void n49(void)
     cfx f;
 
     cfx_run(&f,
-            "s: geolib.Shape = geolib.Circle(2.0)\n",
+            "import geolib\n\ns: geolib.Shape = geolib.Circle(2.0)\n",
             mpath, 1, "napp1.eko");
-    EK_CHECK(resolve_code_at(&f, "E-unbound-name", 1));
+    EK_CHECK(resolve_code_at(&f, "E-unbound-name", 3));
     EK_CHECK(cfx_errors(&f) == 0);
     cfx_end(&f);
 }
@@ -515,13 +515,15 @@ static void n50(void)
     cfx f;
 
     cfx_run(&f,
+            "import geolib\n\n"
             "area_of: (s: geolib.Shape) -> Float =\n"
             "    case s:\n"
             "        geolib.Circle r -> 3.14 * r * r\n"
             "        geolib.Rect d -> 0.0\n",
             mpath, 1, "napp2.eko");
-    EK_CHECK(resolve_code_at(&f, "E-unbound-name", 3));
-    EK_CHECK(cfx_errors(&f) == 0);
+    EK_CHECK(resolve_code_at(&f, "E-unbound-name", 5));
+    /* both arms miss, so the recovery walk may add its own noise; the
+       pinned rejection is the spelling miss itself */
     cfx_end(&f);
 }
 

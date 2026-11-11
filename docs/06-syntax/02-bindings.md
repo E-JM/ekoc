@@ -70,11 +70,14 @@ it is the wildcard (Clause 7.5.4).
 
 `:=` introduces a binding for a name without an annotation. If the name is
 already bound, the new binding shadows the old one in the remainder of the
-block.
+block. The left side admits the irrefutable patterns of a value binding:
+every name the pattern binds takes the rebinding, moving in where the scope
+already carries it and declaring fresh where it does not.
 
 ```eko
 count := count + 1
 p2 := p
+(a, b) := pair
 ```
 
 `:=` does not generalize; a polymorphic binding requires an annotated `=`

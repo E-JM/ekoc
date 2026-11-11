@@ -49,7 +49,10 @@ add: (a: Int, b: Int) -> Int =
 
 The body MAY be a lambda, in which case the lambda is checked against the
 annotation. The body MAY instead be a block that uses the parameter names from
-the annotation directly.
+the annotation directly. An `if` or `case` whose every arm is a lambda is a
+third reading: the whole expression is a value of the annotation's arrow, the
+arms check against it, and the selection happens when the binding evaluates,
+not at every call.
 
 ### 6.4.3 Parameter Groups
 
