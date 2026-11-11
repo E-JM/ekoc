@@ -54,6 +54,9 @@ otherwise it names the rejection and the normative clause.
 | N46 | the conversion member does not chain | `E-unbound-member` |
 | N47 | an argument beyond the conversion's operand | `E-call-arity` |
 | N48 | a bare conversion member read | `E-unbound-member` |
+| N49 | a constructor spelled flat through its module | `E-unbound-name` |
+| N50 | a constructor pattern spelled flat through its module | `E-unbound-name` |
+| N51 | a constructor call on a type with no same-named constructor | `E-unbound-name` |
 
 ## N01 — nominal mismatch
 
@@ -670,3 +673,44 @@ main: (out: Out) ! =
 ```
 
 Expected: `E-unbound-member`.
+
+## N49 — a constructor spelled flat through its module
+
+A qualified constructor reference ends at the type; the module-side
+spelling is retired because a same-named pair would pick by surface
+order (`Clause 7.4.4`).
+
+```eko
+// with tests/conformance/geolib.eko on the module path
+s: geolib.Shape = geolib.Circle(2.0)
+```
+
+Expected: `E-unbound-name`, naming the owning type's spelling
+`geolib.Shape.Circle(2.0)`.
+
+## N50 — a constructor pattern spelled flat through its module
+
+The pattern position ends at the type the same way: `Type.Ctor` or the
+type's own name, never the module-side pair.
+
+```eko
+// with tests/conformance/geolib.eko on the module path
+area_of: (s: geolib.Shape) -> Float =
+    case s:
+        geolib.Circle r -> 3.14 * r * r
+        geolib.Rect d -> 0.0
+```
+
+Expected: `E-unbound-name`.
+
+## N51 — a constructor call on a type with no same-named constructor
+
+`Mod.Type(args)` is the type's own same-named variant; the domain type
+`Int` carries none, and the `Json` variant of the same spelling names
+the owning type in the diagnostic.
+
+```eko
+j: Json = std.Int(5)
+```
+
+Expected: `E-unbound-name`, pointing at `std.Json.Int(...)`.

@@ -33,3 +33,15 @@ anchors: test =
 qualified_payloads: test =
     assert_eq(MyResult.Ok("q"), Ok "q")
     assert_eq(MyResult.Retry(7), Retry 7)
+
+// The type-qualified spelling names same-named constructors apart
+// without reading the module's surface order (Clause 7.4.4).
+Other: type = Ok Int | Stop
+
+named_apart: test =
+    a: MyResult = MyResult.Ok("q")
+    b: Other = Other.Ok(3)
+    assert_eq(a, Ok "q")
+    assert_eq(b, Ok 3)
+    assert_eq(MyResult.Ok("q"), Ok "q")
+    assert_eq(Other.Ok(3), Ok 3)

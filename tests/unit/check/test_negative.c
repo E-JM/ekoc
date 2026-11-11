@@ -494,9 +494,54 @@ static void n48(void)
     cfx_end(&f);
 }
 
+/* N49 — a constructor spelled flat through its module. */
+static void n49(void)
+{
+    static const char *const mpath[1] = {CONF_DIR};
+    cfx f;
+
+    cfx_run(&f,
+            "s: geolib.Shape = geolib.Circle(2.0)\n",
+            mpath, 1, "napp1.eko");
+    EK_CHECK(resolve_code_at(&f, "E-unbound-name", 1));
+    EK_CHECK(cfx_errors(&f) == 0);
+    cfx_end(&f);
+}
+
+/* N50 — a constructor pattern spelled flat through its module. */
+static void n50(void)
+{
+    static const char *const mpath[1] = {CONF_DIR};
+    cfx f;
+
+    cfx_run(&f,
+            "area_of: (s: geolib.Shape) -> Float =\n"
+            "    case s:\n"
+            "        geolib.Circle r -> 3.14 * r * r\n"
+            "        geolib.Rect d -> 0.0\n",
+            mpath, 1, "napp2.eko");
+    EK_CHECK(resolve_code_at(&f, "E-unbound-name", 3));
+    EK_CHECK(cfx_errors(&f) == 0);
+    cfx_end(&f);
+}
+
+/* N51 — a constructor call on a type with no same-named constructor. */
+static void n51(void)
+{
+    cfx f;
+
+    cfx_begin(&f, "j: Json = std.Int(5)\n");
+    EK_CHECK(resolve_code_at(&f, "E-unbound-name", 1));
+    EK_CHECK(cfx_errors(&f) == 0);
+    cfx_end(&f);
+}
+
 int main(void)
 {
     n41();
+    n49();
+    n50();
+    n51();
     n01();
     n02();
     n03();

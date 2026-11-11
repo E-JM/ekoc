@@ -116,7 +116,7 @@ implementation that does not collide with a code in the table.
 | `E-cycle-import` | the module dependency graph contains a cycle | Clause 7.2.4 |
 | `E-namespace-owner` | a type-namespace member is declared outside the module that owns the type | Clause 7.4.5 |
 | `E-name-conflict` | two names conflict at one level, two imported module stems collide, or a declaration names the language's `Never` | Clause 7.4.6, Clause 7.5.4 |
-| `E-unbound-name` | a name resolves to no declaration in any visible scope, including a constructor name with no visible constructor | Clause 7.4.2, Clause 7.4.6, Clause 9.1.2 |
+| `E-unbound-name` | a name resolves to no declaration in any visible scope, including a constructor name with no visible constructor under its spelling, and a qualified constructor spelling that does not end at a type carrying it | Clause 7.4.2, Clause 7.4.4, Clause 7.4.6, Clause 9.1.2 |
 | `E-unbound-member` | a member link names a member no station of Clause 7.4.3 carries, in a namespace whose member set is closed | Clause 7.4.3 |
 | `E-call-arity` | a call supplies an argument count the callee's arity does not admit | Clause 7.8.1 |
 | `E-undetermined` | a constructor reference has no unique anchor: several constructors of that name are visible and no expected type or scrutinee type selects one | Clause 7.4.6 |

@@ -154,9 +154,10 @@ Argument        := Expression
 ```
 
 A bare or dotted name of any case class is a `QualifiedName`; a `PascalName`
-followed by a juxtaposed postfix expression is a constructor application
-(Clause 6.5.2). An item of a composite literal with a `:` is a keyed entry;
-without one it is an element (Clause 6.6.1).
+followed by a juxtaposed postfix expression is a constructor application,
+and a dotted name followed by an argument list is the call form of the same
+application (Clause 6.5.2). An item of a composite literal with a `:` is a
+keyed entry; without one it is an element (Clause 6.6.1).
 
 A keyed composite in the argument of the derived `with` is a partial
 record literal; the grammar does not distinguish it, the position does
@@ -189,9 +190,12 @@ FieldPattern    := Identifier [ ':' Pattern ]
 
 A `PascalName` pattern is a constructor; an `Identifier` pattern is a
 variable. A variable pattern MUST be snake_case; a constructor pattern MUST
-be PascalCase. A constructor pattern with a payload occurs in `case` arms
-and, when its constructor is the sole constructor of the scrutinee's ADT, in
-a value binding (Clause 7.7.1).
+be PascalCase. A qualified constructor pattern ends at the type: a dotted
+head names a constructor of the type it spells, `Type.Ctor` or the type's
+own name `Mod.Type` (Clause 7.4.4), and a pattern has no call form — the
+juxtaposed payload is the only application shape. A constructor pattern with
+a payload occurs in `case` arms and, when its constructor is the sole
+constructor of the scrutinee's ADT, in a value binding (Clause 7.7.1).
 
 The braced group is the tuple pattern's spelling; the parenthesized group
 occurs on the left of a binding operator, where it cannot be an expression,
@@ -250,12 +254,12 @@ QualifiedPascalName := { Identifier '.' } PascalName
 
 A dotted name in expression position is resolved by Clause 7.4.4 and may carry
 a call's arguments (Clause 6.5.2). A `QualifiedPascalName` is a dotted name
-whose last segment is PascalCase and whose head is a module name of any case
-class (Clause 5.5.2): in type position `geolib.Shape` is a module-qualified
-type (Clause 7.4.5); in pattern position `geolib.Circle` is a module-qualified
-constructor (Clause 7.4.6). As the head of a `NamespaceBinding` it names the
+whose last segment is PascalCase and whose head is a module name (Clause
+5.5.2): in type position `geolib.Shape` is a module-qualified type (Clause
+7.4.5); in constructor position `geolib.Shape.Circle` is the constructor of
+a named type (Clause 7.4.4). As the head of a `NamespaceBinding` it names the
 owner type. The production admits any number of head segments; a
 module-qualified `QualifiedPascalName` carries exactly one module segment
 (Clause 7.4.4), and a reference with a longer prefix is `E-unbound-name`. A
-module-qualified constructor application in value position is spelled as a
-call, `geolib.Circle(r)` (Clause 6.5.2).
+qualified constructor reference ends at the type, and its dotted head is
+applied as a call (Clause 6.5.2).

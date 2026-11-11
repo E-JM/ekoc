@@ -48,10 +48,9 @@ is a tuple type. A variant list has at least one variant: a type with no
 values is not a declaration form, and the bottom type is vocabulary of the
 language (Clause 7.5.4). A constructor applied by juxtaposition is check-only:
 it requires an expected type; its instantiation is taken from that type
-(Clause 7.6.4). A bare constructor is never written with parentheses; a
-module-qualified constructor is applied as a call on its dotted head (Clauses
-6.5.2, 6.8.1). Its visibility follows the type (Clause 7.3.3), and its name
-MAY equal the type name.
+(Clause 7.6.4). A bare constructor head is never written with parentheses; a
+dotted head is applied as a call (Clauses 6.5.2, 6.8.1). Its visibility
+follows the type (Clause 7.3.3), and its name MAY equal the type name.
 
 A bracketed right-hand side declares a record or a tuple-shaped nominal type.
 Field access does not apply to a tuple-shaped nominal type; its values are

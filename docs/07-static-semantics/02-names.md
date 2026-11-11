@@ -115,18 +115,28 @@ call is typed as Clause 7.8.2.
 
 A qualified name has the form `Mod.f` or `Mod.Type.f` at the expression head,
 `x.Mod.f(args)` or `x.Mod.Type.f(args)` at a receiver link, `Mod.Type` in type
-position, or `Mod.Ctor` at constructor value or pattern position. The module
-prefix is exactly one segment, not an import path; a qualified name reference
-with more than one head segment is `E-unbound-name` (Annex B).
+position, or `Type.Ctor` / `Mod.Type` at constructor value or pattern
+position. The module prefix is exactly one segment, not an import path; a
+qualified name reference with more than one head segment is `E-unbound-name`
+(Annex B).
 
 | Position | Form | Denotes |
 |---|---|---|
 | Expression head | `Mod.f(args)` | free function `f` of module `Mod` |
 | Expression head | `Mod.Type.f(args)` | namespace member `f` of type `Type` in `Mod` |
+| Expression head | `Type.Ctor(args)` / `Mod.Type.Ctor(args)` | constructor `Ctor` of type `Type` |
+| Expression head | `Mod.Type(args)` | the constructor of `Type` named `Type` in `Mod` |
 | Receiver link | `x.Mod.f(args)` | `Mod.f(x, args)` (Clause 6.5.2) |
 | Receiver link | `x.Mod.Type.f(args)` | `Mod.Type.f(x, args)` |
 | Type position | `Mod.Type` | type `Type` declared in `Mod` |
-| Constructor | `Mod.Ctor` | constructor `Ctor` declared in `Mod` |
+| Constructor | `Type.Ctor` / `Mod.Type.Ctor` | constructor `Ctor` of type `Type` |
+| Constructor | `Mod.Type` | the constructor of `Type` named `Type` in `Mod` |
+
+A qualified constructor reference ends at the type: the last segment names a
+constructor of the type the spelling carries, and a constructor not spelled
+with its owning type is `E-unbound-name` (Annex B). `Type.Ctor` and
+`Mod.Type.Ctor` carry the type as provenance, so same-named constructors of
+one module are named apart without reading the module's surface order.
 
 The bare spelling is the normal form for types and constructors. The qualified
 spelling is legal at every name position and is the disambiguation device for

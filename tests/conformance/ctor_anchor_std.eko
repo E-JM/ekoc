@@ -6,3 +6,9 @@ _t = True
 
 self_anchor: test =
     assert(True)
+
+qualified_std_variants: test =
+    j: Json = std.Json.Int(5)
+    s: Json = std.Json.Str("a")
+    assert_eq(j, Int 5)
+    assert_eq(s, Str "a")
