@@ -141,18 +141,23 @@ static const char *bit_name(ek_bit b)
    call bits of the body. A lambda value is the declared body itself,
    so its own bit is the body bit; any other value excludes lambda
    interiors, because a closure's calls belong to the closure's own
-   declared arrow. */
+   declared arrow. The lambda reads through parentheses, which wrap it
+   without changing it. */
 void ck_reconcile(ck_ctx *c, const ek_node *at, const ek_type *bound,
                   const ek_node *val)
 {
     ek_bit own = ck_own_bit(bound);
     ek_bit body;
+    const ek_node *lam = val;
 
     if (!val || c->oom) {
         return;
     }
-    if (val->kind == EK_N_LAMBDA) {
-        body = ck_bit_of(c, val);
+    while (lam && lam->kind == EK_N_PAREN) {
+        lam = lam->u.wrap.inner;
+    }
+    if (lam && lam->kind == EK_N_LAMBDA) {
+        body = ck_bit_of(c, lam);
         if (own == EK_BIT_PURE && body == EK_BIT_WORLD) {
             return; /* the lambda check reported the direction */
         }

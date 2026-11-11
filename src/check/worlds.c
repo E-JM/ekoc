@@ -55,11 +55,15 @@ ek_bit ck_bit_of(ck_ctx *c, const ek_node *n)
 
 /* The bit an argument supplies where a `?` is instantiated: a lambda
    carries its body's bit, a world-touching function value its arrow's
-   bit, anything else nothing (holding is quiet). */
+   bit, anything else nothing (holding is quiet). The lambda reads
+   through parentheses, which wrap it without changing it. */
 ek_bit ck_arg_bit(ck_ctx *c, const ek_node *arg, const ek_type *arg_type)
 {
     const ek_type *t;
 
+    while (arg && arg->kind == EK_N_PAREN) {
+        arg = arg->u.wrap.inner;
+    }
     if (arg && arg->kind == EK_N_LAMBDA) {
         return map_bit(&c->bits, arg);
     }
