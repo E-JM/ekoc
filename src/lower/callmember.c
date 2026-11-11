@@ -3,9 +3,10 @@
 #include "lower/internal.h"
 
 /* The member-call readings: the namespace scan the dispatch shares
-   with the derived services, the re-routing at an open receiver, the
-   free-call and receiver forms of a compiler service, and the
-   current-module function a receiver-form call selected. */
+   with the derived services, the conversion member's payload read, the
+   re-routing at an open receiver, the free-call and receiver forms of
+   a compiler service, and the current-module function a receiver-form
+   call selected. */
 
 /* The scan behind the member lookup: the member of one namespace
    owner, in the owning module's surface, with the capability module's
@@ -81,10 +82,90 @@ const ek_symbol *lower_member_symbol(lower_ctx *c, const ek_type *recv,
     return member_symbol(c, recv, name);
 }
 
+/* The sole constructor one newtype declaration owns, in its declaring
+   module's surface; NULL when the surface names none. */
+static const ek_symbol *sole_ctor(lower_ctx *c, const ek_type *ot)
+{
+    const ek_symbol *tsym = ot && ot->kind == EK_T_NOMINAL
+                                ? ot->u.nominal.sym : NULL;
+    size_t k, i;
+
+    if (!tsym || !tsym->module || !tsym->name) {
+        return NULL;
+    }
+    for (k = 0; k < c->resolved.module_count; k++) {
+        const ek_surface *s = &c->resolved.modules[k];
+
+        if (strcmp(s->module, tsym->module) != 0) {
+            continue;
+        }
+        for (i = 0; i < s->count; i++) {
+            const ek_symbol *m = &s->syms[i];
+
+            if (m->kind == EK_SYM_CONSTRUCTOR && m->owner
+                && strcmp(m->owner, tsym->name) == 0) {
+                return m; /* the sole-constructor rule accepted it */
+            }
+        }
+    }
+    return NULL;
+}
+
+/* The conversion member: the payload type's name over a newtype
+   receiver. The receiver form's operand is the receiver node; the
+   type-namespace form's is the one written argument. The operand
+   lowers to a temp, the payload reads out of the constructor family's
+   single slot as an owned keep, and the temp dies. */
+static lower_val convert_call(lower_ctx *c, lower_scope *scope,
+                              const ek_node *e, const ek_node *callee,
+                              const call_form *form, const ek_type *rt)
+{
+    const ek_type *ot = rt;
+    const ek_node *operand = callee->u.field.recv;
+    const ek_symbol *cs;
+    lower_gtype *g;
+    lower_val a;
+    const char *at, *r;
+
+    if (form->has_recv || form->extra) {
+        return lower_discard_call(c, scope, e, form);
+    }
+    if (rt) {
+        if (e->u.call.args.count != 0) {
+            lower_error(c, e, "the conversion member takes no argument "
+                              "beyond the receiver");
+            return lower_discard_call(c, scope, e, form);
+        }
+    } else {
+        if (e->u.call.args.count != 1) {
+            lower_error(c, e, "the conversion member takes the one "
+                              "operand, the newtype value");
+            return lower_discard_call(c, scope, e, form);
+        }
+        operand = e->u.call.args.data[0];
+        ot = lower_row_type(c, operand);
+    }
+    cs = sole_ctor(c, ot);
+    g = cs ? lower_ctor_of_symbol(c, e, cs, 0) : NULL;
+    if (!g || !g->nf) {
+        lower_error(c, e, "the conversion operand carries no payload");
+        return lower_discard_call(c, scope, e, form);
+    }
+    a = lower_sub(c, scope, operand);
+    at = lower_as_temp(c, scope, &a);
+    r = lower_temp(c, scope);
+    lower_pad(c);
+    lower_emitf(c, "ek_val %s = ek_keep(((ekS_%s *)%s.as.ref)->p0);\n",
+                r, g->stem, at);
+    lower_pad(c);
+    lower_emitf(c, "ek_release(%s);\n", at);
+    return (lower_val){ r, 1 };
+}
+
 /* The unsupported-call balance: the receiver and the arguments still
    evaluate and die. */
 lower_val lower_discard_call(lower_ctx *c, lower_scope *scope,
-                              const ek_node *e, const call_form *form)
+                             const ek_node *e, const call_form *form)
 {
     const ek_nlist *args = &e->u.call.args;
     lower_val a;
@@ -341,6 +422,9 @@ lower_val member_call(lower_ctx *c, lower_scope *scope,
         lower_val f = lower_sub(c, scope, callee);
 
         return value_call(c, scope, e, f, form->extra);
+    }
+    if (frow && frow->reading == EK_RD_CONVERT && !form->extra) {
+        return convert_call(c, scope, e, callee, form, rt);
     }
     if (frow && frow->reading == EK_RD_DERIVED && !form->extra) {
         if (strcmp(callee->u.field.name, "with") == 0) {
