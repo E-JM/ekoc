@@ -15,10 +15,10 @@ vocabulary module, whose one import, `std/time`, serves `FileInfo.mtime`
 `std/time`, for the time types in the `_ClockB` bundle and `Clock.sleep`; it
 imports nothing else (Clause 9.1.3).
 Every member in this section is capability-module source (Clause 9.1.1), except
-the sixteen compiler-provided declarations (Clause 10.8): `Proc.exit`, the four
+the seventeen compiler-provided declarations (Clause 10.8): `Proc.exit`, the four
 concurrency members, the eight `File` members, the two advancing derivations
-`In.from_lines` and `Rand.with_seed`, and the error-channel constructor
-`Out.err`.
+`In.from_lines` and `Rand.with_seed`, the error-channel constructor
+`Out.err`, and the scheduler constructor `Conc.os`.
 
 | Capability | Member | Signature | Clause |
 |---|---|---|---|
@@ -64,6 +64,7 @@ concurrency members, the eight `File` members, the two advancing derivations
 | `Rand` | `Rand.with_seed` | `(Int) -> Rand` | Clause 9.14.5 |
 | `Proc` | `Proc.exit` | `(Proc, Int) !-> Never` | Clause 8.4.3 |
 | `Conc` | `Conc.scope` | `(Conc, (Scope) ?-> a) ?-> a` | Clause 8.9.1 |
+| `Conc` | `Conc.os` | `() -> Conc` | Clause 9.14.5 |
 | `Scope` | `Scope.spawn` | `(Scope, () ?-> b) ?-> Task b` | Clause 8.9.1 |
 | `Task` | `Task.join` | `(Task b) -> Option b` | Clause 8.9.2 |
 | `Task` | `Task.cancel` | `(Task b) -> _` | Clause 8.9.2 |
@@ -74,7 +75,9 @@ on each write. `Out.null` swallows every write, `In.empty` reports EOF
 immediately, and `In.from_lines` yields the given lines in order and then EOF
 (Clause 9.14.5). `Out.err` constructs the session's error channel over host
 wiring; construction is pure, and the writes through the value land on the
-process's error stream (Clauses 9.14.5, 10.8). `with_file` closes the handle
+process's error stream (Clauses 9.14.5, 10.8). `Conc.os` constructs the host
+scheduler; construction is pure, and the capability itself carries no world
+contact (Clauses 8.9, 9.14.5). `with_file` closes the handle
 on both the value path and the error path (Clause 9.12.4). `read` keeps the
 text gate and reports invalid
 UTF-8 as `Err InvalidData`; `read_bytes` never reports `InvalidData`

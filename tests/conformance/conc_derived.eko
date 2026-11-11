@@ -1,0 +1,80 @@
+// The derived scheduler of Clause 9.14.5: Conc.os hands a test the host
+// scheduler of Clause 8.9, whose construction is pure and carries no
+// world contact of its own. Assertions target joined values: a pure
+// task's result is determined by the values captured at spawn (Clause
+// 8.9.3), and no test asserts an interleaving of world calls. The
+// cancellation probes use a task that cannot terminate on its own, so
+// the None of a cancelled join is deterministic (Clause 8.9.1).
+
+_compute: (n: Int) -> Int = n * n + 1
+
+_spin: (out: Out) !-> Never =
+    out.println("tick")
+    _spin(out)
+
+_joined: (t: Task Int) -> Int =
+    case t.join():
+        Some v -> v
+        None -> -1
+
+_join_in_scope: (s: Scope) -> Int =
+    t := s.spawn(((): _compute(3)))
+    _joined(t)
+
+_join_two: (s: Scope) -> Int =
+    a := s.spawn(((): _compute(2)))
+    b := s.spawn(((): _compute(4)))
+    _joined(a) + _joined(b)
+
+_spawn_compute: (s: Scope) -> Task Int =
+    s.spawn(((): _compute(3)))
+
+_spawn_spin: (s: Scope, out: Out) !-> Task Never =
+    s.spawn(((): _spin(out)))
+
+_join_then_escape: (s: Scope) -> Task Int =
+    t := s.spawn(((): _compute(4)))
+    _joined(t)
+    t
+
+_cancel_spawned: (s: Scope, out: Out) !-> Task Never =
+    t := s.spawn(((): _spin(out)))
+    t.cancel()
+    t
+
+_spin_scope: (s: Scope) !-> Task Never =
+    _spawn_spin(s, Out.null())
+
+_cancel_scope: (s: Scope) !-> Task Never =
+    _cancel_spawned(s, Out.null())
+
+scheduler_constructs: test =
+    c := Conc.os()
+    v := Conc.scope(c, _join_in_scope)
+    assert_eq(v, 10)
+
+children_join_deterministically: test =
+    c := Conc.os()
+    v := Conc.scope(c, _join_two)
+    assert_eq(v, 22)
+
+escaped_cancelled_join_none: test =
+    c := Conc.os()
+    t := Conc.scope(c, _spin_scope)
+    case t.join():
+        Some _ -> assert(False)
+        None -> assert(True)
+
+escaped_terminated_join_some: test =
+    c := Conc.os()
+    t := Conc.scope(c, _join_then_escape)
+    case t.join():
+        Some v -> assert_eq(v, 17)
+        None -> assert(False)
+
+cancel_stops_at_boundary: test =
+    c := Conc.os()
+    t := Conc.scope(c, _cancel_scope)
+    case t.join():
+        Some _ -> assert(False)
+        None -> assert(True)

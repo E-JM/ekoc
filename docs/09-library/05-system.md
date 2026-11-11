@@ -261,8 +261,9 @@ namespaces and are declared by the capability module (Clause 9.1.1), except
 `In.from_lines` and `Rand.with_seed`: their sequences advance across calls,
 which has no stateless expression, so both are compiler-provided declarations
 over injected extern symbols (Clause 10.8). The error-channel constructor
-`Out.err` is likewise compiler-provided over an injected extern; the wiring
-it names is Clause 7.9.1's.
+`Out.err` and the scheduler constructor `Conc.os` are likewise
+compiler-provided over injected externs; the wiring `Out.err` names is
+Clause 7.9.1's.
 
 | Derivation | Behavior |
 |---|---|
@@ -276,6 +277,7 @@ it names is Clause 7.9.1's.
 | `Args.frozen` | reads the fixed argument vector |
 | `Clock.frozen` | reads the fixed time; `sleep` returns immediately |
 | `Rand.with_seed` | the seed fixes the order; the sequence itself is not promised across versions |
+| `Conc.os` | constructs the host scheduler of Clause 8.9; construction is pure, and the members keep their bits |
 
 `Out.tee` has signature `(Out, (String) !-> _) -> Out`. Construction is pure.
 The observer fires once per write and receives the written string with one
@@ -284,7 +286,17 @@ unchanged. The observer's bit is absorbed by the `!` of the bundle's write
 closure (Clause 7.9.5). A pure observer flows in by adaptation.
 Tests cannot obtain real capabilities. Construction right belongs to the host,
 and `main`'s parameter table is the only entrance (Clause 7.9.1); a test has
-no parameter table. What the test runtime hands a test that
+no parameter table. What a test constructs is derivation, not grant: its
+combinators narrow the world, fake it, or wire its entrances onto the
+runner's own side, and none of them opens one. `Conc.os` constructs the host
+scheduler itself, and it too opens no world entrance: the four concurrency
+members set no bit of their own (Clause 8.9), so the scheduler adds
+scheduling, not world contact — the derived combinators remain the test's
+entire world. Assertions over concurrency
+target joined values: a pure task's result is determined by the values
+captured at spawn (Clause 8.9.3), while the interleaving of world calls
+across tasks is not promised, and a test MUST NOT assert it. What the test
+runtime hands a test that
 constructs `Out.err` is the runner's own side of the child's error stream,
 which the runner reads as panic capture (Clause 9.14.6) and never the user's,
 so a test keeps its written output on the derived combinators. Derived

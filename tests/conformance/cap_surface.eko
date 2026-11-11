@@ -99,8 +99,10 @@ _file_rows: (f: File) !-> _ =
     _
 
 // The concurrency and process rows answer at their capability and
-// handle parameters; no test constructs a Conc, a Scope, a Task, or a
-// Proc (Clauses 8.4.3, 8.9).
+// handle parameters; a test constructs the Conc through Conc.os
+// (Clause 9.14.5) and reaches a Scope and a Task only through the
+// scheduler's members, and no test constructs a Proc (Clauses 8.4.3,
+// 8.9).
 _conc_rows: (c: Conc, cb: (Scope) ?-> Int) ?-> Int = Conc.scope(c, cb)
 _spawn_row: (s: Scope, cb: () ?-> Int) ?-> Task Int = s.spawn(cb)
 _task_rows: (t: Task Int) -> Option Int = t.join()

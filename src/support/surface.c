@@ -541,7 +541,8 @@ const ek_surface_row ek_surface_rows[] = {
 
     /* The capability surface the source does not declare (Clause
        10.8): the two advancing derivations, the error channel, the
-       process exit, the four concurrency members, and the File
+       scheduler derivation, the process exit, the four concurrency
+       members, and the File
        family. `Never` is the bottom type, and the open arrows are the
        dispatchers. The capability-module source declares every other
        member (Clause 9.1.1), so the namespaces are complete (Clause
@@ -550,7 +551,9 @@ const ek_surface_row ek_surface_rows[] = {
        capability module declares no In or Rand type for the
        capability build to find. Constructing the error channel is
        pure: the writes through the value still carry the world bit of
-       the Out members. */
+       the Out members. Constructing the scheduler is pure the same
+       way: the members keep their declared bits, and the capability
+       itself carries no world contact for a test to pick up. */
     {"In", "from_lines", SIG_FN(EK_ARROW_PURE, SIG_STD("In"),
                                 SIG_LIST(SIG_STD("String"))),
      .route = EK_ROUTE_CAP, .sym = "ek_in_from_lines", .args = "o",
@@ -561,6 +564,9 @@ const ek_surface_row ek_surface_rows[] = {
      .registers = 1},
     {"Out", "err", SIG_FN0(EK_ARROW_PURE, SIG_STD("Out")),
      .route = EK_ROUTE_CAP, .sym = "ek_cap_out_stderr", .args = "",
+     .registers = 1},
+    {"Conc", "os", SIG_FN0(EK_ARROW_PURE, SIG_STD("Conc")),
+     .route = EK_ROUTE_CAP, .sym = "ek_cap_conc_os", .args = "",
      .registers = 1},
     {"Proc", "exit", SIG_FN(EK_ARROW_WORLD, SIG_STD("Never"),
                             SIG_STD("Proc"), SIG_STD("Int")),
