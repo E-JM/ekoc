@@ -347,6 +347,19 @@ lower_val member_call(lower_ctx *c, lower_scope *scope,
         return lower_convert_call(c, scope, e, callee, form, rt);
     }
     if (frow && frow->reading == EK_RD_DERIVED && !form->extra) {
+        if (strcmp(callee->u.field.name, "panic") == 0) {
+            /* The receiver form of the panic service: the receiver is
+               the message, and the call does not return. */
+            lower_val a = lower_sub(c, scope, recv);
+            const char *at = lower_as_temp(c, scope, &a);
+
+            lower_pad(c);
+            lower_emitf(c, "ek_frame_site(%d, %d);\n", e->line, e->col);
+            lower_emitf(c, "ek_panic_value(%s);\n", at);
+            lower_pad(c);
+            lower_emitf(c, "ek_release(%s);\n", at);
+            return lower_val_unit();
+        }
         if (strcmp(callee->u.field.name, "with") == 0) {
             return lower_derived_with(c, scope, e, recv);
         }

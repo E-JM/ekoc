@@ -37,6 +37,7 @@ static lower_val panic_call(lower_ctx *c, lower_scope *scope,
     a = lower_sub(c, scope, args->data[0]);
     at = lower_as_temp(c, scope, &a);
     lower_pad(c);
+    lower_emitf(c, "ek_frame_site(%d, %d);\n", e->line, e->col);
     lower_emitf(c, "ek_panic_value(%s);\n", at);
     lower_pad(c);
     lower_emitf(c, "ek_release(%s);\n", at);
