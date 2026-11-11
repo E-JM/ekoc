@@ -76,6 +76,7 @@
 | constructor | 构造子 | Clause 7.5.2 |
 | payload | 载荷 | Clause 7.5.2 |
 | single-variant type | 单变体类型 | Clause 7.5.2 |
+| conversion member | 转换成员 | Clause 7.8.7 |
 | type variable | 类型变量 | Clause 7.6.1 |
 | binder | 绑定器 | Clause 7.6.2 |
 | generic declaration | 泛型声明 | Clause 7.6.1 |

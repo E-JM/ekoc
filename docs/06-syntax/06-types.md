@@ -147,6 +147,7 @@ The following constructs do not exist. Their occurrence is an error.
 | As-patterns | Not a form (Clause 6.8.7) |
 | Conjunctive patterns `P and Q` | Not a form; one pattern conjoins fields, a guard conjoins a `Bool` (Clause 6.8.7) |
 | Type aliases | The right-hand side of `type` is a declaration form only (Clause 6.9.5) |
+| General cast `T(x)` | Not a form; the newtype payload is the conversion member `x.P()`, `P` the payload type (Clause 7.8.7) |
 
 Lexical forms that do not exist — tabs, block comments, multiline string
 literals, numeric type suffixes, bitwise tokens, and prefix `!` as negation —

@@ -81,7 +81,8 @@ The namespace of a type is named after the type's head: `[]t` maps to `List`,
 declared type uses its own name; an anonymous tuple or record type has no
 namespace.
 
-Station 2 includes the derived service members of Clause 9.8.7. When the
+Station 2 includes the derived service members of Clause 9.8.7 and the
+conversion member of Clause 7.8.7 on a single-variant receiver. When the
 static type is a type variable, station 2 resolves only the operations of
 Clause 7.6.6, and the concrete service is selected at instantiation (Clause
 8.7.2).

@@ -59,7 +59,7 @@ taken apart by patterns (Clause 7.7.1).
 
 A single-variant declaration with one payload is the newtype form. It admits
 no implicit conversion in either direction; the wrapped type is reachable by
-pattern matching.
+pattern matching and by the conversion member (Clause 7.8.7).
 
 Two nominal types with the same shape are mutually incompatible. Conversion is
 explicit: a literal or a field-by-field rebuild. A nominal value MAY flow into

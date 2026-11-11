@@ -46,10 +46,17 @@ method-call form.
 A bare constructor is applied by juxtaposition. The argument, when present,
 is a postfix expression, and juxtaposition binds tighter than every
 operator: `Ok inner`, `Duration 500`, `Succ (Succ Zero)`, and `Ok x || y`
-reads `(Ok x) || y`. A nullary constructor is the bare `PascalName`. A
+reads `(Ok x) || y`. Nested juxtaposition associates to the right: `Ok Ok 3`
+reads `Ok (Ok 3)`, and the parenthesized spelling is the readable one. A
+nullary constructor is the bare `PascalName`. A
 module-qualified constructor `Mod.Name` selects among same-named
 constructors (Clause 7.4.6) and is applied as a call on its dotted head,
 `geolib.Circle(r)`; the juxtaposition form belongs to the bare spelling.
+
+A type name in member position is the conversion member: on a value of the
+newtype form, `n.P()` reads the payload, `P` naming the payload type. The
+two directions of the newtype form are separate spellings — construction is
+the constructor's juxtaposition, selection is a member call (Clause 7.8.7).
 
 ### 6.5.3 Member Chains
 

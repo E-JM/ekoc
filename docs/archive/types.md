@@ -1,7 +1,7 @@
 # Design Record — Types and Generics
 
-Non-normative. Ruling clauses: 7.5, 7.6. Rejected alternatives, prior art, and
-rationale.
+Non-normative. Ruling clauses: 7.5, 7.6, 7.8.7. Rejected alternatives, prior
+art, and rationale.
 
 ## 1. Declarations
 
@@ -111,7 +111,27 @@ writable type with no writable value. Inside, `Range` is a real ADT, so `eq`,
 ordering, and `show` come free; `inspect` is compiler-owned as `0..9` /
 `0..=9`, the writable operator spellings (`Clause 9.8.3`).
 
-## 10. Rejected surface
+## 10. The conversion member
+
+The newtype form is the one declaration whose payload has no
+expression-level reach: records have fields, tuples have patterns at the
+binding line, and a newtype payload cost a pattern line at every consumer.
+The ruling gives the form one member reading named by the payload type
+itself — `a.UInt()` on `Age: type = Age UInt` — matched against the payload,
+never resolved, and typed as the pure one-parameter arrow from the newtype
+to the payload, so the receiver form and the type-namespace form type as
+ordinary member calls (`Clause 7.8.7`).
+
+The name is the whole design. No new word enters the language; the spelling
+is a type name, so no declaration can occupy it (`Clause 5.5.2`); the call
+is visible at the use site; and the judgment is identity, not conformance —
+no adaptation path opens. Construction stays the constructor's
+juxtaposition and selection is a member call, so the two directions never
+share a spelling, which is the answer to the pattern-binding duality that
+motivated the ruling: `NewInt i = n` keeps its pattern reading and stays
+legal, but nothing needs to reach for it again.
+
+## 11. Rejected surface
 
 | Area | Rejected | Reason (clause) |
 |---|---|---|
@@ -121,6 +141,9 @@ ordering, and `show` come free; `inspect` is compiler-owned as `0..9` /
 | Nominality | shape adaptation in containers and function types | shapes carry identity; bit adaptation is exempt because bits are erased (`7.5.5`) |
 | Nominality | anonymous ADTs | no union form outside a right-hand side |
 | Nominality | `Name(x)` conversion functions | conversion is a literal at the expected position or a rebuild (`7.5.2`) |
+| Newtype | implicit unwrapping (`Coercible`, deref layers) | silent at the use site; conformance solving underneath (`7.5.7`) |
+| Newtype | a derived `unwrap`/`inner` member | a second vocabulary word in every newtype namespace, failure-connoting |
+| Newtype | positional access `.0` | access is record-only; position is index syntax by another name |
 | Composite | value-position `(...)` tuples | parentheses are parameter groups, calls, grouping |
 | Composite | `Set` notation or literal | `{a, b}` is already lists and tuples; four-form closure |
 | Composite | zero-element tuple | `()` is the zero-parameter function type; the unit is `_` |

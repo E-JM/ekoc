@@ -141,7 +141,7 @@ clause column is the normative owner; the record is evidence, not a rule.
 | `archive/README.md` | 1.3 | directory index; status of the records; reading guide |
 | `archive/syntax.md` | 5, 6 | layout, operators, literals, comments |
 | `archive/control.md` | 6.3, 6.7, 6.8, 7.7, 8.2, 8.3, 8.8 | bindings, lambdas, branching, patterns, `Never`, iteration |
-| `archive/types.md` | 7.5, 7.6 | declarations, nominality, composites, generics |
+| `archive/types.md` | 7.5, 7.6, 7.8.7 | declarations, nominality, composites, generics, the newtype conversion member |
 | `archive/names.md` | 7.2, 7.3, 7.4 | UFCS, access, modules, visibility, `std` |
 | `archive/world.md` | 7.9, 8.4, 8.9, 9.12 | capabilities, world bit, failure, handles, concurrency |
 | `archive/runtime.md` | 8.5, 8.6, 8.7, 8.8, 8.10 | representation, acyclicity, memory, monomorphization |
@@ -210,6 +210,7 @@ bibliography; Annex G lists the works.
 | Tradition or source | Mechanism compared | Eko position | Clauses |
 |---|---|---|---|
 | ML-family variants and pattern matching | Nominal variants, exhaustive `case`, guards | Adopted; `case` is the only branching primitive | 6.7, 7.7 |
+| Newtype wrappers | Implicit wrapping or unwrapping (`Coercible`, deref-style layers), positional access (`.0`), a derived `unwrap`/`inner` member | Rejected; the conversion member names the payload type itself — visible at the call, owned by the compiler, zero new vocabulary | 7.5.2, 7.8.7 |
 | Constraint-directed overloading | Type-class-style constraints on generic functions | Rejected; UFCS and namespace members. User-defined or open constraint syntax and solving are rejected: the language carries the closed, compiler-owned derived service set | 6.5.2, 7.4.3, 7.6.6 |
 | `IO` monads and handler-based I/O | I/O tracking in the type | Rejected; capabilities plus one world bit | 7.9 |
 | Ownership and borrowing | Lifetime-annotated signatures and move semantics | Rejected; immutable values, O(1) sharing, reference counting | 8.5, 8.6 |

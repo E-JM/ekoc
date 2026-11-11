@@ -80,6 +80,7 @@ operative rules.
 | **constructor** | the value-level name of a variant | 7.5.2 |
 | **payload** | the value carried by a variant | 7.5.2 |
 | **single-variant type** | an ADT with one constructor and one payload; the newtype form | 7.5.2 |
+| **conversion member** | the member reading that names a newtype's payload type and selects the payload | 7.8.7 |
 | **type variable** | a lowercase identifier that stands for a type in a generic declaration or annotation | 7.6.1 |
 | **binder** | a type variable listed after `type` in a generic type declaration | 7.6.2 |
 | **generic declaration** | a type or function declaration with type variables | 7.6.1 |
