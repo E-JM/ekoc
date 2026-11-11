@@ -930,6 +930,8 @@ const lower_local *scope_find_local(lower_scope *scope, const char *name);
    1 when the pattern lowered, 0 to keep the general diagnostic. */
 int lower_binding_destructure(lower_ctx *c, lower_scope *scope,
                               const ek_node *m, const ek_node *pat);
+int lower_rebind_destructure(lower_ctx *c, lower_scope *scope,
+                             const ek_node *m, const ek_node *pat);
 
 /* extctype.c: the frozen C struct of a ctype and the walks between
    its two shapes. lower_ctype_of_node names the declaration a written

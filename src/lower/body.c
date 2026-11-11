@@ -249,6 +249,9 @@ static void emit_rebind(lower_ctx *c, lower_scope *scope, const ek_node *m)
         return;
     }
     if (!pat || pat->kind != EK_N_P_VAR || pat->u.path.count != 1) {
+        if (pat && lower_rebind_destructure(c, scope, m, pat)) {
+            return;
+        }
         lower_error(c, m, "the destructuring pattern is not supported by "
                           "this lowerer");
         emit_value_stmt(c, scope, m->u.bind.value);

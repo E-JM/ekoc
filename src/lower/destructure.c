@@ -55,24 +55,47 @@ static const ek_type *repr_type(lower_ctx *c, const ek_node *pat,
 }
 
 /* One bound name: an owned keep of its slot. */
+static int destructure_pat(lower_ctx *c, lower_scope *scope,
+                           const ek_node *pat, const char *slot,
+                           const ek_type *t, int rebind);
+
+/* A destructured name: an initial binding declares; a rebind moves
+   into the name the scope already carries and declares a fresh one
+   otherwise, exactly the single-name rebind's own reading. */
 static int bind_name(lower_ctx *c, lower_scope *scope, const char *name,
-                     const char *slot)
+                     const char *slot, int rebind)
 {
     const char *cname = lower_c_name(c, scope, name);
+    const lower_local *loc;
 
+    if (!rebind) {
+        lower_pad(c);
+        lower_emitf(c, "ek_val %s = ek_keep(%s);\n", cname, slot);
+        lower_scope_add(c, scope, name, cname, 0, NULL);
+        return 1;
+    }
+    loc = scope_find_local(scope, name);
+    if (!loc) {
+        lower_pad(c);
+        lower_emitf(c, "ek_val %s = ek_keep(%s);\n", cname, slot);
+        lower_scope_add(c, scope, name, cname, 0, NULL);
+        return 1;
+    }
+    if (loc->is_param) {
+        return 0; /* a borrowed binding cannot rebind; the single-name
+                     form names it, here the walk declines */
+    }
     lower_pad(c);
-    lower_emitf(c, "ek_val %s = ek_keep(%s);\n", cname, slot);
-    lower_scope_add(c, scope, name, cname, 0, NULL);
+    lower_emitf(c, "ek_release(%s);\n", loc->cname);
+    lower_pad(c);
+    lower_emitf(c, "%s = ek_keep(%s);\n", loc->cname, slot);
     return 1;
 }
 
 /* One record item: the field's slot, read by name. */
-static int destructure_pat(lower_ctx *c, lower_scope *scope,
-                           const ek_node *pat, const char *slot,
-                           const ek_type *t);
 static int destructure_field(lower_ctx *c, lower_scope *scope,
                              const ek_node *item, lower_gtype *g,
-                             const char *slot)
+                             const char *slot, int rebind)
 {
     const ek_node *sub = NULL;
     const char *field;
@@ -99,9 +122,9 @@ static int destructure_field(lower_ctx *c, lower_scope *scope,
     sub_slot = lower_str(c, "((ekS_%s *)%s.as.ref)->f_%s", g->stem, slot,
                          field);
     if (sub == item) {
-        return bind_name(c, scope, field, sub_slot);
+        return bind_name(c, scope, field, sub_slot, rebind);
     }
-    return destructure_pat(c, scope, sub, sub_slot, NULL);
+    return destructure_pat(c, scope, sub, sub_slot, NULL, rebind);
 }
 
 /* One component slot of a generated family, by position. */
@@ -115,7 +138,7 @@ static const char *field_slot(lower_ctx *c, lower_gtype *g,
    names, at its own component type. */
 static int destructure_paren(lower_ctx *c, lower_scope *scope,
                              const ek_node *pat, const char *slot,
-                             const ek_type *t)
+                             const ek_type *t, int rebind)
 {
     lower_gtype *g = tuple_repr_of(c, t);
     size_t i;
@@ -129,7 +152,7 @@ static int destructure_paren(lower_ctx *c, lower_scope *scope,
                                 ? t->u.tuple.items[i] : NULL;
 
         if (!destructure_pat(c, scope, pat->u.kids.data[i],
-                             field_slot(c, g, slot, i), ct)) {
+                             field_slot(c, g, slot, i), ct, rebind)) {
             return 0;
         }
     }
@@ -140,7 +163,7 @@ static int destructure_paren(lower_ctx *c, lower_scope *scope,
    by field name, the tuple items by position. */
 static int destructure_brace(lower_ctx *c, lower_scope *scope,
                              const ek_node *pat, const char *slot,
-                             const ek_type *t)
+                             const ek_type *t, int rebind)
 {
     lower_gtype *g;
     size_t i;
@@ -155,7 +178,8 @@ static int destructure_brace(lower_ctx *c, lower_scope *scope,
     if (g->shape == GT_REC) {
         for (i = 0; i < pat->u.p_brace.items.count; i++) {
             if (!destructure_field(c, scope,
-                                   pat->u.p_brace.items.data[i], g, slot)) {
+                                   pat->u.p_brace.items.data[i], g, slot,
+                                   rebind)) {
                 return 0;
             }
         }
@@ -163,7 +187,7 @@ static int destructure_brace(lower_ctx *c, lower_scope *scope,
     }
     for (i = 0; i < pat->u.p_brace.items.count && i < g->nf; i++) {
         if (!destructure_pat(c, scope, pat->u.p_brace.items.data[i],
-                             field_slot(c, g, slot, i), NULL)) {
+                             field_slot(c, g, slot, i), NULL, rebind)) {
             return 0;
         }
     }
@@ -173,7 +197,7 @@ static int destructure_brace(lower_ctx *c, lower_scope *scope,
 /* The payload of the sole constructor the family names. */
 static int destructure_cons(lower_ctx *c, lower_scope *scope,
                             const ek_node *pat, const char *slot,
-                            const ek_type *t)
+                            const ek_type *t, int rebind)
 {
     const ek_ref *ref = lower_ref(c, pat);
     const ek_symbol *tsym = t && t->kind == EK_T_NOMINAL
@@ -188,13 +212,13 @@ static int destructure_cons(lower_ctx *c, lower_scope *scope,
     }
     return destructure_pat(c, scope, pat->u.cons.payload,
                            lower_str(c, "((ekS_%s *)%s.as.ref)->p0",
-                                     g->stem, slot), NULL);
+                                     g->stem, slot), NULL, rebind);
 }
 
 /* The irrefutable walk of one pattern node over its slot. */
 static int destructure_pat(lower_ctx *c, lower_scope *scope,
                            const ek_node *pat, const char *slot,
-                           const ek_type *t)
+                           const ek_type *t, int rebind)
 {
     const ek_type *rt = repr_type(c, pat, t);
 
@@ -204,20 +228,22 @@ static int destructure_pat(lower_ctx *c, lower_scope *scope,
     case EK_N_P_VAR:
         if (pat->u.path.count == 1
             && strcmp(pat->u.path.data[0], "_") != 0) {
-            return bind_name(c, scope, pat->u.path.data[0], slot);
+            return bind_name(c, scope, pat->u.path.data[0], slot, rebind);
         }
         return 1;
     case EK_N_P_FIELD:
-        return destructure_pat(c, scope, pat->u.p_field.pattern, slot, rt);
+        return destructure_pat(c, scope, pat->u.p_field.pattern, slot, rt,
+                               rebind);
     case EK_N_P_PAREN:
         if (pat->u.kids.count == 1) {
-            return destructure_pat(c, scope, pat->u.kids.data[0], slot, rt);
+            return destructure_pat(c, scope, pat->u.kids.data[0], slot, rt,
+                                   rebind);
         }
-        return destructure_paren(c, scope, pat, slot, rt);
+        return destructure_paren(c, scope, pat, slot, rt, rebind);
     case EK_N_P_BRACE:
-        return destructure_brace(c, scope, pat, slot, rt);
+        return destructure_brace(c, scope, pat, slot, rt, rebind);
     case EK_N_P_CONS:
-        return destructure_cons(c, scope, pat, slot, rt);
+        return destructure_cons(c, scope, pat, slot, rt, rebind);
     default:
         return 0;
     }
@@ -245,7 +271,26 @@ int lower_binding_destructure(lower_ctx *c, lower_scope *scope,
         vt = arow ? arow->type : vt;
     }
     t = lower_as_temp(c, scope, &v);
-    ok = destructure_pat(c, scope, pat, t, vt);
+    ok = destructure_pat(c, scope, pat, t, vt, 0);
+    lower_pad(c);
+    lower_emitf(c, "ek_release(%s);\n", t);
+    return ok;
+}
+
+/* A destructuring rebind: the same walk with the rebind's name
+   reading, and no annotation adaptation -- the rebind carries no
+   annotation of its own. */
+int lower_rebind_destructure(lower_ctx *c, lower_scope *scope,
+                             const ek_node *m, const ek_node *pat)
+{
+    const ek_type *vt = lower_row_type(c, m->u.bind.value);
+    lower_val v;
+    const char *t;
+    int ok;
+
+    v = lower_expr(c, scope, m->u.bind.value);
+    t = lower_as_temp(c, scope, &v);
+    ok = destructure_pat(c, scope, pat, t, vt, 1);
     lower_pad(c);
     lower_emitf(c, "ek_release(%s);\n", t);
     return ok;

@@ -101,6 +101,23 @@ static void tuple_let_binds_components(void)
     EK_CHECK(lfx_has(&f, ")->f_0);"));
     EK_CHECK(lfx_lacks(&f, ")->f_1);\n    "));
     lfx_end(&f);
+
+    /* the rebinding form destructures the same way; a name the scope
+       already carries releases its old value and moves the read in */
+    lfx_begin(&f,
+              "pair: [Int, String] = {7, \"x\"}\n"
+              "pair2: [Int, String] = {9, \"y\"}\n"
+              "main: (out: Out) ! =\n"
+              "    (a, b) := pair\n"
+              "    (a, b) := pair2\n"
+              "    out.println(show(a))\n"
+              "    out.println(b)\n");
+    EK_CHECK(lfx_check_clean(&f));
+    EK_CHECK(lfx_lower_clean(&f));
+    EK_CHECK(lfx_has(&f, "ek_val a = ek_keep(((ekS_tup_2 *)"));
+    EK_CHECK(lfx_has(&f, "ek_release(a);\n"));
+    EK_CHECK(lfx_has(&f, "a = ek_keep(((ekS_tup_2 *)"));
+    lfx_end(&f);
 }
 
 static void capture_descends_into_lambda(void)
