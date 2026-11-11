@@ -204,11 +204,16 @@ static void constructor_juxtaposition(void)
     EK_CHECK_U64(e->u.binary.lhs->kind, EK_N_APPLY);
     pfx_end(&f);
 
-    /* qualified constructor application Mod.Name x */
-    e = expr_of(&f, "Mod.Ok x");
+    /* a dotted head applies as a call; the juxtaposition form belongs
+       to the bare constructor spelling */
+    e = expr_of(&f, "Mod.Ok(x)");
     EK_CHECK_U64(pfx_errors(&f), 0);
-    EK_CHECK_U64(e->kind, EK_N_APPLY);
-    EK_CHECK_U64(e->u.pair.a->kind, EK_N_FIELD);
+    EK_CHECK_U64(e->kind, EK_N_CALL);
+    EK_CHECK_U64(e->u.call.callee->kind, EK_N_FIELD);
+    pfx_end(&f);
+
+    e = expr_of(&f, "Mod.Ok x");
+    EK_CHECK_U64(pfx_errors(&f), 1);
     pfx_end(&f);
 }
 

@@ -13,18 +13,14 @@ static ek_node *apply_ctor(p_ctx *c, ek_node *head);
 static ek_node *dot_link(p_ctx *c, ek_node *e);
 static void call_args(p_ctx *c, ek_node *call);
 
-/* Is e a name chain that can head a constructor application: every
-   segment PascalCase, no call or application yet. */
+/* Is e a bare constructor head that can take a juxtaposed payload:
+   one PascalCase segment, no call or application yet. A dotted chain
+   takes its arguments in parentheses; the juxtaposition form belongs
+   to the bare spelling. */
 static int cons_head(const ek_node *e)
 {
-    switch (e->kind) {
-    case EK_N_NAME:
-        return e->u.path.count == 1 && p_is_pascal(e->u.path.data[0]);
-    case EK_N_FIELD:
-        return p_is_pascal(e->u.field.name) && cons_head(e->u.field.recv);
-    default:
-        return 0;
-    }
+    return e->kind == EK_N_NAME && e->u.path.count == 1
+           && p_is_pascal(e->u.path.data[0]);
 }
 
 /* Constructor application: an all-Pascal name head followed by one

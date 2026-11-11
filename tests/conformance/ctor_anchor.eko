@@ -31,5 +31,5 @@ anchors: test =
     assert_eq(_mine_or_not(mine), "mine")
 
 qualified_payloads: test =
-    assert_eq(MyResult.Ok "q", Ok "q")
-    assert_eq(MyResult.Retry 7, Retry 7)
+    assert_eq(MyResult.Ok("q"), Ok "q")
+    assert_eq(MyResult.Retry(7), Retry 7)

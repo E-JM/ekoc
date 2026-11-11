@@ -325,7 +325,8 @@ const ek_symbol *qualified_head_ctor(ck_ctx *c, const ek_node *head)
 }
 
 /* Constructor application by juxtaposition is check-only: it takes
-   its instantiation from the expected type. */
+   its instantiation from the expected type. The head is a bare
+   PascalCase name; a dotted head applies as a call (Clause 6.5.2). */
 const ek_type *ck_apply(ck_ctx *c, const ek_node *e, const ek_type *expected)
 {
     const ek_node *head = e->u.pair.a;
@@ -337,16 +338,6 @@ const ek_type *ck_apply(ck_ctx *c, const ek_node *e, const ek_type *expected)
     }
     if (head && ck_ref_at(c, head, 0, &ref) && ref->ncands) {
         return apply_candidates(c, e, ref, expected);
-    }
-    if (head && head->kind == EK_N_FIELD) {
-        const ek_symbol *cs = qualified_head_ctor(c, head);
-
-        if (cs) {
-            t = apply_known(c, e, ck_ctor_of(c, cs), expected);
-            if (t) {
-                return t;
-            }
-        }
     }
     (void)ck_ref_at(c, head, EK_SYM_CONSTRUCTOR, &ref);
     t = ref && ref->symbol ? apply_known(c, e, ck_ctor_of(c, ref->symbol),
