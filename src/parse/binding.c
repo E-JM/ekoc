@@ -95,6 +95,44 @@ ek_node *p_binding_after_pattern(p_ctx *c, ek_node *pat, int top_level)
    the value reading -- a local binding at a function type takes the
    named function read as a value (Annex D.5). The synthesized lambda
    carries no written source, so its position is the value's. */
+/* The lambda beneath parentheses or a one-member block: the arm body
+   an if or case carries at the value reading. */
+static const ek_node *desugar_arm_lambda(const ek_node *b)
+{
+    while (b && (b->kind == EK_N_PAREN
+                 || (b->kind == EK_N_BLOCK && b->u.kids.count == 1))) {
+        b = b->kind == EK_N_PAREN ? b->u.wrap.inner
+                                  : b->u.kids.data[0];
+    }
+    return b && b->kind == EK_N_LAMBDA ? b : NULL;
+}
+
+/* Every arm of the if or case is a lambda: the whole expression is a
+   value of the annotation's arrow, and the body reading does not
+   apply. */
+static int desugar_arms_lambdas(const ek_node *v)
+{
+    size_t i;
+
+    if (v->kind == EK_N_IF) {
+        return desugar_arm_lambda(v->u.ifexpr.then) != NULL
+               && (!v->u.ifexpr.els
+                   || desugar_arm_lambda(v->u.ifexpr.els) != NULL);
+    }
+    if (v->kind == EK_N_CASE) {
+        if (v->u.caseexpr.arms.count == 0) {
+            return 0;
+        }
+        for (i = 0; i < v->u.caseexpr.arms.count; i++) {
+            if (!desugar_arm_lambda(v->u.caseexpr.arms.data[i]->u.arm.body)) {
+                return 0;
+            }
+        }
+        return 1;
+    }
+    return 0;
+}
+
 static ek_node *fn_body_desugar(p_ctx *c, ek_node *ann, ek_node *v)
 {
     const ek_node *inner = v;
@@ -106,7 +144,8 @@ static ek_node *fn_body_desugar(p_ctx *c, ek_node *ann, ek_node *v)
         inner = inner->u.wrap.inner;
     }
     if (!ann || ann->kind != EK_N_T_FN || !inner
-        || inner->kind == EK_N_LAMBDA || inner->kind == EK_N_NAME) {
+        || inner->kind == EK_N_LAMBDA || inner->kind == EK_N_NAME
+        || desugar_arms_lambdas(inner)) {
         return v;
     }
     params = p_node(c, EK_N_LAMBDA_PARAMS, v->line, v->col);

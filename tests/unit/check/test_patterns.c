@@ -476,6 +476,45 @@ static void binding_irrefutable(void)
     cfx_end(&f);
 }
 
+/* An if or case whose every arm is a lambda is the value reading of
+   an annotated function binding: the arms check against the whole
+   arrow, and the body reading does not apply. */
+static void binding_lambda_arms(void)
+{
+    cfx f;
+
+    cfx_begin(&f,
+              "f: (b: Bool) -> Int =\n"
+              "    h: () -> Int = if b: ((): 5) else: ((): 6)\n"
+              "    h()\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "f: () -> Int = if True: ((): 5) else: ((): 6)\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+
+    cfx_begin(&f,
+              "f: (b: Bool) -> Int =\n"
+              "    g: (Bool) -> Int = case b:\n"
+              "        True -> (n): 5\n"
+              "        False -> (n): 6\n"
+              "    g(b)\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+
+    /* one non-lambda arm keeps the body reading */
+    cfx_begin(&f,
+              "f: () -> Int =\n"
+              "    if True:\n"
+              "        5\n"
+              "    else:\n"
+              "        6\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
+}
+
 /* Refutable pattern kinds at a value binding: a list pattern, an
    or-pattern outside a case arm, and a `<-` outside parameter
    position. */
@@ -544,6 +583,7 @@ static void binding_annotated_group(void)
 static void bindings(void)
 {
     binding_irrefutable();
+    binding_lambda_arms();
     binding_refutable_kinds();
     binding_refutable_literals();
     binding_annotated_group();

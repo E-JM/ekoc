@@ -47,9 +47,60 @@ static void inst_restore(ck_ctx *c, const ck_inst_saved *s)
     c->inst_nvars = s->nvars;
 }
 
+/* The lambda beneath parentheses, a one-member block, or both: the
+   arm body an annotated if or case carries at the value reading. */
+static const ek_node *arm_lambda(const ek_node *b)
+{
+    while (b && (b->kind == EK_N_PAREN
+                 || (b->kind == EK_N_BLOCK && b->u.kids.count == 1))) {
+        b = b->kind == EK_N_PAREN ? b->u.wrap.inner
+                                  : b->u.kids.data[0];
+    }
+    return b && b->kind == EK_N_LAMBDA ? b : NULL;
+}
+
+/* The value beneath parentheses or a one-member block. */
+static const ek_node *fn_body_inner(const ek_node *val)
+{
+    while (val && (val->kind == EK_N_PAREN
+                   || (val->kind == EK_N_BLOCK
+                       && val->u.kids.count == 1))) {
+        val = val->kind == EK_N_PAREN ? val->u.wrap.inner
+                                      : val->u.kids.data[0];
+    }
+    return val;
+}
+
+/* Every arm of the if or case is a lambda: the whole expression reads
+   as a value of the arrow, not as the binding's body. */
+static int arms_are_lambdas(const ek_node *val)
+{
+    size_t i;
+
+    if (val->kind == EK_N_IF) {
+        return arm_lambda(val->u.ifexpr.then) != NULL
+               && (!val->u.ifexpr.els
+                   || arm_lambda(val->u.ifexpr.els) != NULL);
+    }
+    if (val->kind == EK_N_CASE) {
+        if (val->u.caseexpr.arms.count == 0) {
+            return 0;
+        }
+        for (i = 0; i < val->u.caseexpr.arms.count; i++) {
+            if (!arm_lambda(val->u.caseexpr.arms.data[i]->u.arm.body)) {
+                return 0;
+            }
+        }
+        return 1;
+    }
+    return 0;
+}
+
 /* The right-hand side of an annotated function binding: the
    annotation's parameters bind over it, a lambda is checked against
-   the whole arrow, and any other expression against the result. */
+   the whole arrow, any other expression against the result -- and an
+   if or case whose every arm is a lambda is the value reading, the
+   arms checking against the whole arrow. */
 void annotated_fn_body(ck_ctx *c, const ek_node *ann, const ek_node *val,
                        const ek_type *bound)
 {
@@ -73,6 +124,16 @@ void annotated_fn_body(ck_ctx *c, const ek_node *ann, const ek_node *val,
 
         if (ck_conforms(c, vt, bound, 1) != CK_OK) {
             ck_error(c, lam, "E-type-mismatch",
+                     "the binding is %s, the annotation is %s "
+                     "(Clause 7.5.7)", ck_type_name(c, vt),
+                     ck_type_name(c, bound));
+        }
+    } else if (arms_are_lambdas(val)
+               || arms_are_lambdas(fn_body_inner(val))) {
+        const ek_type *vt = ck_expr(c, val, bound);
+
+        if (ck_conforms(c, vt, bound, 1) != CK_OK) {
+            ck_error(c, val, "E-type-mismatch",
                      "the binding is %s, the annotation is %s "
                      "(Clause 7.5.7)", ck_type_name(c, vt),
                      ck_type_name(c, bound));
