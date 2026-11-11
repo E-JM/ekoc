@@ -18,7 +18,7 @@ and a normative clause disagree, the clause prevails.
 |---|---|---|
 | [syntax.md](syntax.md) | Clauses 5, 6 | layout, operators, literals, numeric vocabulary |
 | [control.md](control.md) | Clauses 6.3, 6.7, 6.8, 7.7, 8.2, 8.3, 8.8 | bindings, lambdas, branching, patterns, `Never`, iteration |
-| [types.md](types.md) | Clauses 7.5, 7.6 | declarations, nominality, composites, generics notation |
+| [types.md](types.md) | Clauses 7.5, 7.6, 7.8.7 | declarations, nominality, composites, generics notation, the newtype conversion member |
 | [names.md](names.md) | Clauses 7.2, 7.3, 7.4 | UFCS, structural access, modules, visibility, the standard library |
 | [world.md](world.md) | Clauses 7.9, 8.4, 8.9, 9.12 | capabilities, world bit, failure, handles, concurrency |
 | [runtime.md](runtime.md) | Clauses 8.5–8.8, 8.10 | representation, acyclicity, memory strategy, monomorphization |

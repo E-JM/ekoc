@@ -210,16 +210,22 @@ birthday: (a: Age) -> Age = Age (a.UInt() + 1)
 
 The member has the pure one-parameter arrow from the newtype to the payload.
 The receiver form `n.P()` and the type-namespace form `T.P(n)` are the same
-call (Clause 6.5.2): the newtype value occupies the one parameter, and an
-argument beyond it is `E-call-arity` (Clause 7.8.1).
+call: the newtype value occupies the one parameter, and an argument beyond
+it is `E-call-arity` (Clause 7.8.1). The namespace form extends through
+qualification, `x.Mod.T.P()` (Clause 7.4.4). It exists where the type as
+written determines the payload's name; a generic newtype's bare head does
+not, so its member is written in the receiver form alone.
 
 The name is matched against the payload itself, never resolved: the payload
 MUST be a fully applied named type, and the member exists only when the
-receiver's instantiated payload is exactly that type. The judgment is
+receiver's instantiated payload is exactly that type — the member is the
+payload type's own name, applied payloads included. The judgment is
 identity, not conformance — no adaptation enters it (Clause 7.5.7). A name
 that is not the payload's own has no reading, and the miss is
 `E-unbound-member` (Clause 7.4.3); the conversion retracts exactly one
-constructor, so a newtype over a newtype selects the inner type's name.
+constructor, so a newtype over a newtype selects the inner type's name. The
+member is a call form only: a bare `n.P` without a call is the
+function-member miss of Clause 7.4.3.
 
 A composite or variable payload has no name, so it carries no conversion
 member: a tuple, record, list, or function payload, and the `t` of a generic
@@ -227,4 +233,4 @@ body, are reached by pattern matching (Clause 7.7.1). The member is
 compiler-owned: its spelling is a type name, so no namespace declaration
 carries it (Clause 5.5.2), and it joins no derived service set or capability
 set (Clauses 9.8.7, 7.6.6). It is pure and reads the payload in O(1)
-(Clause 8.5.2).
+(Clause 8.5).

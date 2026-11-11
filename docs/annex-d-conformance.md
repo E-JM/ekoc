@@ -20,8 +20,8 @@ every test (Clause 2.7).
 
 | Component | Location | Form | Required outcome |
 |---|---|---|---|
-| Positive modules | `tests/conformance/` | 33 Eko modules: 32 test roots and one fixture | compile; every test binding executes without panic |
-| Negative entries | `tests/negative/manifest.md` | 40 minimal programs | compile-time rejection with the stated outcome |
+| Positive modules | `tests/conformance/` | 36 Eko modules: 34 test roots and 2 fixtures | compile; every test binding executes without panic |
+| Negative entries | `tests/negative/manifest.md` | 48 minimal programs | compile-time rejection with the stated outcome |
 | Runner | toolchain | test runner over both classes | per-test report (Clause D.6) |
 
 ## D.2 Positive Tests
@@ -39,7 +39,7 @@ block. It has no arrow and does not enter the module interface (Clauses
 9.14.1, 9.14.6). A module without a test binding is an ordinary
 dependency under a test root; `geolib.eko` is the only such module.
 
-The suite contains 199 test bindings. Each test is a block of ordinary
+The suite contains 208 test bindings. Each test is a block of ordinary
 expressions; its value is discarded. Assertions are the standard library
 functions `assert`, `assert_eq`, and `assert_ne` (Clause 9.14.3). `assert_eq`
 locks both arguments to one type and reports failure through `inspect`
@@ -104,6 +104,24 @@ the rejection and the violated clause.
 | N28 | opened free name and a top-level binding share a name | `E-name-conflict` | 7.4.6 |
 | N29 | two imports open the same free name | `E-name-conflict` | 7.4.6 |
 | N30 | non-terminating generic instantiation | `E-instantiation-depth` | 8.7.3 |
+| N31 | record right-hand side on its own indented line | parse error, no specified code | A.3.2 |
+| N32 | constructor of a several-variant ADT in a value binding | `E-refutable-binding` | 7.7.1 |
+| N33 | list pattern in a value binding | `E-refutable-binding` | 7.7.1 |
+| N34 | inverted binding at module top level | `E-top-arrow` | 6.3.4 |
+| N35 | raw string content containing its delimiter | compile error, no specified code | 5.9.4 |
+| N36 | raw string opener without a line break | compile error, no specified code | 5.9.4 |
+| N37 | equality over a compiled pattern | `E-no-eq` | 9.8.4 |
+| N38 | non-ASCII module stem | `E-name-case` | 7.2.1 |
+| N39 | empty literal receiver with an ambiguous member | `E-literal-expected` | 7.5.3 |
+| N40 | world call in a top-level initializer | `E-world-bit` | 7.9.2 |
+| N41 | a payload constructor read as a value | `E-ctor-value` | 6.5.2 |
+| N42 | a dotted head followed by a juxtaposed operand | parse error, no specified code | 6.5.2 |
+| N43 | a grouped exponent | `E-digit-grouping` | 5.7.3 |
+| N44 | a trailing comma in a composite literal | parse error, no specified code | 6.2.4 |
+| N45 | the conversion member names a type other than the payload | `E-unbound-member` | 7.8.7 |
+| N46 | the conversion member does not chain | `E-unbound-member` | 7.8.7 |
+| N47 | an argument beyond the conversion's operand | `E-call-arity` | 7.8.1 |
+| N48 | a bare conversion member read | `E-unbound-member` | 7.4.3 |
 
 For an entry with a specified code, the error diagnostic that rejects the
 program MUST carry that code. For an entry without a specified code, the
@@ -116,7 +134,8 @@ runtime panic, a linker error, or a test failure is not a pass. The program
 MUST be materialized as a standalone module. N12 requires `geolib` on the
 module path, and N15 requires a raw tab character at the marked position.
 
-Five entries have no specified code: N04, N16, N17, N18, and N19. For these,
+Ten entries have no specified code: N04, N16, N17, N18, N19, N31, N35,
+N36, N42, and N44. For these,
 the compiler MUST report an error diagnostic with an implementation-chosen
 `E-` code and MUST identify the violated clause (Annex B.3). The snippets are
 not added to the positive tree.
@@ -183,7 +202,10 @@ number of test bindings. `geolib.eko` is a fixture and has none.
 | `case_patterns.eko` | yes | 9 | 6.7.1, 6.7.2, 6.7.3, 6.7.5, 6.8.2, 6.8.3, 6.8.4, 6.8.5, 7.7.2, 7.7.3, 8.3.1, 8.3.3, 8.3.4, 9.8.1 | guards; or-patterns; list and record patterns; literals; multiple scrutinees; single-line form |
 | `char_class.eko` | yes | 5 | 9.4.2, 9.4.4, 9.11.1 | ASCII letter and digit predicates; the White_Space and XID properties; trim follows the space property |
 | `collection_heads.eko` | yes | 10 | 9.8.1, 9.8.2, 9.8.3, 9.8.4, 9.9.3; Annex C.3, C.4 | head-qualified derived members over List and Dict: equality, ordering, show, hash, JSON over the structural shape the arguments determine |
+| `conc_derived.eko` | yes | 5 |  |  |
 | `container_keys.eko` | yes | 8 | 9.10.3, 9.10.4 | a list as a dictionary key; equal sets deduplicating as elements; a dictionary as a key; a nested list key |
+| `convert_member.eko` | yes | 4 | 7.4.4, 7.8.7 | receiver, namespace, and qualified-chain forms; scalar, generic, record, and cross-module payloads; the one-layer boundary |
+| `convert_payload.eko` | no | 0 | 7.5.2, 7.8.7 | the payload declarations the conversion suite converts from |
 | `ctor_anchor.eko` | yes | 2 | 7.4.6, 7.5.2 | same-named constructors of different types; the expected type selects one |
 | `ctor_anchor_std.eko` | yes | 1 | 7.4.6, 7.6 | self-anchoring through the single visible constructor |
 | `data_services.eko` | yes | 13 | 6.5.4, 7.8.6, 9.5.1, 9.5.2, 9.5.3, 9.6.1, 9.6.2, 9.6.3, 9.6.4, 9.7.1, 9.7.3, 9.8.1, 9.9.2, 9.9.3, 9.9.4, 9.9.5, 9.13.1 | `Bytes` round trips, append, and the word bridge; JSON derivation and external tagging; numeric and parse round trips; frozen time; formatting |
@@ -273,5 +295,5 @@ requirement.
 | test-runner entry point over the positive roots and the negative manifest | 11.3 | delivered as `ekoc test`; the negative manifest of Clause D.3 is a specification of rejection, not an automated run |
 | the compiler built as one library | 11.3 | delivered: one lex, layout, parse, resolve, and check implementation behind the command line |
 | semantic query API: occurrence to definition; references of a definition; members of a namespace with origin | 11.3 | delivered through the resolver's reference table and the module surfaces the library exposes |
-| semantic query API: signature and world bit at a position; go-to-definition spanning | 11.3 | not delivered |
-| documentation comments carried in the semantic index | 11.3 | not delivered; `doc` reads them from the embedded sources |
+| semantic query API: signature and world bit at a position; go-to-definition spanning | 11.3 | delivered as the `ekoc at <file> <line> <col>` subcommand over the resolver's reference table, the module surfaces, and the check's rows: the position's innermost reference or declaration names its definition site, its signature line, and its world bit; a receiver link resolves through the receiver's namespace, and a compiler-provided member reports its type and origin |
+| documentation comments carried in the semantic index | 11.3 | delivered: the `///` lines directly above a binding ride the binding's symbol in the module surface, with the document's first line; `doc` reads them from the embedded sources, and `at` reads them from the index |
