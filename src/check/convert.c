@@ -36,14 +36,14 @@ static const ek_type *sole_payload(ck_ctx *c, const ek_type *recv)
                             r->u.nominal.args, r->u.nominal.argc);
 }
 
-/* True when the payload names the member's spelling: a fully applied
-   nominal whose declaration carries exactly that name. */
+/* True when the payload names the member's spelling: the head symbol
+   of a fully applied nominal payload, applied or not — an applied
+   payload is still one named type, and the member is its name. */
 static int names_payload(const ek_type *payload, const char *name)
 {
     const ek_type *t = ck_prune(payload);
 
     return t && t->kind == EK_T_NOMINAL && t->u.nominal.sym
-        && t->u.nominal.argc == 0
         && strcmp(t->u.nominal.sym->name, name) == 0;
 }
 

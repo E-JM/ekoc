@@ -95,7 +95,20 @@ const ek_type *ck_field(ck_ctx *c, const ek_node *e)
         }
     }
     recv = ck_expr(c, e->u.field.recv, NULL);
-    return ck_link(c, e, recv, e->u.field.name, &rd);
+    {
+        const ek_type *t = ck_link(c, e, recv, e->u.field.name, &rd);
+
+        if (rd == EK_RD_CONVERT) {
+            /* The conversion member is a call form only; a bare read
+               misses like any function member. */
+            ck_error(c, e, "E-unbound-member",
+                     "the receiver type %s has no member `%s` "
+                     "(Clause 7.4.3)", ck_type_name(c, recv),
+                     e->u.field.name);
+            return ck_opaque(c);
+        }
+        return t;
+    }
 }
 
 /* One member link at its receiver's type. The caller supplies the
