@@ -161,6 +161,19 @@ static inline int cfx_code_at_line(const cfx *f, const char *code, int line)
     return 0;
 }
 
+/* Any check-stage message carrying one fragment. */
+static inline int cfx_msg_has(const cfx *f, const char *fragment)
+{
+    size_t i;
+
+    for (i = 0; i < f->cdn; i++) {
+        if (f->cds[i].message && strstr(f->cds[i].message, fragment) != NULL) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 /* The first check row whose node sits on a source line. */
 static inline const ek_ck_row *cfx_row_at_line(const cfx *f, int line)
 {

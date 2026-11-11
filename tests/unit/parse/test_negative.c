@@ -157,8 +157,27 @@ static void n42_dotted_head_juxtaposition(void)
     pfx_end(&f);
 }
 
+/* A bare snake_case name takes no juxtaposed operand; the call spells
+   its arguments in parentheses. */
+static void bare_name_operand(void)
+{
+    parse_fixture f;
+
+    pfx_begin(&f,
+        "five: () -> Int = 5\n"
+        "main: (out: Out) ! =\n"
+        "    five 1\n");
+    EK_CHECK(pfx_errors(&f) >= 1);
+    pfx_collect(&f);
+    EK_CHECK(pfx_has_code(&f, "E-syntax"));
+    EK_CHECK(pfx_msg_has(&f, "6.5.2"));
+    EK_CHECK(f.ast.module != NULL);
+    pfx_end(&f);
+}
+
 int main(void)
 {
+    bare_name_operand();
     n42_dotted_head_juxtaposition();
     n04_bare_panic_arm();
     n16_chained_comparison();

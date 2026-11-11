@@ -114,6 +114,18 @@ ek_node *p_postfix(p_ctx *c)
                 p_sync(c);
                 return e;
             }
+            if (p_apply_start(p_src_kind(t)) && e->kind == EK_N_NAME
+                && e->u.path.count == 1
+                && !p_is_pascal(e->u.path.data[0])) {
+                /* A bare snake_case name takes no juxtaposed operand:
+                   the application forms are the call and the
+                   constructor spelling. */
+                p_error_tok(c, "E-syntax", t,
+                            "a call takes its arguments in parentheses "
+                            "(Clause 6.5.2)");
+                p_sync(c);
+                return e;
+            }
             return e;
         }
         e = dot_link(c, e);

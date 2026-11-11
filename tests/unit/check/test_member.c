@@ -575,8 +575,27 @@ static void literal_receivers(void)
     cfx_end(&f);
 }
 
+/* The receiver miss names the same-name module function the reading
+   passed over, with the parameter it takes first. */
+static void miss_names_near_function(void)
+{
+    cfx f;
+
+    cfx_begin(&f,
+              "Human: type = [name: String, age: Int]\n"
+              "h: Human = {name: \"ada\", age: 36}\n"
+              "frobnicate: (n: Int) -> Int = n\n"
+              "use: () -> Int =\n"
+              "    h.frobnicate\n");
+    EK_CHECK(cfx_errors(&f) >= 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-unbound-member", 5));
+    EK_CHECK(cfx_msg_has(&f, "takes Int first"));
+    cfx_end(&f);
+}
+
 int main(void)
 {
+    miss_names_near_function();
     station_field();
     station_namespace();
     station_namespace_phantom();

@@ -261,6 +261,7 @@ static const ek_type *walk_record(lower_ctx *c, const ek_node *t,
     }
     out->kind = EK_T_RECORD;
     out->u.record.fields = fields;
+    out->u.record.decl = NULL;
     out->u.record.count = n;
     return out;
 }

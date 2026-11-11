@@ -209,7 +209,9 @@ lower_gtype *lower_anon_record(lower_ctx *c, const ek_type *rec)
             return NULL;
         }
         for (i = 0; i < g->nf; i++) {
-            g->fnames[i] = rec->u.record.fields[i].name;
+            size_t k = rec->u.record.decl ? rec->u.record.decl[i] : i;
+
+            g->fnames[i] = rec->u.record.fields[k].name;
         }
     }
     g->used = 1;

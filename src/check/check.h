@@ -45,6 +45,8 @@ struct ek_type {
         struct {
             const ek_tfield *fields; /* sorted by name: field order is
                                         not part of equality */
+            const size_t *decl; /* the canonical index of each declared
+                                   field, the order the display reads */
             size_t count;
         } record;
         struct {

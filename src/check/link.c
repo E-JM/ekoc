@@ -124,8 +124,25 @@ static const ek_type *derive_chain(ck_ctx *c, const ek_node *at,
     return ck_derive_with(c, at, r, name, rd);
 }
 
+/* The current module's function of one spelling, whatever its
+   parameters: the near-miss a receiver miss names. */
+static const ek_symbol *same_name_fn(ck_ctx *c, const char *name)
+{
+    size_t i;
+
+    for (i = 0; i < c->cur->count; i++) {
+        const ek_symbol *m = &c->cur->syms[i];
+
+        if (m->kind == EK_SYM_FUNC && strcmp(m->name, name) == 0) {
+            return m;
+        }
+    }
+    return NULL;
+}
+
 /* The current module's extension of the receiver: a free function
-   taking it first, else the reported miss. */
+   taking it first, else the reported miss -- naming the same-name
+   function the reading passed over, when there is one. */
 static const ek_type *module_tail(ck_ctx *c, const ek_node *at,
                                   const ek_type *r, const char *name,
                                   const ek_symbol *mod, ek_reading *rd)
@@ -135,6 +152,22 @@ static const ek_type *module_tail(ck_ctx *c, const ek_node *at,
     if (t && t->kind == EK_T_FN) {
         *rd = EK_RD_MODULE_FN;
         return t;
+    }
+    if (!mod) {
+        const ek_symbol *cand = same_name_fn(c, name);
+
+        if (cand) {
+            const ek_type *ft = ck_type_of(c, cand);
+
+            ck_error(c, at, "E-unbound-member",
+                     "the receiver type %s has no member `%s`; the module "
+                     "function `%s` takes %s first (Clause 7.4.3)",
+                     ck_type_name(c, r), name, name,
+                     ft && ft->kind == EK_T_FN && ft->u.fn.count
+                         ? ck_type_name(c, ft->u.fn.params[0]) : "?");
+            ck_map_put(c, &c->absent, at, (const void *)1);
+            return ck_opaque(c);
+        }
     }
     return ck_no_member(c, at, r, name, mod);
 }

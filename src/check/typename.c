@@ -51,20 +51,23 @@ static int list_append(ck_ctx *c, ek_buf *b, const ek_type *const *items,
     return ok;
 }
 
-/* The fields of a record, in their canonical order. */
-static int fields_append(ck_ctx *c, ek_buf *b, const ek_tfield *fs, size_t n,
-                         int depth)
+/* The fields of a record, in their declaration order. */
+static int fields_append(ck_ctx *c, ek_buf *b, const ek_type *t, int depth)
 {
+    const ek_tfield *fs = t->u.record.fields;
+    const size_t *decl = t->u.record.decl;
     size_t i;
     int ok = 1;
 
-    for (i = 0; ok && i < n; i++) {
+    for (i = 0; ok && i < t->u.record.count; i++) {
+        size_t k = decl ? decl[i] : i;
+
         if (i) {
             ok = ek_buf_append_str(b, ", ");
         }
-        ok = ok && ek_buf_append_str(b, fs[i].name)
+        ok = ok && ek_buf_append_str(b, fs[k].name)
             && ek_buf_append_str(b, ": ")
-            && name_append(c, b, fs[i].type, depth);
+            && name_append(c, b, fs[k].type, depth);
     }
     return ok;
 }
@@ -225,8 +228,7 @@ static int name_append(ck_ctx *c, ek_buf *b, const ek_type *t, int depth)
             && ek_buf_append_char(b, ']');
     case EK_T_RECORD:
         return ek_buf_append_char(b, '[')
-            && fields_append(c, b, t->u.record.fields, t->u.record.count,
-                             depth - 1)
+            && fields_append(c, b, t, depth - 1)
             && ek_buf_append_char(b, ']');
     case EK_T_FN:
         return fn_append(c, b, t, depth);

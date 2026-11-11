@@ -335,22 +335,48 @@ const ek_type *ck_tuple(ck_ctx *c, const ek_type **items, size_t n)
     return ck_intern(c, t);
 }
 
-static int field_order(const void *a, const void *b)
-{
-    const ek_tfield *f = a, *g = b;
-
-    return strcmp(f->name, g->name);
-}
-
 const ek_type *ck_record(ck_ctx *c, ek_tfield *fields, size_t n)
 {
     ek_type *t = ck_fresh(c, EK_T_RECORD);
+    size_t *canon = NULL;
+    size_t *decl = NULL;
+    size_t i, j;
 
     if (!t) {
         return NULL;
     }
-    qsort(fields, n, sizeof *fields, field_order);
+    if (n) {
+        ek_tfield *sorted = ek_arena_alloc(c->arena, n * sizeof *sorted);
+
+        canon = ek_arena_alloc(c->arena, n * sizeof *canon);
+        decl = ek_arena_alloc(c->arena, n * sizeof *decl);
+        if (!sorted || !canon || !decl) {
+            c->oom = 1;
+            return NULL;
+        }
+        for (i = 0; i < n; i++) {
+            canon[i] = i;
+        }
+        for (i = 1; i < n; i++) {
+            size_t x = canon[i];
+
+            for (j = i; j && strcmp(fields[canon[j - 1]].name,
+                                    fields[x].name) > 0; j--) {
+                canon[j] = canon[j - 1];
+            }
+            canon[j] = x;
+        }
+        for (i = 0; i < n; i++) {
+            sorted[i] = fields[canon[i]];
+            decl[canon[i]] = i;
+        }
+        t->u.record.fields = sorted;
+        t->u.record.decl = decl;
+        t->u.record.count = n;
+        return ck_intern(c, t);
+    }
     t->u.record.fields = fields;
+    t->u.record.decl = NULL;
     t->u.record.count = n;
     return ck_intern(c, t);
 }

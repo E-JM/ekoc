@@ -77,6 +77,7 @@ static const ek_type *subst_record(ck_ctx *c, ek_type *copy,
         }
     }
     copy->u.record.fields = fs;
+    copy->u.record.decl = t->u.record.decl;
     return ck_intern(c, copy);
 }
 

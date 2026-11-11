@@ -211,6 +211,20 @@ static void inspect_vs_show(void)
          "\"wd\"\n");
 }
 
+/* A record's display follows the field's declaration order, not the
+   canonical order the type identity sorts to. */
+static void inspect_declaration_order(void)
+{
+    gate("main: (o: Out) ! =\n"
+         "    r: [z: Int, a: Int] = {z: 1, a: 2}\n"
+         "    o.println(r.inspect())\n"
+         "    o.println(r.show())\n"
+         "    _\n",
+         "derived_record_order",
+         "{z: 1, a: 2}\n"
+         "{z: 1, a: 2}\n");
+}
+
 /* Equality over a composite arrives as the derived member: two
    separately built trees compare structurally. */
 static void tree_equality(void)
@@ -344,6 +358,7 @@ int main(void)
     nested_show();
     adt_show();
     inspect_vs_show();
+    inspect_declaration_order();
     tree_equality();
     value_eq_operator();
     string_order();

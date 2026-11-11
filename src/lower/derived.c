@@ -112,8 +112,10 @@ static int shape_rows(lower_ctx *c, const ek_type *t, const char ***fnames,
             return 0;
         }
         for (i = 0; i < n; i++) {
-            names[i] = t->u.record.fields[i].name;
-            types[i] = t->u.record.fields[i].type;
+            size_t k = t->u.record.decl ? t->u.record.decl[i] : i;
+
+            names[i] = t->u.record.fields[k].name;
+            types[i] = t->u.record.fields[k].type;
         }
         *fnames = names;
         *ftypes = types;
