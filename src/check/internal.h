@@ -549,6 +549,7 @@ const ek_type *call_service(ck_ctx *c, const ek_node *e,
 const ek_type *call_ctor(ck_ctx *c, const ek_node *e, const ek_node *callee,
                          const ek_ref *ref, const ek_type *expected,
                          int implicit);
+const ek_symbol *qualified_head_ctor(ck_ctx *c, const ek_node *head);
 
 const ek_type *ck_call(ck_ctx *c, const ek_node *e, const ek_type *expected);
 const ek_type *ck_field(ck_ctx *c, const ek_node *e);

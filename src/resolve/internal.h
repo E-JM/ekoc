@@ -286,6 +286,8 @@ void r_chain(r_ctx *c, r_file *f, const ek_node *node, int is_call,
              r_head *out);
 const ek_symbol *r_module_member(const r_mod *m, const char *name);
 const ek_symbol *r_module_ctor(const r_mod *m, const char *name);
+const ek_symbol *r_module_owned_ctor(const r_mod *m, const char *type,
+                                     const char *name);
 void r_external_link(r_ctx *c, r_head *cur, const ek_node *link);
 int r_module_walk(r_ctx *c, r_file *f, r_head *cur, const ek_node *link,
                   const char *name, int last, int from_receiver,

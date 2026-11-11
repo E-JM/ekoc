@@ -45,6 +45,28 @@ const ek_symbol *r_module_ctor(const r_mod *m, const char *name)
     return NULL;
 }
 
+/* A module's constructor of one spelling owned by one type: the
+   type-namespace member a `Type.Ctor` or `Mod.Type.Ctor` spelling
+   names (Clause 7.4.4). */
+const ek_symbol *r_module_owned_ctor(const r_mod *m, const char *type,
+                                     const char *name)
+{
+    size_t i;
+
+    if (!m || !m->surf) {
+        return NULL;
+    }
+    for (i = 0; i < m->surf->count; i++) {
+        const ek_symbol *s = &m->surf->syms[i];
+
+        if (s->kind == EK_SYM_CONSTRUCTOR && s->owner
+            && strcmp(s->owner, type) == 0 && strcmp(s->name, name) == 0) {
+            return s;
+        }
+    }
+    return NULL;
+}
+
 /* A module's type of one spelling; a constructor may share it, and a
    namespace link continues at the type, never at the constructor. */
 static const ek_symbol *module_type(const r_mod *m, const char *name)
@@ -118,10 +140,16 @@ static void module_miss(r_ctx *c, r_file *f, r_head *cur,
         bridge_stop(c, cur, link, walk_mod, state);
         return;
     }
-    if ((*walk_mod)->surf == c->std || from_receiver) {
-        /* The std placeholder keeps its bridge, and a receiver-form
-           miss defers to check: a record field of the same spelling
-           wins the link there, and only the receiver's type knows. */
+    if (from_receiver) {
+        /* A receiver-form miss defers to check: a record field of the
+           same spelling wins the link there, and only the receiver's
+           type knows. */
+        bridge_stop(c, cur, link, walk_mod, state);
+        return;
+    }
+    if ((*walk_mod)->surf == c->std) {
+        /* The std placeholder keeps its bridge at the head position;
+           the naming of its misses lands with the bridge tightening. */
         bridge_stop(c, cur, link, walk_mod, state);
         return;
     }
@@ -231,8 +259,24 @@ int r_namespace_walk(r_ctx *c, r_file *f, r_head *cur,
         cur->kind = EK_SYM_NAMESPACE;
         cur->st = from_receiver ? EK_ST_MODULE_PATH : EK_ST_QUALIFIED;
         r_add_ref(c, link, cur->kind, cur->st, cur->sym);
+    } else if (!from_receiver
+               && (nm = r_module_owned_ctor(owner, type->name, name)) != NULL) {
+        /* The type's own constructor: `Type.Ctor` and `Mod.Type.Ctor`
+           anchor it with the type as provenance (Clause 7.4.4). */
+        if (!nm->public) {
+            r_error(c, f->mod->file, link->line, link->col,
+                    "E-private-name",
+                    "constructor `%s.%s` is private (Clause 7.3.1)",
+                    type->name, name);
+        }
+        cur->sym = nm;
+        cur->kind = EK_SYM_CONSTRUCTOR;
+        cur->st = EK_ST_QUALIFIED;
+        r_add_ref(c, link, cur->kind, cur->st, cur->sym);
     } else {
-        /* Derived services attach as defaults; check owns them.
+        /* Derived services attach as defaults, and the compiler-owned
+           namespaces keep their rows in check; the walk bridges and a
+           miss is named there (Clauses 7.4.3, 7.4.4).
            r_external_link records the reference itself. */
         r_external_link(c, cur, link);
     }

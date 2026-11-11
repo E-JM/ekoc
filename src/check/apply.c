@@ -293,7 +293,7 @@ static const ek_type *apply_candidates(ck_ctx *c, const ek_node *e,
 /* The constructor a type-qualified application head names: the head's
    receiver resolved as the owner type and the link as one of its
    variants. NULL outside the form or when the spelling names none. */
-static const ek_symbol *qualified_head_ctor(ck_ctx *c, const ek_node *head)
+const ek_symbol *qualified_head_ctor(ck_ctx *c, const ek_node *head)
 {
     const ek_ref *tr = NULL;
     const ek_symbol *tsym;

@@ -50,14 +50,54 @@ static void bind_var(r_ctx *c, r_file *f, const char *name, int line,
     }
 }
 
-/* A module-qualified pattern constructor head: `Mod.Ctor` names the
-   constructor even when a type shares the spelling. */
+/* A type-qualified pattern constructor head: `Type.Ctor` names one
+   variant of the type it is spelled on (Clause 7.4.4). */
+static int cons_ref_type(r_ctx *c, r_file *f, const ek_node *pat,
+                         const char *tname, const char *cname)
+{
+    const ek_symbol *ts = NULL;
+    const ek_symbol *cs;
+    r_mod *owner;
+
+    if (r_lookup_type(f, tname, &ts) != 1 || !ts) {
+        return 0;
+    }
+    owner = r_module_find(c, ts->module);
+    cs = r_module_owned_ctor(owner, ts->name, cname);
+    if (cs && r_is_placeholder(cs)) {
+        /* A placeholder constructor keeps the bridged reading. */
+        r_add_ref(c, pat, EK_SYM_EXTERNAL, EK_ST_EXTERNAL, cs);
+        return 1;
+    }
+    if (!cs) {
+        r_error(c, f->mod->file, pat->line, pat->col, "E-unbound-name",
+                "the type `%s` has no constructor `%s` (Clause 7.4.4)",
+                tname, cname);
+        r_add_ref(c, pat, EK_SYM_EXTERNAL, EK_ST_CONS, NULL);
+        return 1;
+    }
+    if (!cs->public) {
+        r_error(c, f->mod->file, pat->line, pat->col, "E-private-name",
+                "constructor `%s` is private in type `%s` (Clause 7.3.1)",
+                cname, tname);
+    }
+    r_add_ref(c, pat, EK_SYM_CONSTRUCTOR, EK_ST_QUALIFIED, cs);
+    return 1;
+}
+
+/* A module-qualified pattern constructor head: `Mod.Type` names the
+   type's own constructor even when a type shares the spelling. */
 static void cons_ref_qualified(r_ctx *c, r_file *f, const ek_node *pat,
                                const char *mname, const char *cname)
 {
-    const ek_symbol *mod = r_lookup_mod(f, mname);
+    const ek_symbol *mod;
     const ek_symbol *cs;
     r_mod *target;
+
+    if (cons_ref_type(c, f, pat, mname, cname)) {
+        return;
+    }
+    mod = r_lookup_mod(f, mname);
 
     if (!mod) {
         r_error(c, f->mod->file, pat->line, pat->col, "E-unbound-name",

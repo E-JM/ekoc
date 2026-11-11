@@ -207,6 +207,33 @@ static lower_val ns_constant_read(lower_ctx *c, const ek_node *e)
     return (lower_val){ NULL, 0 };
 }
 
+/* A bare qualified read of a zero-payload constructor: the value of
+   the constructor's type, built by the family helper. A payload
+   constructor is not a value; check reported it and the read hands
+   back. */
+static lower_val ctor_bare_read(lower_ctx *c, lower_scope *scope,
+                                const ek_node *e)
+{
+    const ek_ref *ref = lower_ref(c, e);
+    lower_gtype *g;
+    const char *r;
+
+    if (!ref || ref->kind != EK_SYM_CONSTRUCTOR || !ref->symbol) {
+        return (lower_val){ NULL, 0 };
+    }
+    g = lower_ctor_of_symbol(c, e, ref->symbol, 1);
+    if (!g) {
+        return lower_val_unit();
+    }
+    if (g->nf) {
+        return (lower_val){ NULL, 0 };
+    }
+    r = lower_temp(c, scope);
+    lower_pad(c);
+    lower_emitf(c, "ek_val %s = %s();\n", r, g->helper);
+    return (lower_val){ r, 1 };
+}
+
 /* A field access: the receiver lowers to a temp, the read is an owned
    copy out of the generated struct, and the receiver temp dies. The
    receiver borrows the frame local it reads -- the slot read is
@@ -227,6 +254,9 @@ static lower_val field_expr(lower_ctx *c, lower_scope *scope,
 
         if (!q.text) {
             q = ns_constant_read(c, e);
+        }
+        if (!q.text) {
+            q = ctor_bare_read(c, scope, e);
         }
         if (q.text) {
             return q;

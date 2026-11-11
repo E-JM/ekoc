@@ -566,6 +566,16 @@ const ek_type *ck_call(ck_ctx *c, const ek_node *e, const ek_type *expected)
         const ek_type *head = NULL;
 
         if (type_head(c, callee->u.field.recv, &head)) {
+            /* A type-qualified call ending in a constructor of that
+               type anchors the constructor; any other member goes to
+               the namespace and its derived services. */
+            const ek_symbol *cs = qualified_head_ctor(c, callee);
+            const ck_ctor *ct = cs ? ck_ctor_of(c, cs) : NULL;
+
+            if (ct && ct->owner) {
+                return ctor_apply(c, e, ct, expected, e->u.call.args.data,
+                                  e->u.call.args.count);
+            }
             /* A type namespace selects namespace members and derived
                services, and supplies no receiver value. */
             return call_member(c, e, callee, implicit);
