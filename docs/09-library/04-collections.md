@@ -196,7 +196,10 @@ The engine is a Thompson NFA simulation with no backtracking. For a fixed
 pattern, matching a line costs time proportional to the product of the line's
 length and the automaton's size, and nested quantifiers such as `(a*)*` cannot
 blow up. A compiled pattern carries its automaton in a closure; no pattern
-text, automaton state, or other implementation detail is observable.
+text, automaton state, or other implementation detail is observable. The
+payload of the declared type is a function value, so a pattern's `inspect`
+form is `Regex <fn>` (Clause 9.8.3): the display observes the declared
+payload category, not the closure's contents.
 
 The pattern language is exactly this set of forms.
 
