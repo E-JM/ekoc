@@ -1,0 +1,8 @@
+// The payload types of the conversion member suite: a scalar newtype, a
+// newtype over a newtype, a generic newtype, and a record payload
+// (Clauses 7.5.2, 7.8.7).
+
+Inner: type = Inner Int
+Box: type t = Box t
+Meter: type = [m: Int]
+Dist: type = Dist Meter

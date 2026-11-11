@@ -1,0 +1,28 @@
+// The conversion member: receiver, namespace, and qualified-chain forms
+// over scalar, generic, record, and cross-module payloads; one layer
+// only (Clause 7.8.7).
+import convert_payload
+
+_unwrap: (i: convert_payload.Inner) -> Int = i.Int()
+_box: (b: convert_payload.Box Int) -> Int = b.Int()
+_km: (d: convert_payload.Dist) -> Int = d.Meter().m
+
+scalar: test =
+    i: convert_payload.Inner = convert_payload.Inner(7)
+    assert_eq(i.Int(), 7)
+    assert_eq(_unwrap(i), 7)
+    assert_eq(convert_payload.Inner.Int(i), 7)
+
+generic: test =
+    b: convert_payload.Box Int = convert_payload.Box(3)
+    assert_eq(b.Int(), 3)
+    assert_eq(_box(b), 3)
+
+record_payload: test =
+    d: convert_payload.Dist = convert_payload.Dist({m: 5})
+    assert_eq(d.Meter().m, 5)
+    assert_eq(_km(d), 5)
+
+qualified_chain: test =
+    i: convert_payload.Inner = convert_payload.Inner(9)
+    assert_eq(i.convert_payload.Inner.Int(), 9)

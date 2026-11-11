@@ -478,6 +478,22 @@ static void n47(void)
     cfx_end(&f);
 }
 
+/* N48 — a bare conversion member read. */
+static void n48(void)
+{
+    cfx f;
+
+    cfx_begin(&f,
+              "NewInt: type = NewInt Int\n"
+              "\n"
+              "probe: () -> Int =\n"
+              "    n: NewInt = NewInt 10\n"
+              "    n.Int\n");
+    EK_CHECK(cfx_errors(&f) >= 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-unbound-member", 5));
+    cfx_end(&f);
+}
+
 int main(void)
 {
     n41();
@@ -502,6 +518,7 @@ int main(void)
     n45();
     n46();
     n47();
+    n48();
     alias_cascade();
     unanchored_literal();
     return ek_test_report("check/negative");

@@ -46,6 +46,14 @@ otherwise it names the rejection and the normative clause.
 | N38 | non-ASCII module stem | `E-name-case` |
 | N39 | empty literal receiver with an ambiguous member | `E-literal-expected` |
 | N40 | world call in a top-level initializer | `E-world-bit` |
+| N41 | a payload constructor read as a value | `E-ctor-value` |
+| N42 | a dotted head followed by a juxtaposed operand | parse error: `E-syntax` |
+| N43 | a grouped exponent | `E-digit-grouping` |
+| N44 | a trailing comma in a composite literal | parse error: `E-syntax` |
+| N45 | the conversion member names a type other than the payload | `E-unbound-member` |
+| N46 | the conversion member does not chain | `E-unbound-member` |
+| N47 | an argument beyond the conversion's operand | `E-call-arity` |
+| N48 | a bare conversion member read | `E-unbound-member` |
 
 ## N01 — nominal mismatch
 
@@ -647,3 +655,18 @@ main: (out: Out) ! =
 ```
 
 Expected: `E-call-arity`.
+
+## N48 — a bare conversion member read
+
+The conversion member is a call form: a bare `n.P` without a call is the
+function-member miss of Clause 7.4.3, not a value.
+
+```eko
+NewInt: type = NewInt Int
+
+main: (out: Out) ! =
+    n: NewInt = NewInt 10
+    out.println(show(n.Int))
+```
+
+Expected: `E-unbound-member`.
