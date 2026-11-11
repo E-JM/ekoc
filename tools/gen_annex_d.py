@@ -66,7 +66,7 @@ def rewrite(mods, negatives):
     drift = []
 
     for pattern, render, label in (
-        (r"\d+ Eko modules: \d+ test roots and one fixture",
+        (r"\d+ Eko modules: \d+ test roots and (?:one|\d+) fixtures?",
          lambda m: "%d Eko modules: %d test roots and %s" % (
              len(mods), roots,
              "one fixture" if fixtures == 1 else "%d fixtures" % fixtures),
