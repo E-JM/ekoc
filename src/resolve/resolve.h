@@ -61,6 +61,8 @@ typedef struct ek_symbol {
     const ek_node *decl;     /* declaration node; NULL for derived data */
     const ek_node *type;     /* written annotation, else NULL */
     const char *extern_symbol; /* extern C symbol, else NULL */
+    const char *doc;         /* the /// lines before the binding, joined
+                                 with newlines; NULL when none rides it */
     int pure;                /* extern Pure status */
     int line;
     int col;
@@ -102,6 +104,9 @@ typedef struct {
     size_t module_count;
     ek_ref *refs;        /* sorted by node address */
     size_t ref_count;
+    size_t root_refs[2]; /* the root's own references, [begin, end); the
+                            reference sort mixes the closure's, so a
+                            query about the root file walks this slice */
 } ek_resolve_result;
 
 /* Resolves module (an EK_N_MODULE of file) as a compilation root.

@@ -78,6 +78,7 @@ void r_surf_type(r_surf *s, const ek_node *d)
     }
     sym->decl = d;
     sym->public = name[0] != '_';
+    sym->doc = d->doc;
     seen = r_surf_key_seen(s->tkeys, s->nt, name);
     if (seen >= 0) {
         r_error(s->c, s->m->file, d->line, d->col, "E-name-conflict",

@@ -1,6 +1,7 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
@@ -16,6 +17,7 @@ static void usage(void)
     fprintf(stderr, "       ekoc test <file.eko>\n");
     fprintf(stderr, "       ekoc where std [<stem>]\n");
     fprintf(stderr, "       ekoc doc [-src] <name>\n");
+    fprintf(stderr, "       ekoc at <file.eko> <line> <col>\n");
 }
 
 /* Resolves the directory holding the compiler's own tree: the running
@@ -175,6 +177,27 @@ int main(int argc, char **argv)
             return 2;
         }
         return cli_doc(root, src, argv[2 + (src ? 1 : 0)]);
+    }
+    if (strcmp(argv[1], "at") == 0) {
+        char *end;
+        long line;
+        long col;
+
+        if (argc != 5) {
+            usage();
+            return 2;
+        }
+        line = strtol(argv[3], &end, 10);
+        if (*end != '\0' || end == argv[3]) {
+            usage();
+            return 2;
+        }
+        col = strtol(argv[4], &end, 10);
+        if (*end != '\0' || end == argv[4]) {
+            usage();
+            return 2;
+        }
+        return cli_at(root, argv[2], (int)line, (int)col);
     }
     usage();
     return 2;

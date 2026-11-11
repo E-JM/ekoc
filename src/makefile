@@ -188,6 +188,8 @@ EMIT_SRC := \
 
 CLI_SRC := \
 	src/cli/main.c \
+	src/cli/at.c \
+	src/cli/at_report.c \
 	src/cli/build.c \
 	src/cli/check.c \
 	src/cli/front.c \

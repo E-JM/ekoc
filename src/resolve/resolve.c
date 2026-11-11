@@ -214,6 +214,10 @@ static void finish(r_ctx *c, ek_resolve_result *r)
             r->module_count++;
         }
     }
+    /* The root resolves first, so its slice of the table is recorded
+       before the sort mixes the closure's references together. */
+    r->root_refs[0] = c->nmods ? c->mods[0].ref_begin : 0;
+    r->root_refs[1] = c->nmods ? c->mods[0].ref_end : 0;
     r_refs_sort(c->refs, c->nrefs);
     r->refs = c->refs;
     r->ref_count = c->nrefs;

@@ -356,3 +356,30 @@ int cli_doc(const char *root, int src, const char *name)
     }
     return 0;
 }
+
+/* The distribution path of one shipped source by its stem; 0 when the
+   stem names no shipped module. */
+int cli_shipped_path(const char *root, const char *stem, char *buf,
+                     size_t cap)
+{
+    size_t s;
+
+    for (s = 0; SHIPPED[s].path; s++) {
+        const char *p = SHIPPED[s].path;
+        const char *slash = strrchr(p, '/');
+        const char *base = slash ? slash + 1 : p;
+        size_t n = strlen(base);
+        char stem_buf[64];
+
+        if (n >= sizeof stem_buf) {
+            continue;
+        }
+        memcpy(stem_buf, base, n - 4); /* minus ".eko" */
+        stem_buf[n - 4] = '\0';
+        if (strcmp(stem_buf, stem) == 0) {
+            shipped_path(buf, cap, root, p);
+            return 1;
+        }
+    }
+    return 0;
+}

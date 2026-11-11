@@ -267,6 +267,11 @@ static void collect_member(r_surf *s, const ek_node *item)
             sym->pure = item->u.extern_decl.pure;
         }
     }
+    if (sym) {
+        /* The document rides the binding it describes: the index
+           carries it with the span the symbol already holds. */
+        sym->doc = item->doc;
+    }
     /* Namespace members are keyed by their full head and never occupy
        the leaf layer. */
     if (!sym || sym->kind != EK_SYM_NAMESPACE) {

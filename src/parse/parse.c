@@ -2,6 +2,8 @@
 
 #include "parse/internal.h"
 
+#include "support/buf.h"
+
 ek_parse_result ek_parse(const ek_layout_token *tokens, size_t count,
                          const char *file, ek_arena *arena, ek_diag *diag)
 {
@@ -90,20 +92,41 @@ static int deprecated_doc(const char *text)
     return strncmp(text, "@deprecated", 11) == 0;
 }
 
-/* Consumes the document before a member and reports whether any line
-   marks the binding deprecated. */
-static int take_docs(p_ctx *c)
+/* Consumes the document before a member: the lines join into one
+   string on the arena, and the flag reports whether any line marks
+   the binding deprecated. */
+static const char *take_docs(p_ctx *c, int *deprecated)
 {
-    int deprecated = 0;
+    ek_buf b;
+    const char *joined = NULL;
 
+    ek_buf_init(&b);
+    *deprecated = 0;
     while (p_at(c, EK_TOK_DOC)) {
         const ek_layout_token *t = p_take(c);
 
         if (deprecated_doc(t->tok.text)) {
-            deprecated = 1;
+            *deprecated = 1;
+        }
+        if (b.len != 0 && !ek_buf_append_str(&b, "\n")) {
+            p_alloc(c, 0);
+        }
+        if (!ek_buf_append_str(&b, t->tok.text ? t->tok.text : "")) {
+            p_alloc(c, 0);
         }
     }
-    return deprecated;
+    if (b.len != 0) {
+        char *into = ek_arena_alloc(c->arena, b.len + 1);
+
+        if (into) {
+            memcpy(into, b.data, b.len + 1);
+            joined = into;
+        } else {
+            p_alloc(c, 0);
+        }
+    }
+    ek_buf_destroy(&b);
+    return joined;
 }
 
 /* Whether a node introduces a name that a document can describe. */
@@ -181,15 +204,19 @@ static ek_node *member_node(p_ctx *c, int top_level)
 ek_node *p_member(p_ctx *c, int top_level)
 {
     int deprecated;
+    const char *doc;
     ek_node *n;
 
     if (c->oom) {
         return NULL;
     }
-    deprecated = take_docs(c);
+    doc = take_docs(c, &deprecated);
     n = member_node(c, top_level);
-    if (n && deprecated && named_binding(n->kind)) {
-        n->deprecated = 1;
+    if (n && named_binding(n->kind)) {
+        n->doc = doc;
+        if (deprecated) {
+            n->deprecated = 1;
+        }
     }
     return n;
 }

@@ -74,6 +74,8 @@ struct ek_node {
     int col;   /* 1-based, counted in Unicode scalar values */
     int depth; /* parse-time tree height; consumers ignore it */
     int deprecated; /* the document before the binding marks it deprecated */
+    const char *doc; /* the /// lines before the binding, joined with
+                         newlines; NULL when no document rides it */
     union {
         ek_nlist kids;    /* MODULE, BLOCK, LAMBDA_PARAMS, P_PAREN, P_OR,
                              T_TUPLE, T_RECORD */
