@@ -465,6 +465,15 @@ static void binding_irrefutable(void)
               "(a, b) = pair\n");
     EK_CHECK_U64(cfx_errors(&f), 0);
     cfx_end(&f);
+
+    cfx_begin(&f,
+              "Box: type = Box(Int)\n"
+              "read: () -> Int =\n"
+              "    n: Box = Box(1)\n"
+              "    (Box v) = n\n"
+              "    v\n");
+    EK_CHECK_U64(cfx_errors(&f), 0);
+    cfx_end(&f);
 }
 
 /* Refutable pattern kinds at a value binding: a list pattern, an

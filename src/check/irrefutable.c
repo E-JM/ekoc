@@ -121,12 +121,17 @@ static const ek_type *item_field_type(const ek_type *repr,
 }
 
 /* A group of irrefutable patterns over a tuple type: each component
-   walks at its component type. */
+   walks at its component type. One component is no tuple: the group
+   is the pattern's own parentheses, and the component walks at the
+   bound type. */
 static int paren_irrefutable(ck_ctx *c, const ek_node *p, const ek_type *t)
 {
     const ek_type *repr = brace_repr_of(c, t);
     size_t i;
 
+    if (p->u.kids.count == 1) {
+        return ck_irrefutable(c, p->u.kids.data[0], t);
+    }
     for (i = 0; i < p->u.kids.count; i++) {
         const ek_type *ct = repr && repr->kind == EK_T_TUPLE
                                 && i < repr->u.tuple.count
