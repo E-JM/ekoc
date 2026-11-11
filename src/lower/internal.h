@@ -764,6 +764,11 @@ lower_val direct_call(lower_ctx *c, lower_scope *scope, const ek_node *e,
    balance. */
 lower_val lower_discard_call(lower_ctx *c, lower_scope *scope, const ek_node *e,
                        const call_form *form);
+/* convert.c: the conversion member's payload read, over the receiver
+   form and the type-namespace form alike. */
+lower_val lower_convert_call(lower_ctx *c, lower_scope *scope,
+                             const ek_node *e, const ek_node *callee,
+                             const call_form *form, const ek_type *rt);
 lower_val member_call(lower_ctx *c, lower_scope *scope, const ek_node *e,
                       const ek_node *callee, const call_form *form);
 lower_val c_ns_call(lower_ctx *c, lower_scope *scope, const ek_node *e,

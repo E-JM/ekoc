@@ -128,6 +128,7 @@ LOWER_SRC := \
 	src/lower/callargs.c \
 	src/lower/callinv.c \
 	src/lower/callmember.c \
+	src/lower/convert.c \
 	src/lower/capfam.c \
 	src/lower/capwrap.c \
 	src/lower/capture.c \
