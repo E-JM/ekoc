@@ -106,15 +106,18 @@ static void cons_ref_qualified(r_ctx *c, r_file *f, const ek_node *pat,
         return;
     }
     target = r_module_find(c, mod->name);
-    cs = r_module_ctor(target, cname);
+    /* Mod.Type: the type's own constructor; the flat pattern spelling
+       `Mod.Ctor` is retired with the value form (Clause 7.4.4). */
+    cs = r_module_owned_ctor(target, cname, cname);
     if (cs && r_is_placeholder(cs)) {
         /* A placeholder constructor keeps the bridged reading. */
         r_add_ref(c, pat, EK_SYM_EXTERNAL, EK_ST_EXTERNAL, cs);
         return;
     }
     if (!cs) {
-        r_error(c, f->mod->file, pat->line, pat->col, "E-unbound-member",
-                "module `%s` declares no constructor `%s` "
+        r_error(c, f->mod->file, pat->line, pat->col, "E-unbound-name",
+                "module `%s` has no type `%s`; a qualified pattern "
+                "spells `Type.Ctor` or the type's own name "
                 "(Clause 7.4.4)", mname, cname);
         r_add_ref(c, pat, EK_SYM_EXTERNAL, EK_ST_CONS, NULL);
         return;
@@ -168,8 +171,8 @@ static void cons_ref(r_ctx *c, r_file *f, const ek_node *pat)
     if (path->count > 2) {
         r_error(c, f->mod->file, pat->line, pat->col, "E-unbound-name",
                 "`%s.%s` is not a constructor position form; a "
-                "qualified constructor has one module segment "
-                "(Clause 7.4.4)", path->data[0],
+                "qualified pattern spells `Type.Ctor` or the type's "
+                "own name (Clause 7.4.4)", path->data[0],
                 path->data[path->count - 1]);
         r_add_ref(c, pat, EK_SYM_EXTERNAL, EK_ST_CONS, NULL);
         return;

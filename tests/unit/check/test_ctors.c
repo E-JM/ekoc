@@ -407,8 +407,8 @@ static void qualified_zero_payload(void)
 
     cfx_run(&f,
             "import qliba\n"
-            "a: ABool = qliba.True()\n"
-            "b: ABool = qliba.True\n",
+            "a: ABool = qliba.ABool.True()\n"
+            "b: ABool = qliba.ABool.True\n",
             mpath, 2, "qapp1.eko");
     EK_CHECK_U64(cfx_errors(&f), 0);
     EK_CHECK_U64(cfx_stage_errors(f.ds, f.dn), 0);
@@ -416,7 +416,7 @@ static void qualified_zero_payload(void)
 
     cfx_run(&f,
             "import qliba\n"
-            "a: ABool = qliba.True(1)\n",
+            "a: ABool = qliba.ABool.True(1)\n",
             mpath, 2, "qapp2.eko");
     EK_CHECK_U64(cfx_errors(&f), 1);
     EK_CHECK(cfx_code_at_line(&f, "E-call-arity", 2));
@@ -432,8 +432,8 @@ static void qualified_payload(void)
 
     cfx_run(&f,
             "import geolib\n"
-            "a: Shape = geolib.Circle(2.0)\n"
-            "b: Shape = geolib.Circle(\"s\")\n",
+            "a: Shape = geolib.Shape.Circle(2.0)\n"
+            "b: Shape = geolib.Shape.Circle(\"s\")\n",
             mpath, 2, "qapp3.eko");
     EK_CHECK_U64(cfx_stage_errors(f.ds, f.dn), 0);
     EK_CHECK_U64(cfx_errors(&f), 1);
@@ -442,7 +442,7 @@ static void qualified_payload(void)
 
     cfx_run(&f,
             "import geolib\n"
-            "a: Shape = geolib.Circle(1.0, 2.0, 3.0)\n",
+            "a: Shape = geolib.Shape.Circle(1.0, 2.0, 3.0)\n",
             mpath, 2, "qapp4.eko");
     EK_CHECK_U64(cfx_stage_errors(f.ds, f.dn), 0);
     EK_CHECK_U64(cfx_errors(&f), 1);
@@ -484,13 +484,13 @@ static void qualified_core_ctor(void)
     static const char *const mpath[2] = {CONF_DIR, CTOR_DIR};
     cfx f;
 
-    cfx_run(&f, "a: Option Int = std.Some(3)\n", mpath, 2,
+    cfx_run(&f, "a: Option Int = std.Option.Some(3)\n", mpath, 2,
             "qapp7.eko");
     EK_CHECK_U64(cfx_stage_errors(f.ds, f.dn), 0);
     EK_CHECK_U64(cfx_errors(&f), 0);
     cfx_end(&f);
 
-    cfx_run(&f, "a: Option Int = std.Some(\"s\")\n", mpath, 2,
+    cfx_run(&f, "a: Option Int = std.Option.Some(\"s\")\n", mpath, 2,
             "qapp8.eko");
     EK_CHECK_U64(cfx_stage_errors(f.ds, f.dn), 0);
     EK_CHECK_U64(cfx_errors(&f), 1);

@@ -195,6 +195,54 @@ static int module_found(r_ctx *c, r_file *f, r_head *cur,
         *walk_type = m;
         return 1;
     }
+    if (last && !from_receiver) {
+        /* The spelling ends at the type: the constructor is the
+           type's own same-named variant, and the flat module-qualified
+           spelling is retired (Clause 7.4.4). */
+        const ek_symbol *t = module_type(*walk_mod, name);
+
+        if (t) {
+            m = r_module_owned_ctor(*walk_mod, name, name);
+            if (!m) {
+                const ek_symbol *other = r_module_ctor(*walk_mod, name);
+
+                if (other && other->owner
+                    && strcmp(other->owner, name) != 0) {
+                    r_error(c, f->mod->file, link->line, link->col,
+                            "E-unbound-name",
+                            "the type `%s.%s` has no constructor `%s`; "
+                            "the constructor `%s` belongs to `%s` and "
+                            "spells `%s.%s.%s(...)` (Clause 7.4.4)",
+                            (*walk_mod)->stem, name, name, name,
+                            other->owner, (*walk_mod)->stem, other->owner,
+                            name);
+                } else {
+                    r_error(c, f->mod->file, link->line, link->col,
+                            "E-unbound-name",
+                            "the type `%s.%s` has no constructor `%s` "
+                            "(Clause 7.4.4)", (*walk_mod)->stem, name,
+                            name);
+                }
+                bridge_stop(c, cur, link, walk_mod, state);
+                return 1;
+            }
+            if (!m->public) {
+                r_error(c, f->mod->file, link->line, link->col,
+                        "E-private-name",
+                        "member `%s` is private in module `%s` "
+                        "(Clause 7.3.1)", name, (*walk_mod)->stem);
+            }
+        } else if (m->kind == EK_SYM_CONSTRUCTOR) {
+            r_error(c, f->mod->file, link->line, link->col,
+                    "E-unbound-name",
+                    "the constructor `%s` is not spelled flat through "
+                    "module `%s`; write `%s.%s(...)` with the owning "
+                    "type (Clause 7.4.4)", name, (*walk_mod)->stem,
+                    m->owner, name);
+            bridge_stop(c, cur, link, walk_mod, state);
+            return 1;
+        }
+    }
     if (m->kind == EK_SYM_TYPE) {
         m = r_module_ctor(*walk_mod, name);
         if (!m) {

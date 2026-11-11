@@ -127,7 +127,7 @@ static void import_opens(void)
         "\n"
         "area_of: (s: geolib.Shape) -> Float = geolib.area(s)\n"
         "mk: Shape = Circle 2.0\n"
-        "ctor_ref: (s: Shape) -> Shape = geolib.Circle\n"
+        "ctor_ref: (s: Shape) -> Shape = geolib.Shape.Circle\n"
         "approx: Float = geolib.pi\n", "use.eko");
     EK_CHECK_U64(rfx_errors(&f), 0);
     r = rfx_ref_named(&f, 3, "area");

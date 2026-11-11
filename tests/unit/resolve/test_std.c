@@ -303,8 +303,8 @@ static void top_level_service_name(void)
     rfx_end(&f);
 }
 
-/* The qualified spelling is legal at every name position, including a
-   pattern constructor of a core type. */
+/* The pattern constructor of a core type spells bare, anchored by the
+   scrutinee type; the flat module spelling is retired. */
 static void qualified_std_constructors(void)
 {
     rfx f;
@@ -313,15 +313,23 @@ static void qualified_std_constructors(void)
     rfx_begin(&f,
         "f: (b: Bool) -> Int =\n"
         "    case b:\n"
-        "        std.True -> 1\n"
-        "        std.False -> 0\n");
+        "        True -> 1\n"
+        "        False -> 0\n");
     EK_CHECK_U64(rfx_errors(&f), 0);
     r = rfx_ref_named(&f, 3, "True");
     EK_CHECK(r != NULL);
     EK_CHECK(r->kind == EK_SYM_CONSTRUCTOR);
-    EK_CHECK(r->station == EK_ST_QUALIFIED);
     EK_CHECK_STR(r->symbol ? r->symbol->module : NULL, "std");
     EK_CHECK(r->symbol != NULL && r->symbol->decl != NULL);
+    rfx_end(&f);
+
+    rfx_begin(&f,
+        "f: (b: Bool) -> Int =\n"
+        "    case b:\n"
+        "        std.True -> 1\n"
+        "        False -> 0\n");
+    EK_CHECK_U64(rfx_errors(&f), 1);
+    EK_CHECK(rfx_has_code(&f, "E-unbound-name"));
     rfx_end(&f);
 }
 
