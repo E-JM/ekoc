@@ -50,6 +50,7 @@ static void env_reads_the_variables(void)
         ek_release(v);
     }
     ek_release(r);
+    ek_release(args[0]);
     args[0].as.ref = ek_str_from_cstr("EKO_RT_ENV_ABSENT");
     r = ek_closure_call(member(b), args, 1);
     EK_CHECK(ek_val_is_ref(r));
