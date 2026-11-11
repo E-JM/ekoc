@@ -39,7 +39,7 @@ block. It has no arrow and does not enter the module interface (Clauses
 9.14.1, 9.14.6). A module without a test binding is an ordinary
 dependency under a test root; `geolib.eko` is the only such module.
 
-The suite contains 195 test bindings. Each test is a block of ordinary
+The suite contains 199 test bindings. Each test is a block of ordinary
 expressions; its value is discarded. Assertions are the standard library
 functions `assert`, `assert_eq`, and `assert_ne` (Clause 9.14.3). `assert_eq`
 locks both arguments to one type and reports failure through `inspect`
@@ -194,21 +194,21 @@ number of test bindings. `geolib.eko` is a fixture and has none.
 | `geolib_use.eko` | yes | 3 | 6.5.2, 6.7.4, 6.8.1, 7.2.1, 7.2.2, 7.2.3, 7.4.4, 7.8.2, 8.3.2 | import opens types; constructors are anchored; qualified calls; UFCS extension; `if` |
 | `invert_arm_chains.eko` | yes | 1 | 6.3.4, 6.7.4, 7.5.3 | a chain in a case arm carries the arm's expectation into a constructor record tail |
 | `invert_captures.eko` | yes | 1 | 6.3.4, 6.8.2 | continuation capture analysis over brace patterns; a bound scrutinee; prefix rest; multiple scrutinees; a mutual-recursion cluster |
-| `lambdas_capture.eko` | yes | 4 | 6.4.1, 6.4.2, 7.9.2, 7.9.4, 7.9.5, 7.9.6, 8.2.1, 8.2.3, 9.10.1, 9.14.5 | lambdas without annotations; snapshot capture; pure factory returning a `!` closure; dispatcher bit |
+| `lambdas_capture.eko` | yes | 5 | 6.4.1, 6.4.2, 7.9.2, 7.9.4, 7.9.5, 7.9.6, 8.2.1, 8.2.3, 9.10.1, 9.14.5 | lambdas without annotations; snapshot capture; pure factory returning a `!` closure; dispatcher bit |
 | `list_combinators.eko` | yes | 4 | 9.10.1, 9.11.1 | `fold_until` stops at its own answer; `find_map` yields the first hit; `set` is domain-checked; `rep` repeats |
 | `local_bindings.eko` | yes | 2 | 6.3.2, 6.4.2, 7.6.3 | a local binding at a function type takes a lambda, a named function read as a value, or a block body over the annotation's parameter names |
 | `namespaces.eko` | yes | 9 | 7.4.3, 7.9, 9.6, 9.10 | namespace rows in both spellings; arithmetic rows; a capability whose world bit flows from the row |
 | `ranges.eko` | yes | 3 | 6.5.6, 9.8, 9.10.5 | both range operators over each endpoint type; compiler-supplied services over `Range`; wildcard arm |
 | `raw_strings.eko` | yes | 4 | 5.2.2, 5.9.4 | no escape or interpolation; the common indent stripped; blank lines; no closing newline |
 | `receiver_literals.eko` | yes | 7 | 7.5.3, 7.8.1, 7.8.2, 7.9.2 | a bare literal receiver anchors at the member: list, dictionary, chains, the direct form; effectful bodies at value bindings under the enclosing arrow |
-| `regex_companion.eko` | yes | 10 | 9.1.3, 9.11.3 | the pattern subset; the ASCII-only fold; the empty pattern; the rejected forms; the long-line bound |
+| `regex_companion.eko` | yes | 12 | 9.1.3, 9.11.3 | the pattern subset; the ASCII-only fold; the empty pattern; the rejected forms; the long-line bound |
 | `result_chains.eko` | yes | 4 | 6.3.4, 6.8.1, 7.5.4, 8.2.4, 9.2.1, 9.2.2, 9.6.3, 9.10.1, 9.11.1, 9.14.4 | `<-` unwrapping; `to_result` and `map_err`; wildcard links over `Result _ e`; table-driven test |
 | `selective_import.eko` | yes | 2 | 6.5.2, 7.2.3, 9.1.2 | selective import opens one free name; free-call forms of `show` and `panic` |
 | `set_services.eko` | yes | 6 | 9.8.1, 9.8.4, 9.9.3, 9.10.3 | display in insertion order; order-insensitive set equality; the JSON array round trip through a record and the type head; the union, intersection, and difference orders; structural keying through a containing record |
 | `slice_domain.eko` | yes | 3 | 9.10.1, 9.11.1 | a start and a length inside the sequence; a request whose counts would overflow yields `None` |
 | `std_show.eko` | yes | 6 | 9.1.3, 9.7.4, 9.9.2 | `std/time` import; `Duration` decimal seconds and parse; `Time` ISO 8601 UTC and parse; `Json` minimal text |
 | `string_split.eko` | yes | 6 | 9.4.2, 9.11.1 | `split` keeps empty fields; `lines` drops the one trailing empty; empty text has no lines; a large input holds the walk linear |
-| `types_composites.eko` | yes | 10 | 6.3.5, 6.6.1, 6.6.2, 6.6.3, 6.8.1, 6.9.2, 6.9.5, 7.5.2, 7.5.3, 7.5.5, 9.8.6, 9.10.2 | variants; records with nested partial update; newtype; tuples; dictionaries; shape adaptation |
+| `types_composites.eko` | yes | 11 | 6.3.5, 6.6.1, 6.6.2, 6.6.3, 6.8.1, 6.9.2, 6.9.5, 7.5.2, 7.5.3, 7.5.5, 7.8.7, 9.8.6, 9.10.2 | variants; records with nested partial update; newtype and its conversion member; tuples; dictionaries; shape adaptation |
 
 The mapping is not exhaustive in the other direction: a clause may have no
 dedicated module. The absence of a module is not permission to violate the
