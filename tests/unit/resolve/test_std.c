@@ -9,21 +9,6 @@
 
 /* Any bridged reference at a source line: the external station with no
    symbol behind it. */
-static int bridge_at(const rfx *f, int line)
-{
-    size_t i;
-
-    for (i = 0; i < f->res.ref_count; i++) {
-        const ek_ref *r = &f->res.refs[i];
-
-        if (r->node->line == line && r->kind == EK_SYM_EXTERNAL
-            && r->station == EK_ST_EXTERNAL && r->symbol == NULL) {
-            return 1;
-        }
-    }
-    return 0;
-}
-
 static void free_names(void)
 {
     rfx f;
@@ -164,13 +149,14 @@ static void qualified_std(void)
 {
     rfx f;
 
-    /* A qualified spelling of a name the import bridge leaves unknown
-       keeps the placeholder reading. */
+    /* A qualified spelling of a name the std module does not carry is
+       a named miss: a service is spelled on its type. */
     rfx_begin(&f,
         "f: () -> _ =\n"
         "    std.show(1)\n"
         "    _\n");
-    EK_CHECK_U64(rfx_errors(&f), 0);
+    EK_CHECK_U64(rfx_errors(&f), 1);
+    EK_CHECK(rfx_has_code(&f, "E-unbound-name"));
     rfx_end(&f);
 }
 
@@ -200,8 +186,8 @@ static void qualified_real_function(void)
     rfx_end(&f);
 }
 
-/* A std member the file does not declare keeps the external bridge, not
-   a new diagnostic. */
+/* A std member the file does not declare is a named miss at the std
+   head, not the unresolved-external bridge. */
 static void std_unknown_member(void)
 {
     rfx f;
@@ -210,8 +196,8 @@ static void std_unknown_member(void)
         "f: () -> _ =\n"
         "    std.nope(1)\n"
         "    _\n");
-    EK_CHECK_U64(rfx_errors(&f), 0);
-    EK_CHECK(bridge_at(&f, 2));
+    EK_CHECK_U64(rfx_errors(&f), 1);
+    EK_CHECK(rfx_has_code(&f, "E-unbound-name"));
     rfx_end(&f);
 }
 

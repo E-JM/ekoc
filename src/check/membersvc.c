@@ -342,22 +342,11 @@ const ek_type *ck_derive_with(ck_ctx *c, const ek_node *at,
 }
 
 /* True when the receiver's namespace is one the compiler still supplies
-   members for: the std surface, the shipped companions, and the two
-   container namespaces. A declared module's own namespace is complete
-   and never bridged. */
+   members for: the two container namespaces. A declared module's own
+   namespace is complete and never bridged. */
 static int std_namespace(const ek_type *r)
 {
-    switch (r->kind) {
-    case EK_T_LIST:
-    case EK_T_DICT:
-        return 1;
-    case EK_T_NOMINAL:
-        return r->u.nominal.sym && r->u.nominal.sym->module
-            && (strcmp(r->u.nominal.sym->module, "std") == 0
-                || strcmp(r->u.nominal.sym->module, "time") == 0);
-    default:
-        return 0;
-    }
+    return r->kind == EK_T_LIST || r->kind == EK_T_DICT;
 }
 
 /* A name no station answered. A derived service is reported by its own
@@ -382,7 +371,7 @@ const ek_type *ck_no_member(ck_ctx *c, const ek_node *at,
         return ck_opaque(c);
     }
     /* A namespace the compiler rows complete has no opaque names
-       left; every other std namespace keeps the bridge. */
+       left; every other miss is named. */
     if (!std_namespace(r) || ck_ns_owned(r)) {
         absent(c, at, r, name);
     }

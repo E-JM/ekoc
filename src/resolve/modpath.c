@@ -148,8 +148,12 @@ static void module_miss(r_ctx *c, r_file *f, r_head *cur,
         return;
     }
     if ((*walk_mod)->surf == c->std) {
-        /* The std placeholder keeps its bridge at the head position;
-           the naming of its misses lands with the bridge tightening. */
+        /* The std placeholder names no free member: a service is
+           spelled on its type (Clause 7.4.4). */
+        r_error(c, f->mod->file, link->line, link->col, "E-unbound-name",
+                "module `std` names no member `%s`; a service is spelled "
+                "on its type, `Type.%s(...)` (Clauses 7.4.2, 7.4.4)",
+                name, name);
         bridge_stop(c, cur, link, walk_mod, state);
         return;
     }
