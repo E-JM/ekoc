@@ -24,4 +24,17 @@ all: $(LIB_SUPPORT) $(LIB_LEX) $(LIB_LAYOUT) $(LIB_PARSE) $(LIB_RESOLVE) \
 clean:
 	rm -rf build
 
+# The embedded source tables regenerate from their release files; the
+# tool is never a build step, and the byte-comparison suite under
+# tests/unit/resolve is the drift gate.
+REGEN := tools/gen_embedded_source.py
+
+.PHONY: regen
+regen:
+	python3 $(REGEN) std lib/std.eko src/resolve/std_source.c
+	python3 $(REGEN) time lib/std/time.eko src/resolve/time_source.c
+	python3 $(REGEN) regex lib/std/regex.eko src/resolve/regex_source.c
+	python3 $(REGEN) cap cap/cap.eko src/resolve/cap_source.c
+	python3 $(REGEN) sys cap/sys.eko src/resolve/sys_source.c
+
 -include $(DEPS)
