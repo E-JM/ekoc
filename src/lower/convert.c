@@ -49,19 +49,17 @@ lower_val lower_convert_call(lower_ctx *c, lower_scope *scope,
     lower_val a;
     const char *at, *r;
 
-    if (form->has_recv || form->extra) {
+    /* An impossible arity is check's report; the balance still
+       evaluates and dies, one defect one diagnostic. */
+    if (form->extra) {
         return lower_discard_call(c, scope, e, form);
     }
     if (rt) {
         if (e->u.call.args.count != 0) {
-            lower_error(c, e, "the conversion member takes no argument "
-                              "beyond the receiver");
             return lower_discard_call(c, scope, e, form);
         }
     } else {
         if (e->u.call.args.count != 1) {
-            lower_error(c, e, "the conversion member takes the one "
-                              "operand, the newtype value");
             return lower_discard_call(c, scope, e, form);
         }
         operand = e->u.call.args.data[0];
