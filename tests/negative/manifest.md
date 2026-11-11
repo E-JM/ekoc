@@ -600,3 +600,50 @@ main: (out: Out) ! =
 ```
 
 Expected: parse error, `E-syntax` at the comma.
+
+## N45 — the conversion member names a type other than the payload
+
+The conversion member exists only under the payload type's own name; any
+other type spelling is an ordinary member miss (Clause 7.8.7).
+
+```eko
+NewInt: type = NewInt Int
+
+main: (out: Out) ! =
+    n: NewInt = NewInt 10
+    out.println(show(n.Float()))
+```
+
+Expected: `E-unbound-member`.
+
+## N46 — the conversion member does not chain
+
+The conversion retracts exactly one constructor; a newtype over a newtype
+selects the inner type's name, not the outer payload's (Clause 7.8.7).
+
+```eko
+Inner: type = Inner Int
+Outer: type = Outer Inner
+
+main: (out: Out) ! =
+    o: Outer = Outer (Inner 1)
+    out.println(show(o.Int()))
+```
+
+Expected: `E-unbound-member`.
+
+## N47 — an argument beyond the conversion's operand
+
+The conversion member takes the newtype value alone — the receiver of the
+member form, or the one written argument of the type-namespace form
+(Clause 7.8.7).
+
+```eko
+NewInt: type = NewInt Int
+
+main: (out: Out) ! =
+    n: NewInt = NewInt 10
+    out.println(show(n.Int(1)))
+```
+
+Expected: `E-call-arity`.

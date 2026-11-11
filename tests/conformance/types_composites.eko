@@ -1,6 +1,6 @@
 // Composite types: ADTs, records with nested partial update, the newtype
-// form, tuples, dictionaries, and one-directional shape adaptation
-// (Clauses 6.3.5, 6.6, 7.5).
+// form and its conversion member, tuples, dictionaries, and one-directional
+// shape adaptation (Clauses 6.3.5, 6.6, 7.5, 7.8.7).
 
 Color: type = Red | Green | Blue
 Address: type = [city: String, zip: String]
@@ -40,6 +40,10 @@ records: test =
 
 newtype: test =
     assert_eq(_birthday(Age 36), Age 37)
+    a: Age = Age 36
+    assert_eq(a.UInt(), 36)
+    assert_eq(Age.UInt(a), 36)
+    assert_eq(_birthday(a).UInt(), 37)
 
 tuples: test =
     p: [Int, Int] = {1, 2}

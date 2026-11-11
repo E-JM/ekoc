@@ -429,6 +429,55 @@ static void n41(void)
     cfx_end(&f);
 }
 
+/* N45 — the conversion member names a type other than the payload. */
+static void n45(void)
+{
+    cfx f;
+
+    cfx_begin(&f,
+              "NewInt: type = NewInt Int\n"
+              "\n"
+              "probe: () -> Float =\n"
+              "    n: NewInt = NewInt 10\n"
+              "    n.Float()\n");
+    EK_CHECK(cfx_errors(&f) >= 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-unbound-member", 5));
+    cfx_end(&f);
+}
+
+/* N46 — the conversion member does not chain. */
+static void n46(void)
+{
+    cfx f;
+
+    cfx_begin(&f,
+              "Inner: type = Inner Int\n"
+              "Outer: type = Outer Inner\n"
+              "\n"
+              "probe: () -> Int =\n"
+              "    o: Outer = Outer (Inner 1)\n"
+              "    o.Int()\n");
+    EK_CHECK(cfx_errors(&f) >= 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-unbound-member", 6));
+    cfx_end(&f);
+}
+
+/* N47 — an argument beyond the conversion's operand. */
+static void n47(void)
+{
+    cfx f;
+
+    cfx_begin(&f,
+              "NewInt: type = NewInt Int\n"
+              "\n"
+              "probe: () -> Int =\n"
+              "    n: NewInt = NewInt 10\n"
+              "    n.Int(1)\n");
+    EK_CHECK(cfx_errors(&f) >= 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-call-arity", 5));
+    cfx_end(&f);
+}
+
 int main(void)
 {
     n41();
@@ -450,6 +499,9 @@ int main(void)
     n30();
     n32();
     n33();
+    n45();
+    n46();
+    n47();
     alias_cascade();
     unanchored_literal();
     return ek_test_report("check/negative");
