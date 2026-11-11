@@ -131,7 +131,7 @@ lower_val c_ns_call(lower_ctx *c, lower_scope *scope,
    innermost first, mirroring check's chain walk that fixed the
    reading. NULL when no value segment remains: the plain qualified
    form. */
-static const ek_node *module_path_recv(lower_ctx *c, const ek_node *recv)
+const ek_node *module_path_recv(lower_ctx *c, const ek_node *recv)
 {
     const ek_ref *r;
 

@@ -769,6 +769,9 @@ lower_val lower_discard_call(lower_ctx *c, lower_scope *scope, const ek_node *e,
 lower_val lower_convert_call(lower_ctx *c, lower_scope *scope,
                              const ek_node *e, const ek_node *callee,
                              const call_form *form, const ek_type *rt);
+/* call.c: the value node beneath a chain's module and type segments,
+   NULL when the chain heads at a module. */
+const ek_node *module_path_recv(lower_ctx *c, const ek_node *recv);
 lower_val member_call(lower_ctx *c, lower_scope *scope, const ek_node *e,
                       const ek_node *callee, const call_form *form);
 lower_val c_ns_call(lower_ctx *c, lower_scope *scope, const ek_node *e,

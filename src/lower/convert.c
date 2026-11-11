@@ -5,9 +5,11 @@
 /* The conversion member's lowering: on a newtype receiver, the payload
    type's own name reads the sole constructor's payload. The operand
    lowers to a temp, the payload reads out of the constructor family's
-   single slot as an owned keep, and the temp dies. The receiver form's
-   operand is the receiver node; the type-namespace form's is the one
-   written argument, the receiver's row type absent. */
+   single slot as an owned keep, and the temp dies. Three shapes reach
+   here: the receiver form's operand is the receiver node; the
+   type-namespace form's is the one written argument; and a qualified
+   chain's is the value the chain's module and type segments peel down
+   to. */
 
 /* The sole constructor one newtype declaration owns, in its declaring
    module's surface; NULL when the surface names none. */
@@ -58,12 +60,19 @@ lower_val lower_convert_call(lower_ctx *c, lower_scope *scope,
         if (e->u.call.args.count != 0) {
             return lower_discard_call(c, scope, e, form);
         }
-    } else {
-        if (e->u.call.args.count != 1) {
-            return lower_discard_call(c, scope, e, form);
-        }
+    } else if (e->u.call.args.count == 1) {
         operand = e->u.call.args.data[0];
         ot = lower_row_type(c, operand);
+    } else if (e->u.call.args.count == 0) {
+        /* A qualified chain x.Mod.Type.P(): the value sits beneath the
+           module and type segments. */
+        operand = module_path_recv(c, callee->u.field.recv);
+        if (!operand) {
+            return lower_discard_call(c, scope, e, form);
+        }
+        ot = lower_row_type(c, operand);
+    } else {
+        return lower_discard_call(c, scope, e, form);
     }
     cs = sole_ctor(c, ot);
     g = cs ? lower_ctor_of_symbol(c, e, cs, 0) : NULL;
