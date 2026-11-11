@@ -65,6 +65,7 @@ typedef enum {
     EK_RD_NAMESPACE,    /* declared type namespace member */
     EK_RD_MODULE_FN,    /* current-module free function */
     EK_RD_DERIVED,      /* derived service */
+    EK_RD_CONVERT,      /* the payload type's name over a newtype */
     EK_RD_EXTERNAL,     /* the placeholder-std opaque reading */
     EK_RD_UNKNOWN       /* receiver type undetermined (opacity) */
 } ek_reading;

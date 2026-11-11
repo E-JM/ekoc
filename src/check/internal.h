@@ -335,6 +335,11 @@ const ek_type *ck_derive_json(ck_ctx *c, const ek_node *at,
 const ek_type *ck_derive_with(ck_ctx *c, const ek_node *at,
                               const ek_type *r, const char *name,
                               ek_reading *rd);
+/* convert.c: the conversion member of a newtype receiver — the payload
+   type's own name, answering the pure arrow from the newtype to the
+   payload. */
+const ek_type *ck_derive_convert(ck_ctx *c, const ek_type *r,
+                                 const char *name, ek_reading *rd);
 const ek_type *ck_service_receiver(ck_ctx *c, const ek_type *r);
 
 /* reqs.c: the service obligations of a checked body. A service that

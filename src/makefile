@@ -80,6 +80,7 @@ CHECK_SRC := \
 	src/check/apply.c \
 	src/check/check.c \
 	src/check/composite.c \
+	src/check/convert.c \
 	src/check/ctor.c \
 	src/check/ctl.c \
 	src/check/decl.c \

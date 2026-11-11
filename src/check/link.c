@@ -210,8 +210,8 @@ static const ek_type *nominal_service(ck_ctx *c, const ek_node *at,
 }
 
 /* The readings over a declared receiver: its representation's fields,
-   its namespace, the derived services, with, a compiler namespace
-   row, and the extending module function. */
+   its namespace, the conversion member, the derived services, with, a
+   compiler namespace row, and the extending module function. */
 static const ek_type *nominal_link(ck_ctx *c, const ek_node *at,
                                    const ek_type *r, const char *name,
                                    const ek_symbol *mod, ek_reading *rd,
@@ -233,6 +233,10 @@ static const ek_type *nominal_link(ck_ctx *c, const ek_node *at,
     if (m) {
         *rd = EK_RD_NAMESPACE;
         return ck_type_of(c, m);
+    }
+    t = ck_derive_convert(c, r, name, rd);
+    if (t) {
+        return t;
     }
     t = nominal_service(c, at, r, name, rd, bool_t);
     if (t) {
