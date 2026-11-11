@@ -536,12 +536,27 @@ static void n51(void)
     cfx_end(&f);
 }
 
+/* N52 — a payload constructor read as a bare value. */
+static void n52(void)
+{
+    cfx f;
+
+    cfx_begin(&f,
+              "Nt: type = Nt(Int)\n"
+              "t: test =\n"
+              "    x: Int = Nt.Nt\n");
+    EK_CHECK(cfx_errors(&f) >= 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-ctor-value", 3));
+    cfx_end(&f);
+}
+
 int main(void)
 {
     n41();
     n49();
     n50();
     n51();
+    n52();
     n01();
     n02();
     n03();

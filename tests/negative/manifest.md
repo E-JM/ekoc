@@ -57,6 +57,7 @@ otherwise it names the rejection and the normative clause.
 | N49 | a constructor spelled flat through its module | `E-unbound-name` |
 | N50 | a constructor pattern spelled flat through its module | `E-unbound-name` |
 | N51 | a constructor call on a type with no same-named constructor | `E-unbound-name` |
+| N52 | a payload constructor read as a bare value | `E-ctor-value` |
 
 ## N01 — nominal mismatch
 
@@ -714,3 +715,18 @@ j: Json = std.Int(5)
 ```
 
 Expected: `E-unbound-name`, pointing at `std.Json.Int(...)`.
+
+## N52 — a payload constructor read as a bare value
+
+A payload constructor is not a value; the read names the application
+it owes (`Clause 6.5.2`). A zero-payload constructor is the value of
+its type.
+
+```eko
+Nt: type = Nt(Int)
+
+t: test =
+    x: Int = Nt.Nt
+```
+
+Expected: `E-ctor-value`.
