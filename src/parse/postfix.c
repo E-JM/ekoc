@@ -79,7 +79,34 @@ static int juxtapose_reject(p_ctx *c, const ek_layout_token *t,
                          "parentheses (Clause 6.5.2)"
                        : "a call takes its arguments in parentheses "
                          "(Clause 6.5.2)");
-    p_sync(c);
+    /* the rejected operand gives up its tokens, so an enclosing
+       argument list resumes at its own `,` or `)` */
+    {
+        int depth = 0;
+
+        while (!c->oom) {
+            const ek_layout_token *n = p_peek(c);
+            ek_token_kind k;
+
+            if (n->kind != EK_LTOK_SOURCE) {
+                break; /* NEWLINE, INDENT, DEDENT, EOF */
+            }
+            k = p_src_kind(n);
+            if (k == EK_TOK_LPAREN || k == EK_TOK_LBRACKET
+                || k == EK_TOK_LBRACE) {
+                depth++;
+            } else if (k == EK_TOK_RPAREN || k == EK_TOK_RBRACKET
+                       || k == EK_TOK_RBRACE) {
+                if (depth == 0) {
+                    break;
+                }
+                depth--;
+            } else if (depth == 0 && k == EK_TOK_COMMA) {
+                break;
+            }
+            p_take(c);
+        }
+    }
     return 1;
 }
 
