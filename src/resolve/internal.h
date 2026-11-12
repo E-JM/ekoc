@@ -294,6 +294,6 @@ int r_module_walk(r_ctx *c, r_file *f, r_head *cur, const ek_node *link,
                   r_mod **walk_mod, const ek_symbol **walk_type, int *state);
 int r_namespace_walk(r_ctx *c, r_file *f, r_head *cur, const ek_node *link,
                      const char *name, const ek_symbol *type, r_mod *owner,
-                     int from_receiver, int *state);
+                     int from_receiver, int last, int *state);
 
 #endif

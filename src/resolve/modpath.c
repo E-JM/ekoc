@@ -196,12 +196,7 @@ static int ends_at_type(r_ctx *c, r_file *f, r_head *cur,
             bridge_stop(c, cur, link, walk_mod, state);
             return 1;
         }
-        if (!cs->public) {
-            r_error(c, f->mod->file, link->line, link->col,
-                    "E-private-name",
-                    "member `%s` is private in module `%s` "
-                    "(Clause 7.3.1)", name, (*walk_mod)->stem);
-        }
+        /* the walk's own visibility check named the private spelling */
         *out = cs;
         return 0;
     }
@@ -243,6 +238,12 @@ static int module_found(r_ctx *c, r_file *f, r_head *cur,
         if (done) {
             return 1;
         }
+    }
+    if (m->kind == EK_SYM_TYPE && from_receiver) {
+        /* The receiver form defers: a field of the same spelling wins
+           the link, and only the receiver's type knows. */
+        bridge_stop(c, cur, link, walk_mod, state);
+        return 1;
     }
     if (m->kind == EK_SYM_TYPE) {
         m = r_module_ctor(*walk_mod, name);
@@ -308,9 +309,10 @@ int r_module_walk(r_ctx *c, r_file *f, r_head *cur, const ek_node *link,
 int r_namespace_walk(r_ctx *c, r_file *f, r_head *cur,
                           const ek_node *link, const char *name,
                           const ek_symbol *type, r_mod *owner,
-                          int from_receiver, int *state)
+                          int from_receiver, int last, int *state)
 {
     const ek_symbol *nm = namespace_member(owner, type->name, name);
+
 
     if (nm) {
         if (!nm->public) {
@@ -323,10 +325,10 @@ int r_namespace_walk(r_ctx *c, r_file *f, r_head *cur,
         cur->kind = EK_SYM_NAMESPACE;
         cur->st = from_receiver ? EK_ST_MODULE_PATH : EK_ST_QUALIFIED;
         r_add_ref(c, link, cur->kind, cur->st, cur->sym);
-    } else if (!from_receiver
+    } else if (!from_receiver && last
                && (nm = r_module_owned_ctor(owner, type->name, name)) != NULL) {
-        /* The type's own constructor: `Type.Ctor` and `Mod.Type.Ctor`
-           anchor it with the type as provenance. */
+        /* The type's own constructor ends the spelling: `Type.Ctor`
+           and `Mod.Type.Ctor` anchor it with the type as provenance. */
         if (!nm->public) {
             r_error(c, f->mod->file, link->line, link->col,
                     "E-private-name",
@@ -338,6 +340,15 @@ int r_namespace_walk(r_ctx *c, r_file *f, r_head *cur,
         cur->st = EK_ST_QUALIFIED;
         r_add_ref(c, link, cur->kind, cur->st, cur->sym);
     } else {
+        if (!from_receiver && !last
+            && r_module_owned_ctor(owner, type->name, name) != NULL) {
+            /* The spelling ends at the constructor it names; a member
+               read past it has no reading. */
+            r_error(c, f->mod->file, link->line, link->col,
+                    "E-unbound-member",
+                    "the constructor `%s` ends the spelling; it carries "
+                    "no members (Clause 7.4.4)", name);
+        }
         /* Derived services attach as defaults, and the compiler-owned
            namespaces keep their rows in check; the walk bridges and
            check names the miss. r_external_link records the reference

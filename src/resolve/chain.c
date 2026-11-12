@@ -179,7 +179,7 @@ static void walk_links(r_ctx *c, r_file *f, const r_links *l, int is_call,
                           walk_mod, walk_type, state);
         } else if (*state == 2) {
             r_namespace_walk(c, f, cur, link, name, *walk_type, *walk_mod,
-                             *from_receiver, state);
+                             *from_receiver, last, state);
         } else if (!last && (msym = r_lookup_mod(f, name)) != NULL) {
             /* A module segment inside the chain; a field of the same
                name would win at the receiver reading, which check

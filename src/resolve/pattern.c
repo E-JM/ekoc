@@ -58,8 +58,17 @@ static int cons_ref_type(r_ctx *c, r_file *f, const ek_node *pat,
     const ek_symbol *ts = NULL;
     const ek_symbol *cs;
     r_mod *owner;
+    size_t k;
 
-    if (r_lookup_type(f, tname, &ts) != 1 || !ts) {
+    k = r_lookup_type(f, tname, &ts);
+    if (k > 1) {
+        r_error(c, f->mod->file, pat->line, pat->col, "E-name-conflict",
+                "`%s` names several visible types; qualify one "
+                "(Clauses 7.4.5, 7.4.6)", tname);
+        r_add_ref(c, pat, EK_SYM_EXTERNAL, EK_ST_CONS, NULL);
+        return 1;
+    }
+    if (k != 1 || !ts) {
         return 0;
     }
     owner = r_module_find(c, ts->module);
