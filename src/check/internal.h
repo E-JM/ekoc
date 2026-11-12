@@ -508,6 +508,9 @@ void ck_arm_binds_together(ck_ctx *c, const ek_node *arm); /* a name two
 int ck_irrefutable(ck_ctx *c, const ek_node *p, const ek_type *t);
 /* 0 = refutable in a value binding */
 
+/* declcheck.c: the value beneath parentheses or a one-member block. */
+const ek_node *ck_value_inner(const ek_node *v);
+
 /* exhaust.c: coverage of one scrutinee. exhaust_prod.c: the
    multi-scrutinee product and the entry. */
 int ck_covers(ck_ctx *c, const ek_type *t, const ek_node *const *pats,

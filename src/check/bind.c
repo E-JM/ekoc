@@ -26,11 +26,9 @@ ck_scheme *ck_mono(ck_ctx *c, const ek_type *t)
    rejected. */
 static const ek_node *as_lambda(const ek_node *v)
 {
-    while (v && (v->kind == EK_N_PAREN
-                 || (v->kind == EK_N_BLOCK && v->u.kids.count == 1))) {
-        v = v->kind == EK_N_PAREN ? v->u.wrap.inner : v->u.kids.data[0];
-    }
-    return v && v->kind == EK_N_LAMBDA ? v : NULL;
+    const ek_node *inner = ck_value_inner(v);
+
+    return inner && inner->kind == EK_N_LAMBDA ? inner : NULL;
 }
 
 /* The surface symbol one top-level pattern name binds: the FUNC row

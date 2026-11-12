@@ -47,20 +47,9 @@ static void inst_restore(ck_ctx *c, const ck_inst_saved *s)
     c->inst_nvars = s->nvars;
 }
 
-/* The lambda beneath parentheses, a one-member block, or both: the
-   arm body an annotated if or case carries at the value reading. */
-static const ek_node *arm_lambda(const ek_node *b)
-{
-    while (b && (b->kind == EK_N_PAREN
-                 || (b->kind == EK_N_BLOCK && b->u.kids.count == 1))) {
-        b = b->kind == EK_N_PAREN ? b->u.wrap.inner
-                                  : b->u.kids.data[0];
-    }
-    return b && b->kind == EK_N_LAMBDA ? b : NULL;
-}
-
-/* The value beneath parentheses or a one-member block. */
-static const ek_node *fn_body_inner(const ek_node *val)
+/* The value beneath parentheses or a one-member block: the wrapper a
+   binding or an arm carries without changing what it names. */
+const ek_node *ck_value_inner(const ek_node *val)
 {
     while (val && (val->kind == EK_N_PAREN
                    || (val->kind == EK_N_BLOCK
@@ -69,6 +58,15 @@ static const ek_node *fn_body_inner(const ek_node *val)
                                       : val->u.kids.data[0];
     }
     return val;
+}
+
+/* The lambda beneath the wrappers: the arm body an annotated if or
+   case carries at the value reading. */
+static const ek_node *arm_lambda(const ek_node *b)
+{
+    const ek_node *inner = ck_value_inner(b);
+
+    return inner && inner->kind == EK_N_LAMBDA ? inner : NULL;
 }
 
 /* Every arm of the if or case is a lambda: the whole expression reads
@@ -129,7 +127,7 @@ void annotated_fn_body(ck_ctx *c, const ek_node *ann, const ek_node *val,
                      ck_type_name(c, bound));
         }
     } else if (arms_are_lambdas(val)
-               || arms_are_lambdas(fn_body_inner(val))) {
+               || arms_are_lambdas(ck_value_inner(val))) {
         const ek_type *vt = ck_expr(c, val, bound);
 
         if (ck_conforms(c, vt, bound, 1) != CK_OK) {
