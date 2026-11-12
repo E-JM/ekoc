@@ -136,6 +136,7 @@
 | display channel | 显示通道 | Clause 9.8.1 |
 | structural channel | 结构通道 | Clause 9.8.1 |
 | value layer | 值层 | Clause 9.8.4 |
+| JSON variant/domain-type name collision | JSON 变体与域类型撞名 | Clause 7.4.4, Clause 9.9.1 |
 | key domain | 键域 | Clause 9.10.4 |
 | carried pair | 携带对 | Clause 9.10.4 |
 | Set | 集合 | Clause 9.10.3 |
@@ -242,3 +243,4 @@
 - `handle` 译“句柄”，`generation` 译“代次”而非“世代”，`dispatcher` 译“分派器”，`veneer` 译“嵌入薄层”，`scrutinee` 译“被匹配值”；`panic` 译“恐慌”但代码标识符保持原样，`abort` 译“中止”。
 - `nominal type` 采用“名义类型”（备选“标称类型”）；`constructor` 采用“构造子”（备选“构造器”）；`monomorphization` 采用“单态化”（备选“单形化”）；`token` 采用“词法单元”（备选“记号”）。`member` 在 Clause 4.2 与 Clause 4.3 中各有一个定义，本表以“成员（块内）”和“成员（类型命名空间）”区分。
 - 代码标识符、`ctype`、`Pure`、`C.In`、`std` 以及 E-/W-/P- 代码不翻译。诊断消息本身为英文（Annex B）；本表的中文释义不是诊断输出的一部分。中文行文在英文术语与代码两侧留空格。
+- `Json` 的变体 `Int`、`Bool`、`Float` 与域类型 `Int`、`Bool`、`Float` 是不同的名：限定拼写以类型收尾（Clause 7.4.4），`Json.Int(5)` 造 `Json` 变体，`Int(5)` 造域标量；未限定的 `Int` 在类型与构造子位置恒指域类型。
