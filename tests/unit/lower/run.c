@@ -332,6 +332,32 @@ static void panic_backtrace(void)
     EK_CHECK(strstr(err, "ek_frame") == NULL);
 }
 
+/* An if or case whose every arm is a lambda binds the selected
+   closure: calling it runs the arm, never a raw closure value. */
+static void lambda_arms_value(void)
+{
+    char out[64], err[8];
+    int status = gate_print("flag: Bool = True\n"
+                            "pick: (n: Int) -> Int =\n"
+                            "    case flag:\n"
+                            "        True -> (m): m * 2\n"
+                            "        False -> (m): m + 1\n"
+                            "main: (out: Out) ! =\n"
+                            "    g: () -> Int = if flag: ((): 5) "
+                            "else: ((): 6)\n"
+                            "    out.println(pick(21).show())\n"
+                            "    out.println(g().show())\n"
+                            "    _\n",
+                            "lower_arms_value", 3, out, sizeof out, err,
+                            sizeof err);
+
+    if (status >= 0 && WIFEXITED(status)) {
+        EK_CHECK_U64(WEXITSTATUS(status), 0);
+    }
+    EK_CHECK_STR(out, "42\n5\n");
+    EK_CHECK(err[0] == '\0');
+}
+
 static void division_by_zero(void)
 {
     char err[256];
@@ -766,6 +792,7 @@ static void conc_manifest(void)
 int main(void)
 {
     if (mkdir("build", 0777) != 0 && errno != EEXIST) {
+    lambda_arms_value();
         fprintf(stderr, "lower/run: cannot create build/\n");
         return 1;
     }

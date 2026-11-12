@@ -255,7 +255,7 @@ static void fill_values(lower_ctx *c, lower_scope *scope,
 
 /* The C argument array of the closure ABI, over the filled slots;
    NULL at an empty call. */
-static const char *emit_arg_array(lower_ctx *c, lower_scope *scope,
+const char *emit_arg_array(lower_ctx *c, lower_scope *scope,
                                   const char **argv, size_t n)
 {
     const char *av = NULL;

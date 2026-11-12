@@ -744,6 +744,10 @@ typedef struct {
     const char *recv_borrow;
     const char *extra;
 } call_form;
+lower_val panic_member_call(lower_ctx *c, lower_scope *scope,
+                            const ek_node *e, const ek_node *recv);
+const char *emit_arg_array(lower_ctx *c, lower_scope *scope,
+                            const char **argv, size_t n);
 
 int is_injected(const ek_symbol *sym);
 const char *injected_identity(lower_ctx *c, const ek_symbol *sym);

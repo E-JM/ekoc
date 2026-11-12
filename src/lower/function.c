@@ -95,6 +95,88 @@ static const ek_node *fn_body(const ek_symbol *sym)
                                                      : body;
 }
 
+/* The lambda beneath parentheses or a one-member block: the arm body
+   shape check's value reading admits. */
+static const ek_node *arm_lambda_node(const ek_node *b)
+{
+    while (b && (b->kind == EK_N_PAREN
+                 || (b->kind == EK_N_BLOCK && b->u.kids.count == 1))) {
+        b = b->kind == EK_N_PAREN ? b->u.wrap.inner
+                                  : b->u.kids.data[0];
+    }
+    return b && b->kind == EK_N_LAMBDA ? b : NULL;
+}
+
+/* True when the binding's value is an if or case whose every arm is a
+   lambda: check read the whole expression as a value of the arrow, so
+   the function's body selects the closure and applies it to the ABI
+   slots. */
+static int arms_valued(const ek_symbol *sym)
+{
+    const ek_node *body = decl_body(sym);
+    size_t i;
+
+    while (body && (body->kind == EK_N_PAREN
+                    || (body->kind == EK_N_BLOCK
+                        && body->u.kids.count == 1))) {
+        body = body->kind == EK_N_PAREN ? body->u.wrap.inner
+                                        : body->u.kids.data[0];
+    }
+    if (!body) {
+        return 0;
+    }
+    if (body->kind == EK_N_IF) {
+        return arm_lambda_node(body->u.ifexpr.then) != NULL
+               && (!body->u.ifexpr.els
+                   || arm_lambda_node(body->u.ifexpr.els) != NULL);
+    }
+    if (body->kind == EK_N_CASE) {
+        if (body->u.caseexpr.arms.count == 0) {
+            return 0;
+        }
+        for (i = 0; i < body->u.caseexpr.arms.count; i++) {
+            if (!arm_lambda_node(body->u.caseexpr.arms.data[i]->u.arm.body)) {
+                return 0;
+            }
+        }
+        return 1;
+    }
+    return 0;
+}
+
+/* The selected closure applied to the ABI slots: the value an
+   arms-valued function returns. The entries are borrowed -- the
+   runtime callee retains whatever it stores. */
+static lower_val apply_slots(lower_ctx *c, lower_scope *scope,
+                             const lower_scope *params, lower_val v)
+{
+    const char **argv = NULL;
+    size_t cap = 0, i;
+    const char *ft = lower_as_temp(c, scope, &v);
+    const char *av = NULL;
+    const char *r;
+
+    if (params->nloc) {
+        argv = lower_grow(c, NULL, &cap, params->nloc, sizeof *argv);
+        if (!argv) {
+            c->oom = 1;
+            return lower_val_unit();
+        }
+        for (i = 0; i < params->nloc; i++) {
+            argv[i] = params->locs[i].abi ? params->locs[i].abi
+                                          : params->locs[i].cname;
+        }
+        av = emit_arg_array(c, scope, argv, params->nloc);
+    }
+    r = lower_temp(c, scope);
+    lower_pad(c);
+    lower_emitf(c, "ek_val %s = ek_closure_call(%s, %s, %zu);\n", r, ft,
+                params->nloc ? av : "(ek_val *)0", params->nloc);
+    lower_pad(c);
+    lower_emitf(c, "ek_release(%s);\n", ft);
+    return (lower_val){ r, 1 };
+}
+
 /* The C signature of one emitted function, shared by its forward
    declaration and its definition: the borrowed ABI slots. */
 static const char *signature(lower_ctx *c, const char *mangled,
@@ -295,6 +377,9 @@ static void emit_body(lower_ctx *c, const ek_symbol *sym,
     c->in_tail = 1;
     v = lower_block_value(c, top, fn_body(sym));
     c->in_tail = saved;
+    if (arms_valued(sym)) {
+        v = apply_slots(c, top, params, v);
+    }
     finish_function(c, params, top, v);
     c->depth = d;
 }
