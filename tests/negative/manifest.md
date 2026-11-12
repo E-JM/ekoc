@@ -58,6 +58,7 @@ otherwise it names the rejection and the normative clause.
 | N50 | a constructor pattern spelled flat through its module | `E-unbound-name` |
 | N51 | a constructor call on a type with no same-named constructor | `E-unbound-name` |
 | N52 | a payload constructor read as a bare value | `E-ctor-value` |
+| N53 | a member read past a constructor in one chain | `E-unbound-member` |
 
 ## N01 — nominal mismatch
 
@@ -734,3 +735,17 @@ t: test =
 ```
 
 Expected: `E-ctor-value`.
+
+## N53 — a member read past a constructor in one chain
+
+A constructor ends its spelling; the chain carries no member past it.
+
+```eko
+R2: type = Ok String | Err Int
+
+d: test =
+    x := R2.Ok.Extra(1)
+```
+
+Expected: `E-unbound-member`, naming the constructor that ends the
+spelling.
