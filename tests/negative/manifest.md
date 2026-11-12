@@ -59,6 +59,7 @@ otherwise it names the rejection and the normative clause.
 | N51 | a constructor call on a type with no same-named constructor | `E-unbound-name` |
 | N52 | a payload constructor read as a bare value | `E-ctor-value` |
 | N53 | a member read past a constructor in one chain | `E-unbound-member` |
+| N54 | a lambda right-hand side without an annotation | compile error: a lambda is check-only |
 
 ## N01 — nominal mismatch
 
@@ -749,3 +750,18 @@ d: test =
 
 Expected: `E-unbound-member`, naming the constructor that ends the
 spelling.
+
+## N54 — a lambda right-hand side without an annotation
+
+A lambda is check-only: its parameter types come from the expected
+type, and only the binding's annotation supplies one (`Clause 7.6.3`).
+The rebinding form is N19; a right-hand side wrapped in parentheses or
+a one-member block is the same binding.
+
+```eko
+k = (x): x
+```
+
+Expected: compile error: a lambda right-hand side is check-only, so the
+binding carries its parameter types in a function annotation
+(`Clause 7.6.3`). No diagnostic code is published.
