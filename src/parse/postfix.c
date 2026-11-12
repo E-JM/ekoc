@@ -12,6 +12,8 @@ static ek_node *primary(p_ctx *c);
 static ek_node *apply_ctor(p_ctx *c, ek_node *head);
 static ek_node *dot_link(p_ctx *c, ek_node *e);
 static void call_args(p_ctx *c, ek_node *call);
+static int juxtapose_reject(p_ctx *c, const ek_layout_token *t,
+                            const ek_node *e);
 
 /* Is e a bare constructor head that can take a juxtaposed payload:
    one PascalCase segment, no call or application yet. A dotted chain
@@ -56,6 +58,29 @@ static ek_node *apply_ctor(p_ctx *c, ek_node *head)
         return NULL;
     }
     return n;
+}
+
+/* The juxtaposed operands no spelling admits: a dotted head and a
+   bare snake_case name take their arguments in parentheses; the
+   juxtaposition form belongs to the bare constructor spelling.
+   Returns 1 when the rejection is reported. */
+static int juxtapose_reject(p_ctx *c, const ek_layout_token *t,
+                            const ek_node *e)
+{
+    int dotted = e->kind == EK_N_FIELD;
+    int bare = e->kind == EK_N_NAME && e->u.path.count == 1
+               && !p_is_pascal(e->u.path.data[0]);
+
+    if (!dotted && !bare) {
+        return 0;
+    }
+    p_error_tok(c, "E-syntax", t,
+                dotted ? "a dotted head takes its arguments in "
+                         "parentheses (Clause 6.5.2)"
+                       : "a call takes its arguments in parentheses "
+                         "(Clause 6.5.2)");
+    p_sync(c);
+    return 1;
 }
 
 /* Postfix: '.' Identifier [ '(' args ')' ] and constructor
@@ -104,26 +129,7 @@ ek_node *p_postfix(p_ctx *c)
                 e = apply_ctor(c, e);
                 continue;
             }
-            if (p_apply_start(p_src_kind(t)) && e->kind == EK_N_FIELD) {
-                /* A dotted chain takes its arguments in parentheses;
-                   the juxtaposition form belongs to the bare
-                   constructor spelling. */
-                p_error_tok(c, "E-syntax", t,
-                            "a dotted head takes its arguments in "
-                            "parentheses (Clause 6.5.2)");
-                p_sync(c);
-                return e;
-            }
-            if (p_apply_start(p_src_kind(t)) && e->kind == EK_N_NAME
-                && e->u.path.count == 1
-                && !p_is_pascal(e->u.path.data[0])) {
-                /* A bare snake_case name takes no juxtaposed operand:
-                   the application forms are the call and the
-                   constructor spelling. */
-                p_error_tok(c, "E-syntax", t,
-                            "a call takes its arguments in parentheses "
-                            "(Clause 6.5.2)");
-                p_sync(c);
+            if (p_apply_start(p_src_kind(t)) && juxtapose_reject(c, t, e)) {
                 return e;
             }
             return e;

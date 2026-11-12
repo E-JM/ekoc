@@ -46,8 +46,7 @@ const ek_symbol *r_module_ctor(const r_mod *m, const char *name)
 }
 
 /* A module's constructor of one spelling owned by one type: the
-   type-namespace member a `Type.Ctor` or `Mod.Type.Ctor` spelling
-   names (Clause 7.4.4). */
+   constructor a `Type.Ctor` or `Mod.Type.Ctor` spelling names. */
 const ek_symbol *r_module_owned_ctor(const r_mod *m, const char *type,
                                      const char *name)
 {
@@ -149,7 +148,7 @@ static void module_miss(r_ctx *c, r_file *f, r_head *cur,
     }
     if ((*walk_mod)->surf == c->std) {
         /* The std placeholder names no free member: a service is
-           spelled on its type (Clause 7.4.4). */
+           spelled on its type. */
         r_error(c, f->mod->file, link->line, link->col, "E-unbound-name",
                 "module `std` names no member `%s`; a service is spelled "
                 "on its type, `Type.%s(...)` (Clauses 7.4.2, 7.4.4)",
@@ -163,6 +162,60 @@ static void module_miss(r_ctx *c, r_file *f, r_head *cur,
     bridge_stop(c, cur, link, walk_mod, state);
 }
 
+/* The last-link spellings the ends-at-the-type rule decides: the
+   self-named constructor of the type the spelling carries, the flat
+   spelling's rejection, and the private-name diagnosis. Returns 1
+   when the walk is decided, with the constructor to resolve in *out. */
+static int ends_at_type(r_ctx *c, r_file *f, r_head *cur,
+                        const ek_node *link, const char *name,
+                        const ek_symbol *m, r_mod **walk_mod, int *state,
+                        const ek_symbol **out)
+{
+    const ek_symbol *t = module_type(*walk_mod, name);
+    const ek_symbol *cs;
+
+    if (t) {
+        cs = r_module_owned_ctor(*walk_mod, name, name);
+        if (!cs) {
+            const ek_symbol *other = r_module_ctor(*walk_mod, name);
+
+            if (other && other->owner && strcmp(other->owner, name) != 0) {
+                r_error(c, f->mod->file, link->line, link->col,
+                        "E-unbound-name",
+                        "the type `%s.%s` has no constructor `%s`; the "
+                        "constructor `%s` belongs to `%s` and spells "
+                        "`%s.%s.%s(...)` (Clause 7.4.4)",
+                        (*walk_mod)->stem, name, name, name, other->owner,
+                        (*walk_mod)->stem, other->owner, name);
+            } else {
+                r_error(c, f->mod->file, link->line, link->col,
+                        "E-unbound-name",
+                        "the type `%s.%s` has no constructor `%s` "
+                        "(Clause 7.4.4)", (*walk_mod)->stem, name, name);
+            }
+            bridge_stop(c, cur, link, walk_mod, state);
+            return 1;
+        }
+        if (!cs->public) {
+            r_error(c, f->mod->file, link->line, link->col,
+                    "E-private-name",
+                    "member `%s` is private in module `%s` "
+                    "(Clause 7.3.1)", name, (*walk_mod)->stem);
+        }
+        *out = cs;
+        return 0;
+    }
+    if (m->kind == EK_SYM_CONSTRUCTOR) {
+        r_error(c, f->mod->file, link->line, link->col, "E-unbound-name",
+                "the constructor `%s` is not spelled flat through module "
+                "`%s`; write `%s.%s(...)` with the owning type "
+                "(Clause 7.4.4)", name, (*walk_mod)->stem, m->owner, name);
+        bridge_stop(c, cur, link, walk_mod, state);
+        return 1;
+    }
+    return 0;
+}
+
 /* The member the segment names: a private spelling defers to the
    receiver reading or diagnoses, a type spelling continues as its
    namespace mid-chain and denotes its constructor at the last link. */
@@ -172,18 +225,6 @@ static int module_found(r_ctx *c, r_file *f, r_head *cur,
                         r_mod **walk_mod, const ek_symbol **walk_type,
                         int *state)
 {
-    if (!m->public && from_receiver) {
-        /* The same deferral as a miss: the field that wins the
-           module segment decides whether the name was ever
-           read here. */
-        bridge_stop(c, cur, link, walk_mod, state);
-        return 1;
-    }
-    if (!m->public) {
-        r_error(c, f->mod->file, link->line, link->col, "E-private-name",
-                "member `%s` is private in module `%s` (Clause 7.3.1)",
-                name, (*walk_mod)->stem);
-    }
     if (m->kind == EK_SYM_TYPE && !last) {
         /* A type spelling continues as its namespace; at a value
            position it denotes a constructor of the same spelling. */
@@ -196,50 +237,10 @@ static int module_found(r_ctx *c, r_file *f, r_head *cur,
         return 1;
     }
     if (last && !from_receiver) {
-        /* The spelling ends at the type: the constructor is the
-           type's own same-named variant, and the flat module-qualified
-           spelling is retired (Clause 7.4.4). */
-        const ek_symbol *t = module_type(*walk_mod, name);
+        int done = ends_at_type(c, f, cur, link, name, m, walk_mod, state,
+                                &m);
 
-        if (t) {
-            m = r_module_owned_ctor(*walk_mod, name, name);
-            if (!m) {
-                const ek_symbol *other = r_module_ctor(*walk_mod, name);
-
-                if (other && other->owner
-                    && strcmp(other->owner, name) != 0) {
-                    r_error(c, f->mod->file, link->line, link->col,
-                            "E-unbound-name",
-                            "the type `%s.%s` has no constructor `%s`; "
-                            "the constructor `%s` belongs to `%s` and "
-                            "spells `%s.%s.%s(...)` (Clause 7.4.4)",
-                            (*walk_mod)->stem, name, name, name,
-                            other->owner, (*walk_mod)->stem, other->owner,
-                            name);
-                } else {
-                    r_error(c, f->mod->file, link->line, link->col,
-                            "E-unbound-name",
-                            "the type `%s.%s` has no constructor `%s` "
-                            "(Clause 7.4.4)", (*walk_mod)->stem, name,
-                            name);
-                }
-                bridge_stop(c, cur, link, walk_mod, state);
-                return 1;
-            }
-            if (!m->public) {
-                r_error(c, f->mod->file, link->line, link->col,
-                        "E-private-name",
-                        "member `%s` is private in module `%s` "
-                        "(Clause 7.3.1)", name, (*walk_mod)->stem);
-            }
-        } else if (m->kind == EK_SYM_CONSTRUCTOR) {
-            r_error(c, f->mod->file, link->line, link->col,
-                    "E-unbound-name",
-                    "the constructor `%s` is not spelled flat through "
-                    "module `%s`; write `%s.%s(...)` with the owning "
-                    "type (Clause 7.4.4)", name, (*walk_mod)->stem,
-                    m->owner, name);
-            bridge_stop(c, cur, link, walk_mod, state);
+        if (done) {
             return 1;
         }
     }
@@ -276,6 +277,21 @@ int r_module_walk(r_ctx *c, r_file *f, r_head *cur, const ek_node *link,
         return 1;
     }
     m = r_module_member(*walk_mod, name);
+    if (!m) {
+        module_miss(c, f, cur, link, name, from_receiver, walk_mod, state);
+        return 1;
+    }
+    if (!m->public && from_receiver) {
+        /* The same deferral as a miss: the field that wins the module
+           segment decides whether the name was ever read here. */
+        bridge_stop(c, cur, link, walk_mod, state);
+        return 1;
+    }
+    if (!m->public) {
+        r_error(c, f->mod->file, link->line, link->col, "E-private-name",
+                "member `%s` is private in module `%s` (Clause 7.3.1)",
+                name, (*walk_mod)->stem);
+    }
     if (!last) {
         /* A namespace link continues at the type a shared spelling
            may hide behind a constructor row. */
@@ -284,10 +300,6 @@ int r_module_walk(r_ctx *c, r_file *f, r_head *cur, const ek_node *link,
         if (t) {
             m = t;
         }
-    }
-    if (!m) {
-        module_miss(c, f, cur, link, name, from_receiver, walk_mod, state);
-        return 1;
     }
     return module_found(c, f, cur, link, name, m, last, from_receiver,
                         walk_mod, walk_type, state);
@@ -314,7 +326,7 @@ int r_namespace_walk(r_ctx *c, r_file *f, r_head *cur,
     } else if (!from_receiver
                && (nm = r_module_owned_ctor(owner, type->name, name)) != NULL) {
         /* The type's own constructor: `Type.Ctor` and `Mod.Type.Ctor`
-           anchor it with the type as provenance (Clause 7.4.4). */
+           anchor it with the type as provenance. */
         if (!nm->public) {
             r_error(c, f->mod->file, link->line, link->col,
                     "E-private-name",
@@ -327,9 +339,9 @@ int r_namespace_walk(r_ctx *c, r_file *f, r_head *cur,
         r_add_ref(c, link, cur->kind, cur->st, cur->sym);
     } else {
         /* Derived services attach as defaults, and the compiler-owned
-           namespaces keep their rows in check; the walk bridges and a
-           miss is named there (Clauses 7.4.3, 7.4.4).
-           r_external_link records the reference itself. */
+           namespaces keep their rows in check; the walk bridges and
+           check names the miss. r_external_link records the reference
+           itself. */
         r_external_link(c, cur, link);
     }
     *state = 0;

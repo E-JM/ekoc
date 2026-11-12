@@ -55,6 +55,21 @@ int ck_service_name(const char *name)
     return 0;
 }
 
+/* The receiver a bare read's link runs at: a receiver that resolved as
+   a type namespace reads the link in that namespace, so a miss is
+   named instead of an opaque walk over a mid-chain bridge. */
+static const ek_type *type_ns_recv(ck_ctx *c, const ek_node *recv,
+                                   const ek_type *fallback)
+{
+    const ek_ref *tr = NULL;
+
+    if (ck_ref_at(c, recv, EK_SYM_TYPE, &tr)
+        && tr->station != EK_ST_MODULE_PATH && tr->symbol) {
+        return ck_nominal(c, tr->symbol, NULL, 0);
+    }
+    return fallback;
+}
+
 /* A bare x.f is a field access. A head-qualified chain resolve decided
    names a module function, a namespace member, or an extern; its
    scheme is the chain's type, so the member reads as a value wherever
@@ -95,18 +110,9 @@ const ek_type *ck_field(ck_ctx *c, const ek_node *e)
         }
     }
     recv = ck_expr(c, e->u.field.recv, NULL);
+    recv = type_ns_recv(c, e->u.field.recv, recv);
     {
-        const ek_ref *tr = NULL;
-        const ek_type *t;
-
-        /* A bare read whose receiver resolved as a type namespace: the
-           link is read in that namespace, so a miss is named instead of
-           an opaque walk over a mid-chain bridge (Clause 7.4.3). */
-        if (ck_ref_at(c, e->u.field.recv, EK_SYM_TYPE, &tr)
-            && tr->station != EK_ST_MODULE_PATH && tr->symbol) {
-            recv = ck_nominal(c, tr->symbol, NULL, 0);
-        }
-        t = ck_link(c, e, recv, e->u.field.name, &rd);
+        const ek_type *t = ck_link(c, e, recv, e->u.field.name, &rd);
 
         if (rd == EK_RD_CONVERT) {
             /* The conversion member is a call form only; a bare read

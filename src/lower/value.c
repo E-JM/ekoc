@@ -81,6 +81,27 @@ static void emit_slot_head(lower_ctx *c, const ek_symbol *sym)
     lower_emitf(c, "    if (!%s) {\n", flag);
 }
 
+/* A pattern-headed binding: the initializer lowers once, the
+   pattern's names bind as locals, and this symbol's slot takes its
+   own component; the siblings die with the scope. */
+static void value_slot_from_pattern(lower_ctx *c, lower_scope *top,
+                                    const ek_node *decl, const ek_node *pat,
+                                    const ek_symbol *sym, const char *slot)
+{
+    const lower_local *loc = NULL;
+
+    if (!lower_value_destructure(c, top, decl, pat, sym->name)) {
+        lower_error(c, decl, "the destructuring pattern is not "
+                             "supported by this lowerer");
+        return;
+    }
+    loc = scope_find_local(top, sym->name);
+    if (loc) {
+        lower_pad(c);
+        lower_emitf(c, "%s = ek_keep(%s);\n", slot, loc->cname);
+    }
+}
+
 /* One value binding: the slot and its initialized flag, the getter
    that runs the initializer once, and the keep discipline the
    references read through. The initializer's owned result moves into
@@ -120,20 +141,7 @@ void lower_value_binding(lower_ctx *c, const lower_item *item)
     c->in_tail = 1;
     memset(&top, 0, sizeof top);
     if (pattern_head) {
-        /* The pattern's names bind as locals; this symbol's slot takes
-           its own component, and the rest die with the scope. */
-        if (!lower_value_destructure(c, &top, decl, pat, sym->name)) {
-            lower_error(c, decl, "the destructuring pattern is not "
-                                 "supported by this lowerer");
-        }
-        {
-            const lower_local *loc = scope_find_local(&top, sym->name);
-
-            if (loc) {
-                lower_pad(c);
-                lower_emitf(c, "%s = ek_keep(%s);\n", slot, loc->cname);
-            }
-        }
+        value_slot_from_pattern(c, &top, decl, pat, sym, slot);
     } else {
         v = lower_block_value(c, &top, value);
         if (!v.text) {

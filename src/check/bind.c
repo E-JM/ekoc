@@ -116,7 +116,7 @@ static void top_names(ck_ctx *c, const ek_node *pat, const ek_node *m)
 /* A top-level pattern binding: the names are the module surface's own
    rows. A single name takes the bound type; a group names its
    components; the structured families walk in a temporary scope whose
-   reads the install harvests (Clauses 6.3.1, 7.3.1). */
+   reads the install harvests. */
 static void bind_top_pattern(ck_ctx *c, const ek_node *pat,
                              const ek_node *m, const ek_type *bound)
 {
@@ -205,6 +205,45 @@ static void bind_pattern(ck_ctx *c, const ek_node *pat, const ek_type *t,
 
 /* One binding member: LET, REBIND, or INVERT. Returns the type the
    binding introduces. */
+/* The type an annotated or plain binding's value reads: the annotation's
+   elaboration, or the right-hand side's own type with the top-level
+   purity rule applied. */
+static const ek_type *binding_bound(ck_ctx *c, const ek_node *m,
+                                    const ek_node *val, ck_scheme **gen,
+                                    int top)
+{
+    const ek_type *bound;
+
+    if (m->u.bind.type) {
+        *gen = ck_mono(c, NULL);
+        return annotated_binding(c, m, val, *gen, top);
+    }
+    {
+        const ek_node *lam = as_lambda(val);
+
+        if (lam) {
+            /* `:=` does not generalize, and a lambda is check-only. */
+            ck_error(c, lam, "E-lambda-check-only",
+                     "`:=` does not generalize and a lambda is "
+                     "check-only: no expected type supplies the "
+                     "parameter types (Clauses 6.3.3, 7.6.3)");
+        }
+    }
+    bound = ck_expr(c, val, NULL);
+    /* Top-level initialization is pure whatever the binding form; an
+       extern call needs no capability, so the rebind is checked, not
+       ruled out by scope. A body with a reported site claims no bit
+       and owes no judgment here. */
+    if (top && val && !ck_body_silent(c, val)
+        && ck_body_bit(c, val) != EK_BIT_PURE) {
+        ck_error(c, m, "E-world-bit",
+                 "top-level initialization is pure; a bit-setting "
+                 "call belongs inside a world-touching function "
+                 "(Clauses 7.1.2, 7.9.2)");
+    }
+    return bound;
+}
+
 static const ek_type *ck_binding(ck_ctx *c, const ek_node *m, int top)
 {
     const ek_node *pat = m->u.bind.pattern;
@@ -222,32 +261,7 @@ static const ek_type *ck_binding(ck_ctx *c, const ek_node *m, int top)
         c->inst_vars = NULL;
         c->inst_nvars = 0;
     }
-    if (m->u.bind.type) {
-        gen = ck_mono(c, NULL);
-        bound = annotated_binding(c, m, val, gen, top);
-    } else {
-        const ek_node *lam = as_lambda(val);
-
-        if (lam) {
-            /* `:=` does not generalize, and a lambda is check-only. */
-            ck_error(c, lam, "E-lambda-check-only",
-                     "`:=` does not generalize and a lambda is "
-                     "check-only: no expected type supplies the "
-                     "parameter types (Clauses 6.3.3, 7.6.3)");
-        }
-        bound = ck_expr(c, val, NULL);
-        /* Top-level initialization is pure whatever the binding form;
-           an extern call needs no capability, so the rebind is checked,
-           not ruled out by scope (Clauses 7.1.2, 7.9.2). A body with a
-           reported site claims no bit and owes no judgment here. */
-        if (top && val && !ck_body_silent(c, val)
-            && ck_body_bit(c, val) != EK_BIT_PURE) {
-            ck_error(c, m, "E-world-bit",
-                     "top-level initialization is pure; a bit-setting "
-                     "call belongs inside a world-touching function "
-                     "(Clauses 7.1.2, 7.9.2)");
-        }
-    }
+    bound = binding_bound(c, m, val, &gen, top);
     if (!ck_irrefutable(c, pat, bound)) {
         ck_error(c, pat, "E-refutable-binding",
                  "a value binding admits only irrefutable patterns "
@@ -257,8 +271,8 @@ static const ek_type *ck_binding(ck_ctx *c, const ek_node *m, int top)
         bind_pattern(c, pat, bound, gen);
     } else if (pat && (pat->kind != EK_N_P_VAR || !m->u.bind.type)) {
         /* A top-level pattern names the module surface's own rows, and
-           an unannotated name takes the type its right-hand side read
-           (Clauses 6.3.1, 7.3.1). */
+           an unannotated name takes the type its right-hand side
+           read. */
         bind_top_pattern(c, pat, m, bound);
     }
     if (top) {

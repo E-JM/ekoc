@@ -45,6 +45,23 @@ static lower_val panic_call(lower_ctx *c, lower_scope *scope,
 }
 
 
+/* The receiver form of the panic service: the receiver is the
+   message, the live frame reads the panic position, and the call does
+   not return. */
+lower_val panic_member_call(lower_ctx *c, lower_scope *scope,
+                            const ek_node *e, const ek_node *recv)
+{
+    lower_val a = lower_sub(c, scope, recv);
+    const char *at = lower_as_temp(c, scope, &a);
+
+    lower_pad(c);
+    lower_emitf(c, "ek_frame_site(%d, %d);\n", e->line, e->col);
+    lower_emitf(c, "ek_panic_value(%s);\n", at);
+    lower_pad(c);
+    lower_emitf(c, "ek_release(%s);\n", at);
+    return lower_val_unit();
+}
+
 /* The C namespace's member call: the receiver names the namespace,
    not a module, and the machine-interface vocabulary routes to the
    runtime. A NULL result hands the decision back. */

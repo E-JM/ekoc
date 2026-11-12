@@ -322,6 +322,20 @@ static const ek_symbol *member_target(lower_ctx *c, const ek_type *rt,
            : NULL;
 }
 
+/* The current-module function a receiver-form call selected: NULL
+   hands the decision back. */
+static lower_val module_fn_call(lower_ctx *c, lower_scope *scope,
+                                const ek_node *e, const ek_node *callee,
+                                const ek_node *recv, const call_form *form)
+{
+    const ek_symbol *fn = root_module_fn(c, callee->u.field.name);
+
+    if (!fn) {
+        return lower_val_unit();
+    }
+    return recv_call(c, scope, e, callee, fn, recv, form);
+}
+
 /* A receiver-form member call: a function-valued field is the callee
    value, a derived reading lowers to its service, an open receiver the
    instantiation substituted concrete re-routes at the applied type,
@@ -348,17 +362,7 @@ lower_val member_call(lower_ctx *c, lower_scope *scope,
     }
     if (frow && frow->reading == EK_RD_DERIVED && !form->extra) {
         if (strcmp(callee->u.field.name, "panic") == 0) {
-            /* The receiver form of the panic service: the receiver is
-               the message, and the call does not return. */
-            lower_val a = lower_sub(c, scope, recv);
-            const char *at = lower_as_temp(c, scope, &a);
-
-            lower_pad(c);
-            lower_emitf(c, "ek_frame_site(%d, %d);\n", e->line, e->col);
-            lower_emitf(c, "ek_panic_value(%s);\n", at);
-            lower_pad(c);
-            lower_emitf(c, "ek_release(%s);\n", at);
-            return lower_val_unit();
+            return panic_member_call(c, scope, e, recv);
         }
         if (strcmp(callee->u.field.name, "with") == 0) {
             return lower_derived_with(c, scope, e, recv);
@@ -367,11 +371,7 @@ lower_val member_call(lower_ctx *c, lower_scope *scope,
                                   rt ? CF_MEMBER : CF_QUALIFIED);
     }
     if (frow && frow->reading == EK_RD_MODULE_FN && recv && !form->extra) {
-        const ek_symbol *fn = root_module_fn(c, callee->u.field.name);
-
-        if (fn) {
-            return recv_call(c, scope, e, callee, fn, recv, form);
-        }
+        return module_fn_call(c, scope, e, callee, recv, form);
     }
     if (frow && frow->reading == EK_RD_UNKNOWN && !form->extra && rt) {
         lower_val v = open_call(c, scope, e, callee, rt, form);

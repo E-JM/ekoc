@@ -51,7 +51,7 @@ static void bind_var(r_ctx *c, r_file *f, const char *name, int line,
 }
 
 /* A type-qualified pattern constructor head: `Type.Ctor` names one
-   variant of the type it is spelled on (Clause 7.4.4). */
+   variant of the type it is spelled on. */
 static int cons_ref_type(r_ctx *c, r_file *f, const ek_node *pat,
                          const char *tname, const char *cname)
 {
@@ -107,7 +107,7 @@ static void cons_ref_qualified(r_ctx *c, r_file *f, const ek_node *pat,
     }
     target = r_module_find(c, mod->name);
     /* Mod.Type: the type's own constructor; the flat pattern spelling
-       `Mod.Ctor` is retired with the value form (Clause 7.4.4). */
+       `Mod.Ctor` is retired with the value form. */
     cs = r_module_owned_ctor(target, cname, cname);
     if (cs && r_is_placeholder(cs)) {
         /* A placeholder constructor keeps the bridged reading. */
