@@ -21,7 +21,7 @@ every test (Clause 2.7).
 | Component | Location | Form | Required outcome |
 |---|---|---|---|
 | Positive modules | `tests/conformance/` | 36 Eko modules: 34 test roots and 2 fixtures | compile; every test binding executes without panic |
-| Negative entries | `tests/negative/manifest.md` | 53 minimal programs | compile-time rejection with the stated outcome |
+| Negative entries | `tests/negative/manifest.md` | 54 minimal programs | compile-time rejection with the stated outcome |
 | Runner | toolchain | test runner over both classes | per-test report (Clause D.6) |
 
 ## D.2 Positive Tests
@@ -122,6 +122,12 @@ the rejection and the violated clause.
 | N46 | the conversion member does not chain | `E-unbound-member` | 7.8.7 |
 | N47 | an argument beyond the conversion's operand | `E-call-arity` | 7.8.1 |
 | N48 | a bare conversion member read | `E-unbound-member` | 7.4.3 |
+| N49 | a constructor spelled flat through its module | `E-unbound-name` | 7.4.4 |
+| N50 | a constructor pattern spelled flat through its module | `E-unbound-name` | 7.4.4 |
+| N51 | a constructor call on a type with no same-named constructor | `E-unbound-name` | 7.4.4 |
+| N52 | a payload constructor read as a bare value | `E-ctor-value` | 6.5.2 |
+| N53 | a member read past a constructor in one chain | `E-unbound-member` | 7.4.4 |
+| N54 | a lambda right-hand side without an annotation | compile error, no specified code | 7.6.3 |
 
 For an entry with a specified code, the error diagnostic that rejects the
 program MUST carry that code. For an entry without a specified code, the
@@ -134,8 +140,8 @@ runtime panic, a linker error, or a test failure is not a pass. The program
 MUST be materialized as a standalone module. N12 requires `geolib` on the
 module path, and N15 requires a raw tab character at the marked position.
 
-Ten entries have no specified code: N04, N16, N17, N18, N19, N31, N35,
-N36, N42, and N44. For these,
+Eleven entries have no specified code: N04, N16, N17, N18, N19, N31,
+N35, N36, N42, N44, and N54. For these,
 the compiler MUST report an error diagnostic with an implementation-chosen
 `E-` code and MUST identify the violated clause (Annex B.3). The snippets are
 not added to the positive tree.
