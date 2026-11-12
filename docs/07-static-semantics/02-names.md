@@ -126,6 +126,7 @@ qualified name reference with more than one head segment is `E-unbound-name`
 | Expression head | `Mod.Type.f(args)` | namespace member `f` of type `Type` in `Mod` |
 | Expression head | `Type.Ctor(args)` / `Mod.Type.Ctor(args)` | constructor `Ctor` of type `Type` |
 | Expression head | `Mod.Type(args)` | the constructor of `Type` named `Type` in `Mod` |
+| Expression head | `Type.svc(args)` / `Mod.Type.svc(args)` | derived service `svc` of `Type`, the receiver its first argument (Clause 9.8.1) |
 | Receiver link | `x.Mod.f(args)` | `Mod.f(x, args)` (Clause 6.5.2) |
 | Receiver link | `x.Mod.Type.f(args)` | `Mod.Type.f(x, args)` |
 | Type position | `Mod.Type` | type `Type` declared in `Mod` |
