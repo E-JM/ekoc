@@ -21,12 +21,14 @@ ck_scheme *ck_mono(ck_ctx *c, const ek_type *t)
     return s;
 }
 
-/* The lambda beneath one level of parentheses, else NULL: a lambda is
-   check-only, so an unannotated binding over one is rejected. */
+/* The lambda beneath parentheses or a one-member block, else NULL: a
+   lambda is check-only, so an unannotated binding over one is
+   rejected. */
 static const ek_node *as_lambda(const ek_node *v)
 {
-    while (v && v->kind == EK_N_PAREN) {
-        v = v->u.wrap.inner;
+    while (v && (v->kind == EK_N_PAREN
+                 || (v->kind == EK_N_BLOCK && v->u.kids.count == 1))) {
+        v = v->kind == EK_N_PAREN ? v->u.wrap.inner : v->u.kids.data[0];
     }
     return v && v->kind == EK_N_LAMBDA ? v : NULL;
 }
@@ -215,24 +217,35 @@ static const ek_type *binding_bound(ck_ctx *c, const ek_node *m,
                                     const ek_node *val, ck_scheme **gen,
                                     int top)
 {
+    const ek_node *lam;
     const ek_type *bound;
 
     if (m->u.bind.type) {
         *gen = ck_mono(c, NULL);
         return annotated_binding(c, m, val, *gen, top);
     }
-    {
-        const ek_node *lam = as_lambda(val);
-
-        if (lam) {
-            /* `:=` does not generalize, and a lambda is check-only. */
-            ck_error(c, lam, "E-lambda-check-only",
+    lam = as_lambda(val);
+    if (lam) {
+        /* A lambda is check-only: its parameter types come from the
+           expected type, and only the annotation supplies one here.
+           One report at the binding; the lambda still reads under the
+           opacity bridge, so the body's own diagnostics and its bit
+           keep their say. */
+        if (m->kind == EK_N_REBIND) {
+            ck_error(c, m, "E-lambda-check-only",
                      "`:=` does not generalize and a lambda is "
                      "check-only: no expected type supplies the "
                      "parameter types (Clauses 6.3.3, 7.6.3)");
+        } else {
+            ck_error(c, m, "E-lambda-check-only",
+                     "a lambda right-hand side is check-only: the "
+                     "binding carries its parameter types in a "
+                     "function annotation (Clause 7.6.3)");
         }
+        bound = ck_expr(c, val, ck_ivar(c));
+    } else {
+        bound = ck_expr(c, val, NULL);
     }
-    bound = ck_expr(c, val, NULL);
     /* Top-level initialization is pure whatever the binding form; an
        extern call needs no capability, so the rebind is checked, not
        ruled out by scope. A body with a reported site claims no bit

@@ -173,13 +173,26 @@ static void n18(void)
     cfx_end(&f);
 }
 
-/* N19 — `:=` on an unannotated lambda. */
+/* N19 — `:=` on an unannotated lambda. The `=` form carries the same
+   rejection as one report at the binding, naming the annotation it
+   lacks; a right-hand side wrapped in a block is the same lambda. */
 static void n19(void)
 {
     cfx f;
 
     cfx_begin(&f, "id := (x): x\n");
     EK_CHECK(cfx_errors(&f) >= 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-lambda-check-only", 1));
+    cfx_end(&f);
+
+    cfx_begin(&f, "k = (x): x\n");
+    EK_CHECK_U64(cfx_code_count(&f, "E-lambda-check-only"), 1);
+    EK_CHECK(cfx_code_at_line(&f, "E-lambda-check-only", 1));
+    EK_CHECK(cfx_msg_has(&f, "annotation"));
+    cfx_end(&f);
+
+    cfx_begin(&f, "k =\n    (x): x\n");
+    EK_CHECK_U64(cfx_code_count(&f, "E-lambda-check-only"), 1);
     EK_CHECK(cfx_code_at_line(&f, "E-lambda-check-only", 1));
     cfx_end(&f);
 }

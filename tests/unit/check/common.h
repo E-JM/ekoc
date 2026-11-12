@@ -148,6 +148,20 @@ static inline int cfx_has_code(const cfx *f, const char *code)
     return 0;
 }
 
+/* How many check-stage diagnostics carry one code: one root cause is
+   one report. */
+static inline size_t cfx_code_count(const cfx *f, const char *code)
+{
+    size_t i, n = 0;
+
+    for (i = 0; i < f->cdn; i++) {
+        if (f->cds[i].code && strcmp(f->cds[i].code, code) == 0) {
+            n++;
+        }
+    }
+    return n;
+}
+
 static inline int cfx_code_at_line(const cfx *f, const char *code, int line)
 {
     size_t i;
