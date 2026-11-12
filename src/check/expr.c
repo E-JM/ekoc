@@ -350,7 +350,7 @@ const ek_type *ck_expr(ck_ctx *c, const ek_node *e, const ek_type *expected)
         t = name_type(c, e, expected);
         break;
     case EK_N_FIELD:
-        t = ck_field(c, e);
+        t = ck_field(c, e, expected);
         break;
     case EK_N_PAREN:
         t = ck_expr(c, e->u.wrap.inner, expected);

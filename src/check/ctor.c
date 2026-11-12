@@ -77,8 +77,7 @@ static char *owners_text(ck_ctx *c, const ek_ref *ref)
         if (ok) {
             ok = ek_buf_append_char(&b, '`');
         }
-        if (ok && cand->module
-            && strcmp(cand->module, "std") == 0) {
+        if (ok && cand->module && ck_shared_name(c, cand->owner)) {
             ok = ek_buf_append_str(&b, cand->module)
               && ek_buf_append_char(&b, '.');
         }

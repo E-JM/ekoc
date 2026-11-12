@@ -132,6 +132,12 @@ static int paren_irrefutable(ck_ctx *c, const ek_node *p, const ek_type *t)
     if (p->u.kids.count == 1) {
         return ck_irrefutable(c, p->u.kids.data[0], t);
     }
+    /* a group destructures a tuple: the arity must answer at the bound
+       type, so a group over anything else is refutable */
+    if (!repr || repr->kind != EK_T_TUPLE
+        || repr->u.tuple.count != p->u.kids.count) {
+        return 0;
+    }
     for (i = 0; i < p->u.kids.count; i++) {
         const ek_type *ct = repr && repr->kind == EK_T_TUPLE
                                 && i < repr->u.tuple.count

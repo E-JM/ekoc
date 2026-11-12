@@ -552,7 +552,8 @@ const ek_type *call_ctor(ck_ctx *c, const ek_node *e, const ek_node *callee,
 const ek_symbol *qualified_head_ctor(ck_ctx *c, const ek_node *head);
 
 const ek_type *ck_call(ck_ctx *c, const ek_node *e, const ek_type *expected);
-const ek_type *ck_field(ck_ctx *c, const ek_node *e);
+const ek_type *ck_field(ck_ctx *c, const ek_node *e,
+                        const ek_type *expected);
 const ek_type *ck_link(ck_ctx *c, const ek_node *link, const ek_type *recv,
                        const char *name, ek_reading *rd);
 const ek_symbol *ns_scan(ck_ctx *c, const char *want, const char *owner,

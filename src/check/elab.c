@@ -238,7 +238,15 @@ static ek_tfield *group_fields(ck_ctx *c, const ek_node *t, ck_tvars *tv)
         }
         for (i = 0; i < n; i++) {
             const ek_node *f = t->u.kids.data[i];
+            size_t k;
 
+            for (k = 0; k < i; k++) {
+                if (strcmp(fs[k].name, f->u.t_field.name) == 0) {
+                    ck_error(c, f, "E-field-duplicate",
+                             "the record names the field `%s` twice "
+                             "(Clause 7.5.3)", f->u.t_field.name);
+                }
+            }
             fs[i].name = f->u.t_field.name;
             fs[i].type = ck_elaborate(c, f->u.t_field.type, tv);
         }

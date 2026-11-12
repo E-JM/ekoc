@@ -543,8 +543,8 @@ static const char *diag_message(const cfx *f, int line)
     return NULL;
 }
 
-/* A std candidate in the owner list carries its module, so a user type
-   of the same spelling stays distinguishable from it. */
+/* An owner name several modules declare carries its module in the
+   owner list, so every candidate stays distinguishable. */
 static void undetermined_owner_text(void)
 {
     cfx f;
@@ -558,7 +558,7 @@ static void undetermined_owner_text(void)
     EK_CHECK_STR(diag_message(&f, 3),
                  "two constructors named `True` are visible and no "
                  "expected type anchors the reference; write the "
-                 "annotation of one of them: `Bool` or `std.Bool` "
+                 "annotation of one of them: `test.Bool` or `std.Bool` "
                  "(Clause 7.4.6)");
     cfx_end(&f);
 }

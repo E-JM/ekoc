@@ -552,9 +552,27 @@ static void n52(void)
     cfx_end(&f);
 }
 
+/* N53 — a member read past a constructor in one chain. */
+static void n53(void)
+{
+    cfx f;
+
+    cfx_begin(&f,
+              "R2: type = Ok String | Err Int\n"
+              "d: test =\n"
+              "    x := R2.Ok.Extra(1)\n");
+    EK_CHECK(resolve_code_at(&f, "E-unbound-member", 3));
+    cfx_end(&f);
+}
+
 int main(void)
 {
     n41();
+    n49();
+    n50();
+    n51();
+    n52();
+    n53();
     n49();
     n50();
     n51();

@@ -151,6 +151,9 @@ static void bind_top_pattern(ck_ctx *c, const ek_node *pat,
         }
         return;
     }
+    if (!ck_irrefutable(c, pat, bound)) {
+        return; /* the binding judgment named the refutable shape */
+    }
     ck_scope_push(c);
     ck_pattern(c, pat, bound);
     top_names(c, pat, m);

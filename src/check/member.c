@@ -76,7 +76,8 @@ static const ek_type *type_ns_recv(ck_ctx *c, const ek_node *recv,
    the chain does. A receiver-form module path keeps the field walk:
    check owes it the receiver-type decision a field of the same
    spelling can win. */
-const ek_type *ck_field(ck_ctx *c, const ek_node *e)
+const ek_type *ck_field(ck_ctx *c, const ek_node *e,
+                        const ek_type *expected)
 {
     const ek_ref *ref = NULL;
     const ek_type *recv;
@@ -91,8 +92,8 @@ const ek_type *ck_field(ck_ctx *c, const ek_node *e)
         }
         if (ref->kind == EK_SYM_CONSTRUCTOR) {
             /* A qualified constructor read: a zero payload is the
-               value of its type, a payload constructor reads only
-               under application. */
+               value of its type at the expected instantiation, a
+               payload constructor reads only under application. */
             const ck_ctor *ct = ck_ctor_of(c, ref->symbol);
 
             (void)ck_expr(c, e->u.field.recv, NULL);
@@ -104,7 +105,7 @@ const ek_type *ck_field(ck_ctx *c, const ek_node *e)
                 return ck_opaque(c);
             }
             if (ct && ct->owner) {
-                return ck_nominal(c, ct->owner, NULL, 0);
+                return ctor_apply(c, e, ct, expected, NULL, 0);
             }
             return ck_opaque(c);
         }
