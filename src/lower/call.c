@@ -218,6 +218,17 @@ static lower_val func_call(lower_ctx *c, lower_scope *scope,
     if (ref->kind == EK_SYM_FUNC && is_injected(ref->symbol)) {
         return identity_call(c, scope, e, ref->symbol, form);
     }
+    if (ref->kind == EK_SYM_FUNC && lower_is_value(ref->symbol)) {
+        /* A function value held by a top-level binding: the getter's
+           closure applies, exactly as the value read passes it on. */
+        lower_val cv;
+
+        lower_enqueue(c, ref->symbol);
+        cv.text = lower_str(c, "%s()",
+                            lower_value_getter(c, ref->symbol));
+        cv.is_temp = 0;
+        return value_call(c, scope, e, cv, form->extra);
+    }
     if (ref->station == EK_ST_MODULE_PATH && !form->has_recv
         && callee && callee->kind == EK_N_FIELD) {
         const ek_node *rv = module_path_recv(c, callee->u.field.recv);

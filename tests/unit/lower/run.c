@@ -538,6 +538,34 @@ static void function_value(void)
     }
 }
 
+/* A function value held by a top-level binding takes the closure call
+   through its getter: the alias and the selected arm apply like any
+   value, and the same binding passed as an argument keeps the value
+   read. */
+static void value_slot_call(void)
+{
+    char out[64], err[8];
+    int status = gate_print("double: (x: Int) -> Int = x * 2\n"
+                            "twice = double\n"
+                            "pick = case 1:\n"
+                            "    0 -> (m): m * 2\n"
+                            "    _ -> (m): m + 1\n"
+                            "apply: (f: (Int) -> Int, x: Int) -> Int = f(x)\n"
+                            "main: (out: Out) ! =\n"
+                            "    out.println(twice(21).show())\n"
+                            "    out.println(pick(20).show())\n"
+                            "    out.println(apply(twice, 5).show())\n"
+                            "    _\n",
+                            "lower_slot_call", 6, out, sizeof out, err,
+                            sizeof err);
+
+    if (status >= 0 && WIFEXITED(status)) {
+        EK_CHECK_U64(WEXITSTATUS(status), 0);
+    }
+    EK_CHECK_STR(out, "42\n21\n10\n");
+    EK_CHECK(err[0] == '\0');
+}
+
 /* A guarded arm and an or-pattern discriminate at runtime: the probes
    panic unless every arm chose exactly. */
 static void guarded_and_or(void)
@@ -808,6 +836,7 @@ int main(void)
     tail_recursion();
     lambda_capture();
     function_value();
+    value_slot_call();
     guarded_and_or();
     record_pattern();
     invert_chain();
