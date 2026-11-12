@@ -207,8 +207,9 @@ static lower_val ctor_call(lower_ctx *c, lower_scope *scope,
 }
 
 /* A call whose callee names a function or namespace: the injected
-   identity, the module-path receiver re-route, the frame-local retry
-   of a self tail-call, or the direct form. */
+   identity, the function value's closure call, the module-path
+   receiver re-route, the frame-local retry of a self tail-call, or
+   the direct form. */
 static lower_val func_call(lower_ctx *c, lower_scope *scope,
                            const ek_node *e, const ek_ref *ref,
                            const call_form *form)
