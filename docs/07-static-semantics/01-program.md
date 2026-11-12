@@ -32,8 +32,9 @@ binding, the `type` declaration, the `ctype` declaration, the `test`
 declaration, and the `extern` declaration (Clause 6.3.1).
 
 A value binding MAY omit its annotation; its type then comes from the
-right-hand side, and a composite literal with no expected type requires an
-annotation (Clause 7.5.3). A `type` right-hand side MUST be a declaration form
+right-hand side, except that a binding whose right-hand side is a lambda
+carries an annotation (Clause 7.6.3), and a composite literal with no
+expected type requires an annotation (Clause 7.5.3). A `type` right-hand side MUST be a declaration form
 (Clause 7.5.2). A `ctype` right-hand side MUST satisfy the field predicate
 (Clause 10.3.3). An `extern` signature MUST satisfy Clause 7.8.1. A `test`
 right-hand side is a block and is checked only for a test root (Clause

@@ -40,9 +40,10 @@ pattern. A value binding MAY carry a type annotation between the pattern and
 person: Person = {name: "ada", age: 36, sex: Woman, address: "x"}
 ```
 
-Without an annotation, the type is determined by the right-hand side. A
-composite literal with no expected type requires an annotation
-(Clause 6.6.2).
+Without an annotation, the type is determined by the right-hand side,
+except that a binding whose right-hand side is a lambda carries an
+annotation (Clause 7.6.3). A composite literal with no expected type
+requires an annotation (Clause 6.6.2).
 
 The tuple pattern's own spelling is braced (Clause 6.8.1). A parenthesized
 group appears on the left of `=`, where it cannot be an expression, and
